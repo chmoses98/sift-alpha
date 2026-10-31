@@ -115,7 +115,7 @@ def source_profile(rows):
     keys = Counter()
     nested = Counter()
     for row in rows:
-        keys.update(row)
+        keys.update(row.keys())  # Counter.update(mapping) would sum arbitrary JSON values
         for k, v in row.items():
             if isinstance(v, dict):
                 nested.update(f"{k}.{sub}" for sub in v)

@@ -41,6 +41,21 @@ class HistoricalTests(unittest.TestCase):
         self.assertFalse(a["promotion_eligible"])
         self.assertEqual(a["statistical_conclusion"], "DESCRIPTIVE_ONLY")
 
+    def test_missing_quote_record_is_preserved_as_explicit_exclusion(self):
+        no_quote = copy.deepcopy(CFB)
+        no_quote["event_id"] = "second-game-no-quote"
+        no_quote["capture"]["status"] = "PRICE_1_00"
+        no_quote["capture"]["entry"] = None
+        scored = audit_cfb([CFB, no_quote])
+        self.assertEqual(scored["n_source_games"], 2)
+        self.assertEqual(scored["n_independent_games"], 1)
+        self.assertEqual(scored["n_excluded"], 1)
+        self.assertEqual(scored["exclusion_counts"], {"no_usable_pregame_quote": 1})
+        missing_ok = copy.deepcopy(CFB)
+        missing_ok["capture"]["entry"] = None
+        with self.assertRaises(ValueError):
+            audit_cfb([missing_ok])
+
     def test_cfb_rejects_tampered_or_future_rows(self):
         for path, value in [
             (("capture", "entry", "captured_at"), "2026-10-10T20:00:00Z"),

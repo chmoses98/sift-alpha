@@ -49,5 +49,24 @@ jobs:
           assert all(not item["promotion_eligible"] for item in report["studies"].values())
           print("Research-only independent historical evidence audit passed.")
           PY
+      - name: Test unified market timeline invariants (offline)
+        run: python3 -m unittest discover -s tests -p 'test_timeline.py' -v
+      - name: Replay pinned NBA/NHL historical quote files (read-only)
+        run: python3 -m alpha_engine.timeline_cli --out artifacts/unified_timeline_pilot.json
+      - name: Verify timeline did not confer pregame or trading authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("artifacts/unified_timeline_pilot.json").read_text())
+          assert x["status"] == "RESEARCH_ONLY"
+          assert set(x["sport_tapes"]) == {"NBA", "NHL"}
+          assert len(x["provenance"]) == 7
+          for sport, d in x["sport_tapes"].items():
+              assert d["research_authority"] == "DESCRIPTIVE_ONLY"
+              assert d["counts"].get("tickers", 0) > 0, f"{sport}: no valid market ticker rows"
+              assert all(z["pregame_cutoff"] == "UNVERIFIED" for z in d["examples"])
+          print("Pinned NBA/NHL real-source contract timelines verified, research-only.")
+          PY
       - name: Production build
         run: npm run build

@@ -29,10 +29,11 @@ def wilson(wins: int, trials: int, z: float = 1.96) -> list[float]:
 
 
 def audit_cfb(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pre-registered all-rows descriptive quote/outcome audit.
+    """All-source-game audit with explicit price eligibility and exclusions.
 
-    Row identity is event_id; duplicate events or any leaked timestamp
-    fail the complete audit, rather than deleting inconvenient rows.
+    Every record must have valid identity, pregame state and settlement.
+    Status PRICE_1_00 (no usable entry) stays in coverage with a reason
+    and is not silently added to price-model calibration denominators.
     """
     if not isinstance(rows, list) or not rows:
         raise ValueError("CFB source must contain records")
@@ -40,6 +41,8 @@ def audit_cfb(rows: list[dict[str, Any]]) -> dict[str, Any]:
     prices: list[float] = []
     results: list[int] = []
     qualities: Counter[str] = Counter()
+    captures: Counter[str] = Counter()
+    exclusions: Counter[str] = Counter()
     for index, row in enumerate(rows):
         try:
             if row["schema"] != "cfb_control_prospective_settlement/1.0.0":
@@ -48,19 +51,13 @@ def audit_cfb(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if game in seen:
                 raise ValueError("Duplicate event in independent game sample")
             seen.add(game)
-            if row["capture"]["status"] != "CAPTURE_OK" or row["settlement"]["status"] != "SETTLED":
-                raise ValueError("Missing capture/settlement")
             kickoff = stamp(row["kickoff_utc"])
-            first = stamp(row["capture"]["entry"]["captured_at"])
             pregame = stamp(row["final_pregame"]["recorded_at"])
             settled = stamp(row["settled_at"])
-            open_at = stamp(row["capture"]["window_opens_at"])
-            close_at = stamp(row["capture"]["window_closes_at"])
-            if not open_at <= first <= close_at < kickoff or not pregame < kickoff < settled:
-                raise ValueError("Timing/leakage violation")
-            p = row["capture"]["entry"]["price"]
-            if type(p) not in (int, float) or not math.isfinite(p) or not 0 < p < 1:
-                raise ValueError("Invalid contemporaneous quote")
+            if not pregame < kickoff < settled:
+                raise ValueError("Pregame publication or settlement leakage")
+            if row["settlement"]["status"] != "SETTLED":
+                raise ValueError("Unsettled game in purported final archive")
             y = row["settlement"]["control_won"]
             if type(y) is not bool:
                 raise ValueError("Outcome must be a known boolean")
@@ -70,24 +67,49 @@ def audit_cfb(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 raise ValueError("Invalid official score")
             if pts == opponent or (pts > opponent) is not y:
                 raise ValueError("Outcome/score mismatch")
+            capture = row["capture"]
+            captures[capture["status"]] += 1
+            if capture["status"] == "PRICE_1_00":
+                if capture.get("entry") is not None:
+                    raise ValueError("Excluded PRICE_1_00 must have no valid entry")
+                exclusions["no_usable_pregame_quote"] += 1
+                continue
+            if capture["status"] != "CAPTURE_OK":
+                raise ValueError("Unknown capture status")
+            if not isinstance(capture.get("entry"), dict):
+                raise ValueError("Capture-OK without price observation")
+            first = stamp(capture["entry"]["captured_at"])
+            open_at = stamp(capture["window_opens_at"])
+            close_at = stamp(capture["window_closes_at"])
+            if not open_at <= first <= close_at < kickoff:
+                raise ValueError("Capture outside valid pregame window")
+            p = capture["entry"]["price"]
+            if type(p) not in (int, float) or not math.isfinite(p) or not 0 < p < 1:
+                raise ValueError("Invalid contemporaneous quote")
             qualities[str(row["final_pregame"]["data_quality"])] += 1
             prices.append(float(p))
             results.append(int(y))
         except (KeyError, ValueError, TypeError) as exc:
             raise ValueError(f"CFB row {index}: {exc}") from exc
-    n = len(rows)
+    n = len(prices)
+    if not n:
+        raise ValueError("No price-eligible CFB rows; cannot score market quotes")
     wins = sum(results)
     return {
         "sport": "CFB",
         "kind": "point_in_time_market_vs_outcome_descriptive_audit",
+        "n_source_games": len(rows),
         "n_independent_games": n,
+        "n_excluded": len(rows) - n,
+        "exclusion_counts": dict(sorted(exclusions.items())),
+        "capture_status_counts": dict(sorted(captures.items())),
         "n_wins": wins,
         "brier_market_price": round(sum((p - y) ** 2 for p, y in zip(prices, results)) / n, 6),
         "mean_captured_quote": round(sum(prices) / n, 6),
         "observed_win_fraction": round(wins / n, 6),
         "observed_win_wilson_95": wilson(wins, n),
         "quality_counts": dict(sorted(qualities.items())),
-        "evaluation_population": "All unique source games, no outcome-filtered deletion",
+        "evaluation_population": "All price-eligible distinct games; excluded source games and reasons included",
         "statistical_conclusion": "DESCRIPTIVE_ONLY",
         "promotion_eligible": False,
         "reason": "No independent reserved holdout, no proof of executable asks/depth, small selected control sample. Retrospective summary cannot establish trading advantage.",

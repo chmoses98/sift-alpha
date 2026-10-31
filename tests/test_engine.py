@@ -53,6 +53,10 @@ class CoreTests(unittest.TestCase):
         uncertain = {**s, "temporal_status": "needs_audit"}
         result = decide_next({"schema_version": 1, "projects": [p]}, {"schema_version": 1, "sources": [uncertain]})
         self.assertEqual(result["next"]["action"], "QUALIFY_DATA")
+        not_yet_verified = {**s, "charge_mode": "unknown", "access_class": "unverified", "cost_verified": False}
+        pending = decide_next({"schema_version": 1, "projects": [p]}, {"schema_version": 1, "sources": [not_yet_verified]})
+        self.assertEqual(pending["next"]["action"], "QUALIFY_COST")
+        self.assertIn("never access a billable endpoint", pending["next"]["reason"])
         paid = {**s, "charge_mode": "metered"}
         blocked = decide_next({"schema_version": 1, "projects": [p]}, {"schema_version": 1, "sources": [paid]})
         self.assertEqual(blocked["status"], "NO_ELIGIBLE_WORK")
@@ -78,6 +82,7 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(audit_prediction_rows([nonutc], 1)["passed"])
         postgame = {**good, "cutoff_at": "2026-10-30T17:00:00Z"}
         self.assertFalse(audit_prediction_rows([postgame], 1)["passed"])
+        self.assertFalse(audit_prediction_rows(None, 1)["passed"])
 
     def test_deterministic_fingerprinting(self):
         self.assertEqual(fingerprint({"a": 1, "b": 2}), fingerprint({"b": 2, "a": 1}))

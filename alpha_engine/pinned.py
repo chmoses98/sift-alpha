@@ -51,7 +51,7 @@ def source_url(entry: dict[str, Any]) -> str:
 def verify_blob(data: bytes, entry: dict[str, Any]) -> dict[str, str | int]:
     if len(data) > entry["max_bytes"] or not data:
         raise ValueError("Source size outside explicitly bounded range")
-    git_blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\\0" + data).hexdigest()
+    git_blob = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
     if git_blob != entry["git_blob_sha1"]:
         raise ValueError("Source hash mismatch: refuse modified data")
     return {"blob_sha1": git_blob, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}

@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Deliberately isolated: does not reuse the public SIFT PWA, routing, live-data or build config.
-// Default builds into dist-alpha, which is never deployed by the public Pages workflow.
+// Independent Alpha app; intentionally does not import the consumer SIFT routing, PWA or live-feed infrastructure.
+// Builds to dist/ and is not deployed by the CI workflow.
 export default defineConfig({
   base: "./",
   plugins: [react()],

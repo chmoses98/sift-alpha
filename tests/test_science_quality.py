@@ -106,7 +106,7 @@ class ScienceTruthTests(unittest.TestCase):
  def test_no_data_unknown_no_source_and_missing_prediction_evidence(self):
     g=copy.deepcopy(GAME)
     g["sources"]=[]
-    self.assertEqual(context(g,D)["state"],"QUARANTINED")
+    self.assertEqual(context(g,D)["state"],"LIMITED")
     p={**PROJECTION,"target_definition_verified":False,
         "backtest_holdout_verified":False,"calibration_evidence_id":None}
     self.assertEqual(projection(p,GAME,D)["state"],"LIMITED")

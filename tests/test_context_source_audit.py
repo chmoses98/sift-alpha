@@ -55,6 +55,12 @@ class ContextSourceAuditTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             read_source(fake,2,downloader=lambda _:raw)
 
+    def test_schema_profile_handles_nullable_and_non_numeric_fields(self):
+        row={"game_id":None,"name":"Atlanta","teams":["A","B"],"meta":{"status":None}}
+        profile=source_profile([row])
+        self.assertEqual(profile["top_level_fields"],["game_id","meta","name","teams"])
+        self.assertEqual(profile["nested_fields"],["meta.status"])
+
     def test_source_profiles_do_not_emit_private_values(self):
         profile=source_profile([{"event_id":"SENSITIVE", "game":{"start":"SENSITIVE"}}])
         self.assertEqual(profile["top_level_fields"],["event_id","game"])

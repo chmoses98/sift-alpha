@@ -35,6 +35,10 @@ npm run e2e
 
 The separate GitHub Actions CI workflow builds and runs unit tests on PRs. It has **no recurring schedule** and does not deploy anything.
 
+## Zero-cost operating policy
+
+**Alpha operates under a $0 incremental spending rule until the owner explicitly approves a specific exception.** Do not enable paid APIs, compute, inference, data, or paid fallbacks; automation must stop safely at free-tier limits. Quality-gated research and honest limitations take priority over volume. See the [full cost policy](docs/COST_POLICY.md).
+
 ## Research standards
 
 A measured projection discrepancy is **not** a proven +EV bet. Strategies must be evaluated against contemporaneous market prices, honest fees and fills, calibrated probabilities, independent out-of-sample observations, and explicit uncertainty. The research lab may reject every candidate.

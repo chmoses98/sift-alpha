@@ -248,5 +248,30 @@ jobs:
               assert g["n_active_contract_tickers"]==len(g["active_contract_tickers"])
           print("Exact event grouping verified without physical-game or ROI claims.")
           PY
+      - name: Adversarial Tennis quote capture tests (offline)
+        run: python3 -m unittest discover -s tests -p 'test_tennis_capture.py' -v
+      - name: Qualify pinned Tennis historical capture (read-only)
+        run: python3 -m alpha_engine.tennis_capture_cli
+      - name: Verify Tennis archive scope and no trading authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/tennis_capture_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert report["sport"]=="TENNIS"
+          assert report["n_observed_quote_rows"]==2054
+          assert [r["n_quote_rows_written"] for r in report["capture_reports"]]==[1411,286,357]
+          assert [r["snapshot_kind"] for r in report["capture_reports"]]==["HOURLY_FULL","CHANGED_ONLY","CHANGED_ONLY"]
+          assert report["full_board_at_later_ticks"]=="NOT_VERIFIED_REMOVALS_UNOBSERVED"
+          assert report["contract_to_physical_match"]=="NOT_ESTABLISHED"
+          assert report["exchange_settlement"]=="NOT_JOINED"
+          assert report["pregame_or_execution_authority"]=="NONE"
+          with gzip.open("artifacts/tennis_observed_quote_rows.jsonl.gz","rt") as f:
+              rows=[json.loads(line) for line in f]
+          assert len(rows)==2054
+          assert all(r["pregame_status"]=="UNVERIFIED" and r["quote_execution_authority"]=="NONE" for r in rows)
+          print("Real Tennis source verified, changed-only snapshots not mistaken for full tape.")
+          PY
       - name: Production build
         run: npm run build

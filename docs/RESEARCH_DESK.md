@@ -16,12 +16,12 @@ On phones, the library is followed by the details, and tapping a record scrolls 
 Use the existing SIFT root dependencies:
 
 ```bash
-npm ci
+npm install
 npm run dev
 # Open the localhost URL shown by Vite.
 npm test
 npm run build
-npx playwright test -c playwright.config.mjs   # desktop + iPhone WebKit journeys
+npm run e2e   # desktop + iPhone WebKit journeys
 ```
 
 The dedicated config builds to `dist/`. **It does not replace, alter, or deploy SIFT 2, v4, v3, public Pages, production quote infrastructure, or any projection model.** No new scheduled GitHub runner is introduced. UI acceptance tests are opt-in, so this prototype does not add another recurring job to the already busy Actions queue.

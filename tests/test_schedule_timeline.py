@@ -62,7 +62,7 @@ def fixture(revised=True, conflicting=False, duplicate=False):
             start='2026-10-25T01:00:00Z' if not revised or i==0 else '2026-10-25T01:30:00Z'
             game=row(gid=gid,observed=at.replace('Z','.500Z'),start=start,home=1 if not conflicting or i==0 else 3)
             games=[game,deepcopy(game)] if duplicate and i==0 else [game]
-            path=f'context/schedule/dt=2026-10-{24+i}/context_schedule_{stamp}_123.jsonl.gz'
+            path=f'context/schedule/dt=2026-10-{24+i}/context_schedule_{stamp}_{123 if sport=="NBA" else 456}.jsonl.gz'
             blob=gzip.compress(('\n'.join(json.dumps(x) for x in games)+'\n').encode(),mtime=0)
             entry={'sport':sport,'kind':'schedule','repository':repo,'commit':'a'*40,
                    'path':path,'sha':hashlib.sha1(b'blob '+str(len(blob)).encode()+b'\0'+blob).hexdigest(),
@@ -70,7 +70,7 @@ def fixture(revised=True, conflicting=False, duplicate=False):
             sources.append(entry)
             blobs[(repo,path)]=blob
         stamp='20261026T001946Z'
-        path=f'settlements/dt=2026-10-26/settlements_{stamp}_123.jsonl.gz'
+        path=f'settlements/dt=2026-10-26/settlements_{stamp}_{123 if sport=="NBA" else 456}.jsonl.gz'
         blob=gzip.compress(b'{"ticker":"KXFAKE","result":"YES"}\n',mtime=0)
         sources.append({'sport':sport,'kind':'settlement','repository':repo,'commit':'a'*40,
                         'path':path,'sha':hashlib.sha1(b'blob '+str(len(blob)).encode()+b'\0'+blob).hexdigest(),

@@ -273,5 +273,33 @@ jobs:
           assert all(r["pregame_status"]=="UNVERIFIED" and r["quote_execution_authority"]=="NONE" for r in rows)
           print("Real Tennis source verified, changed-only snapshots not mistaken for full tape.")
           PY
+      - name: Adversarial Tennis settlement result tests (offline)
+        run: python3 -m unittest discover -s tests -p 'test_tennis_settlement.py' -v
+      - name: Verify pinned Tennis archived exchange-result fields
+        run: python3 -m alpha_engine.tennis_settlement_cli
+      - name: Guard Tennis scalar payouts, historical joins, and no trading authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/tennis_settlement_status.json").read_text())
+          assert r["authority"]=="RESEARCH_ONLY"
+          assert r["n_settlement_rows"]==36
+          assert r["n_distinct_settled_tickers"]==36
+          assert r["n_distinct_exchange_event_tickers"]==18
+          assert r["exchange_result_counts"]=={"yes":16,"no":16,"scalar":2}
+          assert r["n_occurrence_timestamps_after_reported_settlement"]==36
+          assert r["independently_authenticated_exchange_result"] is False
+          assert r["actual_match_start"]=="NOT_VERIFIED"
+          assert r["pregame_or_execution_authority"]=="NONE"
+          assert r["profitability_authority"]=="NONE"
+          assert r["historical_quote_overlap"]["pregame_eligibility"]=="NOT_VERIFIED_ACTUAL_MATCH_START"
+          with gzip.open("artifacts/tennis_settlement_rows.jsonl.gz","rt") as f:
+              rows=[json.loads(line) for line in f]
+          assert len(rows)==36
+          assert sum(x["exchange_reported_result"]=="scalar" and x["exchange_reported_payout_dollars"]=="0.5" for x in rows)==2
+          assert all(x["actual_match_start_verified"] is False for x in rows)
+          print("Pinned Tennis result fields and 0.5 scalar settlement guarded; no pregame authority.")
+          PY
       - name: Production build
         run: npm run build

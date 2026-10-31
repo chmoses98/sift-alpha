@@ -219,5 +219,34 @@ jobs:
               assert row["pregame_or_execution_authority"]=="NONE"
           print("Literal contract identity qualified, no physical-game or ROI authority.")
           PY
+      - name: Adversarial tests for point-in-time Kalshi event grouping
+        run: python3 -m unittest discover -s tests -p 'test_event_groups.py' -v
+      - name: Build exact observed NBA/NHL event-group ledger
+        run: python3 -m alpha_engine.event_groups_cli
+      - name: Guard event groups against invented physical-game or betting authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/literal_event_group_status.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY"
+          assert set(x["sports"])=={"NBA","NHL"}
+          with gzip.open("artifacts/literal_event_group_ledger.jsonl.gz","rt") as f:
+              groups=[json.loads(line) for line in f]
+          assert len(groups)==x["n_group_rows"] and len(groups)>0
+          for sport,data in x["sports"].items():
+              assert data["n_verified_board_ticks"]==4
+              assert data["event_to_physical_game"]=="NOT_ESTABLISHED"
+              assert data["exchange_settlement"]=="NOT_VERIFIED"
+              assert data["pregame_or_execution_authority"]=="NONE"
+              assert len(data["snapshots"])==4
+          for g in groups:
+              assert g["contract_to_physical_game"]=="NOT_ESTABLISHED"
+              assert g["actual_start"]=="NOT_VERIFIED"
+              assert g["exchange_settlement"]=="NOT_VERIFIED"
+              assert g["pregame_or_execution_authority"]=="NONE"
+              assert g["n_active_contract_tickers"]==len(g["active_contract_tickers"])
+          print("Exact event grouping verified without physical-game or ROI claims.")
+          PY
       - name: Production build
         run: npm run build

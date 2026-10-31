@@ -40,12 +40,15 @@ class GameContextTests(unittest.TestCase):
         g=one_game()
         g["capture"]["entry"]=None
         g["capture"]["status"]="PRICE_1_00"
-        x = assemble_cfb_game_timeline([g])
-        self.assertEqual(x["game_count"], 1)
+        g["event_id"] = "401002"
+        g["game_key"] = "G2"
+        other = one_game()
+        x = assemble_cfb_game_timeline([other, g])
+        self.assertEqual(x["game_count"], 2)
         self.assertEqual(x["quote_coverage"]["unpriced_games"], 1)
-        self.assertEqual(x["data_quality"]["n_excluded"], 1) if x["data_quality"]["n_independent_games"] else None
-        self.assertTrue(all(event["kind"]!="KALSHI_MARKET_PRICE_CAPTURE"
-                            for event in x["game_examples"][0]["events"]))
+        self.assertEqual(x["data_quality"]["n_excluded"], 1)
+        self.assertTrue(all(event["kind"] != "KALSHI_MARKET_PRICE_CAPTURE"
+                            for event in x["game_examples"][1]["events"]))
 
     def test_leaked_timestamp_fails_entire_context_join(self):
         g=one_game()

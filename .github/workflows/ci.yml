@@ -116,5 +116,31 @@ jobs:
               assert x["game_outcome_join"]=="NOT_ESTABLISHED_BY_METADATA"
           print("All sport sources verified: not a profitable trading signal.")
           PY
+      - name: Adversarial tests for point-in-time sparse quote tape
+        run: python3 -m unittest discover -s tests -p 'test_verified_tape.py' -v
+      - name: Emit verified NBA/NHL sparse quote tape
+        run: python3 -m alpha_engine.verified_tape_cli
+      - name: Verify tape provenance and no betting authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/verified_sparse_tape_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert set(report["sports"])=={"NBA","NHL"}
+          with gzip.open("artifacts/verified_sparse_quote_tape.jsonl.gz","rt") as f:
+              rows=[json.loads(line) for line in f]
+          assert len(rows)==sum(x["n_sparse_tape_rows"] for x in report["sports"].values())
+          assert len(rows)>15000
+          for row in rows:
+              assert row["pregame_status"]=="UNVERIFIED"
+              assert row["quote_execution_authority"]=="NONE"
+              assert len(row["source_blob_sha1"])==40
+          for x in report["sports"].values():
+              assert x["n_verified_delta_ticks"]==3
+              assert x["market_tape_coverage"]=="VERIFIED_PREFIX_ONLY"
+              assert x["settlement_join"]=="NOT_VERIFIED"
+          print("Source-verified quote tape emitted with no trading claims.")
+          PY
       - name: Production build
         run: npm run build

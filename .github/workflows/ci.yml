@@ -164,5 +164,30 @@ jobs:
               assert len(row["source_profiles"])==3
           print("Independent source qualification passed; no pregame or ROI claims.")
           PY
+      - name: Adversarial tests for independently observed scheduled starts
+        run: python3 -m unittest discover -s tests -p 'test_schedule_timeline.py' -v
+      - name: Reconstruct point-in-time NBA/NHL scheduled starts
+        run: python3 -m alpha_engine.schedule_timeline_cli
+      - name: Guard against falsely claiming actual starts or market joins
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/scheduled_start_timeline_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert set(report["sports"])=={"NBA","NHL"}
+          for sport, row in report["sports"].items():
+              assert row["n_accepted_point_in_time_schedule_rows"]>0, sport
+              assert row["source_diagnostics"]["source_schedule_files"]==2
+              assert row["asof_tape_base"]["n_games_with_known_schedule"]>0, sport
+              assert row["actual_game_start_verified"] is False
+              assert row["market_contract_join"]=="NOT_ESTABLISHED"
+              assert row["pregame_market_eligibility"]=="NOT_ESTABLISHED"
+              assert row["settlement_rule_authority"]=="NONE"
+              assert row["execution_or_profitability_authority"]=="NONE"
+              for name in ("asof_tape_base","asof_tape_end"):
+                  assert row[name]["pregame_authority"]=="NONE"
+          print("Independent schedule timeline validated, no pregame or betting authority.")
+          PY
       - name: Production build
         run: npm run build

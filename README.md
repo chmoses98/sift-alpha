@@ -39,6 +39,10 @@ The separate GitHub Actions CI workflow builds and runs unit tests on PRs. It ha
 
 **Alpha operates under a $0 incremental spending rule until the owner explicitly approves a specific exception.** Do not enable paid APIs, compute, inference, data, or paid fallbacks; automation must stop safely at free-tier limits. Quality-gated research and honest limitations take priority over volume. See the [full cost policy](docs/COST_POLICY.md).
 
+## Kalshi archive-first research
+
+**Alpha's first research priority is rebuilding our already-collected Kalshi market history across sports.** Captured prices, bids/asks, trades, depth and settlements provide a valuable empirical research laboratory, subject to the strictest point-in-time and execution checks. The starting cross-sport archive inventory is in [research/kalshi_archive_sources.json](research/kalshi_archive_sources.json), with a [$0 read-only inventory tool](alpha_engine/market_inventory.py), [full research plan](docs/KALSHI_MARKET_RESEARCH.md), and [P0 tracking issue](https://github.com/chmoses98/sift-alpha/issues/4). Listing locations is **not** yet reconstructing price histories or verifying profitable edges.
+
 ## Research standards
 
 A measured projection discrepancy is **not** a proven +EV bet. Strategies must be evaluated against contemporaneous market prices, honest fees and fills, calibrated probabilities, independent out-of-sample observations, and explicit uncertainty. The research lab may reject every candidate.

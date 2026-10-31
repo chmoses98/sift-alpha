@@ -1,7 +1,7 @@
 """Adversarial schedule time travel, source identity, reschedule and safety QA."""
 from datetime import datetime
 import unittest
-from alpha_engine.schedule_timeline import normalize_schedule_row, build_schedule_timeline
+from alpha_engine.schedule_timeline import normalize_schedule_row, build_schedule_timeline, schedule_asof, verified_tape_ticks
 
 CAPTURE = '2026-10-24T23:15:57Z'
 SRC = {'captured_at': CAPTURE, 'path':'context/schedule/dt=2026-10-24/f.jsonl.gz',
@@ -113,6 +113,81 @@ class TimelineIntegrationTests(unittest.TestCase):
             self.assertEqual(report['sports'][sport]['source_diagnostics']['quarantined_duplicate_game_ids'],1)
             self.assertEqual(report['sports'][sport]['asof_tape_end']['n_games_with_known_schedule'],1)
             self.assertEqual(report['sports'][sport]['asof_tape_end']['n_games_with_observed_schedule_start_revision'],0)
+
+
+    def test_future_identity_conflict_does_not_erase_prior_valid_schedule(self):
+        manifest,tape,download=fixture(conflicting=True)
+        # First schedule row observed at 23:15:57.500Z; future conflict at 00:18:44.500Z.
+        for sport in ('NBA','NHL'):
+            tape['sports'][sport]['base_at']='2026-10-24T23:15:57.750Z'
+        report=build_schedule_timeline(manifest,tape,download)
+        for sport in ('NBA','NHL'):
+            r=report['sports'][sport]
+            self.assertEqual(r['asof_tape_base']['n_games_with_known_schedule'],1)
+            self.assertEqual(r['asof_tape_base']['n_games_quarantined_for_identity_conflict_asof'],0)
+            self.assertEqual(r['asof_tape_end']['n_games_with_known_schedule'],0)
+            self.assertEqual(r['asof_tape_end']['n_games_quarantined_for_identity_conflict_asof'],1)
+            self.assertEqual(r['asof_tape_base']['n_future_schedule_rows_excluded'],1)
+
+    def test_future_identity_conflict_after_tape_end_cannot_poison_earlier_asof(self):
+        manifest,tape,download=fixture(conflicting=True)
+        for sport in ('NBA','NHL'):
+            tape['sports'][sport]['base_at']='2026-10-24T23:15:57.750Z'
+            tape['sports'][sport]['last_verified_at']='2026-10-24T23:30:00Z'
+        report=build_schedule_timeline(manifest,tape,download)
+        for sport in ('NBA','NHL'):
+            r=report['sports'][sport]
+            self.assertEqual(r['n_quarantined_game_identities'],0)
+            self.assertEqual(r['asof_tape_end']['n_games_with_known_schedule'],1)
+            self.assertEqual(r['asof_tape_end']['n_future_schedule_rows_excluded'],1)
+
+    def test_complete_verified_tape_ticks_preserve_asof_schedule(self):
+        manifest,tape,download=fixture(conflicting=True)
+        events=[]
+        for sport in ('NBA','NHL'):
+            base='2026-10-24T23:15:57.750Z'
+            end='2026-10-25T00:20:00Z'
+            tape['sports'][sport].update({
+                'base_at':base,'last_verified_at':end,
+                'n_sparse_tape_rows':2,'n_verified_delta_ticks':1,
+                'source_files':[{'path':f'{sport}/checkpoint','blob_sha1':'a'*40},
+                                {'path':f'{sport}/delta','blob_sha1':'b'*40}]
+            })
+            for at,kind,path,sha in [
+                (base,'CHECKPOINT',f'{sport}/checkpoint','a'*40),
+                (end,'DELTA_TOUCHED',f'{sport}/delta','b'*40)
+            ]:
+                events.append({'sport':sport,'ticker':f'KX{sport}GAME',
+                               'observed_at_utc':at,'source_kind':kind,
+                               'source_path':path,'source_blob_sha1':sha,
+                               'pregame_status':'UNVERIFIED',
+                               'quote_execution_authority':'NONE'})
+        report=build_schedule_timeline(manifest,tape,download,tape_rows=events)
+        for sport in ('NBA','NHL'):
+            ticks=report['sports'][sport]['asof_verified_market_ticks']
+            self.assertEqual(len(ticks),2)
+            self.assertEqual(ticks[0]['n_games_with_known_schedule'],1)
+            self.assertEqual(ticks[1]['n_games_with_known_schedule'],0)
+            self.assertEqual(ticks[0]['n_games_quarantined_for_identity_conflict_asof'],0)
+            self.assertEqual(ticks[1]['n_games_quarantined_for_identity_conflict_asof'],1)
+            self.assertEqual(ticks[0]['pregame_authority'],'NONE')
+        self.assertEqual(verified_tape_ticks(events,tape)['NBA'],
+                         ['2026-10-24T23:15:57.750000Z','2026-10-25T00:20:00Z'])
+
+        # Forged future tick, forged source hash, incomplete tape, and fake
+        # trading authority all fail closed rather than silently joining.
+        for change in ('future','hash','missing','authority'):
+            tampered=deepcopy(events)
+            if change=='future':
+                tampered[0]['observed_at_utc']='2026-10-25T01:00:00Z'
+            elif change=='hash':
+                tampered[0]['source_blob_sha1']='c'*40
+            elif change=='missing':
+                tampered.pop()
+            else:
+                tampered[0]['quote_execution_authority']='ALLOWED'
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                build_schedule_timeline(manifest,tape,download,tape_rows=tampered)
 
     def test_malformed_or_tampered_source_is_rejected(self):
         manifest,tape,download=fixture()

@@ -74,9 +74,19 @@ def audit_project(project: dict[str, Any], source_map: dict[str, dict[str, Any]]
     missing_sources = [sid for sid in project.get("sources", []) if sid not in source_map]
     faults += ["unregistered source: " + str(sid) for sid in missing_sources]
     audits = [audit_source(source_map[sid]) for sid in project.get("sources", []) if sid in source_map]
-    cost_faults = any(reject_cost(source_map[sid]) for sid in project.get("sources", []) if sid in source_map)
-    if faults or cost_faults:
+    registered = [source_map[sid] for sid in project.get("sources", []) if sid in source_map]
+    # A provider already known to be billable is not a research candidate.
+    known_billable = any(
+        src.get("charge_mode") not in ("none", "unknown")
+        or (isinstance(src.get("estimated_usd"), (int, float)) and src["estimated_usd"] > 0)
+        for src in registered
+    )
+    unknown_cost = any(reject_cost(src) for src in registered)
+    if faults or known_billable:
         kind = "BLOCKED"
+    elif unknown_cost:
+        # Metadata-only review is safe. No requests to the provider are made.
+        kind = "QUALIFY_COST"
     elif any(not audit["ready"] for audit in audits):
         kind = "QUALIFY_DATA"
     else:
@@ -124,9 +134,12 @@ def decide_next(queue: dict[str, Any], registry: dict[str, Any], history: dict[s
     if not candidates:
         return {"status": "NO_ELIGIBLE_WORK", "next": None, "blocked": blocked}
     _, _, audit, project = sorted(candidates, key=lambda x: (-x[0], x[1]))[0]
-    if audit["action"] == "QUALIFY_DATA":
+    if audit["action"] == "QUALIFY_COST":
         required = [entry for entry in audit["source_audits"] if not entry["ready"]]
-        next_text = "Verify free access, data rights, historical coverage, identity, and point-in-time integrity of listed sources."
+        next_text = "Review publicly available provider license and pricing documentation; never access a billable endpoint until certified free."
+    elif audit["action"] == "QUALIFY_DATA":
+        required = [entry for entry in audit["source_audits"] if not entry["ready"]]
+        next_text = "Verify historical coverage, identity, missingness, timestamps and point-in-time integrity of listed sources."
     else:
         required = []
         next_text = "Register baseline, leakage-safe split, independent outcome and validation protocol before running any experiment."
@@ -152,7 +165,9 @@ def audit_prediction_rows(rows: list[dict[str, Any]], minimum: int) -> dict[str,
     """
     faults = []
     seen = set()
-    if not isinstance(rows, list) or len(rows) < minimum:
+    if not isinstance(rows, list):
+        return {"passed": False, "count": 0, "faults": ["rows must be a list"]}
+    if not isinstance(minimum, int) or minimum < 1 or len(rows) < minimum:
         faults.append("insufficient rows for registered sample requirement")
     for index, row in enumerate(rows):
         try:

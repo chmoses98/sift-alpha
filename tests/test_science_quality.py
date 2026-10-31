@@ -106,7 +106,9 @@ class ScienceTruthTests(unittest.TestCase):
  def test_no_data_unknown_no_source_and_missing_prediction_evidence(self):
     g=copy.deepcopy(GAME)
     g["sources"]=[]
-    self.assertEqual(context(g,D)["state"],"LIMITED")
+    # A fact pointing to a missing source is a genuine provenance contradiction.
+    # Don't downgrade this to merely limited evidence.
+    self.assertEqual(context(g,D)["state"],"QUARANTINED")
     p={**PROJECTION,"target_definition_verified":False,
         "backtest_holdout_verified":False,"calibration_evidence_id":None}
     self.assertEqual(projection(p,GAME,D)["state"],"LIMITED")

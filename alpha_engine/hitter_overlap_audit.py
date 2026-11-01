@@ -62,6 +62,7 @@ def audit_day(date, raw):
     if not 0 < len(lines) <= MAX_ROWS_PER_DAY or any(not line.strip() for line in lines):
         raise ValueError("Missing, blank, or unbounded historical snapshot rows")
     counts, families = Counter(), Counter()
+    family_candidates, family_non_candidates = Counter(), Counter()
     seen_ids, seen_tickers = set(), set()
     for line in lines:
         try:
@@ -72,10 +73,8 @@ def audit_day(date, raw):
             raise ValueError("Non-object historical forecast row")
         counts["all_rows"] += 1
         family = row.get("marketFamily")
-        if isinstance(family, str):
-            families[family] += 1
-        else:
-            families["<MISSING>"] += 1
+        family_key = family if isinstance(family, str) else "<MISSING>"
+        families[family_key] += 1
         ticker, ident = row.get("marketTicker"), row.get("hitterProjectionSnapshotId")
         valid_identity = (isinstance(ticker, str) and ticker.startswith("KXMLB")
                           and isinstance(ident, str) and len(ident) == 40
@@ -114,13 +113,19 @@ def audit_day(date, raw):
                 and row.get("projectionStatus") == "PROJECTED"
                 and row.get("pricingStatus") == "PRICED"):
             counts["candidate_at_recorded_quote_only"] += 1
+            family_candidates[family_key] += 1
         else:
             counts["not_candidate_at_recorded_quote"] += 1
-    assert counts["candidate_at_recorded_quote_only"] + counts["not_candidate_at_recorded_quote"] == len(lines)
+            family_non_candidates[family_key] += 1
+    if (counts["candidate_at_recorded_quote_only"] + counts["not_candidate_at_recorded_quote"] != len(lines)
+            or any(family_candidates[f] + family_non_candidates[f] != n for f, n in families.items())):
+        raise ValueError("Historical family denominator reconciliation failed")
     return {
         "date": date, "source_git_blob_sha1": sha, "source_sha256": hashlib.sha256(raw).hexdigest(),
         "source_bytes": size, "source_rows": len(lines),
         "family_source_rows": dict(sorted(families.items())),
+        "family_candidate_rows_at_embedded_quote_clock": dict(sorted(family_candidates.items())),
+        "family_non_candidate_rows": dict(sorted(family_non_candidates.items())),
         "row_evidence": dict(sorted(counts.items())),
         "original_publication_availability_verified": False,
         "physical_game_and_player_team_verified": False,
@@ -173,6 +178,11 @@ def main():
     out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print("MLB original overlap snapshots:", report["source_rows_examined"],
           "rows; PIT candidates are NOT independently valid evaluations; original 694/138158 and 0/23295 unchanged.")
+    for day in sorted(report["days"]):
+        row = report["days"][day]
+        print(day, "family_source_rows=", json.dumps(row["family_source_rows"], sort_keys=True),
+              "candidate_by_family=", json.dumps(row["family_candidate_rows_at_embedded_quote_clock"], sort_keys=True),
+              "noncandidate_by_family=", json.dumps(row["family_non_candidate_rows"], sort_keys=True))
     print("Evidence:", out)
 
 

@@ -6,7 +6,29 @@ import unittest
 from unittest.mock import patch
 
 from alpha_engine import hitter_archive_gate as gate
-from tests.test_research_repair import synthetic_report
+def synthetic_report():
+    return {"rowCount": 138158, "report": {
+        "totalOpportunityRows": 138158, "uniqueGames": 353,
+        "uniqueMarketTickers": 80526, "rowsLackingModelEvaluation": 137464,
+        "rowsLackingTemporallyValidModelEvaluation": 137464,
+        "rowsLackingExecutablePregamePrice": 0,
+        "datesWithObservations": [f"2026-08-{i:02d}" for i in range(1, 21)],
+        "familyModelCoverage": {
+            "hitter_hits": {"observed": 23295, "modelEvaluated": 0, "coverageRate": 0},
+            "game_total": {"observed": 114863, "modelEvaluated": 694,
+                           "coverageRate": 694 / 114863},
+        },
+        "familySettlementCoverage": {
+            "hitter_hits": {"observed": 23295, "settled": 20000,
+                            "coverageRate": 20000 / 23295},
+            "game_total": {"observed": 114863, "settled": 100765,
+                           "coverageRate": 100765 / 114863},
+        },
+        "settlementStatusCounts": {
+            "SETTLED": 120765, "NOT_SETTLED": 17393,
+            "SETTLEMENT_UNRESOLVED": 0,
+        },
+    }}
 
 
 def fixture():

@@ -70,7 +70,7 @@ def load_sources(manifest, downloader=None):
                 raw = response.read(source["max_bytes"] + 1)
         if not isinstance(raw, bytes) or not raw or len(raw) > source["max_bytes"]:
             raise ValueError("Missing, oversized or non-byte witness: " + ident)
-        git_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\\0" + raw).hexdigest()
+        git_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
         if git_sha != source["blob_sha1"]:
             raise ValueError("Git blob witness mismatch: " + ident)
         data[ident] = raw
@@ -209,7 +209,7 @@ def main():
     report = run(manifest)
     out = Path("artifacts/mlb_repair_cycle.json")
     out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(report, sort_keys=True, indent=2) + "\\n", encoding="utf-8")
+    out.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(f"MLB repair: {report['result']}; {report['after']['model_evaluated_rows']}/{report['after']['opportunity_rows']} historical source-reported evaluations; hitter hits 0/23295; independent validity unverified.")
     print("Evidence:", out)
 

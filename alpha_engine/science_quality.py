@@ -88,6 +88,7 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
             bad.append("invalid game-start evidence interval")
     sources = record.get("sources", [])
     roots = set()
+    source_by_id = {}
     if not isinstance(sources, list) or not sources:
         limits.append("source provenance missing")
         sources = []
@@ -95,6 +96,13 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
         if not isinstance(source, dict):
             bad.append(f"source {i}: malformed provenance")
             continue
+        source_id = source.get("id")
+        if not isinstance(source_id, str) or not source_id.strip():
+            bad.append(f"source {i}: missing source identity")
+        elif source_id in source_by_id:
+            bad.append(f"source {i}: duplicate source identity")
+        else:
+            source_by_id[source_id] = source
         root = source.get("original_provider")
         if not isinstance(root, str) or not root.strip():
             limits.append(f"source {i}: underlying provider not identified")
@@ -108,6 +116,15 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
                 bad.append(f"source {i}: future-observed source")
         except (ValueError, TypeError):
             bad.append(f"source {i}: missing/invalid observation clock")
+        available = source.get("available_at")
+        if available is None:
+            limits.append(f"source {i}: independent availability clock missing")
+        else:
+            try:
+                if utc(available) > decision:
+                    bad.append(f"source {i}: source not available by decision cutoff")
+            except (ValueError, TypeError):
+                bad.append(f"source {i}: invalid availability clock")
     if len(roots) < 2:
         limits.append("independent original-provider corroboration not established")
     facts = record.get("facts", [])
@@ -119,13 +136,29 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
         if not isinstance(fact, dict) or not isinstance(fact.get("name"), str):
             bad.append(f"fact {i}: invalid fact descriptor")
             continue
-        if fact.get("source_id") is None or not any(src.get("id") == fact["source_id"] for src in sources if isinstance(src, dict)):
+        source = source_by_id.get(fact.get("source_id"))
+        if source is None:
             bad.append(f"fact {i}: unregistered source")
         try:
-            if utc(fact.get("observed_at")) > decision:
+            fact_observed = utc(fact.get("observed_at"))
+            if fact_observed > decision:
                 bad.append(f"fact {i}: observed after decision cutoff")
+            if source is not None and fact_observed > utc(source.get("observed_at")):
+                bad.append(f"fact {i}: observation newer than its source capture")
         except (ValueError, TypeError):
-            bad.append(f"fact {i}: invalid availability timestamp")
+            bad.append(f"fact {i}: invalid observation or source clock")
+        fact_available = fact.get("available_at")
+        if fact_available is None:
+            limits.append(f"fact {i}: fact availability clock missing")
+        else:
+            try:
+                available = utc(fact_available)
+                if available > decision:
+                    bad.append(f"fact {i}: unavailable by decision cutoff")
+                if available < utc(fact.get("observed_at")):
+                    bad.append(f"fact {i}: availability precedes observation")
+            except (ValueError, TypeError):
+                bad.append(f"fact {i}: invalid availability clock")
         if fact.get("status") not in ("OBSERVED", "CONFIRMED", "ESTIMATED", "UNKNOWN"):
             bad.append(f"fact {i}: unsupported confidence descriptor")
         if fact.get("status") in ("ESTIMATED", "UNKNOWN"):
@@ -174,6 +207,24 @@ def projection(record: dict[str, Any], context_record: dict[str, Any], decision_
                 bad.append(field + " is after decision cutoff")
         except (ValueError, TypeError):
             bad.append("missing/invalid " + field)
+    # Observation and availability are distinct: an input or corrected label
+    # may have been observed historically but unavailable to the model then.
+    for available_field, observed_field, latest_allowed in (
+        ("latest_input_available_at", "latest_input_observed_at", "published_at"),
+        ("last_training_label_available_at", "last_training_label_at", "model_fit_at"),
+    ):
+        value = record.get(available_field)
+        if value is None:
+            limits.append(available_field + " missing; feature/label availability unverified")
+        else:
+            try:
+                at = utc(value)
+                if at > decision or at > utc(record.get(latest_allowed)):
+                    bad.append(available_field + " after decision or model cutoff")
+                if at < utc(record.get(observed_field)):
+                    bad.append(available_field + " precedes observation")
+            except (ValueError, TypeError):
+                bad.append("invalid " + available_field)
     try:
         if utc(record.get("last_training_label_at")) > utc(record.get("model_fit_at")):
             bad.append("training outcome observed after model fit")

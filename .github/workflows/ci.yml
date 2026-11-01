@@ -372,5 +372,27 @@ jobs:
           assert x["source_accuracy_or_profitability_certified"] is False
           print("Real source inventory + PIT pilot verified; no backfill, market join or trading authority.")
           PY
+      - name: Adversarial tests for MLB historical overlap snapshot chronology
+        run: python3 -m unittest discover -s tests -p 'test_hitter_overlap_audit.py' -v
+      - name: Audit two pinned original MLB hitter snapshot archives (bounded read-only)
+        run: python3 -m alpha_engine.hitter_overlap_audit
+      - name: Guard overlap evidence against fabricated model evaluations
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/mlb_hitter_overlap_audit.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY_NO_BACKFILL"
+          assert x["source_scope"]=="PINNED_HITTER_SNAPSHOTS_AUG19_20_ONLY"
+          assert x["source_rows_examined"]>0
+          assert set(x["days"])=={"2026-08-19","2026-08-20"}
+          assert all(d["source_rows"]>0 and len(d["source_sha256"])==64 for d in x["days"].values())
+          assert x["before"]==x["after"]=={"opportunity_rows":138158,"evaluated_rows":694,
+                                           "hitter_hits_observed":23295,"hitter_hits_evaluated":0}
+          assert x["independently_valid_historical_evaluations"] is None
+          assert x["repair_result"]=="BLOCKED_NO_SAFE_HISTORICAL_REPAIR"
+          assert x["profitability_or_execution_authority"]=="NONE"
+          print("Original Aug19/20 overlap sources audited, no historical evaluation backfill.")
+          PY
       - name: Production build
         run: npm run build

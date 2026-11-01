@@ -55,7 +55,7 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
         return status(["invalid decision timestamp"], [], "GAME_CONTEXT")
     if not isinstance(record, dict):
         return status(["context record missing"], [], "GAME_CONTEXT")
-    if record.get("sport") not in SPORTS or not isinstance(record.get("event_id"), str) or not record["event_id"]:
+    if not isinstance(record.get("sport"), str) or record["sport"] not in SPORTS or not isinstance(record.get("event_id"), str) or not record["event_id"]:
         bad.append("unknown sport or physical-event identity")
     home, away = record.get("home_team_id"), record.get("away_team_id")
     if not isinstance(home, str) or not home or not isinstance(away, str) or not away or home == away:
@@ -136,7 +136,8 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
         if not isinstance(fact, dict) or not isinstance(fact.get("name"), str):
             bad.append(f"fact {i}: invalid fact descriptor")
             continue
-        source = source_by_id.get(fact.get("source_id"))
+        source_key = fact.get("source_id")
+        source = source_by_id.get(source_key) if isinstance(source_key, str) else None
         if source is None:
             bad.append(f"fact {i}: unregistered source")
         try:
@@ -163,7 +164,10 @@ def context(record: dict[str, Any], decision_at: str) -> dict[str, Any]:
             bad.append(f"fact {i}: unsupported confidence descriptor")
         if fact.get("status") in ("ESTIMATED", "UNKNOWN"):
             limits.append(f"fact {i}: estimate/unknown cannot be treated as observed truth")
-        identity = (fact["name"], fact.get("subject_id"))
+        subject_id = fact.get("subject_id")
+        if subject_id is not None and not isinstance(subject_id, str):
+            bad.append(f"fact {i}: invalid subject identity")
+        identity = (fact["name"], subject_id if isinstance(subject_id, str) else None)
         current = (fact.get("value"), fact.get("observed_at"))
         if identity in seen and seen[identity][1] == current[1] and seen[identity][0] != current[0]:
             bad.append(f"fact {i}: conflicting values at identical observation timestamp")

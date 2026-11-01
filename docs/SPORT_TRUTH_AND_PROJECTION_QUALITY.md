@@ -25,6 +25,14 @@
 
 Results: `QUARANTINED`, `LIMITED`, or `STRUCTURE_PASS_UNCERTIFIED`. **The last category does NOT mean data is correct.** Declared source metadata, fake provider identifiers and simulated test records are not independent proof. Even a clean shape never permits a validated scientific result or trading authority. Adversarial fixture tests live in `tests/test_science_quality.py`.
 
+## Point-in-time availability hardening (P0)
+
+The sport-side gate now distinguishes **when a source or fact was observed** from **when it was actually available** to the historical decision maker. A late-arriving lineup, delayed feed, corrected outcome or model feature cannot become a valid earlier input just because its original observation clock predates the decision. The source and fact contracts include `observed_at` and `available_at`; forecasts additionally include `latest_input_available_at` and `last_training_label_available_at`. These clocks are compared against decision, publication and model-fit cutoffs as applicable.
+
+A missing availability clock yields `LIMITED`, not structural clearance. Future availability, fact observation later than its purported source capture, corrected training labels unavailable by model fit, duplicate source identifiers, and malformed identities yield `QUARANTINED`. This is a **synthetic contract and adversarial test** improvement, not evidence that existing eight-sport pipelines actually archive the required clocks. An upstream `observed_at` should be the time the fact was recorded by that source; a source's capture time cannot precede the observations it purports to contain. When a sport cannot establish these clocks from its original archive, mark that record unavailable/limited instead of inventing timestamps.
+
+**Retrospective actual-start verification is separate from pregame feature availability.** A postgame verified start may be used to classify historical eligibility, but must never be smuggled into the forecast's pregame feature set. The current start bracket still lacks independent raw-provider authentication; `STRUCTURE_PASS_UNCERTIFIED` never certifies actual kickoff, roster accuracy, projections, calibration, market settlement or execution.
+
 ## Next: real factual certification, not green-looking fixtures
 
 1. Build original-provider data audits with immutable raw evidence, timing clocks, identity mappings and independent cross-provider comparisons; detect common-mode data lineage. Respect rights and $0 constraints.

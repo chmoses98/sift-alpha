@@ -33,6 +33,14 @@ A missing availability clock yields `LIMITED`, not structural clearance. Future 
 
 **Retrospective actual-start verification is separate from pregame feature availability.** A postgame verified start may be used to classify historical eligibility, but must never be smuggled into the forecast's pregame feature set. The current start bracket still lacks independent raw-provider authentication; `STRUCTURE_PASS_UNCERTIFIED` never certifies actual kickoff, roster accuracy, projections, calibration, market settlement or execution.
 
+## Historical MLB model-coverage denominator reconciliation (P0 #5)
+
+The pinned August 1–20, 2026 MLB source-side report contains **138,158 market opportunity rows**, **80,526 reported unique market tickers**, and **353 reported unique games**. These are *different units* and must never be used interchangeably or summed as independent events. Across the report's 14 market families, **694/138,158 opportunity rows (0.5023%)** were model-evaluated; **137,464 (99.4977%)** lacked a model evaluation. The same 137,464 rows lacked a temporally valid model evaluation. **120,765** rows are reported settled, **14,074** not settled, and **3,319** unresolved. For hitter_hits, **0/23,295** market observations were model-evaluated. These counts are historical *reported* evidence, not a statement about today's published model coverage.
+
+The Alpha sports_quality_evidence audit now fails closed if the total opportunity denominator, per-family observed/evaluated/settled counts, report row count, settlement-status partition, missing forecast totals, or claimed family rates disagree. Adversarial tests attack missing families, corrupted denominators, wrong coverage rates, NaN, bool-as-int, impossible identity counts, and impossible chronology-eligibility counts. The CLI's real hash-pinned MLB audit must pass these checks in CI. No synthetic row is represented as an observed market.
+
+**Scientific limitation:** Even the source report's rowsLackingExecutablePregamePrice: 0 is not independent proof that quotes were actually executable with available size and fees. modelEvaluated is not equivalent to a validated pregame forecast, SETTLED is not independent exchange certification, and one physical game can generate thousands of correlated rows. This audit exposes denominator completeness and a major model-coverage hole; it does not certify original-provider MLB pitch/lineup accuracy, calibration, current production deployment, or profitability.
+
 ## Next: real factual certification, not green-looking fixtures
 
 1. Build original-provider data audits with immutable raw evidence, timing clocks, identity mappings and independent cross-provider comparisons; detect common-mode data lineage. Respect rights and $0 constraints.

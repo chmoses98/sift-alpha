@@ -157,5 +157,15 @@ class ScienceTruthTests(unittest.TestCase):
         p[field]=late
         self.assertEqual(projection(p,GAME,D)["state"],"QUARANTINED",field)
 
+ def test_malformed_identity_inputs_quarantine_instead_of_crashing(self):
+    for field, value in [("sport", ["NBA"]), ("sport", None)]:
+        g=copy.deepcopy(GAME)
+        g[field]=value
+        self.assertEqual(context(g,D)["state"],"QUARANTINED")
+    for field in ("source_id","subject_id"):
+        g=copy.deepcopy(GAME)
+        g["facts"][0][field]=["unhashable"]
+        self.assertEqual(context(g,D)["state"],"QUARANTINED")
+
 if __name__=="__main__":
  unittest.main()

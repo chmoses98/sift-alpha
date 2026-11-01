@@ -6,8 +6,8 @@ from alpha_engine.science_quality import context, projection, research_eligibili
 
 D="2026-10-25T18:00:00Z"
 SRC=[
- {"id":"nba_official","original_provider":"nba", "rights_checked":True,"observed_at":"2026-10-25T17:30:00Z"},
- {"id":"scoreboard_independent","original_provider":"espn","rights_checked":True,"observed_at":"2026-10-25T17:35:00Z"},
+ {"id":"nba_official","original_provider":"nba", "rights_checked":True,"observed_at":"2026-10-25T17:30:00Z","available_at":"2026-10-25T17:30:00Z"},
+ {"id":"scoreboard_independent","original_provider":"espn","rights_checked":True,"observed_at":"2026-10-25T17:35:00Z","available_at":"2026-10-25T17:35:00Z"},
 ]
 GAME={
  "event_id":"gameA","sport":"NBA","home_team_id":"H","away_team_id":"A",
@@ -18,7 +18,7 @@ GAME={
  "sources":SRC,
  "facts":[{"name":"player_roster_membership","subject_id":"p1","value":"H",
            "source_id":"nba_official","status":"CONFIRMED",
-           "observed_at":"2026-10-25T17:35:00Z"}]
+           "observed_at":"2026-10-25T17:25:00Z","available_at":"2026-10-25T17:30:00Z"}]
 }
 PROJECTION={
  "event_id":"gameA","sport":"NBA","player_id":"p1","player_team_id":"H",
@@ -28,6 +28,8 @@ PROJECTION={
  "model_fit_at":"2026-10-25T16:00:00Z",
  "last_training_label_at":"2026-10-24T23:59:00Z",
  "latest_input_observed_at":"2026-10-25T17:45:00Z",
+ "latest_input_available_at":"2026-10-25T17:46:00Z",
+ "last_training_label_available_at":"2026-10-25T00:00:00Z",
  "distribution":{"kind":"binary","p_yes":0.58},
  "backtest_holdout_verified":True,"calibration_evidence_id":"fixture_calibration"}
 class ScienceTruthTests(unittest.TestCase):
@@ -112,5 +114,48 @@ class ScienceTruthTests(unittest.TestCase):
     p={**PROJECTION,"target_definition_verified":False,
         "backtest_holdout_verified":False,"calibration_evidence_id":None}
     self.assertEqual(projection(p,GAME,D)["state"],"LIMITED")
+ def test_observed_does_not_mean_available_at_cutoff(self):
+    for kind in ("source", "fact"):
+        g=copy.deepcopy(GAME)
+        if kind=="source":
+            g["sources"][0]["available_at"]="2026-10-25T18:01:00Z"
+        else:
+            g["facts"][0]["available_at"]="2026-10-25T18:01:00Z"
+        self.assertEqual(context(g,D)["state"],"QUARANTINED",kind)
+
+ def test_source_capture_cannot_contain_later_observed_fact(self):
+    g=copy.deepcopy(GAME)
+    g["facts"][0]["observed_at"]="2026-10-25T17:31:00Z"
+    g["facts"][0]["available_at"]="2026-10-25T17:32:00Z"
+    self.assertEqual(context(g,D)["state"],"QUARANTINED")
+
+ def test_duplicate_source_ids_and_impossible_availability(self):
+    g=copy.deepcopy(GAME)
+    g["sources"][1]["id"]=g["sources"][0]["id"]
+    self.assertEqual(context(g,D)["state"],"QUARANTINED")
+    g=copy.deepcopy(GAME)
+    g["facts"][0]["available_at"]="2026-10-25T17:20:00Z"
+    self.assertEqual(context(g,D)["state"],"QUARANTINED")
+
+ def test_missing_availability_is_not_a_structural_pass(self):
+    g=copy.deepcopy(GAME)
+    del g["sources"][0]["available_at"]
+    self.assertEqual(context(g,D)["state"],"LIMITED")
+    g=copy.deepcopy(GAME)
+    del g["facts"][0]["available_at"]
+    self.assertEqual(context(g,D)["state"],"LIMITED")
+    p=copy.deepcopy(PROJECTION)
+    del p["latest_input_available_at"]
+    self.assertEqual(projection(p,GAME,D)["state"],"LIMITED")
+
+ def test_late_feature_and_late_corrected_label_block_projection(self):
+    for field,late in [
+        ("latest_input_available_at","2026-10-25T17:56:00Z"),
+        ("last_training_label_available_at","2026-10-25T16:01:00Z"),
+    ]:
+        p=copy.deepcopy(PROJECTION)
+        p[field]=late
+        self.assertEqual(projection(p,GAME,D)["state"],"QUARANTINED",field)
+
 if __name__=="__main__":
  unittest.main()

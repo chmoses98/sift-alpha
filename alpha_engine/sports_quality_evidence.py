@@ -78,29 +78,111 @@ def audit_nba(x):
     }
 
 def audit_mlb(x):
-    r=x.get("report",{})
-    fs=r.get("familyModelCoverage",{})
-    if not isinstance(fs,dict) or not fs:
-        raise ValueError("Missing model coverage denominator")
-    holes={}
-    for family, stats in fs.items():
-        observed=stats.get("observed")
-        evaluated=stats.get("modelEvaluated")
-        rate=stats.get("coverageRate")
-        if not isinstance(family,str) or type(observed) is not int or type(evaluated) is not int or observed<0 or not 0<=evaluated<=observed:
-            raise ValueError("Invalid coverage count")
-        if type(rate) not in (float,int) or not 0<=rate<=1 or abs(rate-(evaluated/observed if observed else 0))>0.001:
-            raise ValueError("Invalid claimed model coverage rate")
-        if observed>=100 and evaluated==0:
-            holes[family]={"model_evaluated":evaluated,"market_observations":observed}
+    """Reconcile the *entire* historical MLB opportunity denominator.
+
+    These are source-reported opportunity rows, not independent games, unique
+    contracts, contemporaneous executable fills, or certified forecasts.
+    """
+    import math
+
+    r = x.get("report", {})
+    if not isinstance(r, dict):
+        raise ValueError("Missing MLB quality report")
+
+    def count(value, label):
+        if type(value) is not int or value < 0:
+            raise ValueError("Invalid count: " + label)
+        return value
+
+    def rate(value, numerator, denominator, label):
+        if type(value) not in (float, int) or not math.isfinite(value):
+            raise ValueError("Invalid coverage rate: " + label)
+        expected = numerator / denominator if denominator else 0
+        if not 0 <= value <= 1 or abs(value - expected) > 0.001:
+            raise ValueError("Inconsistent coverage rate: " + label)
+
+    total = count(r.get("totalOpportunityRows"), "totalOpportunityRows")
+    if not total or x.get("rowCount") != total:
+        raise ValueError("Missing or inconsistent global opportunity denominator")
+    unique_games = count(r.get("uniqueGames"), "uniqueGames")
+    unique_tickers = count(r.get("uniqueMarketTickers"), "uniqueMarketTickers")
+    if unique_games > total or unique_tickers > total:
+        raise ValueError("Unique identity count exceeds row denominator")
+    missing_model = count(r.get("rowsLackingModelEvaluation"), "rowsLackingModelEvaluation")
+    missing_valid_model = count(
+        r.get("rowsLackingTemporallyValidModelEvaluation"),
+        "rowsLackingTemporallyValidModelEvaluation",
+    )
+    missing_price = count(
+        r.get("rowsLackingExecutablePregamePrice"),
+        "rowsLackingExecutablePregamePrice",
+    )
+    if not missing_model <= missing_valid_model <= total or missing_price > total:
+        raise ValueError("Impossible global missingness counts")
+
+    model_families = r.get("familyModelCoverage")
+    settlement_families = r.get("familySettlementCoverage")
+    if not isinstance(model_families, dict) or not model_families or not isinstance(settlement_families, dict):
+        raise ValueError("Missing family coverage denominators")
+    if set(model_families) != set(settlement_families):
+        raise ValueError("Model and settlement family inventories disagree")
+
+    holes = {}
+    family_observed = family_evaluated = family_settled = 0
+    for family, stats in model_families.items():
+        if not isinstance(family, str) or not family or not isinstance(stats, dict):
+            raise ValueError("Malformed market family")
+        observed = count(stats.get("observed"), family + " observed")
+        evaluated = count(stats.get("modelEvaluated"), family + " evaluated")
+        if evaluated > observed:
+            raise ValueError("Model coverage exceeds family denominator")
+        rate(stats.get("coverageRate"), evaluated, observed, family + " model")
+        settlement = settlement_families[family]
+        if not isinstance(settlement, dict):
+            raise ValueError("Malformed settlement family")
+        settled_observed = count(settlement.get("observed"), family + " settlement observed")
+        settled = count(settlement.get("settled"), family + " settled")
+        if settled_observed != observed or settled > observed:
+            raise ValueError("Settlement and model denominators disagree")
+        rate(settlement.get("coverageRate"), settled, observed, family + " settlement")
+        family_observed += observed
+        family_evaluated += evaluated
+        family_settled += settled
+        if observed >= 100 and evaluated == 0:
+            holes[family] = {"model_evaluated": evaluated, "market_observations": observed}
+
+    statuses = r.get("settlementStatusCounts")
+    if not isinstance(statuses, dict) or set(statuses) != {
+        "SETTLED", "NOT_SETTLED", "SETTLEMENT_UNRESOLVED"
+    }:
+        raise ValueError("Missing or unknown settlement status category")
+    status_counts = {key: count(value, key) for key, value in statuses.items()}
+    if (family_observed != total
+            or family_evaluated != total - missing_model
+            or family_settled != status_counts["SETTLED"]
+            or sum(status_counts.values()) != total):
+        raise ValueError("Family and global coverage denominators disagree")
+
     return {
-        "source_type":"dated_retrospective_market_to_model_coverage_audit",
-        "date_range":r.get("dateRange"),
-        "unmodeled_families_with_100plus_observations":holes,
-        "n_market_families_with_unmodeled_coverage":len(holes),
-        "finding":"Market availability cannot be mistaken for valid independent model predictions or retrospective returns.",
-        "requires":"Reconcile each target market family with timestamped original feature inputs, actually published projection snapshots, and independently settled outcomes.",
-        "model_accuracy_certified":False,
+        "source_type": "dated_retrospective_market_to_model_coverage_audit",
+        "date_range": r.get("dateRange"),
+        "opportunity_rows": total,
+        "unique_market_tickers_reported": unique_tickers,
+        "unique_physical_games_reported_not_independently_verified": unique_games,
+        "model_evaluated_rows": family_evaluated,
+        "model_evaluation_coverage_fraction": family_evaluated / total,
+        "rows_without_model_evaluation": missing_model,
+        "rows_without_temporally_valid_model_evaluation": missing_valid_model,
+        "settled_rows_reported": family_settled,
+        "settlement_unresolved_rows": status_counts["SETTLEMENT_UNRESOLVED"],
+        "not_settled_rows": status_counts["NOT_SETTLED"],
+        "rows_reported_without_executable_pregame_price": missing_price,
+        "executable_pregame_price_independently_verified": False,
+        "unmodeled_families_with_100plus_observations": holes,
+        "n_market_families_with_unmodeled_coverage": len(holes),
+        "finding": "Historical market capture has vastly broader coverage than model evaluation; row counts are not independent games, valid forecasts, executable trades or verified returns.",
+        "requires": "Verify source-side family definitions, frozen point-in-time forecasts, independent outcomes, actual starts, executable side/depth and per-family exclusions.",
+        "model_accuracy_certified": False,
     }
 
 def audit(manifest,downloader=None):

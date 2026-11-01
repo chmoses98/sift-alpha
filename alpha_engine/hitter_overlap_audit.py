@@ -182,7 +182,8 @@ def main():
         row = report["days"][day]
         print(day, "family_source_rows=", json.dumps(row["family_source_rows"], sort_keys=True),
               "candidate_by_family=", json.dumps(row["family_candidate_rows_at_embedded_quote_clock"], sort_keys=True),
-              "noncandidate_by_family=", json.dumps(row["family_non_candidate_rows"], sort_keys=True))
+              "noncandidate_by_family=", json.dumps(row["family_non_candidate_rows"], sort_keys=True),
+              "row_evidence=", json.dumps(row["row_evidence"], sort_keys=True))
     print("Evidence:", out)
 
 

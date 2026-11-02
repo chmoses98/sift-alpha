@@ -48,6 +48,8 @@ def audit_capture(directory, manifest, sport):
                 raise ValueError("Duplicate contract across original pages")
             tickers.add(ticker)
             rules_primary, rules_secondary = contract.get("rules_primary"), contract.get("rules_secondary")
+            if any(v is not None and not isinstance(v, str) for v in (rules_primary, rules_secondary)):
+                raise ValueError("Malformed literal contract rule text")
             rows.append({
                 "ticker": ticker,
                 "literal_event_ticker": contract.get("event_ticker"),
@@ -56,6 +58,8 @@ def audit_capture(directory, manifest, sport):
                 "floor_strike": contract.get("floor_strike"),
                 "rules_primary_sha256": _sha(rules_primary),
                 "rules_secondary_sha256": _sha(rules_secondary),
+                "rules_primary": rules_primary,
+                "rules_secondary": rules_secondary,
                 "literal_rule_text_available": bool(rules_primary and rules_secondary),
                 "source_page_sha256": page["sha256"],
                 "source_page_path": source_path,

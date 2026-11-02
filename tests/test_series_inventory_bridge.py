@@ -40,6 +40,8 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(row["observed_denominator"], 2)
             self.assertEqual(len(row["observed_contracts"]), 2)
             self.assertEqual(len(row["source_page_sha256"]), 2)
+            self.assertEqual(row["observed_contracts"][0]["rules_primary"], "Team A wins")
+            self.assertEqual(row["observed_contracts"][1]["rules_secondary"], "Official final")
             self.assertEqual(row["market_collection_status"], "COLLECTED_VALID")
             self.assertEqual(row["model_usage_status"], "UNKNOWN")
             self.assertEqual(row["point_in_time_pregame_eligibility"], "UNKNOWN")

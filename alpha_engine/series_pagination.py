@@ -48,7 +48,16 @@ def _existing_guard(root, series, now, base):
         doc = json.loads(item.read_text(encoding="utf-8"))
         if doc.get("series") != series or doc.get("source_url") != base:
             raise ValueError("Previous capture provenance conflict")
-        age = (now - clock(doc.get("captured_at_utc"))).total_seconds()
+        # The caller-supplied requested clock is not an authoritative receipt.
+        # Rate-limit against the previous original HTTP-page receipt, so a
+        # forged future request timestamp cannot bypass the collection bound.
+        prior_pages = doc.get("pages")
+        if not isinstance(prior_pages, list) or not prior_pages:
+            raise ValueError("Previous capture missing receipt provenance")
+        last_receipt = clock(prior_pages[-1].get("received_at_utc"))
+        if last_receipt < clock(doc.get("captured_at_utc")):
+            raise ValueError("Previous capture request later than receipt")
+        age = (now - last_receipt).total_seconds()
         if age < MIN_INTERVAL_SECONDS:
             raise ValueError("Rate limit or clock rollback: denied")
 
@@ -72,14 +81,19 @@ def capture_series(series, now_utc, directory, *, fetcher=None, max_pages=MAX_PA
         raise ValueError("Symlink capture lock forbidden")
     with lock.open("a+b") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        _existing_guard(root, series, now, base)
+        _existing_guard(root, series, datetime.now(timezone.utc), base)
         pages, tickers, cursors = [], set(), set()
         cursor = None
         total = 0
         for index in range(max_pages):
             url = _url(series, cursor)
             raw, server_date = (fetcher(url) if fetcher else public_read(url))
-            received = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            receipt = datetime.now(timezone.utc)
+            if now > receipt:
+                raise ValueError("Requested capture clock is later than HTTP receipt")
+            if pages and receipt < clock(pages[-1]["received_at_utc"]):
+                raise ValueError("HTTP receipt clocks moved backward")
+            received = receipt.isoformat().replace("+00:00", "Z")
             if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_BYTES:
                 raise ValueError("Missing or oversized page")
             total += len(raw)
@@ -180,6 +194,8 @@ def verify_capture(directory, manifest):
     root = Path(directory) / series
     tickers = set()
     expected_cursor = None
+    requested = clock(manifest.get("captured_at_utc"))
+    previous_receipt = None
     for index, page in enumerate(pages):
         name = page.get("file")
         if (not isinstance(name, str) or "/" in name or "\\" in name
@@ -188,6 +204,10 @@ def verify_capture(directory, manifest):
                 or page.get("request_cursor") != expected_cursor
                 or page.get("request_url") != _url(series, expected_cursor)):
             raise ValueError("Page identity or cursor mismatch")
+        receipt = clock(page.get("received_at_utc"))
+        if receipt < requested or (previous_receipt is not None and receipt < previous_receipt):
+            raise ValueError("Requested/received capture chronology invalid")
+        previous_receipt = receipt
         target = root / name
         if target.is_symlink():
             raise ValueError("Symlink source page forbidden")

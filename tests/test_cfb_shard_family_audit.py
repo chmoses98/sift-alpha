@@ -78,6 +78,10 @@ class CfbShardTests(unittest.TestCase):
         self.assertEqual(row["period"], "first_quarter")
         self.assertEqual(len(row["observed_contracts"]), 2)
         self.assertEqual(len(row["observed_contracts"][0]["rules_primary_sha256"]), 64)
+        self.assertEqual(row["observed_contracts"][0]["rules_primary"], data["markets"][0]["rules_primary"])
+        self.assertEqual(row["observed_contracts"][0]["rules_secondary"], data["markets"][0]["rules_secondary"])
+        self.assertEqual(hashlib.sha256(row["observed_contracts"][0]["rules_primary"].encode()).hexdigest(),
+                         row["observed_contracts"][0]["rules_primary_sha256"])
         self.assertFalse(x["actual_game_start_verified"])
         self.assertFalse(x["settlement_join_verified"])
         self.assertTrue(row["candidate_inputs"])

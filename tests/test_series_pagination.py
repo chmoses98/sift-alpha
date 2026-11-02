@@ -92,6 +92,33 @@ class MultiPageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tampered"):
                 verify_capture(d, m)
 
+    def test_request_clock_cannot_bypass_receipt_rate_limit(self):
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d,
+                fetcher=lambda url: (payload([SERIES + "-A"]), None))
+            self.assertEqual(verify_capture(d, m)["observed_denominator"], 1)
+            # Previously a caller could advance its supplied timestamp by six
+            # minutes and immediately make another request. Real receipt time
+            # must govern the rate limit, not the caller's claim.
+            with self.assertRaisesRegex(ValueError, "Rate limit"):
+                capture_series(SERIES, "2026-11-02T18:06:00Z", d,
+                    fetcher=lambda url: (payload([SERIES + "-B"]), None))
+            forged = copy.deepcopy(m)
+            forged["pages"][0]["received_at_utc"] = "2026-11-02T17:59:59Z"
+            with self.assertRaisesRegex(ValueError, "chronology"):
+                verify_capture(d, forged)
+            forged = copy.deepcopy(m)
+            forged["captured_at_utc"] = "2099-01-01T00:00:00Z"
+            with self.assertRaisesRegex(ValueError, "chronology"):
+                verify_capture(d, forged)
+
+    def test_future_requested_capture_rejected_before_storage(self):
+        with TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError, "later than HTTP receipt"):
+                capture_series(SERIES, "2099-01-01T00:00:00Z", d,
+                    fetcher=lambda url: (payload([SERIES + "-A"]), None))
+            self.assertFalse(list((Path(d)/SERIES).glob("*.json")))
+
     def test_bad_page_and_clock_do_not_invent_capture(self):
         with TemporaryDirectory() as d:
             with self.assertRaises(ValueError):

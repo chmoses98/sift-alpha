@@ -259,6 +259,11 @@ def audit(shards, *, model_evidence=None):
                 "floor_strike": floor, "is_alternate_line": market.get("is_alternate_line"),
                 "rules_primary_sha256": _rule_sha(primary),
                 "rules_secondary_sha256": _rule_sha(secondary),
+                # Preserve the exact observed wording, not only its hash.
+                # These are archived contract terms, NOT independently
+                # authenticated exchange settlement outcomes.
+                "rules_primary": primary,
+                "rules_secondary": secondary,
                 "upstream_updated_time_not_capture_clock": market.get("updated_time"),
             })
         # Fail closed rather than silently collapsing multiple mechanisms.

@@ -97,9 +97,14 @@ def ontology_rows(sport, repo_dir, summary_key):
     rules = {}
     for t, v in s["series"].items():
         fam = t2f.get(t) or next((f for rx, f in pats if rx.search(t)), None)
+        extra = {}
+        if fam is None and t.endswith("PROT") and t[:-4] in t2f:
+            fam = t2f[t[:-4]]
+            extra = {"variant": "protected", "base_series": t[:-4], "settlement_equivalent_to_base": False,
+                     "equivalence_evidence": "research/audit/variants/NBA_PROT_equivalence.json"}
         if fam is None:
             fam = "UNMAPPED_SERIES"
-        by[fam].append({"ticker": t, "title": v.get("sample_title"), "markets_now": v["markets"], "status": v["status"]})
+        by[fam].append({"ticker": t, "title": v.get("sample_title"), "markets_now": v["markets"], "status": v["status"], **extra})
         rules[t] = v.get("rules_sample")
     rows = []
     for fam, v in onto.items():
@@ -261,13 +266,15 @@ def main(argv=None):
     master = {"schema_version": SCHEMA_VERSION, "generated_utc": now, "sports": {}, "families": []}
     for sp in SPORTS:
         rows, meta = builders[sp]()
+        from .family_coverage import attach
+        attach(sp, rows)
         sp_doc = {"schema_version": SCHEMA_VERSION, "sport": sp, "generated_utc": now, "source_meta": meta, "families": rows}
         (out / f"{sp}.json").write_text(json.dumps(sp_doc, indent=1))
         unc = [r["id"] for r in rows if r["canonical"]["kind"] == "unclassified"]
         master["sports"][sp] = {"families": len(rows), "families_observed_now": sum(r["observed"]["state"] == "OBSERVED_NOW" for r in rows),
                                 "series": sum(len(r["series"]) for r in rows), "unclassified_families": unc,
                                 "markets_now_basis_sum": sum((r["observed"]["markets_now"] or 0) for r in rows)}
-        master["families"] += [{k: r[k] for k in ("id", "sport", "native_family", "canonical", "observed", "settlement")} | {k: r[k] for k in ("markets_prior_snapshot", "prior_snapshot_date", "markets_prior_registry_snapshot", "markets_historical_archived_tier", "repo_support") if k in r} | {"series_count": len(r["series"]), "series_sample": [s["ticker"] for s in r["series"][:6]]} for r in rows]
+        master["families"] += [{k: r[k] for k in ("id", "sport", "native_family", "canonical", "observed", "settlement")} | {k: r[k] for k in ("historical", "markets_prior_snapshot", "prior_snapshot_date", "markets_prior_registry_snapshot", "markets_historical_archived_tier", "repo_support") if k in r} | {"series_count": len(r["series"]), "series_sample": [s["ticker"] for s in r["series"][:6]]} for r in rows]
         print(sp, master["sports"][sp]["families"], "families", master["sports"][sp]["markets_now_basis_sum"], "markets", "unclassified:", unc)
     (AUDIT / "master_inventory.json").write_text(json.dumps(master, indent=1))
 

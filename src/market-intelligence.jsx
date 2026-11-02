@@ -4,15 +4,22 @@ import master from "../research/audit/master_inventory.json";
 import registry from "../research/audit/input_registry.json";
 import status from "../research/audit/collection_status.json";
 import gaps from "../research/audit/collection_gap_report.json";
+import tennisIv from "../research/audit/sources/tennis_results_intervals.json";
+import soccerAmb from "../research/audit/resolutions/soccer_ambiguous.json";
+import soccerCtx from "../research/audit/lineage/soccer_context_lineage.json";
+import nbaProt from "../research/audit/variants/NBA_PROT_equivalence.json";
+import tsInt from "../research/audit/integrity/timestamp_integrity.json";
 
 // Everything below is generated from research/audit/*.json. Nothing here asserts completeness; anything absent is unknown.
 const FAMILY_AUDITS = Object.values(import.meta.glob("../research/audit/audits/*.json", {eager: true, import: "default"}));
 const SPORTS = Object.keys(registry.sports);
 const TIER = {E: "Essential", C: "Contextual", X: "Exploratory"};
-const COLL = {PIT_ARCHIVED: "ok", DERIVED: "ok", COLLECTED_NOT_PIT_ARCHIVED: "warn", PARTIAL_OR_STALE: "bad", SOURCE_AVAILABLE_NOT_COLLECTED: "bad", NO_RELIABLE_SOURCE: "bad", NO_REFERENCE_FOUND: "bad", CODE_REFERENCE_ONLY: "unk", UNKNOWN: "unk"};
+const COLL = {PIT_ARCHIVED: "ok", DERIVED: "ok", COLLECTED_NOT_PIT_ARCHIVED: "warn", PARTIAL_OR_STALE: "stale", SOURCE_AVAILABLE_NOT_COLLECTED: "bad", NO_RELIABLE_SOURCE: "bad", NO_REFERENCE_FOUND: "unk", CODE_REFERENCE_ONLY: "code", UNKNOWN: "unk",
+  VERIFIED_COLLECTION: "ok", COLLECTED_UNVERIFIED_PIT: "warn", STALE_OR_PARTIAL: "stale", MISSING: "bad"};
+const VNAME = {VERIFIED_COLLECTION: "verified collection", COLLECTED_UNVERIFIED_PIT: "collected, PIT unverified", STALE_OR_PARTIAL: "stale / partial", MISSING: "missing", CODE_REFERENCE_ONLY: "code reference only", UNKNOWN: "unknown", DERIVED: "derived"};
 const nice = s => s.toLowerCase().replaceAll("_", " ");
 const n = v => v == null ? "—" : v.toLocaleString();
-function Badge({v}) { return <span className={"badge b-" + (COLL[v] || "unk")}>{nice(v)}</span>; }
+function Badge({v, raw}) { return <span title={raw ? nice(raw) : undefined} className={"badge b-" + (COLL[v] || "unk")}>{VNAME[v] || nice(v)}</span>; }
 
 function FamilyDetail({fam, sport}) {
   const fr = registry.sports[sport].families[fam.id];
@@ -25,11 +32,12 @@ function FamilyDetail({fam, sport}) {
     <p><strong>{fam.native_family}</strong> · {fam.canonical.kind.replaceAll("_", " ")} · {fam.canonical.scope} · periods {fam.canonical.periods.join(", ")}</p>
     <p className="fine">Observed: <b>{nice(fam.observed.state)}</b> — {n(fam.observed.markets_now)} markets now ({fam.observed.basis}; as of {fam.observed.as_of || "unknown"}){fam.markets_prior_snapshot != null && <> · prior snapshot {n(fam.markets_prior_snapshot)} ({fam.prior_snapshot_date})</>}. Series: {fam.series_count}{fam.series_sample.length ? " e.g. " + fam.series_sample.join(", ") : ""}.</p>
     <p className="fine">Settlement: {fam.settlement?.text || "unknown"} <em>({fam.settlement?.status || "UNKNOWN"}{fam.settlement?.source ? " · " + fam.settlement.source : ""})</em></p>
+    {fam.historical && <p className="fine">Historical coverage: {fam.historical.state === "OBSERVED" ? <>first seen {fam.historical.first_seen}, last {fam.historical.last_seen}; present on {fam.historical.days_present} of {fam.historical.snapshot_days} archived days ({fam.historical.calendar_days_without_snapshot} calendar days in the span have no snapshot); peak {n(fam.historical.markets_peak)} markets/day. Basis: {fam.historical.basis}.</> : <b>{nice(fam.historical.state)}</b>}</p>}
     {audit && <p className="fine audited">End-to-end audit exists: repair priority {audit.repair_priority}, verified {audit.last_verified_utc}. See audit file for per-input evidence.</p>}
     {["E", "C", "X"].map(t => groups[t].length > 0 && <div key={t}><h4>{TIER[t]} candidate inputs ({groups[t].length})</h4>
       <div className="inp-grid">{groups[t].map(id => { const s = st[id]; return <div className="inp" key={id}>
         <strong>{defs[id].label}</strong>
-        <div><Badge v={s.collection}/> <span className="badge b-use">model: {nice(s.model_use)}</span></div>
+        <div><Badge v={s.verification_class} raw={s.collection}/> <span className="badge b-use">model: {nice(s.model_use)}</span></div>
         <p className="fine">{s.note}{s.evidence?.length > 0 && <> · evidence: {s.evidence.map(e => e.replace(/^(doc|arch):/, "")).join("; ")}</>}</p>
       </div>; })}</div></div>)}
     <p className="fine">Tier = candidate relevance, not validated predictive value. Validation status: not tested.</p>
@@ -56,14 +64,22 @@ export function MarketIntelligence() {
       <strong>{sm.families} families · {sm.series} series</strong><span>{sm.families_observed_now} observed in latest snapshot · {master.families.filter(f => f.sport === sport && f.observed.state === "OBSERVED_PRIOR_SNAPSHOT_ONLY").length} only in an older snapshot · {master.families.filter(f => f.sport === sport && f.observed.state === "DEFINED_NOT_OBSERVED").length} defined, not observed</span>
       <span>{g.inputs} candidate inputs ({g.curated_inputs} with curated evidence)</span><span>unclassified: {sm.unclassified_families.length ? sm.unclassified_families.join(", ") : "none"}</span>
     </div>
-    <div className="status-row">{Object.entries(g.status_counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => <span key={k} className={"badge b-" + (COLL[k] || "unk")}>{nice(k)}: {v}</span>)}</div>
+    <div className="status-row">{Object.entries(g.verification_counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => <span key={k} className={"badge b-" + (COLL[k] || "unk")}>{VNAME[k] || nice(k)}: {v}</span>)}</div>
     <h3>Top collection gaps — {sport}</h3>
-    <div className="gap-list">{g.top_gaps.slice(0, 6).map(r => <div className="gap" key={r.input}><strong>{r.label}</strong> <Badge v={r.collection}/> <span className="badge b-use">model: {nice(r.model_use)}</span>
+    <div className="gap-list">{g.top_gaps.slice(0, 6).map(r => <div className="gap" key={r.input}><strong>{r.label}</strong> <Badge v={r.verification_class || r.collection} raw={r.collection}/> <span className="badge b-use">model: {nice(r.model_use)}</span>
       <span className="fine"> essential for {r.essential_for_families} families · {(r.share_of_sport_markets * 100).toFixed(0)}% of this sport's observed markets</span><p className="fine">{r.note}</p></div>)}</div>
     <h3>Market families</h3>
     <div className="intelligence-filters"><label>Kind<select value={kind} onChange={e => {setKind(e.target.value); setSel(null);}}><option value="all">all kinds</option>{kinds.map(k => <option key={k}>{k}</option>)}</select></label>
       <label>Family<select value={fam?.id || ""} onChange={e => setSel(e.target.value)}>{fams.map(f => <option key={f.id} value={f.id}>{f.native_family} — {n(f.observed.markets_now ?? f.markets_prior_snapshot)} mkts · {nice(f.observed.state)}</option>)}</select></label></div>
     {fam && <FamilyDetail fam={fam} sport={sport}/>}
+    <h3>Source investigations (generated)</h3>
+    <ul className="fine">
+      <li><b>NBA PROT series</b>: {Object.keys(nbaProt.pairs).length} stat families; settlement equivalent to base: {Object.values(nbaProt.pairs).every(p => p.settlement_equivalent) ? "yes" : "NO"} (differs in {[...new Set(Object.values(nbaProt.pairs).flatMap(p => p.settlement_fields_differing))].join(", ")}). Kept as separate identifiers.</li>
+      <li><b>Tennis results</b> ({tennisIv.status.toLowerCase().replaceAll("_", " ")}): primary frozen since ATP {tennisIv.tours.atp.unavailable_from_primary.from}, WTA {tennisIv.tours.wta.unavailable_from_primary.from}; candidate covers to {tennisIv.tours.atp.candidate_last_match} but thin months {tennisIv.tours.wta.candidate_thin_months_inside_gap.join(", ")}.</li>
+      <li><b>Soccer ambiguous series</b>: {soccerAmb.total} → {Object.entries(soccerAmb.counts).map(([k, v]) => v + " " + nice(k)).join(", ")} (ticker evidence only).</li>
+      <li><b>Soccer context</b>: lineups {(soccerCtx.lineups.share_pre_kickoff * 100).toFixed(0)}% of {soccerCtx.lineups.fixtures.toLocaleString()} fixtures with a pre-kickoff XI; weather {(soccerCtx.weather.share_rows_after_kickoff * 100).toFixed(1)}% of snapshots captured after kickoff; injuries and xG: no archive.</li>
+      <li><b>Timestamp integrity</b>: {Object.entries(tsInt.sports).map(([k, v]) => k + " " + v.updated_after_stamp + " rows updated after batch stamp (max " + Math.round(v.max_lag_seconds) + " s)").join(" · ")}.</li>
+    </ul>
     <h3>Cross-sport gap ranking (within-sport shares)</h3>
     <ol className="fine">{gaps.cross_sport.slice(0, 8).map((r, i) => <li key={i}><b>{r.sport}</b> {r.input} — {nice(r.collection)}, model {nice(r.model_use)}, {(r.share_of_sport_markets * 100).toFixed(0)}% of its markets</li>)}</ol>
     <div className="intelligence-related"><strong>Related source-linked research</strong>{relevant.length ? relevant.map(x => <p key={x.id}>{x.title} · {x.status} {x.sources[0]?.url && <a href={x.sources[0].url} target="_blank" rel="noreferrer">Source ↗</a>}</p>) : <p>No verified sport-specific research records are linked yet.</p>}</div>

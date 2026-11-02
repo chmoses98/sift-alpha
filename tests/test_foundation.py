@@ -57,7 +57,8 @@ class Foundation(unittest.TestCase):
     def test_nba_unmapped_series_gap_is_recorded(self):
         fams = {f["native_family"]: f for f in json.load(open(A / "inventory" / "NBA.json"))["families"]}
         tickers = {s["ticker"] for s in fams["UNMAPPED_SERIES"]["series"]}
-        self.assertIn("KXNBAPTSPROT", tickers)
+        self.assertIn("KXNBASTATLEADER", tickers)      # mapped upstream by nba-edge-finder PR #82 once merged
+        self.assertNotIn("KXNBAPTSPROT", tickers)       # protected variants are grouped under their stat family
 
     def test_classifier_periods(self):
         self.assertEqual(classify("CFB", "quarter_total", "KXNCAAF3QTOTAL")["period"], "Q3")

@@ -1,0 +1,34 @@
+name: Kalshi series sweep (manual, public reads)
+# Manual only. Unauthenticated public market-data GETs; no secrets, no trading, no paid service.
+# Resumes from the state artifact of a prior run when one is supplied via the cache key.
+on:
+  workflow_dispatch:
+    inputs:
+      queue:
+        description: "Queue file under research/audit/sweep/"
+        default: mlb_queue.json
+      max_requests:
+        description: "Request budget for this run"
+        default: "400"
+permissions:
+  contents: read
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: sweep_state.json
+          key: sweep-state-${{ inputs.queue }}-${{ github.run_id }}
+          restore-keys: sweep-state-${{ inputs.queue }}-
+      - name: Sweep (exit 3 = budget/rate-limit stop, rerun to resume)
+        run: python3 -m alpha_engine.series_sweep research/audit/sweep/${{ inputs.queue }} sweep_state.json --max-requests ${{ inputs.max_requests }} || [ $? -eq 3 ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sweep-state-${{ inputs.queue }}
+          path: sweep_state.json

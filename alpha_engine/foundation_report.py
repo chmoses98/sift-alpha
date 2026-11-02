@@ -8,6 +8,8 @@ from .input_catalog import INPUTS, BP, COMMON, COMMON_BP, LADDER_BP
 from .collection_curated import CUR
 from .master_inventory import AUDIT, SPORTS, REPO
 
+VCLASS = {"PIT_ARCHIVED": "VERIFIED_COLLECTION", "DERIVED": "DERIVED", "COLLECTED_NOT_PIT_ARCHIVED": "COLLECTED_UNVERIFIED_PIT", "PARTIAL_OR_STALE": "STALE_OR_PARTIAL",
+          "SOURCE_AVAILABLE_NOT_COLLECTED": "MISSING", "NO_RELIABLE_SOURCE": "MISSING", "CODE_REFERENCE_ONLY": "CODE_REFERENCE_ONLY", "NO_REFERENCE_FOUND": "UNKNOWN", "UNKNOWN": "UNKNOWN"}
 TIER = {"E": "ESSENTIAL", "C": "CONTEXTUAL", "X": "EXPLORATORY"}
 RANK = {"E": 3, "C": 2, "X": 1}
 SEV = {"SOURCE_AVAILABLE_NOT_COLLECTED": 5, "NO_REFERENCE_FOUND": 4, "PARTIAL_OR_STALE": 4, "COLLECTED_NOT_PIT_ARCHIVED": 3,
@@ -82,7 +84,7 @@ def main():
             else:
                 coll = "CODE_REFERENCE_ONLY" if code["collect_files"] else ("NO_REFERENCE_FOUND" if not code["files_total"] else "CODE_REFERENCE_ONLY")
                 use, note, evid = "UNKNOWN", ("keyword hits only in " + ("collection" if code["collect_files"] else "non-collection") + " code; archival and correct use unverified") if code["files_total"] else "no code reference matched the recorded regex", []
-            rows[iid] = {"label": meta["label"], "collection": coll, "model_use": use, "curated": bool(cur), "note": note, "evidence": evid,
+            rows[iid] = {"label": meta["label"], "collection": coll, "verification_class": VCLASS[coll], "model_use": use, "curated": bool(cur), "note": note, "evidence": evid,
                          "code": {"regex": code["regex"], "collect_files": code["collect_files"], "model_files": code["model_files"], "examples": code["collect_examples"] + code["model_examples"][:2]}}
         cs["sports"][sp] = {"repo": ev["repo"], "commit": ev["commit"], "inputs": rows,
                             "archives": [{"key": k, "repo": v.get("repo"), "branch": v.get("branch"), "commit": v.get("commit"), "total_files": v.get("total_files")} for k, v in arch.items() if k.split(":")[0].lower().startswith(REPO[sp].lower().split("-")[0])]}
@@ -104,7 +106,8 @@ def main():
                          "severity": sev, "share_of_sport_markets": round(a["markets"] / tot, 4), "score": round((sev + (1 if use_gap else 0)) * a["markets"] / tot, 4), "note": r["note"], "curated": r["curated"]})
         rows.sort(key=lambda r: -r["score"])
         cnt = collections.Counter(r["collection"] for r in cs["sports"][sp]["inputs"].values())
-        gap["sports"][sp] = {"status_counts": dict(cnt), "top_gaps": rows[:15], "curated_inputs": sum(r["curated"] for r in cs["sports"][sp]["inputs"].values()), "inputs": len(cs["sports"][sp]["inputs"])}
+        vcnt = collections.Counter(r["verification_class"] for r in cs["sports"][sp]["inputs"].values())
+        gap["sports"][sp] = {"status_counts": dict(cnt), "verification_counts": dict(vcnt), "top_gaps": rows[:15], "curated_inputs": sum(r["curated"] for r in cs["sports"][sp]["inputs"].values()), "inputs": len(cs["sports"][sp]["inputs"])}
         for r in rows[:5]: gap["cross_sport"].append({"sport": sp, **{k: r[k] for k in ("input", "collection", "model_use", "essential_markets", "share_of_sport_markets", "score", "note")}})
     gap["cross_sport"].sort(key=lambda r: -r["score"])
     for n, o in (("input_registry", reg), ("collection_status", cs), ("collection_gap_report", gap)):

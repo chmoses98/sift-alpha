@@ -138,3 +138,31 @@ class EndToEnd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublishJob(unittest.TestCase):
+    def test_only_the_publish_job_can_write_and_never_via_inline_expressions(self):
+        jobs = W["jobs"]
+        self.assertEqual(W["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["publish"]["permissions"], {"contents": "write"}); self.assertNotIn("permissions", jobs["sweep"])
+        self.assertEqual(jobs["publish"]["needs"], "sweep")
+        for j in jobs.values():
+            for st in j["steps"]:
+                if "run" in st:
+                    self.assertNotIn("${{", st["run"])
+        self.assertEqual(TXT.count("git push"), 1); self.assertIn("HEAD:refs/heads/sweep-data", TXT)
+
+    def test_publish_writes_raw_state_with_provenance_and_index(self):
+        import tempfile, os
+        from datetime import datetime, timezone
+        from kalshi_sweep.publish import publish
+        with tempfile.TemporaryDirectory() as d:
+            st = os.path.join(d, "s.json"); q = os.path.join(d, "q.json")
+            json.dump({"requests_total": 5, "series": {"A": {k: {"complete": True, "markets": 2} for k in ("open", "unopened", "closed", "settled")}}}, open(st, "w")); json.dump({"series": ["A", "B"]}, open(q, "w"))
+            out = os.path.join(d, "out"); os.makedirs(out)
+            m = publish(st, q, out, env={"GITHUB_RUN_ID": "99", "GITHUB_SHA": "abc"}, now=datetime(2026, 11, 3, tzinfo=timezone.utc))
+            self.assertEqual((m["series_complete"], m["series_queued"], m["complete"], m["requests_total"]), (1, 2, False, 5))
+            raw = open(os.path.join(out, "sweeps", "q", m["file"]), "rb").read(); self.assertEqual(raw, open(st, "rb").read())      # byte-for-byte
+            self.assertEqual(json.load(open(os.path.join(out, "sweeps", "q", "latest.json")))["workflow_run_id"], "99")
+            publish(st, q, out, env={"GITHUB_RUN_ID": "100"}, now=datetime(2026, 11, 3, 1, tzinfo=timezone.utc))
+            self.assertEqual(len(open(os.path.join(out, "index.jsonl")).read().splitlines()), 2)       # append-only

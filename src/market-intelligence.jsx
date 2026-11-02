@@ -9,6 +9,9 @@ import soccerAmb from "../research/audit/resolutions/soccer_ambiguous.json";
 import soccerCtx from "../research/audit/lineage/soccer_context_lineage.json";
 import nbaProt from "../research/audit/variants/NBA_PROT_equivalence.json";
 import tsInt from "../research/audit/integrity/timestamp_integrity.json";
+import rvb from "../research/audit/integrity/record_vs_batch_timing.json";
+import wxPit from "../research/audit/lineage/soccer_weather_pit_report.json";
+import tennisOpt from "../research/audit/sources/tennis_results_options.json";
 
 // Everything below is generated from research/audit/*.json. Nothing here asserts completeness; anything absent is unknown.
 const FAMILY_AUDITS = Object.values(import.meta.glob("../research/audit/audits/*.json", {eager: true, import: "default"}));
@@ -78,6 +81,9 @@ export function MarketIntelligence() {
       <li><b>Tennis results</b> ({tennisIv.status.toLowerCase().replaceAll("_", " ")}): primary frozen since ATP {tennisIv.tours.atp.unavailable_from_primary.from}, WTA {tennisIv.tours.wta.unavailable_from_primary.from}; candidate covers to {tennisIv.tours.atp.candidate_last_match} but thin months {tennisIv.tours.wta.candidate_thin_months_inside_gap.join(", ")}.</li>
       <li><b>Soccer ambiguous series</b>: {soccerAmb.total} → {Object.entries(soccerAmb.counts).map(([k, v]) => v + " " + nice(k)).join(", ")} (ticker evidence only).</li>
       <li><b>Soccer context</b>: lineups {(soccerCtx.lineups.share_pre_kickoff * 100).toFixed(0)}% of {soccerCtx.lineups.fixtures.toLocaleString()} fixtures with a pre-kickoff XI; weather {(soccerCtx.weather.share_rows_after_kickoff * 100).toFixed(1)}% of snapshots captured after kickoff; injuries and xG: no archive.</li>
+      <li><b>Soccer weather PIT guard</b>: {wxPit.quarantined.toLocaleString()} of {wxPit.rows.toLocaleString()} snapshots excluded from pregame use (captured after kickoff); {wxPit.events_without_usable_snapshot} of {wxPit.events} events have no usable snapshot; raw archive untouched.</li>
+      <li><b>Record vs batch time</b>: {rvb.findings.filter(f => f.record_obs_later_than_batch_stamp > 0 && f.record_minus_batch_seconds_max > 1).map(f => f.sport + " " + f.dir + " up to " + Math.round(f.record_minus_batch_seconds_max) + " s").join("; ")} — record time is later than the batch stamp (use record-level time).</li>
+      <li><b>Tennis results options</b>: {tennisOpt.options.length} sources assessed, none ingested; {tennisOpt.options.filter(o => o.status === "PARTIAL_CANDIDATE").length} partial candidate (licence-restricted).</li>
       <li><b>Timestamp integrity</b>: {Object.entries(tsInt.sports).map(([k, v]) => k + " " + v.updated_after_stamp + " rows updated after batch stamp (max " + Math.round(v.max_lag_seconds) + " s)").join(" · ")}.</li>
     </ul>
     <h3>Cross-sport gap ranking (within-sport shares)</h3>

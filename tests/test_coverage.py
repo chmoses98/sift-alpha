@@ -50,3 +50,34 @@ class Coverage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Lineage2(unittest.TestCase):
+    def test_record_vs_batch_findings(self):
+        f = {(x["sport"], x["dir"]): x for x in json.load(open(A / "integrity" / "record_vs_batch_timing.json"))["findings"]}
+        g = f[("NHL", "context/goalie_observations")]
+        self.assertEqual(g["record_obs_later_than_batch_stamp"], g["records"]); self.assertGreater(g["record_minus_batch_seconds_max"], 60)
+        self.assertEqual(f[("MLB", "availability/mlb")]["with_source_time"], 0)
+        self.assertEqual(f[("NHL", "context/lines")]["source_time_after_observation"], 0)
+
+    def test_tennis_options_ingest_nothing_incomplete_or_restricted(self):
+        d = json.load(open(A / "sources" / "tennis_results_options.json"))
+        self.assertTrue(len(d["options"]) >= 6)
+        for o in d["options"]:
+            self.assertNotIn(o["status"], {"INGESTED"}); self.assertTrue(o["licence"] and o["decision"])
+        partial = next(o for o in d["options"] if o["status"] == "PARTIAL_CANDIDATE"); self.assertTrue(partial["decision"].startswith("NOT ingested"))
+
+    def test_curated_corrections_and_conversions(self):
+        s = json.load(open(A / "collection_status.json"))["sports"]
+        self.assertEqual(s["NHL"]["inputs"]["nhl.lines"]["verification_class"], "VERIFIED_COLLECTION")
+        self.assertEqual(s["CFB"]["inputs"]["cfb.injuries"]["verification_class"], "STALE_OR_PARTIAL")     # was 'no reliable source'
+        self.assertEqual(s["NBA"]["inputs"]["nba.starters_pit"]["verification_class"], "STALE_OR_PARTIAL")  # expected, not confirmed, starters
+        n = sum(1 for sp in s.values() for r in sp["inputs"].values() if r["verification_class"] == "CODE_REFERENCE_ONLY")
+        self.assertLessEqual(n, 131)
+
+    def test_family_history_for_all_eight_sports_is_scanned_or_labelled(self):
+        m = json.load(open(A / "master_inventory.json"))
+        c = {f["sport"]: set() for f in m["families"]}
+        for f in m["families"]: c[f["sport"]].add(f["historical"]["state"])
+        for sp in ("NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "TENNIS"): self.assertIn("OBSERVED", c[sp], sp)
+        self.assertIn("OBSERVED", c["SOCCER"])

@@ -7,6 +7,7 @@ import unittest
 
 from alpha_engine.cfb_shard_family_audit import (
     audit, append, check_manifest, hypotheses, tree_sha, verified_shards,
+    verify_generic_pricer, PRICER_BLOB_SHA1,
 )
 from alpha_engine.market_family_registry import git_sha
 
@@ -130,6 +131,21 @@ class CfbShardTests(unittest.TestCase):
         self.assertFalse(combined["live_capture_running"])
         with self.assertRaises(ValueError):
             append(combined, audit([(entry, data, hashlib.sha256(raw).hexdigest())]))
+
+    def test_model_lineage_rejects_forged_source_and_scope(self):
+        # A fake source or a claimed all-routes certification is never evidence.
+        with self.assertRaises(ValueError):
+            verify_generic_pricer(lambda: b"def price_market(): pass")
+        entry, data, raw = fixture()
+        forged = {"source_git_blob_sha1": PRICER_BLOB_SHA1,
+                  "verified_scope": "ALL_CFB_PRICERS",
+                  "first_half_capability": "EXPLICIT_UNSUPPORTED_MARKET_FAMILY"}
+        with self.assertRaises(ValueError):
+            audit([(entry, data, hashlib.sha256(raw).hexdigest())],
+                  model_evidence=forged)
+        unverified = audit([(entry, data, hashlib.sha256(raw).hexdigest())])
+        self.assertEqual(unverified["rows"][0]["generic_pricer_capability"], "UNKNOWN")
+        self.assertIsNone(unverified["rows"][0]["generic_pricer_evidence"])
 
     def test_unknown_family_not_falsely_required_or_useful(self):
         self.assertEqual(hypotheses("unmapped_exotic", "first_quarter"), [])

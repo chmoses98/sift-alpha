@@ -28,7 +28,8 @@ class SweepResults(unittest.TestCase):
         for f in v["families"].values():
             for s in f["series"]:
                 self.assertTrue(s["title_validated"] and s["title"], s["ticker"])
-        self.assertEqual(J("sweep_results/summary.json")["mlb"]["unresolved_title_series"], ["KXMLBBGAME"])
+        e = v["families"]["non_baseball_esports"]["series"][0]
+        self.assertEqual(e["ticker"], "KXMLBBGAME"); self.assertIn("Mobile Legends", e["rules_sample"])      # resolved from the exchange's own settlement rules: MLBB esports, not baseball
 
     def test_soccer_ambiguity_resolved_by_title_not_ticker(self):
         s = J("sweep_results/summary.json")["soccer"]
@@ -42,6 +43,20 @@ class SweepResults(unittest.TestCase):
             self.assertTrue(fams[n]["new_in_sweep"], n); self.assertGreater(fams[n]["exchange_history"]["settled"], 0)
         self.assertEqual(fams["SWEPT_EMPTY_SERIES"]["observed"]["state"], "EMPTY_ALL_STATUSES_AT_SWEEP")
         self.assertNotIn("SERIES_LISTED_NOT_QUERIED", fams)
+
+
+    def test_every_new_mlb_family_has_market_specific_inputs_in_the_registry(self):
+        reg = J("input_registry.json")["sports"]["MLB"]; fams = {f["native_family"]: f for f in J("inventory/MLB.json")["families"]}
+        new = [n for n, f in fams.items() if f.get("new_in_sweep")]
+        self.assertGreaterEqual(len(new), 26)
+        for n in new:
+            self.assertIn(fams[n]["id"], reg["families"], n)
+            self.assertTrue([i for i in reg["families"][fams[n]["id"]]["inputs"] if i.startswith("mlb.")], n)
+        specific = {"hitter_home_runs": "mlb.hr_environment", "pitcher_hits_allowed": "mlb.contact_defense", "pitcher_earned_runs": "mlb.leash", "pitcher_walks_allowed": "mlb.plate_discipline",
+                    "first_inning_runs": "mlb.first_inning_splits", "game_delay": "mlb.delay_risk", "extra_innings": "mlb.extras_prob", "postseason_series": "mlb.series_context",
+                    "season_leaders": "mlb.leader_race", "awards": "mlb.award_voting", "transactions": "mlb.roster_moves"}
+        for n, i in specific.items():
+            self.assertEqual(reg["families"][fams[n]["id"]]["inputs"].get(i), "E", (n, i))
 
 
 if __name__ == "__main__":

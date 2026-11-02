@@ -70,10 +70,10 @@ class Lineage2(unittest.TestCase):
     def test_curated_corrections_and_conversions(self):
         s = json.load(open(A / "collection_status.json"))["sports"]
         self.assertEqual(s["NHL"]["inputs"]["nhl.lines"]["verification_class"], "VERIFIED_COLLECTION")
-        self.assertEqual(s["CFB"]["inputs"]["cfb.injuries"]["verification_class"], "STALE_OR_PARTIAL")     # was 'no reliable source'
+        self.assertEqual(s["CFB"]["inputs"]["cfb.injuries"]["verification_class"], "STALE_OR_PARTIAL")     # 35 injury rows of 3,085
         self.assertEqual(s["NBA"]["inputs"]["nba.starters_pit"]["verification_class"], "MISSING")  # expected_*_starters empty on 0/376 sampled records
         n = sum(1 for sp in s.values() for r in sp["inputs"].values() if r["verification_class"] == "CODE_REFERENCE_ONLY")
-        self.assertLessEqual(n, 131)
+        self.assertLessEqual(n, 123 + 12)      # 12 new MLB market-specific inputs start as code-reference-only
 
     def test_family_history_for_all_eight_sports_is_scanned_or_labelled(self):
         m = json.load(open(A / "master_inventory.json"))
@@ -92,3 +92,26 @@ class FieldEvidence(unittest.TestCase):
         s = json.load(open(A / "collection_status.json"))["sports"]
         self.assertEqual(s["NHL"]["inputs"]["nhl.pace"]["verification_class"], "VERIFIED_COLLECTION")
         self.assertEqual(s["SOCCER"]["inputs"]["soc.xg"]["verification_class"], "MISSING")
+
+
+class Gaps(unittest.TestCase):
+    def test_nba_rotation_and_starters_are_missing_by_code_not_by_chance(self):
+        s = json.load(open(A / "collection_status.json"))["sports"]["NBA"]["inputs"]
+        for i in ("nba.starters_pit", "nba.rotation", "nba.matchup_def"):
+            self.assertEqual(s[i]["verification_class"], "MISSING", i); self.assertIn("shadow.py", " ".join(s[i]["evidence"]))
+
+    def test_archive_gap_artifact_lists_dates(self):
+        g = json.load(open(A / "lineage" / "historical_archive_gaps.json"))["sports"]
+        self.assertEqual(g["SOCCER"]["missing_calendar_days"], ["2026-10-04", "2026-10-05", "2026-10-06"]); self.assertEqual(len(g["NBA"]["missing_calendar_days"]), 5)
+        self.assertTrue(g["NFL"]["sampled_not_exhaustive"] and g["NFL"]["missing_calendar_days"] is None)
+        self.assertIn("2026-08-11", g["MLB"]["missing_calendar_days"])
+
+
+class MarketRecords(unittest.TestCase):
+    def test_market_record_field_evidence_backs_volume_and_lifecycle(self):
+        d = json.load(open(A / "lineage" / "market_record_fields.json"))["sports"]
+        s = json.load(open(A / "collection_status.json"))["sports"]
+        for sp in ("NBA", "NHL", "CBB"):
+            self.assertEqual(d[sp]["populated_share_all"]["close_time"], 1.0); self.assertEqual(d[sp]["populated_share_all"]["rules_primary"], 1.0)
+            for i in ("m.volume_oi", "m.lifecycle"):
+                self.assertEqual(s[sp]["inputs"][i]["verification_class"], "VERIFIED_COLLECTION", (sp, i))

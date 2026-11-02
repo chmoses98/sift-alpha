@@ -184,7 +184,19 @@ mlb.injuries_pit|Injury/IL and late scratches vintages|personnel
 mlb.opp_strength|Opponent-adjusted offense/defense|team_strength
 mlb.extra_innings|Extra-innings/ghost-runner rules|distribution
 mlb.season_sim|Season/playoff simulation, awards candidates|team_strength
-mlb.news|Trades, call-ups, news|personnel""",
+mlb.news|Trades, call-ups, news|personnel
+mlb.hr_environment|Home-run environment: park HR factor by handedness, wind direction/speed, temperature, ball carry|venue_weather_schedule
+mlb.contact_defense|Contact allowed: BABIP, hard-hit/barrel rate against, team defense behind the pitcher|team_strength
+mlb.leash|Manager hook tendencies, pitch-count limits, bullpen state (how long a starter stays)|usage_role
+mlb.plate_discipline|Walk drivers: BB%/K%, chase and zone rates of the lineup, pitcher command|specialized
+mlb.first_inning_splits|First-inning splits: starter first-inning ERA, top-of-order quality, lineup order|specialized
+mlb.delay_risk|Delay/postponement risk: precipitation probability and radar, tarp/roof status, historical delay rate|venue_weather_schedule
+mlb.extras_prob|Extra-innings probability: tied-after-nine rate, close-game rate, ghost-runner rules|distribution
+mlb.series_context|Postseason series state: games played, rest days, rotation set, home-field pattern|team_strength
+mlb.award_voting|Award voting: ballot structure, voter-visible stats, narrative and finalist timing|specialized
+mlb.leader_race|Season leaderboards: to-date totals, games remaining, injuries to contenders|team_strength
+mlb.mention_text|Broadcast crew language tendencies for word-mention markets|specialized
+mlb.roster_moves|Roster moves: transactions, call-ups, free agency and trade timelines|personnel""",
 "SOCCER": """soc.xg|Team xG for/against, shot quality, set-piece xG|team_strength
 soc.ratings|Elo/rating, opponent-adjusted goal models (Dixon-Coles)|team_strength
 soc.pace_press|Tempo, pressing intensity, possession style|pace_volume
@@ -310,6 +322,18 @@ BP = {
  "player_other": "mlb.lineup_pit:E mlb.hitter_quality:C mlb.baserunning:C mlb.pa_sim:E",
  "first_event": "mlb.first_inning:E mlb.sp_quality:E mlb.lineup_pit:E mlb.park:C",
  "game_event": "mlb.run_dist:C mlb.extra_innings:C",
+ "player_hr": "mlb.lineup_pit:E mlb.hitter_quality:E mlb.hr_environment:E mlb.park:E mlb.weather_pit:E mlb.sp_quality:E mlb.platoon:C mlb.pitch_mix:C mlb.pa_sim:E",
+ "pitcher_hits": "mlb.sp_workload:E mlb.leash:E mlb.contact_defense:E mlb.lineup_pit:E mlb.hitter_quality:C mlb.park:C mlb.platoon:C mlb.pa_sim:E",
+ "pitcher_er": "mlb.sp_workload:E mlb.leash:E mlb.contact_defense:E mlb.bullpen:C mlb.lineup_pit:E mlb.park:C mlb.weather_pit:C mlb.pa_sim:E mlb.defense:C",
+ "pitcher_bb": "mlb.sp_workload:E mlb.plate_discipline:E mlb.umpire:C mlb.lineup_pit:E mlb.pitch_mix:C mlb.pa_sim:E",
+ "first_inning_mkt": "mlb.first_inning_splits:E mlb.first_inning:E mlb.sp_quality:E mlb.lineup_pit:E mlb.park:C mlb.weather_pit:C mlb.umpire:X",
+ "delay": "mlb.delay_risk:E mlb.weather_pit:E mlb.park:C",
+ "extras": "mlb.extras_prob:E mlb.run_dist:E mlb.extra_innings:E mlb.bullpen:C",
+ "series_ctx": "mlb.series_context:E mlb.season_sim:C mlb.bullpen:C mlb.sp_quality:C mlb.injuries_pit:C",
+ "leaders": "mlb.leader_race:E mlb.hitter_quality:C mlb.injuries_pit:C mlb.season_sim:C",
+ "awards_mkt": "mlb.award_voting:E mlb.leader_race:C mlb.season_sim:C mlb.news:C",
+ "mentions": "mlb.mention_text:X",
+ "transactions_mkt": "mlb.roster_moves:E mlb.news:E mlb.injuries_pit:C",
  "lineup_role": "mlb.lineup_pit:E mlb.injuries_pit:E mlb.news:C",
  "season_outcome": "mlb.season_sim:E mlb.injuries_pit:C mlb.news:C",
  "season_stat": "mlb.hitter_quality:C mlb.season_sim:C",

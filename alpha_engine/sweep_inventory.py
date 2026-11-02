@@ -29,7 +29,7 @@ MLB = {  # series: (family, expect-regex on title+rules)
  "KXMLBALEAST": ("division_winner", r"Division"), "KXMLBALCENT": ("division_winner", r"Division"), "KXMLBALWEST": ("division_winner", r"Division"), "KXMLBNLEAST": ("division_winner", r"Division"), "KXMLBNLCENT": ("division_winner", r"Division"), "KXMLBNLWEST": ("division_winner", r"Division"),
  "KXMLBSERIES": ("postseason_series", r"Series"), "KXMLBSERIESSCORE": ("postseason_series", r"Series"), "KXMLBSERIESSPREAD": ("postseason_series", r"Series"), "KXMLBSERIESGAMES": ("postseason_series", r"Series"), "KXMLBSERIESHR": ("postseason_series", r"home runs"),
  "KXMLBBESTRECORD": ("team_season_records", r"record|streak"), "KXMLBWORSTRECORD": ("team_season_records", r"record"), "KXMLBLSTREAK": ("team_season_records", r"streak"), "KXMLBWSTREAK": ("team_season_records", r"streak"), "KXMLB100LOSS": ("team_season_records", r"losses"),
- "KXLMBGAME": ("other_league_game_result", r"wins"), "KXMLBBGAME": ("UNRESOLVED_TITLE", r"."),
+ "KXLMBGAME": ("other_league_game_result", r"wins"), "KXMLBBGAME": ("non_baseball_esports", r"Mobile Legends"),
 }
 for s in ("KXMLBGG", "KXMLBSS", "KXMLBWSMVP", "KXMLBAWARDFIN", "KXMLBNLMVP", "KXMLBALMVP", "KXMLBNLHAARON", "KXMLBALHAARON", "KXMLBNLCY", "KXMLBALCY", "KXMLBALROTY", "KXMLBNLROTY", "KXMLBALRELOTY", "KXMLBNLRELOTY",
           "KXMLBNLMOTY", "KXMLBALMOTY", "KXMLBNLCPOTY", "KXMLBALCPOTY", "KXMLBEOTY", "KXMLBALCSMVP", "KXMLBNLCSMVP", "KXMLBAWARDCOMBO", "KXMLBTRIPLECROWN"):

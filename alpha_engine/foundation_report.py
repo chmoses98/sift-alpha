@@ -20,7 +20,15 @@ def parse(t):
     return {l.split("|")[0]: {"label": l.split("|")[1], "category": l.split("|")[2]} for l in t.splitlines()}
 
 
+OVERRIDE_KEYS = {("MLB", k): v for k, v in {
+    "hitter_home_runs": ["player_hr"], "pitcher_hits_allowed": ["pitcher_hits"], "pitcher_earned_runs": ["pitcher_er"], "pitcher_walks_allowed": ["pitcher_bb"],
+    "first_inning_runs": ["first_inning_mkt", "game_total"], "extra_innings": ["extras"], "game_delay": ["delay"], "postseason_series": ["series_ctx"], "postseason_futures": ["series_ctx"],
+    "season_leaders": ["leaders"], "season_player_stat": ["leaders"], "awards": ["awards_mkt"], "announcer_mentions": ["mentions"], "transactions": ["transactions_mkt"], "coaching": ["transactions_mkt"]}.items()}
+
+
 def bp_keys(sport, native, kind, periods):
+    if (sport, native) in OVERRIDE_KEYS:
+        return OVERRIDE_KEYS[(sport, native)]
     n = native.lower(); keys = []
     if kind in ("winner", "spread", "margin_bucket", "exact_score"): keys.append("game_side")
     if kind in ("total", "team_total", "btts", "exact_score"): keys.append("game_total")

@@ -87,7 +87,7 @@ OVERRIDES = {  # explicit (sport, native_family) -> (kind, scope) where keyword 
     ("TENNIS", "SEASON_RANKING"): ("season_stat", "season"), ("TENNIS", "SEASON_MAJORS"): ("season_stat", "season"), ("TENNIS", "NATIONALITY_WINNER"): ("season_outcome", "season"),
     ("TENNIS", "NATIONALITY_STAGE_COUNT"): ("season_outcome", "season"), ("SOCCER", "soccer_special"): ("off_field", "other"),
     ("SOCCER", "first_to_score"): ("first_event", "game"), ("SOCCER", "competition_outright"): ("season_outcome", "season"),
-    ("MLB", "announcer_mentions"): ("off_field", "other"), ("MLB", "extra_innings"): ("overtime", "game"), ("MLB", "game_delay"): ("game_stat", "game"), ("MLB", "non_baseball"): ("off_field", "other"),
+    ("MLB", "announcer_mentions"): ("off_field", "other"), ("MLB", "extra_innings"): ("overtime", "game"), ("MLB", "game_delay"): ("game_stat", "game"), ("MLB", "non_baseball"): ("off_field", "other"), ("MLB", "non_baseball_esports"): ("off_field", "other"),
     ("MLB", "postseason_series"): ("season_outcome", "season"), ("MLB", "season_specials"): ("season_stat", "season"), ("MLB", "business_other"): ("off_field", "other"),
     ("MLB", "other_league_game_result"): ("winner", "game"), ("MLB", "team_season_records"): ("season_stat", "season"), ("MLB", "player_participation"): ("lineup_role", "player"),
     ("MLB", "first5_total"): ("total", "game"), ("MLB", "first5_spread"): ("spread", "game"), ("MLB", "first_inning_runs"): ("total", "game"), ("MLB", "game_spread"): ("spread", "game"), ("SOCCER", "season_player_total"): ("season_stat", "season"),

@@ -65,6 +65,7 @@ export function MarketIntelligence(){
       <div className="intelligence-summary"><strong>{audit.family_rows.length} source-scoped audit rows</strong>
         <span>{audit.discovered_literal_series_count ?? 0} literal NBA/NHL series from verified tape prefix</span>
         <span>{audit.supported_sports.length} sports inventoried · live capture: NOT VERIFIED</span>
+        {audit.cfb_event_shard_audit && <span>CFB: {audit.cfb_event_shard_audit.n_event_shards} verified event shards / {audit.cfb_event_shard_audit.n_distinct_market_tickers} literal tickers (one archived game directory only)</span>}
       </div>
       <div className="intelligence-filters"><label>Sport<select value={sport} onChange={e=>{setSport(e.target.value);setMarket("");}}>
         {SPORTS.map(x=><option key={x} value={x}>{x}</option>)}
@@ -80,6 +81,7 @@ export function MarketIntelligence(){
           <p><b>Source clock:</b> {label(selected.observed_at_utc)} · <b>Forecast availability:</b> {label(selected.historical_availability)} · <b>Pregame status:</b> {label(selected.point_in_time_pregame_eligibility)}</p>
           <p><b>Settlement rules:</b> {label(selected.exact_settlement_rule_status)} · <b>Outcome join:</b> {label(selected.settlement_outcome_join)} · <b>Projected outcome:</b> {label(selected.projected_outcome)}</p>
           {selected.rule_text_sample && <p><b>Archived sample rule:</b> {label(selected.rule_text_sample.primary)} (not independent exchange settlement verification)</p>}
+          {selected.observed_contracts?.length>0 && <details><summary>All {selected.observed_contracts.length} archived literal contract tickers and rule hashes</summary><div className="intelligence-contracts">{selected.observed_contracts.map(c=><p key={c.ticker}><code>{c.ticker}</code> · {label(c.period)} · {label(c.strike_type)} {label(c.floor_strike)} · primary SHA256 <code>{c.rules_primary_sha256}</code></p>)}</div></details>}
           {selected.sample_contract && <p><b>Observed sample ticker:</b> {selected.sample_contract.ticker} · <b>Last ticker observation:</b> {label(selected.sample_contract.last_ticker_observed_at_utc)}</p>}
           {validSource && <a href={sourceHref(selected)} target="_blank" rel="noreferrer">Pinned source commit ↗</a>}
           {selected.source_code_paths?.length>0 && <p><b>Audited processing paths:</b> {selected.source_code_paths.join(", ")}</p>}

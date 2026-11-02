@@ -1,0 +1,51 @@
+name: Kalshi series sweep (manual, public reads)
+# Manual only (workflow_dispatch). Unauthenticated public market-data GETs: no secrets, no trading, no paid service.
+# Bounded: request budget per run, per-request interval, Retry-After backoff, 30-minute timeout.
+# Resumable: state is restored from the newest cache for the same queue and re-saved; each run also uploads the state.
+# Run again until the log says "complete".  One run at a time (concurrency group).
+on:
+  workflow_dispatch:
+    inputs:
+      queue:
+        description: "Queue file under kalshi_sweep/queues/"
+        type: choice
+        options:
+          - mlb_queue.json
+          - soccer_ambiguous_queue.json
+        default: mlb_queue.json
+      max_requests:
+        description: "Request budget for this run (1-1000)"
+        type: number
+        default: 400
+permissions:
+  contents: read
+concurrency:
+  group: kalshi-series-sweep
+  cancel-in-progress: false
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      QUEUE: ${{ inputs.queue }}
+      MAX_REQUESTS: ${{ inputs.max_requests }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: sweep_state.json
+          key: sweep-state-${{ inputs.queue }}-${{ github.run_id }}
+          restore-keys: sweep-state-${{ inputs.queue }}-
+      - name: Sweep (exit 3 = budget/rate-limit stop; dispatch again to resume)
+        run: |
+          set +e
+          python3 -m kalshi_sweep.series_sweep "kalshi_sweep/queues/$QUEUE" sweep_state.json --max-requests "$MAX_REQUESTS" --min-interval 0.3
+          rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then exit "$rc"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sweep-state-${{ inputs.queue }}
+          path: sweep_state.json

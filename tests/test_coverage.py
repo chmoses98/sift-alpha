@@ -14,8 +14,11 @@ class Coverage(unittest.TestCase):
         self.assertEqual((r["updated_after_stamp"], r["max_lag_seconds"], r["open_before_created"], r["settled_without_result"]), (1, 60.0, 1, 1))
 
     def test_attach_marks_unscanned_and_never_seen(self):
-        rows = attach("MLB", [{"series": [{"ticker": "X"}]}])
-        self.assertEqual(rows[0]["historical"]["state"], "NOT_SCANNED")
+        self.assertEqual(attach("XYZ", [{"series": [{"ticker": "X"}]}])[0]["historical"]["state"], "NOT_SCANNED")
+        h = attach("TENNIS", [{"series": [{"ticker": "KXNOSUCH"}], "markets_historical_archived_tier": 12}])[0]["historical"]
+        self.assertEqual(h["state"], "NEVER_SEEN_IN_SCANNED_DAYS"); self.assertTrue(h["exists_per_other_evidence"]); self.assertIn("NOT evidence", h["absence_meaning"])
+        h = attach("TENNIS", [{"series": [{"ticker": "KXNOSUCH"}]}])[0]["historical"]
+        self.assertFalse(h["exists_per_other_evidence"])
 
     def test_family_historical_is_present_for_every_family_and_consistent(self):
         m = json.load(open(A / "master_inventory.json"))

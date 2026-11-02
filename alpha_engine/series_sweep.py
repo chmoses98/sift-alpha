@@ -77,7 +77,7 @@ class Sweeper:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("queue"); ap.add_argument("state")
-    ap.add_argument("--max-requests", type=int, default=500); ap.add_argument("--min-interval", type=float, default=0.25)
+    ap.add_argument("--max-requests", type=int, default=500, choices=range(1, 1001), metavar="1-1000"); ap.add_argument("--min-interval", type=float, default=0.25)
     a = ap.parse_args(argv)
     q = json.load(open(a.queue))["series"]
     try:

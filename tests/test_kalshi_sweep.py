@@ -138,3 +138,54 @@ class EndToEnd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublishJob(unittest.TestCase):
+    def test_only_the_publish_job_can_write_and_never_via_inline_expressions(self):
+        jobs = W["jobs"]
+        self.assertEqual(W["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["publish"]["permissions"], {"contents": "write"}); self.assertNotIn("permissions", jobs["sweep"])
+        self.assertEqual(jobs["publish"]["needs"], "sweep")
+        for j in jobs.values():
+            for st in j["steps"]:
+                if "run" in st:
+                    self.assertNotIn("${{", st["run"])
+        self.assertEqual(TXT.count("git push"), 1); self.assertIn("HEAD:refs/heads/sweep-data", TXT)
+
+    def test_publish_writes_raw_state_with_provenance_and_index(self):
+        import tempfile, os
+        from datetime import datetime, timezone
+        from kalshi_sweep.publish import publish
+        with tempfile.TemporaryDirectory() as d:
+            st = os.path.join(d, "s.json"); q = os.path.join(d, "q.json")
+            json.dump({"requests_total": 5, "series": {"A": {k: {"complete": True, "markets": 2} for k in ("open", "unopened", "closed", "settled")}}}, open(st, "w")); json.dump({"series": ["A", "B"]}, open(q, "w"))
+            out = os.path.join(d, "out"); os.makedirs(out)
+            m = publish(st, q, out, env={"GITHUB_RUN_ID": "99", "GITHUB_SHA": "abc"}, now=datetime(2026, 11, 3, tzinfo=timezone.utc))
+            self.assertEqual((m["series_complete"], m["series_queued"], m["complete"], m["requests_total"]), (1, 2, False, 5))
+            raw = open(os.path.join(out, "sweeps", "q", m["file"]), "rb").read(); self.assertEqual(raw, open(st, "rb").read())      # byte-for-byte
+            self.assertEqual(json.load(open(os.path.join(out, "sweeps", "q", "latest.json")))["workflow_run_id"], "99")
+            publish(st, q, out, env={"GITHUB_RUN_ID": "100"}, now=datetime(2026, 11, 3, 1, tzinfo=timezone.utc))
+            self.assertEqual(len(open(os.path.join(out, "index.jsonl")).read().splitlines()), 2)       # append-only
+
+
+class PublishSecurity(unittest.TestCase):
+    def test_token_never_reaches_urls_files_or_git_config(self):
+        self.assertNotIn("credential.helper", TXT); self.assertNotIn("x-access-token:${", TXT.replace("x-access-token:%s", ""))
+        self.assertNotRegex(TXT, r"https://[^\s\"']*@github\.com")                 # no credentials embedded in any URL
+        self.assertNotIn("sweep-git-credentials", TXT); self.assertNotIn("--global", TXT)
+        self.assertNotIn("git config http", TXT)                                     # header only via process-local GIT_CONFIG_* env
+        pub = W["jobs"]["publish"]
+        self.assertFalse(pub["steps"][0]["with"].get("persist-credentials", True))     # checkout does not persist the token
+        self.assertEqual(TXT.count("GH_TOKEN: ${{ github.token }}"), 2)                # exposed only to the two git steps
+        self.assertEqual(TXT.count("::add-mask::"), 2)                                 # the derived base64 header is masked explicitly
+
+    def test_publish_runs_only_for_the_default_branch_after_a_successful_sweep(self):
+        cond = W["jobs"]["publish"]["if"]
+        self.assertIn("github.ref == 'refs/heads/main'", cond); self.assertIn("needs.sweep.result == 'success'", cond)
+
+    def test_secret_scope_is_limited_to_git_steps(self):
+        for st in W["jobs"]["sweep"]["steps"]:
+            self.assertNotIn("GH_TOKEN", json.dumps(st))
+        for st in W["jobs"]["publish"]["steps"]:
+            if "GH_TOKEN" in json.dumps(st):
+                self.assertTrue("Check out" in st["name"] or "Commit" in st["name"], st["name"])

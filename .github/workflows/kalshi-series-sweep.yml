@@ -63,7 +63,6 @@ jobs:
       contents: write
     env:
       QUEUE: ${{ inputs.queue }}
-      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
@@ -77,12 +76,19 @@ jobs:
         with:
           name: sweep-state-${{ inputs.queue }}
           path: state
+      - name: Configure short-lived GitHub authentication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf "https://x-access-token:%s@github.com\n" "$GH_TOKEN" > "$RUNNER_TEMP/sweep-git-credentials"
+          chmod 600 "$RUNNER_TEMP/sweep-git-credentials"
+          git config --global credential.helper "store --file=$RUNNER_TEMP/sweep-git-credentials"
       - name: Check out (or create) the sweep-data branch
         run: |
           set -e
           rm -rf data && mkdir data && cd data
           git init -q
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          git remote add origin "https://github.com/${REPO}.git"
           if git fetch -q --depth=1 origin sweep-data; then git checkout -q -B sweep-data FETCH_HEAD; else git checkout -q --orphan sweep-data; fi
       - name: Publish raw state with provenance
         working-directory: code
@@ -95,3 +101,8 @@ jobs:
           git add -A && git commit -q -m "sweep: ${QUEUE} run ${GITHUB_RUN_ID}"
           for i in 1 2 3; do git push -q origin HEAD:refs/heads/sweep-data && exit 0; git fetch -q --depth=1 origin sweep-data && git rebase -q FETCH_HEAD || true; done
           exit 1
+      - name: Remove temporary GitHub credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/sweep-git-credentials"
+          git config --global --unset credential.helper || true

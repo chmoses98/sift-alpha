@@ -427,5 +427,40 @@ jobs:
           assert not x["all_market_families_certified"] and not x["live_capture_running"]
           print("Source-verified family inventory and explicit missing-input queue; no live/certified claims.")
           PY
+      - name: Adversarial source-to-dashboard market-series audit tests
+        run: python3 -m unittest discover -s tests -p 'test_market_series_audit.py' -v
+      - name: Generate dashboard audit from source-verified NBA/NHL tape and eight-sport matrix
+        run: python3 -m alpha_engine.market_series_audit
+      - name: Guard dashboard artifact against inflated coverage and fabricated model authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("public/market-family-input-coverage.json").read_text())
+          assert x["schema_version"]==2
+          assert x["authority"]=="RESEARCH_ONLY_NOT_LIVE_COLLECTION"
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          assert set(x["literal_series_audit"])=={"NBA","NHL"}
+          assert x["discovered_literal_series_count"]>0
+          for sport, audit in x["literal_series_audit"].items():
+              assert audit["n_tickers_with_literal_series"]+audit["n_tickers_quarantined"]==audit["n_unique_tickers_in_prefix"], sport
+              assert audit["n_literal_series"]>0, sport
+              rows=[r for r in x["family_rows"] if r["sport"]==sport and r["family"].startswith("SERIES:")]
+              assert len(rows)==audit["n_literal_series"]
+              assert sum(r["observed_denominator"] for r in rows)==audit["n_tickers_with_literal_series"]
+              for r in rows:
+                  assert r["market_collection_status"]=="COLLECTED_VALID"
+                  assert r["model_usage_status"]=="UNKNOWN"
+                  assert r["input_collection_status"]=="UNKNOWN"
+                  assert r["independently_valid_evaluations"] is None
+                  assert r["settlement_outcome_join"]=="UNKNOWN"
+                  assert r["full_checkpoint_delta_replay"]=="VERIFIED_PREFIX_ONLY"
+          assert x["live_capture_running"] is False
+          assert x["all_market_families_certified"] is False
+          print("Source-verified literal-series dashboard artifact; no model or betting certification.")
+          PY
       - name: Production build
         run: npm run build

@@ -5,6 +5,7 @@ an as-of pregame capture, or an independent exchange settlement audit.
 """
 from __future__ import annotations
 
+import ast
 from collections import Counter
 import hashlib
 import json
@@ -33,6 +34,62 @@ CODE_PATHS = [
     "src/cfb_edge_finder/kalshi/contract_semantics.py",
 ]
 HYPOTHESIS = "CAUSAL_HYPOTHESIS_NOT_EMPIRICALLY_VALIDATED"
+# Independent pinned source evidence: this is ONE generic full-game pricer,
+# not a complete audit of all CFB pricing routes or of actual forecasts.
+PRICER_PATH = "src/cfb_edge_finder/projections/distribution.py"
+PRICER_BLOB_SHA1 = "7d73b0edce9dcc6ccdfb2375f001a1838f55a80e"
+PRICER_MAX_BYTES = 12_000
+
+
+def verify_generic_pricer(loader=None):
+    """Verify pinned upstream source and its explicit first-half rejection."""
+    if loader is None:
+        url = "https://raw.githubusercontent.com/" + REPO + "/" + COMMIT + "/" + PRICER_PATH
+        def loader():
+            with urlopen(Request(url, headers={"User-Agent": "SIFT-Alpha-cfb-model-lineage/1"}), timeout=15) as response:
+                if response.geturl() != url:
+                    raise ValueError("Unapproved model source redirect")
+                return response.read(PRICER_MAX_BYTES + 1)
+    raw = loader()
+    if not isinstance(raw, bytes) or len(raw) > PRICER_MAX_BYTES or git_sha(raw) != PRICER_BLOB_SHA1:
+        raise ValueError("CFB model source missing, oversized or hash mismatch")
+    source = raw.decode("utf-8")
+    tree = ast.parse(source)
+    families = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "_FIRST_HALF_FAMILIES"
+                for target in node.targets):
+            families = {part.attr for part in ast.walk(node.value)
+                        if isinstance(part, ast.Attribute)
+                        and isinstance(part.value, ast.Name) and part.value.id == "MarketFamily"}
+    expected = {"FIRST_HALF_MONEYLINE", "FIRST_HALF_SPREAD", "FIRST_HALF_TOTAL"}
+    if families != expected:
+        raise ValueError("Pinned generic pricer first-half family contract changed")
+    pricing = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "price_market"), None)
+    if pricing is None:
+        raise ValueError("Missing generic price_market function")
+    def explicit_rejection(node):
+        t = node.test
+        return (isinstance(t, ast.Compare) and isinstance(t.left, ast.Name)
+                and t.left.id == "market_family" and len(t.ops) == 1
+                and isinstance(t.ops[0], ast.In) and len(t.comparators) == 1
+                and isinstance(t.comparators[0], ast.Name)
+                and t.comparators[0].id == "_FIRST_HALF_FAMILIES"
+                and any(isinstance(x, ast.Raise) and isinstance(x.exc, ast.Call)
+                        and isinstance(x.exc.func, ast.Name)
+                        and x.exc.func.id == "UnsupportedMarketFamilyError"
+                        for statement in node.body for x in ast.walk(statement)))
+    if not any(isinstance(node, ast.If) and explicit_rejection(node)
+               for node in ast.walk(pricing)):
+        raise ValueError("Generic pricer does not explicitly reject first-half markets")
+    return {"repository": REPO, "commit": COMMIT, "path": PRICER_PATH,
+            "source_git_blob_sha1": PRICER_BLOB_SHA1,
+            "verified_scope": "GENERIC_GAME_DISTRIBUTION_PRICER_ONLY",
+            "first_half_capability": "EXPLICIT_UNSUPPORTED_MARKET_FAMILY",
+            "all_other_pricing_routes_audited": False}
+
+
 
 
 def tree_sha(files):
@@ -132,9 +189,14 @@ def _rule_sha(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def audit(shards):
+def audit(shards, *, model_evidence=None):
     if not shards or len(shards) > MAX_FILES:
         raise ValueError("Empty or unbounded source shards")
+    if model_evidence is not None and (
+            model_evidence.get("source_git_blob_sha1") != PRICER_BLOB_SHA1
+            or model_evidence.get("verified_scope") != "GENERIC_GAME_DISTRIBUTION_PRICER_ONLY"
+            or model_evidence.get("first_half_capability") != "EXPLICIT_UNSUPPORTED_MARKET_FAMILY"):
+        raise ValueError("Unrecognized model-lineage evidence")
     all_tickers = set()
     all_events = set()
     rows = []
@@ -223,6 +285,11 @@ def audit(shards):
             "input_collection_status": "UNKNOWN",
             "model_usage_status": "UNKNOWN",
             "model_version_and_calibration": "UNKNOWN",
+            "generic_pricer_capability": (
+                "EXPLICIT_UNSUPPORTED_FIRST_HALF_ONLY" if model_evidence is not None
+                and period == "first_half" else "UNKNOWN"),
+            "generic_pricer_evidence": (
+                model_evidence if model_evidence is not None and period == "first_half" else None),
             "source_provider_independence": "KALSHI_DERIVED_ARCHIVE_NOT_INDEPENDENTLY_VERIFIED",
             "exact_settlement_rule_status": "ARCHIVED_LITERAL_RULE_TEXT_NOT_SETTLEMENT_VERIFICATION",
             "rule_text_sample": {"primary": sample["rules_primary"], "secondary": sample["rules_secondary"],
@@ -289,7 +356,7 @@ def append(base, audited):
 
 def main():
     manifest = json.loads(Path("research/cfb_aubmiss_event_shards.json").read_text())
-    data = audit(verified_shards(manifest))
+    data = audit(verified_shards(manifest), model_evidence=verify_generic_pricer())
     target = Path("public/market-family-input-coverage.json")
     result = append(json.loads(target.read_text()), data)
     target.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")

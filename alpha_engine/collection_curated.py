@@ -10,6 +10,8 @@ USE, UP, RO, CU, NC, UK, NA = ("USED", "USED_PARTIAL", "RESEARCH_ONLY", "COLLECT
 NFLDOC = "doc:nfl-edge-finder/docs/DATA_SOURCE_AUDIT.md"
 CUR = {
 "NFL": {
+ "m.ladder_structure": (D, UK, "derived from archived quotes: nfl_edge/pricing/ladder.py (ladder semantics + monotonicity checks)", ["doc:nfl-edge-finder/nfl_edge/pricing/ladder.py"]),
+ "m.fees": (M, UK, "fee_type / fee_multiplier per series in config/kalshi_nfl_series.json (392 series, static catalog, not time-stamped or vintage-archived)", ["doc:nfl-edge-finder/config/kalshi_nfl_series.json"]),
  "nfl.skill_avail": (S, USE, "pit_availability: espn_event_rosters / espn_injuries non-empty in only 25% of sampled files", ["arch:nfl-edge-finder:market-data:data/pit_availability", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
  "m.rules_text": (S, UK, "latest open-set carries tickers only (0/161 series with rules text); settlement semantics hand-encoded in semantics/catalog.py", ["arch:nfl-edge-finder:market-data:data/kalshi", "doc:nfl-edge-finder/nfl_edge/semantics/catalog.py"]),
  "m.quote_history": (P, USE, "10-min conductor: quotes/books/trades/openset per run, 83,328 files 2026-09-04..2026-11-02 on market-data", ["arch:nfl-edge-finder:market-data:data/kalshi"]),
@@ -49,6 +51,7 @@ CUR = {
  "cfb.opening_poss": (U, UK, "Only one market shard (KXNCAAF1QTOTAL AUBMISS) pinned by Alpha so far", []),
 },
 "NBA": {
+ "m.fees": (M, UK, "fee_type / fee_multiplier per series in data/catalog/discovery_summary.json (static catalog, not vintage-archived)", ["doc:nba-edge-finder/data/catalog/discovery_summary.json"]),
  "m.volume_oi": (P, UK, "open_interest_fp / volume_fp present on every record (non-zero on 25% of active markets = real liquidity), batch-stamped", ["arch:nba-edge-finder:data-archive:kalshi/markets", "doc:sift-alpha/research/audit/lineage/market_record_fields.json"]),
  "m.lifecycle": (P, UK, "close_time / expiration_time / status populated on 100% of records; state at each snapshot only (no separate lifecycle events)", ["arch:nba-edge-finder:data-archive:kalshi/markets", "doc:sift-alpha/research/audit/lineage/market_record_fields.json"]),
  "nba.matchup_def": (N, NC, "ROOT CAUSE (code): shadow.py sets exposures=() and home/away_scheme=None (\"no defensive-assignment source is reachable\", \"no scheme-proxy source ingested yet\")", ["doc:nba-edge-finder/src/nba_edge/matchup/shadow.py", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
@@ -59,7 +62,7 @@ CUR = {
  "m.orderbook_depth": (P, UK, "kalshi/orderbooks + orderbooks_delta", ["arch:nba-edge-finder:data-archive:kalshi/orderbooks_delta"]),
  "m.settlement_truth": (P, USE, "scorecards/outcomes on projection-data", ["arch:nba-edge-finder:projection-data:scorecards/nba"]),
  "nba.injuries_pit": (P, USE, "injury_pit official 69 files (10-19..11-01) + espn 108 files (10-12..11-01); context/injuries 518 files", ["arch:nba-edge-finder:data-injury-pit:injury_pit", "arch:nba-edge-finder:data-archive:context/injuries"]),
- "nba.starters_pit": (N, NC, "ROOT CAUSE (code): matchup/shadow.py deliberately sets expected_*_starters=() and lineup_confidence=UNKNOWN because \"no source reports expected starters today\"; 0 of 376 sampled records populated", ["doc:nba-edge-finder/src/nba_edge/matchup/shadow.py", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
+ "nba.starters_pit": (N, NC, "ROOT CAUSE (code): matchup/shadow.py deliberately sets expected_*_starters=() and lineup_confidence=UNKNOWN because \"no source reports expected starters today\"; 0 of 376 sampled records populated [Repair drafted, unverified in production: nba-edge-finder PR #87 captures ESPN starter flags before tip into context/starters; status stays MISSING until archived rows show CONFIRMED captures.]", ["doc:nba-edge-finder/src/nba_edge/matchup/shadow.py", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
  "nba.minutes": (P, USE, "minutes-shadow-archive: eligibility (59), jrm_v2_uniform (50)", ["arch:nba-edge-finder:minutes-shadow-archive:eligibility"]),
  "nba.tracking": (A, NC, "stats.nba.com times out from Actions; NBA CDN 403", ["doc:nba-edge-finder/docs/NBA_DATA_SOURCE_AUDIT.md"]),
  "nba.pot_ast": (A, NC, "Potential assists only on stats.nba.com tracking (blocked from Actions)", ["doc:nba-edge-finder/docs/NBA_DATA_SOURCE_AUDIT.md"]),
@@ -84,6 +87,7 @@ CUR = {
  "cbb.rest_travel": (P, UK, "schedule-archive obs/rows 59 files 2026-10-06..11-01", ["arch:cbb-edge-finder:schedule-archive:obs"]),
 },
 "NHL": {
+ "m.fees": (M, UK, "fee_type (incl. quadratic_with_maker_fees) / fee_multiplier per series in data/catalog/discovery_summary.json (static catalog)", ["doc:NHL-edge-finder/data/catalog/discovery_summary.json"]),
  "m.volume_oi": (P, UK, "open_interest_fp / volume_fp present on every record (non-zero on ~40% of active markets = real liquidity), batch-stamped", ["arch:NHL-edge-finder:data-archive:kalshi/markets", "doc:sift-alpha/research/audit/lineage/market_record_fields.json"]),
  "m.lifecycle": (P, UK, "close_time / expiration_time / status populated on 100% of records; state at each snapshot only (no separate lifecycle events)", ["arch:NHL-edge-finder:data-archive:kalshi/markets", "doc:sift-alpha/research/audit/lineage/market_record_fields.json"]),
  "nhl.venue": (P, UK, "schedule: venue + neutral_site populated on 100% of sampled records", ["arch:NHL-edge-finder:data-archive:context/schedule", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
@@ -104,6 +108,8 @@ CUR = {
  "nhl.special_teams": (P, UK, "context/team_summary 697 files (PP, PK, GF/GA), batch-stamped", ["arch:NHL-edge-finder:data-archive:context/team_summary", "doc:sift-alpha/research/audit/lineage/context_probe.json"]),
 },
 "MLB": {
+ "m.ladder_structure": (D, UK, "documented ladder semantics (docs/EDGELAB_KALSHI_TOTAL_LADDER_SEMANTICS.md); derived from quotes", ["doc:edge-finder-api/docs/EDGELAB_KALSHI_TOTAL_LADDER_SEMANTICS.md"]),
+ "m.settlement_truth": (M, UK, "data/edgelab/settlements: 90 daily files 2026-08-02+, jsonl.gz on main; per-record timestamps not checked", ["doc:edge-finder-api/data/edgelab/settlements"]),
  "mlb.injuries_pit": (S, UK, "availability/mlb 35 files 2026-10-18..10-28 with captured_utc but 0 of 84 sampled records carry a source timestamp", ["arch:edge-finder-api:projection-data:availability/mlb", "doc:sift-alpha/research/audit/integrity/record_vs_batch_timing.json"]),
  "m.rules_text": (S, UK, "daily discovery contracts carry no rules text (0/15 families)", ["doc:edge-finder-api/data/kalshi/discovery/2026-10-28.json"]),
  "m.quote_history": (P, USE, "data/kalshi_registry_snapshots 582 files 2026-06-08..11-01; discovery daily; only 13 of 215 MLB series had counts enumerated on 2026-10-28", ["arch:edge-finder-api:main:data/kalshi_registry_snapshots", "doc:edge-finder-api/data/kalshi/discovery/2026-10-28_series_catalogue.json"]),
@@ -115,21 +121,24 @@ CUR = {
  "mlb.run_dist": (D, USE, "negative-binomial run distribution shadow research", ["doc:edge-finder-api/docs/EDGELAB_MLB_RSCH_0033_TEAM_RUN_MEAN_AUDIT.md"]),
 },
 "SOCCER": {
+ "m.settlement_truth": (P, UK, "settlements/ 31 daily files 2026-09-28..11-02 and results/ on data-archive; per-record timestamp field not checked", ["arch:soccer-edge-finder:data-archive:settlements"]),
+ "m.fees": (P, UK, "fee_type / fee_multiplier are fields of every archived capture record (data-archive snapshots/cap-*.jsonl), timestamped by captured_at", ["arch:soccer-edge-finder:data-archive:snapshots"]),
  "soc.score_state": (N, NC, "results card slots 0 of 5,727 populated; repair drafted in soccer-edge-finder PR #39 (cards from scoreboard details; completeness vs box score unverified)", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
- "soc.set_pieces": (N, NC, "results corners slots exist but 0 of 5,727 populated", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
- "soc.pace_press": (N, NC, "results shots / shots_on_target slots exist but 0 of 5,727 records populated", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
+ "soc.set_pieces": (N, NC, "results corners slots exist but 0 of 5,727 populated [Repair drafted: soccer-edge-finder PR #39 (raw boxscore statistics incl. corners; names unverified).]", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
+ "soc.pace_press": (N, NC, "results shots / shots_on_target slots exist but 0 of 5,727 records populated [Repair drafted: soccer-edge-finder PR #39 archives raw post-match boxscore statistics (shots etc.) verbatim from the summary already fetched; ESPN stat names unverified until archived.]", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
  "soc.rest_travel": (P, UK, "fixtures/ 1,184 files 2026-09-28..11-02 with as_of and kickoff_utc (rest derived downstream)", ["arch:soccer-edge-finder:data-archive:fixtures", "doc:sift-alpha/research/audit/lineage/context_probe.json"]),
  "m.quote_history": (P, USE, "snapshots/cap-*.jsonl every ~15 min since 2026-10-03 on data-archive", ["arch:soccer-edge-finder:data-archive:snapshots"]),
  "m.rules_text": (P, UK, "capture records carry rules_primary_hash (sha256) so settlement-text versions are detectable; full text not in the capture", ["arch:soccer-edge-finder:data-archive:snapshots"]),
  "m.external_lines": (S, USE, "odds_api/raw since 2026-09-29 (free tier 500 req/month); football-data.co.uk historical closing odds", ["arch:soccer-edge-finder:data-archive:odds_api", "doc:soccer-edge-finder/docs/DATA_SOURCE_AUDIT.md"]),
  "soc.lineups_pit": (P, UK, "764 lineup files 2026-09-28..11-02 (51 competitions); of 1,971 tracked fixtures only 28.3% had a pre-kickoff XI archived and 21.1% >= 20 min ahead (repo's own lead-time evaluation). Earlier doc saying LineupProvider is not wired is superseded by the archive; whether models read it is unverified", ["arch:soccer-edge-finder:data-archive:lineups", "doc:sift-alpha/research/audit/lineage/soccer_context_lineage.json"]),
  "soc.injuries": (N, NC, "no injury path in the data-archive tree (verified); InjuryProvider not wired", ["arch:soccer-edge-finder:data-archive:lineups", "doc:sift-alpha/research/audit/lineage/soccer_context_lineage.json"]),
- "soc.xg": (N, UK, "results records (31 files, 5,727 records) have home_xg/away_xg slots but 0 populated; live results are appended from scoreboards without box-score stats (the slots are only filled by football-data historical providers)", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
+ "soc.xg": (N, UK, "results records (31 files, 5,727 records) have home_xg/away_xg slots but 0 populated; live results are appended from scoreboards without box-score stats (the slots are only filled by football-data historical providers) [ESPN summary exposes no xG field in any repo evidence; PR #39 archives raw stats so absence/presence becomes measurable.]", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
  "soc.weather": (P, UK, "Open-Meteo snapshots, 3,993 rows / 756 events 2026-09-28..11-02; 12.6% of rows were captured AFTER kickoff and must be excluded from pre-game use; 744 of 756 events have >=1 pre-kickoff snapshot", ["arch:soccer-edge-finder:data-archive:weather", "doc:sift-alpha/research/audit/lineage/soccer_context_lineage.json"]),
  "soc.ratings": (M, USE, "Dixon-Coles v2 + ClubElo columns from club dataset; ClubElo API 502 at probe", ["doc:soccer-edge-finder/docs/DATA_SOURCE_AUDIT.md"]),
  "soc.referee": (N, NC, "results record has no referee field; no referee path in the archive", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
 },
 "TENNIS": {
+ "m.fees": (M, UK, "fee_type / fee_multiplier per series in config/kalshi_tennis_series.json (static snapshot 2026-09-11)", ["doc:Tennis-Edge-Finder/config/kalshi_tennis_series.json"]),
  "m.rules_text": (S, UK, "config/kalshi_settlement_rules.json; 286 contract-terms PDFs listed but not parsed", ["doc:Tennis-Edge-Finder/docs/DATA_SOURCES.md"]),
  "m.quote_history": (P, USE, "tennis-data branch kalshi: 114,371 files 2026-09-11..11-02", ["arch:Tennis-Edge-Finder:tennis-data:tennis-edge-finder/data/kalshi"]),
  "ten.surface_rating": (S, USE, "Sackmann forks FROZEN: ATP to 2026-06-01, WTA to 2026-04-27. Partial replacement measured (valuebetennis odds-linked results to 2026-11-01 but odds-matched matches only, winner+score missing on part of rows, May-2026 thin) - not ingested; see sources/tennis_results_intervals.json", ["doc:Tennis-Edge-Finder/docs/DATA_SOURCES.md", "doc:sift-alpha/research/audit/sources/tennis_results_intervals.json"]),

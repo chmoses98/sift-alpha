@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 SCHEMA_VERSION = "audit-1.0"
+SPORTS = ("NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "SOCCER", "TENNIS")
 COLLECTION = {"COLLECTED", "COLLECTED_STALE_OR_PARTIAL", "NOT_COLLECTED", "UNKNOWN", "NOT_APPLICABLE"}
 MODEL_USE = {"USED_CORRECTLY", "USED_DEFECTIVE", "USED_DEFECT_REPAIRED", "COLLECTED_UNUSED",
              "NOT_MODELED", "UNKNOWN", "NOT_APPLICABLE"}

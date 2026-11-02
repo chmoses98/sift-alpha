@@ -71,7 +71,7 @@ class Lineage2(unittest.TestCase):
         s = json.load(open(A / "collection_status.json"))["sports"]
         self.assertEqual(s["NHL"]["inputs"]["nhl.lines"]["verification_class"], "VERIFIED_COLLECTION")
         self.assertEqual(s["CFB"]["inputs"]["cfb.injuries"]["verification_class"], "STALE_OR_PARTIAL")     # was 'no reliable source'
-        self.assertEqual(s["NBA"]["inputs"]["nba.starters_pit"]["verification_class"], "STALE_OR_PARTIAL")  # expected, not confirmed, starters
+        self.assertEqual(s["NBA"]["inputs"]["nba.starters_pit"]["verification_class"], "MISSING")  # expected_*_starters empty on 0/376 sampled records
         n = sum(1 for sp in s.values() for r in sp["inputs"].values() if r["verification_class"] == "CODE_REFERENCE_ONLY")
         self.assertLessEqual(n, 131)
 
@@ -81,3 +81,14 @@ class Lineage2(unittest.TestCase):
         for f in m["families"]: c[f["sport"]].add(f["historical"]["state"])
         for sp in ("NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "TENNIS"): self.assertIn("OBSERVED", c[sp], sp)
         self.assertIn("OBSERVED", c["SOCCER"])
+
+
+class FieldEvidence(unittest.TestCase):
+    def test_field_evidence_artifact_backs_the_new_statuses(self):
+        d = {(c["sport"], c["input"]): c for c in json.load(open(A / "lineage" / "field_evidence.json"))["checks"]}
+        self.assertEqual(d[("NHL", "nhl.pace")]["key_populated_share"], {"corsiPercentage": 1.0, "fenwickPercentage": 1.0})
+        self.assertEqual(d[("NBA", "nba.starters_pit")]["key_populated_share"]["expected_home_starters"], 0.0)
+        self.assertTrue(all(v == 0.0 for v in d[("SOCCER", "soc.xg")]["key_populated_share"].values()))
+        s = json.load(open(A / "collection_status.json"))["sports"]
+        self.assertEqual(s["NHL"]["inputs"]["nhl.pace"]["verification_class"], "VERIFIED_COLLECTION")
+        self.assertEqual(s["SOCCER"]["inputs"]["soc.xg"]["verification_class"], "MISSING")

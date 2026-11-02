@@ -21,6 +21,11 @@ TREE_SHA = "06fc6fb1523d13f6636d50ea22353f46f96000b3"
 MAX_FILES = 27
 MAX_BYTES = 1_500_000
 MAX_SINGLE_FILE = 140_000
+# Pinned from the 27 source Git blobs; Git tree hashes commit blob IDs and names,
+# but deliberately do NOT commit file sizes. A changed size must fail here,
+# before fetching, even if the underlying Git tree hash is unchanged.
+EXPECTED_TOTAL_BYTES = 1_183_059
+EXPECTED_SIZE_VECTOR_SHA256 = "434ed07591d488ad497f4d57d6ea39105608c7955dd19789a224f3df545e94ec"
 CODE_PATHS = [
     "src/cfb_edge_finder/modeling/score_model.py",
     "src/cfb_edge_finder/projections/distribution.py",
@@ -60,8 +65,12 @@ def check_manifest(m):
             raise ValueError("Invalid, duplicate or oversized manifest entry")
         names.add(entry["name"])
         total += entry["size"]
-    if total > MAX_BYTES or tree_sha(files) != TREE_SHA:
-        raise ValueError("Incomplete or altered Git directory tree")
+    ordered = sorted(files, key=lambda x: x["name"].encode())
+    size_vector = ",".join(str(x["size"]) for x in ordered).encode("ascii")
+    if (total != EXPECTED_TOTAL_BYTES
+            or hashlib.sha256(size_vector).hexdigest() != EXPECTED_SIZE_VECTOR_SHA256
+            or tree_sha(files) != TREE_SHA):
+        raise ValueError("Incomplete or altered Git directory tree or source byte sizes")
     return sorted(files, key=lambda x: x["name"])
 
 

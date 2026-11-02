@@ -400,5 +400,32 @@ jobs:
           assert x["profitability_or_execution_authority"]=="NONE"
           print("Original Aug19/20 overlap sources audited, no historical evaluation backfill.")
           PY
+      - name: Adversarial tests for market-first source-backed family registry
+        run: python3 -m unittest discover -s tests -p 'test_market_family_registry.py' -v
+      - name: Reconstruct eight-sport market-family and missing-input matrix from pinned sources
+        run: python3 -m alpha_engine.market_family_registry
+      - name: Guard real market-family matrix against denominator inflation and false certification
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/market_family_input_coverage.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY_NOT_LIVE_COLLECTION"
+          assert set(x["supported_sports"])=={"NFL","CFB","NBA","NHL","MLB","CBB","SOCCER","TENNIS"}
+          assert x["checks"]["cbb_snapshot_contracts"]==12209
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          cbb=[r for r in x["family_rows"] if r["sport"]=="CBB"]
+          mlb=[r for r in x["family_rows"] if r["sport"]=="MLB"]
+          assert len(cbb)==7 and sum(r["observed_denominator"] for r in cbb)==12209
+          assert len(mlb)==14 and sum(r["observed_denominator"] for r in mlb)==138158
+          assert len(x["missing_input_queue"])==len(x["family_rows"])
+          assert all(r["independently_valid_evaluations"] is None for r in x["family_rows"])
+          assert all(len(r["source_sha256"])==64 for r in x["family_rows"])
+          assert not x["all_market_families_certified"] and not x["live_capture_running"]
+          print("Source-verified family inventory and explicit missing-input queue; no live/certified claims.")
+          PY
       - name: Production build
         run: npm run build

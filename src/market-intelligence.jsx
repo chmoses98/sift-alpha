@@ -11,6 +11,7 @@ import nbaProt from "../research/audit/variants/NBA_PROT_equivalence.json";
 import tsInt from "../research/audit/integrity/timestamp_integrity.json";
 import rvb from "../research/audit/integrity/record_vs_batch_timing.json";
 import wxPit from "../research/audit/lineage/soccer_weather_pit_report.json";
+import sweepSum from "../research/audit/sweep_results/summary.json";
 import tennisOpt from "../research/audit/sources/tennis_results_options.json";
 
 // Everything below is generated from research/audit/*.json. Nothing here asserts completeness; anything absent is unknown.
@@ -80,6 +81,7 @@ export function MarketIntelligence() {
       <li><b>NBA PROT series</b>: {Object.keys(nbaProt.pairs).length} stat families; settlement equivalent to base: {Object.values(nbaProt.pairs).every(p => p.settlement_equivalent) ? "yes" : "NO"} (differs in {[...new Set(Object.values(nbaProt.pairs).flatMap(p => p.settlement_fields_differing))].join(", ")}). Kept as separate identifiers.</li>
       <li><b>Tennis results</b> ({tennisIv.status.toLowerCase().replaceAll("_", " ")}): primary frozen since ATP {tennisIv.tours.atp.unavailable_from_primary.from}, WTA {tennisIv.tours.wta.unavailable_from_primary.from}; candidate covers to {tennisIv.tours.atp.candidate_last_match} but thin months {tennisIv.tours.wta.candidate_thin_months_inside_gap.join(", ")}.</li>
       <li><b>Soccer ambiguous series</b>: {soccerAmb.total} → {Object.entries(soccerAmb.counts).map(([k, v]) => v + " " + nice(k)).join(", ")} (ticker evidence only).</li>
+      <li><b>Series sweep ({sweepSum.swept_utc})</b>: MLB {sweepSum.mlb.complete}/{sweepSum.mlb.series} series complete in {sweepSum.mlb.requests} requests ({sweepSum.mlb.series_with_markets} with markets, {sweepSum.mlb.empty_series} empty, {sweepSum.mlb.families} families, {sweepSum.mlb.markets.settled.toLocaleString()} settled markets, {sweepSum.mlb.title_mismatch.length} title mismatches); soccer ambiguous {sweepSum.soccer.complete}/{sweepSum.soccer.series} complete: {Object.entries(sweepSum.soccer.classes).map(([k, v]) => v + " " + nice(k)).join(", ")}. Errors: {sweepSum.mlb.errors + sweepSum.soccer.errors}.</li>
       <li><b>Soccer context</b>: lineups {(soccerCtx.lineups.share_pre_kickoff * 100).toFixed(0)}% of {soccerCtx.lineups.fixtures.toLocaleString()} fixtures with a pre-kickoff XI; weather {(soccerCtx.weather.share_rows_after_kickoff * 100).toFixed(1)}% of snapshots captured after kickoff; injuries and xG: no archive.</li>
       <li><b>Soccer weather PIT guard</b>: {wxPit.quarantined.toLocaleString()} of {wxPit.rows.toLocaleString()} snapshots excluded from pregame use (captured after kickoff); {wxPit.events_without_usable_snapshot} of {wxPit.events} events have no usable snapshot; raw archive untouched.</li>
       <li><b>Record vs batch time</b>: {rvb.findings.filter(f => f.record_obs_later_than_batch_stamp > 0 && f.record_minus_batch_seconds_max > 1).map(f => f.sport + " " + f.dir + " up to " + Math.round(f.record_minus_batch_seconds_max) + " s").join("; ")} — record time is later than the batch stamp (use record-level time).</li>

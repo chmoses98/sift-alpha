@@ -29,8 +29,8 @@ def attach(sport, rows):
     if sport == "SOCCER" and c:   # inventory has no series lists: derive them from archived tickers by suffix grammar (titles unconfirmed)
         seen = {t for d in c["days"].values() for t in d}
         for r in rows:
-            if not r["series"]:
-                r["series"] = [{"ticker": t, "title": None, "markets_now": None, "status": {}, "family_by": "ticker-suffix grammar"} for t in sorted(seen) if soccer_family(t) == r["native_family"]]
+            have = {x["ticker"] for x in r["series"]}
+            r["series"] += [{"ticker": t, "title": None, "markets_now": None, "status": {}, "family_by": "ticker-suffix grammar"} for t in sorted(seen) if soccer_family(t) == r["native_family"] and t not in have]
     for r in rows:
         if not c:
             r["historical"] = {"state": "NOT_SCANNED", "note": "no per-day archived market snapshot scanned for this sport"}; continue
@@ -42,7 +42,7 @@ def attach(sport, rows):
         if not tick:
             h = {"state": "NO_SERIES_LISTED"}
         elif not present:
-            other = {k: r.get(k) for k in ("markets_historical_archived_tier", "markets_prior_snapshot", "markets_prior_registry_snapshot") if r.get(k)}
+            other = {k: r.get(k) for k in ("markets_historical_archived_tier", "markets_prior_snapshot", "markets_prior_registry_snapshot", "markets_exchange_settled") if r.get(k)}
             h = {"state": "NEVER_SEEN_IN_SCANNED_DAYS", "exists_per_other_evidence": bool(other), "other_evidence": other,
                  "absence_meaning": "no market in the scanned daily snapshots (basis below); NOT evidence the market does not exist" + ("; other sources show it existed" if other else "")}
         else:

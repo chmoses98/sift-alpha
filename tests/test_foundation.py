@@ -24,7 +24,7 @@ class Foundation(unittest.TestCase):
     def test_counts_never_claim_observation_without_basis(self):
         for f in J("master_inventory.json")["families"]:
             o = f["observed"]
-            self.assertIn(o["state"], {"OBSERVED_NOW", "OBSERVED_PRIOR_SNAPSHOT_ONLY", "DEFINED_NOT_OBSERVED", "SERIES_LISTED_COUNTS_UNKNOWN"})
+            self.assertIn(o["state"], {"OBSERVED_NOW", "OBSERVED_PRIOR_SNAPSHOT_ONLY", "OBSERVED_SETTLED_ONLY", "DEFINED_NOT_OBSERVED", "SERIES_LISTED_COUNTS_UNKNOWN", "EMPTY_ALL_STATUSES_AT_SWEEP"})
             self.assertTrue(o["basis"] and o["as_of"], f["id"])
             if o["state"] == "OBSERVED_NOW" and o["markets_now"] is not None:
                 self.assertGreater(o["markets_now"], 0, f["id"])

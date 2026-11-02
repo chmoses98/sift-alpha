@@ -214,11 +214,29 @@ def build_mlb(repo_dir):
         r = row("MLB", f, ser, state="OBSERVED_NOW", markets_now=v["n"], basis=f"contracts discovered for slate date {day} (one day, MLB season ended)", as_of=cat["generatedAt"], evidence=ev, extra={"native_periods": sorted(p for p in v["periods"] if p)})
         r["canonical"]["kind"] = classify("MLB", f, ser[0]["ticker"])["kind"]
         rows.append(r)
-    rest = [x for x in cat["mlbAssociatedSeries"] if x["seriesTicker"] not in known]
-    ser = [{"ticker": x["seriesTicker"], "title": x["title"], "markets_now": x.get("marketCount"), "status": {}, "query_skipped": x.get("perSeriesQuerySkippedReason")} for x in rest]
-    rows.append(row("MLB", "SERIES_LISTED_NOT_QUERIED", ser, state="SERIES_LISTED_COUNTS_UNKNOWN", markets_now=None,
-                    basis=f"{len(ser)} MLB-associated series on the exchange whose markets were not enumerated ({cat['seriesSkippedCount']} skipped, e.g. NOT_IN_STRICT_SINGLE_GAME_REGISTRY)", as_of=cat["generatedAt"], evidence=ev))
-    return rows, {"source": {"commit": head(repo_dir), "path": f"data/kalshi/discovery/{day}.json"}, "summary": json.loads((base / f"{day}_summary.json").read_text()), "series_listed": cat["mlbAssociatedSeriesCount"]}
+    sw = json.loads((SNAP.parent / "sweep_results" / "validated_families.json").read_text())["MLB"]
+    byname = {r["native_family"]: r for r in rows}
+    sev = [{"label": "exhaustive series sweep (open/unopened/closed/settled), PR #9 workflow", "url": "https://github.com/chmoses98/sift-alpha/blob/main/.github/workflows/kalshi-series-sweep.yml"}]
+    for fam_name, v in sorted(sw["families"].items()):
+        ser = [{"ticker": x["ticker"], "title": x["title"], "markets_now": x["markets"]["open"], "status": {k: n for k, n in x["markets"].items() if n},
+                "title_validated": x["title_validated"]} for x in v["series"]]
+        hist = {"open": v["open"], "closed": v["closed"], "settled": v["settled"], "first_open_time": v["first_open"], "last_open_time": v["last_open"],
+                "basis": "exchange-listed markets per exhaustive sweep on 2026-11-02 (not our archive)"}
+        if fam_name in byname:
+            r = byname[fam_name]
+            have = {x["ticker"] for x in r["series"]}
+            r["series"] += [x for x in ser if x["ticker"] not in have]
+            r["exchange_history"] = hist; r["evidence"] += sev
+            r["observed"]["state"] = "OBSERVED_NOW" if v["open"] else r["observed"]["state"]
+        else:
+            r = row("MLB", fam_name, ser, state="OBSERVED_NOW" if v["open"] else "OBSERVED_SETTLED_ONLY", markets_now=v["open"],
+                    basis="open markets in the exhaustive sweep of 2026-11-02 (all four statuses swept; settled/closed counted in exchange_history)",
+                    as_of="2026-11-02", evidence=ev + sev, settlement={"text": v["series"][0]["rules_sample"], "source": "rules_primary of a sampled market (sweep)", "status": "SAMPLED_CONTRACT_TEXT"},
+                    extra={"exchange_history": hist, "markets_exchange_settled": v["settled"], "new_in_sweep": True})
+            rows.append(r)
+    rows.append(row("MLB", "SWEPT_EMPTY_SERIES", [{"ticker": t, "title": None, "markets_now": 0, "status": {}} for t in sw["empty_series"]], state="EMPTY_ALL_STATUSES_AT_SWEEP", markets_now=0,
+                    basis=f"{len(sw['empty_series'])} MLB-associated series with zero markets in open/unopened/closed/settled on 2026-11-02 (verified empty, not proof of permanent nonexistence)", as_of="2026-11-02", evidence=sev))
+    return rows, {"source": {"commit": head(repo_dir), "path": f"data/kalshi/discovery/{day}.json"}, "summary": json.loads((base / f"{day}_summary.json").read_text()), "series_listed": cat["mlbAssociatedSeriesCount"], "sweep": {"series_swept": 215, "series_with_markets": sw["series_with_markets"], "requests_total": sw["requests_total"], "unmapped_with_markets": sw["unmapped_with_markets"], "title_mismatch": sw["title_mismatch"]}}
 
 
 def build_soccer(repo_dir):
@@ -234,7 +252,24 @@ def build_soccer(repo_dir):
         st = {"text": note[f], "source": "docs/KALSHI_MARKET_MAP.md (verified from rules_primary by repo)", "status": "REPO_ASSERTED"} if f in note else None
         rows.append(row("SOCCER", f, [], state="OBSERVED_PRIOR_SNAPSHOT_ONLY", markets_now=None, basis="contracts discovered in the 2026-09-27 discovery (swept soccer series only)",
                         as_of=d.get("finished_at"), settlement=st, evidence=ev, extra={"markets_prior_snapshot": n, "prior_snapshot_date": "2026-09-27"}))
-    return rows, {"source": {"commit": head(repo_dir), "path": "data/catalog/latest_index.json", "sha256": sha(p)},
+    from .family_coverage import soccer_family
+    sw = json.loads((SNAP.parent / "sweep_results" / "validated_families.json").read_text())["SOCCER"]
+    byname = {r["native_family"]: r for r in rows}
+    for t, v in sorted(sw["classes"].items()):
+        if v["class"] != "SOCCER_CONFIRMED_BY_TITLE":
+            continue
+        fam_name = soccer_family(t) or "competition_outright"
+        r = byname.get(fam_name) or row("SOCCER", fam_name, [], state="OBSERVED_SETTLED_ONLY", markets_now=None, basis="exhaustive sweep of 2026-11-02", as_of="2026-11-02", evidence=ev)
+        if r not in rows:
+            rows.append(r); byname[fam_name] = r
+        r["series"].append({"ticker": t, "title": v["title"], "markets_now": v["markets"]["open"], "status": {k: n for k, n in v["markets"].items() if n}, "swept_confirmed": True})
+        e = r.setdefault("exchange_history", {"open": 0, "closed": 0, "settled": 0, "first_open_time": None, "last_open_time": None, "basis": "exhaustive sweep 2026-11-02 of the ambiguous AFC/AFCON series only (not all soccer)"})
+        for k in ("open", "closed", "settled"): e[k] += v["markets"][k]
+        for f2, fn, val in (("first_open_time", min, v["first_open"]), ("last_open_time", max, v["last_open"])):
+            if val: e[f2] = val if e[f2] is None else fn(e[f2], val)
+        if v["markets"]["open"]: r["observed"]["state"] = "OBSERVED_NOW"; r["observed"]["markets_now"] = (r["observed"]["markets_now"] or 0) + v["markets"]["open"]
+    return rows, {"ambiguous_sweep": {"requests_total": sw["requests_total"], "classes": {c: sum(1 for v in sw["classes"].values() if v["class"] == c) for c in ("SOCCER_CONFIRMED_BY_TITLE", "EMPTY_NO_MARKETS_UNCONFIRMED", "NOT_SOCCER_BY_TITLE")}},
+                  "source": {"commit": head(repo_dir), "path": "data/catalog/latest_index.json", "sha256": sha(p)},
                   "series_swept": c["series_swept"], "series_ambiguous_unswept": c["series_ambiguous_unswept"], "contracts_discovered": c["contracts_discovered"], "run_id": c["run_id"]}
 
 
@@ -274,7 +309,7 @@ def main(argv=None):
         master["sports"][sp] = {"families": len(rows), "families_observed_now": sum(r["observed"]["state"] == "OBSERVED_NOW" for r in rows),
                                 "series": sum(len(r["series"]) for r in rows), "unclassified_families": unc,
                                 "markets_now_basis_sum": sum((r["observed"]["markets_now"] or 0) for r in rows)}
-        master["families"] += [{k: r[k] for k in ("id", "sport", "native_family", "canonical", "observed", "settlement")} | {k: r[k] for k in ("historical", "markets_prior_snapshot", "prior_snapshot_date", "markets_prior_registry_snapshot", "markets_historical_archived_tier", "repo_support") if k in r} | {"series_count": len(r["series"]), "series_sample": [s["ticker"] for s in r["series"][:6]]} for r in rows]
+        master["families"] += [{k: r[k] for k in ("id", "sport", "native_family", "canonical", "observed", "settlement")} | {k: r[k] for k in ("historical", "exchange_history", "new_in_sweep", "markets_prior_snapshot", "prior_snapshot_date", "markets_prior_registry_snapshot", "markets_historical_archived_tier", "repo_support") if k in r} | {"series_count": len(r["series"]), "series_sample": [s["ticker"] for s in r["series"][:6]]} for r in rows]
         print(sp, master["sports"][sp]["families"], "families", master["sports"][sp]["markets_now_basis_sum"], "markets", "unclassified:", unc)
     (AUDIT / "master_inventory.json").write_text(json.dumps(master, indent=1))
 

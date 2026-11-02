@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+from pathlib import Path
 import unittest
 
 from alpha_engine.cfb_shard_family_audit import (
@@ -33,11 +34,11 @@ def fixture():
 
 class CfbShardTests(unittest.TestCase):
     def test_pinned_directory_tree_cannot_omit_or_change_file(self):
-        manifest = json.load(open("research/cfb_aubmiss_event_shards.json"))
+        manifest = json.loads(Path("research/cfb_aubmiss_event_shards.json").read_text())
         entries = check_manifest(manifest)
         self.assertEqual(len(entries), 27)
         self.assertEqual(tree_sha(entries), manifest["directory_tree_sha1"])
-        for mutate in ("omit", "sha", "size", "duplicate", "path"):
+        for mutate in ("omit", "sha", "size", "balanced_size", "duplicate", "path"):
             x = copy.deepcopy(manifest)
             if mutate == "omit":
                 x["files"].pop()
@@ -45,6 +46,10 @@ class CfbShardTests(unittest.TestCase):
                 x["files"][0]["sha"] = "f" * 40
             elif mutate == "size":
                 x["files"][0]["size"] += 1
+            elif mutate == "balanced_size":
+                # A sum-only guard cannot detect compensating size edits.
+                x["files"][0]["size"] += 1
+                x["files"][1]["size"] -= 1
             elif mutate == "duplicate":
                 x["files"][1] = x["files"][0].copy()
             else:

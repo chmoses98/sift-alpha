@@ -4,12 +4,21 @@ Only aggregates are persisted (counts by status, event count, open-time range, s
 fabricated: a (series, status) pair is `complete` only when pagination reached an empty cursor. HTTP 429 honours
 Retry-After with bounded backoff; when retries are exhausted or the request budget is spent the run stops and the
 state file resumes exactly at the saved cursor.  Usage:
-  python -m alpha_engine.series_sweep QUEUE.json STATE.json [--max-requests N] [--min-interval S]
+  python -m kalshi_sweep.series_sweep QUEUE.json STATE.json [--max-requests N] [--min-interval S]
 QUEUE.json: {"series": ["KXMLBGAME", ...]}   Exit codes: 0 all complete, 3 stopped early (resume later)."""
 import argparse, json, sys, time
 import urllib.error, urllib.parse, urllib.request
 
-BASE = "https://api.elections.kalshi.com/trade-api/v2/markets"
+import os
+DEFAULT_BASE = "https://api.elections.kalshi.com/trade-api/v2/markets"
+ALLOWED_PREFIXES = (DEFAULT_BASE, "http://127.0.0.1:", "http://localhost:")   # overrides exist for tests only; anything else is refused
+
+
+def base_url():
+    b = os.environ.get("KALSHI_BASE_URL", DEFAULT_BASE)
+    if not b.startswith(ALLOWED_PREFIXES):
+        raise SystemExit(f"refusing non-Kalshi base url: {b}")
+    return b
 STATUSES = ("open", "unopened", "closed", "settled")
 
 
@@ -17,7 +26,7 @@ def http_fetch(series, status, cursor):
     q = {"series_ticker": series, "status": status, "limit": 1000}
     if cursor:
         q["cursor"] = cursor
-    req = urllib.request.Request(BASE + "?" + urllib.parse.urlencode(q), headers={"User-Agent": "SIFT-Alpha-sweep/1"})
+    req = urllib.request.Request(base_url() + "?" + urllib.parse.urlencode(q), headers={"User-Agent": "SIFT-Alpha-sweep/1"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, json.load(r), {}

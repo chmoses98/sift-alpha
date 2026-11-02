@@ -53,8 +53,8 @@ class Lineage(unittest.TestCase):
         self.assertEqual(d["total"], 134); self.assertEqual(sum(d["counts"].values()), 134)
 
     def test_sweep_queues_cover_all_identified_series(self):
-        self.assertEqual(len(json.load(open(A / "sweep" / "mlb_queue.json"))["series"]), 215)
-        self.assertEqual(len(json.load(open(A / "sweep" / "soccer_ambiguous_queue.json"))["series"]), 48)
+        self.assertEqual(len(json.load(open(A.parents[1] / "kalshi_sweep" / "queues" / "mlb_queue.json"))["series"]), 215)
+        self.assertEqual(len(json.load(open(A.parents[1] / "kalshi_sweep" / "queues" / "soccer_ambiguous_queue.json"))["series"]), 48)
 
 
 if __name__ == "__main__":

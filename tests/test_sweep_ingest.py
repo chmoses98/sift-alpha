@@ -30,6 +30,23 @@ class Ingest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load(d, "HEAD", "_q")
 
+    def test_partial_publish_does_not_displace_complete_state_or_seed(self):
+        full = {"requests_total": 4, "series": {s: {k: {"complete": True, "markets": 1} for k in ("open", "unopened", "closed", "settled")} for s in ("A", "B")}}
+        part = {"requests_total": 1, "series": {"A": {k: {"complete": k == "open", "markets": 1} for k in ("open", "unopened", "closed", "settled")}}}
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d); os.makedirs(os.path.join(d, "seed"))
+            json.dump({"meta": {"requests_total": 9}, "series": [{"s": "SEED"}], "provenance": {"job_id": "9"}}, open(os.path.join(d, "seed", "_q.compact.json"), "w"))
+            q = os.path.join(d, "_q.json"); json.dump({"series": ["A", "B"]}, open(q, "w"))
+            def pub(state, run):
+                st = os.path.join(d, "_s.json"); json.dump(state, open(st, "w")); publish(st, q, d, env={"GITHUB_RUN_ID": run})
+            pub(part, "1")
+            git(d, "add", "sweeps", "index.jsonl", "seed"); git(d, "commit", "-q", "-m", "a")
+            self.assertEqual(load(d, "HEAD", "_q")[1][0]["s"], "SEED")               # only a partial publish exists -> seed still wins
+            pub(full, "2"); pub(part, "3")
+            git(d, "add", "sweeps", "index.jsonl"); git(d, "commit", "-q", "-m", "b")
+            meta, rows, prov = load(d, "HEAD", "_q")
+            self.assertEqual((meta["requests_total"], len(rows), prov["workflow_run_id"], prov["newest_publish_complete"]), (4, 2, "2", False))   # run 3 (partial) did not displace run 2
+
     def test_seed_fallback_and_missing_queue(self):
         with tempfile.TemporaryDirectory() as d:
             self.repo(d); os.makedirs(os.path.join(d, "seed"))

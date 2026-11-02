@@ -1,6 +1,6 @@
 """Ingest Kalshi sweep results from the `sweep-data` branch into research/audit/sweep_results/*.json.
 
-Preferred source: sweeps/<queue>/latest.json -> raw sweeper state (sha256-verified against its manifest).
+Preferred source: the newest COMPLETE raw state listed in index.jsonl (sha256-verified); partial/bounded publishes never displace it.
 Fallback: seed/<queue>.compact.json (rows parsed from a job log). Every output carries its provenance.
 Usage: python -m alpha_engine.sweep_ingest [--repo PATH] [--branch sweep-data]   (needs git read access to origin)"""
 import argparse, hashlib, json, subprocess, sys
@@ -20,15 +20,25 @@ def _show(repo, ref, path):
 def load(repo, ref, stem):
     """-> (meta, rows, provenance) for one queue from a git ref."""
     commit = subprocess.run(["git", "-C", str(repo), "rev-parse", ref], capture_output=True, text=True).stdout.strip()
-    latest = _show(repo, ref, f"sweeps/{stem}/latest.json")
-    if latest:
-        man = json.loads(latest); raw = _show(repo, ref, f"sweeps/{stem}/{man['file']}")
-        if raw is None or hashlib.sha256(raw).hexdigest() != man["state_sha256"]:
-            raise ValueError(f"{stem}: raw state missing or sha256 mismatch against its manifest")
+    # newest COMPLETE raw publish for this queue (index.jsonl is append-only); a later partial/bounded run never displaces it
+    idx = _show(repo, ref, "index.jsonl")
+    pick = None
+    for line in (idx or b"").decode().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("queue") == stem and e.get("complete"):
+            pick = e
+    if pick:
+        raw = _show(repo, ref, f"sweeps/{stem}/{pick['file']}")
+        if raw is None or hashlib.sha256(raw).hexdigest() != pick["state_sha256"]:
+            raise ValueError(f"{stem}: raw state missing or sha256 mismatch against its index entry")
+        man = json.loads(_show(repo, ref, f"sweeps/{stem}/latest.json") or b"{}")
         st = json.loads(raw)
         return ({k: v for k, v in st.items() if k != "series"}, list(compact_rows(st)),
-                {"transport": "sweep-data branch (raw state)", "data_branch_commit": commit, "file": f"sweeps/{stem}/{man['file']}", "state_sha256": man["state_sha256"], "workflow_run_id": man["workflow_run_id"],
-                 "workflow_sha": man.get("workflow_sha"), "queue_sha256": man["queue_sha256"], "published_utc": man["published_utc"], "series_complete": man["series_complete"], "series_queued": man["series_queued"]})
+                {"transport": "sweep-data branch (raw state)", "data_branch_commit": commit, "file": f"sweeps/{stem}/{pick['file']}", "state_sha256": pick["state_sha256"], "workflow_run_id": pick["workflow_run_id"],
+                 "published_utc": pick["published_utc"], "series_complete": pick["series_complete"], "series_queued": pick["series_queued"], "newest_publish_complete": man.get("complete")})
     seed = _show(repo, ref, f"seed/{stem}.compact.json")
     if seed is None:
         raise FileNotFoundError(f"{stem}: neither sweeps/{stem}/latest.json nor seed/{stem}.compact.json on {ref}")

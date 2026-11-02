@@ -1,40 +1,100 @@
-import React, {useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import {STUDIES} from "./studies.mjs";
 
-const BLUEPRINTS = {
- CFB: {"1Q total":["Pace and projected possessions","Opponent-adjusted early-down efficiency","Opening-drive strategy","QB and lineup availability","Weather and venue","Kalshi quote and settlement history"],"1H spread":["Opponent-adjusted team strength","Expected first-half possessions","QB and line availability","Field position and special teams","Price and settlement"]},
- NFL: {"Team total":["Expected drives and pace","Opponent-adjusted scoring efficiency","QB, offensive line and injuries","Defensive matchup and coverage","Red-zone conversion","Market quote and fees"],"Receptions":["Routes and snap share","Targets per route","Defensive coverage","Projected pass volume","Injuries and game script","Quote history"]},
- NBA: {"Assists":["Projected minutes","Potential assists","Creation role and touches","Teammate shooting and injuries","Opponent defense","Possessions and market quotes"],"Rebounds":["Projected minutes","Rebound chances","Shot locations and misses","Lineup assignments","Opponent pace","Market prices"]},
- NHL: {"Shots on goal":["Expected ice time","Shot attempts and rates","Line combinations","Opponent shot suppression","Power-play role","Market prices"],"Game total":["Expected shot quality","Starting goaltender","Special teams","Rest and travel","Expected pace","Market history"]},
- MLB: {"Hitter hits":["Batting order and plate appearances","Pitch mix versus batter","Contact quality and handedness","Confirmed lineup","Park and weather","Original timestamped forecast","Kalshi quote and settlement"],"Pitcher strikeouts":["Pitch mix and whiff matchup","Confirmed opposing lineup","Expected batters faced","Pitch count and workload","Umpire and park context","Market quotes"]},
- CBB: {"Game total":["Opponent-adjusted pace","Shot quality","Turnovers and offensive rebounds","Current roster and minutes","Venue and travel","Market quotes"]},
- SOCCER: {"Match total":["Expected goals and shot quality","Lineups and injuries","Pressing and tactical pace","Rest and motivation","Goalkeeper","Market history"]},
- TENNIS: {"Match winner":["Surface-adjusted serve strength","Return and break probabilities","Matchup and style","Injury and fatigue","Match format","Market prices"]}
-};
-const STATUS = "NOT AUDITED";
-const evidence = {
- "MLB|Hitter hits": {label:"Historical evaluation gap verified",detail:"Pinned Aug 1–20 research report: 0 model-evaluated rows among 23,295 observed hitter-hits market rows. This does not establish whether a separate forecast existed at the original quote.",url:"https://github.com/chmoses98/sift-alpha/blob/build/alpha-research-desk/alpha_engine/research_repair.py"}
-};
-export function MarketIntelligence(){
- const [sport,setSport]=useState("CFB");
- const [market,setMarket]=useState("1Q total");
- const markets=Object.keys(BLUEPRINTS[sport]);
- const selected=BLUEPRINTS[sport][market] || BLUEPRINTS[sport][markets[0]];
- const ev=evidence[sport+"|"+market];
- const relevant=STUDIES.filter(x=>x.sport===sport).slice(0,4);
- return <section className="intelligence" aria-label="Market intelligence input dashboard">
-   <div className="eyebrow">MARKET INTELLIGENCE / SOURCE-TRUTH VIEW</div>
-   <h2>What goes into each market?</h2>
-   <p>These are <strong>candidate inputs to investigate</strong>, not verified model features. Unknown collection, model use, and predictive value are explicitly shown as unaudited.</p>
-   <div className="intelligence-filters"><label>Sport<select value={sport} onChange={e=>{setSport(e.target.value);setMarket(Object.keys(BLUEPRINTS[e.target.value])[0]);}}>{Object.keys(BLUEPRINTS).map(x=><option key={x}>{x}</option>)}</select></label>
-   <label>Market family<select value={selected===BLUEPRINTS[sport][market]?market:markets[0]} onChange={e=>setMarket(e.target.value)}>{markets.map(x=><option key={x}>{x}</option>)}</select></label></div>
-   <div className="intelligence-summary"><strong>{selected.length} candidate input groups</strong><span>Verified model inputs: unknown</span><span>Research authority: none</span></div>
-   {ev&&<div className="intelligence-evidence"><strong>{ev.label}</strong><p>{ev.detail}</p><a href={ev.url} target="_blank" rel="noreferrer">Inspect pinned evidence ↗</a></div>}
-   <div className="intelligence-grid">{selected.map((name,i)=><div className="intelligence-factor" key={name}>
-     <div className="factor-heading"><span className="factor-number">{i+1}</span><strong>{name}</strong></div>
-     <div className="factor-status"><span>Collected: {STATUS}</span><span>Quality: {STATUS}</span><span>Used by model: {STATUS}</span><span>Validated impact: {STATUS}</span></div>
-   </div>)}</div>
-   <div className="intelligence-related"><strong>Related source-linked research</strong>{relevant.length?relevant.map(x=><p key={x.id}>{x.title} · {x.status} {x.sources[0]?.url&&<a href={x.sources[0].url} target="_blank" rel="noreferrer">Source ↗</a>}</p>):<p>No verified sport-specific research records are linked yet.</p>}</div>
-   <p className="fine-print">This dashboard currently displays curated candidate blueprints and existing source-linked research. It does not yet read a continuously generated collection/usage audit. No green completeness percentages are inferred.</p>
- </section>;
+const SPORTS = ["NFL","NBA","CFB","NHL","CBB","MLB","SOCCER","TENNIS"];
+const UNKNOWN = "UNKNOWN";
+const STATUS = new Set(["COLLECTED_VALID","COLLECTED_UNUSED","USED_VALID","STALE","MISSING","UNKNOWN","NOT_APPLICABLE"]);
+const label = value => value == null ? UNKNOWN : String(value);
+const formatCount = value => Number.isInteger(value) ? value.toLocaleString() : UNKNOWN;
+const isPinned = row => /^chmoses98\/[A-Za-z0-9_-]+$/.test(row?.source_repository || "") &&
+  /^[a-f0-9]{40}$/.test(row?.source_commit || "");
+const sourceHref = row => isPinned(row) ? "https://github.com/" + row.source_repository + "/tree/" + row.source_commit : null;
+
+function evidenceStatus(row) {
+  if (STATUS.has(row?.market_collection_status)) return row.market_collection_status;
+  // Source metadata or a retrospective evaluation report is not a complete
+  // family-specific market collection. Only the exact archived CFB shard
+  // supports a narrow, explicit collection statement.
+  if (row?.observation_scope === "ONE_EVENT_SHARD_NOT_FULL_CFB_CATALOG" &&
+      row?.exact_settlement_rule_status === "ARCHIVED_LITERAL_UNVERIFIED_SETTLEMENT")
+    return "COLLECTED_VALID";
+  return UNKNOWN;
 }
+function safeAudit(data) {
+  if (!data || ![1,2].includes(data.schema_version) ||
+      data.authority !== "RESEARCH_ONLY_NOT_LIVE_COLLECTION" ||
+      !Array.isArray(data.family_rows) || !Array.isArray(data.missing_input_queue) ||
+      data.live_capture_running !== false || data.all_market_families_certified !== false)
+    throw new Error("Audit artifact missing required scientific safeguards");
+  if (data.family_rows.length > 5000 ||
+      data.family_rows.some(r => !SPORTS.includes(r.sport) || typeof r.family !== "string" ||
+        (r.observed_denominator != null && (!Number.isInteger(r.observed_denominator) || r.observed_denominator < 0))))
+    throw new Error("Audit artifact contains invalid market rows");
+  return data;
+}
+
+export function MarketIntelligence(){
+  const [audit,setAudit] = useState(null);
+  const [error,setError] = useState("");
+  const [sport,setSport] = useState("CFB");
+  const [market,setMarket] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    const base = import.meta.env.BASE_URL || "/";
+    fetch(base + "market-family-input-coverage.json", {signal:controller.signal, cache:"no-store"})
+      .then(response => {if (!response.ok) throw new Error("No published verified audit artifact"); return response.json();})
+      .then(data => setAudit(safeAudit(data)))
+      .catch(err => {if (err.name !== "AbortError") setError(err.message);});
+    return () => controller.abort();
+  }, []);
+  const rows = useMemo(() => audit?.family_rows.filter(r=>r.sport===sport) || [], [audit,sport]);
+  const selected = rows.find(r=>r.family===market) || rows[0];
+  const gaps = audit?.missing_input_queue.filter(g=>g.sport===sport && g.family===selected?.family) || [];
+  const relevant = STUDIES.filter(x=>x.sport===sport).slice(0,3);
+  const validSource = selected && isPinned(selected);
+  const observedStatus = evidenceStatus(selected);
+  const modelStatus = selected?.model_usage_status || UNKNOWN;
+  const inputs = selected?.candidate_inputs || [];
+  return <section className="intelligence" aria-label="Market intelligence input dashboard">
+    <div className="eyebrow">MARKET INTELLIGENCE / PINNED SOURCE AUDIT</div>
+    <h2>What do we actually know about each market?</h2>
+    <p>Market collection, model use, source truth, and predictive value are separate claims. A literal exchange series is <strong>not</strong> a certified market family. Counts from different archive scopes must never be added together.</p>
+    {!audit && !error && <p role="status">Loading source-backed market audit…</p>}
+    {error && <div className="intelligence-evidence" role="alert"><strong>Audit data unavailable</strong><p>{error}. No family is certified from a missing artifact; the build must generate and publish the pinned-source audit before the dashboard can show verified evidence.</p></div>}
+    {audit && <>
+      <div className="intelligence-summary"><strong>{audit.family_rows.length} source-scoped audit rows</strong>
+        <span>{audit.discovered_literal_series_count ?? 0} literal NBA/NHL series from verified tape prefix</span>
+        <span>{audit.supported_sports.length} sports inventoried · live capture: NOT VERIFIED</span>
+      </div>
+      <div className="intelligence-filters"><label>Sport<select value={sport} onChange={e=>{setSport(e.target.value);setMarket("");}}>
+        {SPORTS.map(x=><option key={x} value={x}>{x}</option>)}
+      </select></label>
+      <label>Observed market grouping<select value={selected?.family || ""} onChange={e=>setMarket(e.target.value)}>
+        {rows.map((r,i)=><option key={r.family+"-"+i} value={r.family}>{r.family}</option>)}
+      </select></label></div>
+      {selected && <>
+        <div className="intelligence-evidence">
+          <strong>{selected.family} · {selected.observation_scope}</strong>
+          <p><b>Market collection:</b> {observedStatus} (only within stated archive scope) · <b>Model usage:</b> {modelStatus}</p>
+          <p><b>Observed denominator:</b> {formatCount(selected.observed_denominator)} {label(selected.denominator_unit)} · <b>Source-reported evaluations:</b> {formatCount(selected.source_reported_model_evaluated)} · <b>Independently valid evaluations:</b> {formatCount(selected.independently_valid_evaluations)}</p>
+          <p><b>Source clock:</b> {label(selected.observed_at_utc)} · <b>Forecast availability:</b> {label(selected.historical_availability)} · <b>Pregame status:</b> {label(selected.point_in_time_pregame_eligibility)}</p>
+          <p><b>Settlement rules:</b> {label(selected.exact_settlement_rule_status)} · <b>Outcome join:</b> {label(selected.settlement_outcome_join)} · <b>Projected outcome:</b> {label(selected.projected_outcome)}</p>
+          {selected.rule_text_sample && <p><b>Archived sample rule:</b> {label(selected.rule_text_sample.primary)} (not independent exchange settlement verification)</p>}
+          {selected.sample_contract && <p><b>Observed sample ticker:</b> {selected.sample_contract.ticker} · <b>Last ticker observation:</b> {label(selected.sample_contract.last_ticker_observed_at_utc)}</p>}
+          {validSource && <a href={sourceHref(selected)} target="_blank" rel="noreferrer">Pinned source commit ↗</a>}
+          {selected.source_code_paths?.length>0 && <p><b>Audited processing paths:</b> {selected.source_code_paths.join(", ")}</p>}
+        </div>
+        <h3>Candidate inputs and observed gaps</h3>
+        {inputs.length ? <div className="intelligence-grid">{inputs.map((factor,i)=><div className="intelligence-factor" key={factor.name+"-"+i}>
+          <div className="factor-heading"><span className="factor-number">{i+1}</span><strong>{factor.name}</strong></div>
+          <div className="factor-status"><span>Hypothesis: {label(factor.evidence)}</span><span>Model used: {label(factor.model_used)}</span><span>Historical source: {label(factor.historical_source)}</span><span>Validated impact: {UNKNOWN}</span></div>
+        </div>)}</div> : <p>Candidate-input lineage is {UNKNOWN} for this observed grouping. No speculative features are labeled as collected or useful.</p>}
+        {gaps.length>0 && <p><strong>Unresolved research gaps:</strong> {gaps.flatMap(g=>g.missing || []).join(" · ")}</p>}
+      </>}
+      <div className="intelligence-related"><strong>Related source-linked research</strong>{relevant.length?relevant.map(x=><p key={x.id}>{x.title} · {x.status} {x.sources[0]?.url&&<a href={x.sources[0].url} target="_blank" rel="noreferrer">Source ↗</a>}</p>):<p>No independently verified sport-specific studies linked yet.</p>}</div>
+      <p className="fine-print">Artifact is a pinned historical research snapshot, generated in CI before build; it is NOT live Kalshi polling. Literal-series rows cover only an NBA/NHL checkpoint plus three deltas. No independent game start, calibrated model, complete market coverage, settlement, trade, or profitability is certified.</p>
+    </>}
+  </section>;
+}
+
+export {safeAudit, evidenceStatus};

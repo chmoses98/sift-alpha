@@ -141,6 +141,25 @@ def append(matrix, row):
             or row.get("sport") not in SPORTS
             or row.get("observation_scope") != "OPT_IN_PUBLIC_OPEN_SERIES_PAGES_ONLY"):
         raise ValueError("Untrusted dashboard matrix or capture")
+    # A capture-only bridge must not accept caller-promoted forecast or outcome
+    # authority. The original page verifier cannot establish any of these.
+    expected = {
+        "market_collection_status": "COLLECTED_VALID",
+        "input_collection_status": "UNKNOWN",
+        "model_usage_status": "UNKNOWN",
+        "model_version_and_calibration": "UNKNOWN",
+        "settlement_outcome_join": "UNKNOWN",
+        "point_in_time_pregame_eligibility": "UNKNOWN",
+        "projected_outcome": None,
+        "complete_series_or_market_tape": False,
+    }
+    if any(row.get(key) != value for key, value in expected.items()):
+        raise ValueError("Capture row claims unverified model, outcome, or tape authority")
+    if (not isinstance(row.get("observed_contracts"), list)
+            or len(row["observed_contracts"]) != row.get("observed_denominator")
+            or row.get("denominator_unit") != "distinct_tickers_in_this_verified_capture"
+            or row.get("all_reported_pages_retrieved") is not True):
+        raise ValueError("Capture row has inconsistent observation denominator")
     if any(x["sport"] == row["sport"] and x["family"] == row["family"]
            for x in matrix["family_rows"]):
         raise ValueError("Capture already added")

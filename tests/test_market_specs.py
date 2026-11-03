@@ -48,3 +48,13 @@ class Specs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModelValidation(unittest.TestCase):
+    def test_validation_is_labelled_repo_reported_with_provenance(self):
+        v = json.load(open(A / "model_validation.json"))
+        self.assertIn("REPO-REPORTED", v["note"])
+        src = v["sources"][0]
+        self.assertEqual(len(src["commit"]), 40); self.assertEqual(len(src["sha256"]), 64)
+        for fam in v["sports"]["NBA"]["families"].values():
+            self.assertTrue(fam["reported"] and fam["readiness"])

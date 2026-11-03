@@ -5,6 +5,8 @@ import registry from "../research/audit/input_registry.json";
 import status from "../research/audit/collection_status.json";
 import gaps from "../research/audit/collection_gap_report.json";
 import specs from "../research/audit/market_specs.json";
+import modelVal from "../research/audit/model_validation.json";
+const VAL_MAP = {"NBA/player_points": "points", "NBA/player_rebounds": "rebounds", "NBA/player_assists": "assists", "NBA/player_threes": "threes", "NBA/player_pra": "pra", "NBA/team_total": "team_points"};
 import tennisIv from "../research/audit/sources/tennis_results_intervals.json";
 import soccerAmb from "../research/audit/resolutions/soccer_ambiguous.json";
 import soccerCtx from "../research/audit/lineage/soccer_context_lineage.json";
@@ -52,6 +54,7 @@ function FamilyDetail({fam, sport}) {
         <p className="fine"><b>Essential-input readiness:</b> {sp.essential_verified}/{sp.essential_total} verified or derived · {Object.entries(sp.essential_by_status).map(([k, v]) => v + " " + (VNAME[k] || nice(k))).join(", ")}
           {sp.essential_missing.length > 0 && <> · <b>not yet usable:</b> {sp.essential_missing.join(", ")}</>}</p></> : <p className="fine">{sp.reason}</p>}
     </div>}
+    {VAL_MAP[fam.id] && modelVal.sports[sport]?.families[VAL_MAP[fam.id]] && (() => { const v = modelVal.sports[sport].families[VAL_MAP[fam.id]]; return <p className="fine"><b>Model validation (repo-reported, not reproduced by Alpha):</b> {v.model} · {v.readiness} — {v.reported}</p>; })()}
     {audit && <p className="fine audited">End-to-end audit exists: repair priority {audit.repair_priority}, verified {audit.last_verified_utc}. See audit file for per-input evidence.</p>}
     {["E", "C", "X"].map(t => groups[t].length > 0 && <div key={t}><h4>{TIER[t]} candidate inputs ({groups[t].length})</h4>
       <div className="inp-grid">{groups[t].map(id => { const s = st[id]; return <div className="inp" key={id}>

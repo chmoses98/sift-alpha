@@ -1,0 +1,43 @@
+name: ESPN period-scoring backfill (probe branch only)
+on:
+  push:
+    branches: ['probe/period-scoring']
+permissions:
+  contents: write
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: collect 2026 seasons to date
+        run: |
+          mkdir -p out
+          python -m alpha_engine.period_scoring collect cfb 2026-08-29 2026-11-02 out/data
+          python -m alpha_engine.period_scoring collect nfl 2026-09-09 2026-11-02 out/data
+          python -m alpha_engine.period_scoring collect nba 2026-10-20 2026-11-02 out/data
+          python -m alpha_engine.period_scoring collect nhl 2026-10-06 2026-11-02 out/data
+          python -m alpha_engine.period_scoring collect cbb 2026-11-02 2026-11-02 out/data
+      - name: summarize (live-schema check + distributions)
+        run: |
+          python - <<'PY' | tee out/summary.txt
+          import json
+          from alpha_engine import period_scoring as ps
+          for lg, regs in (("cfb",4),("nfl",4),("nba",4),("nhl",3),("cbb",2)):
+              rows = ps.load("out/data", lg)
+              rec = sum(r["reconciliation"]=="RECONCILED" for r in rows)
+              print(lg, "rows", len(rows), "reconciled", rec, "overtime", sum(r["overtime"] for r in rows))
+              for i in range(regs):
+                  d = ps.period_distribution(rows, i)
+                  if d["n"]: print("  period", i+1, "n", d["n"], "mean", d["mean"], "p_zero", d["p_zero"])
+          PY
+      - name: publish data branch
+        if: always()
+        run: |
+          git config user.name "sift-alpha-probe"; git config user.email "probe@users.noreply.github.com"
+          git checkout --orphan period-scoring-data
+          git rm -rf -q . || true
+          git add -f out && git commit -qm "period scoring backfill ${GITHUB_RUN_ID}" && git push -f origin period-scoring-data

@@ -11,6 +11,8 @@ NFLDOC = "doc:nfl-edge-finder/docs/DATA_SOURCE_AUDIT.md"
 CUR = {
 "NFL": {
  "m.ladder_structure": (D, UK, "derived from archived quotes: nfl_edge/pricing/ladder.py (ladder semantics + monotonicity checks)", ["doc:nfl-edge-finder/nfl_edge/pricing/ladder.py"]),
+ "m.volume_oi": (P, UK, "quotes.jsonl (2,646 records, observed_at 2026-11-02T23:54Z): volume_fp / open_interest_fp present on 100%, non-zero on 60.6% / 60.5% (real liquidity); every 10-min capture", ["arch:nfl-edge-finder:market-data:data/kalshi/capture", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
+ "m.lifecycle": (P, UK, "quotes.jsonl: status / open_time / close_time / expected_expiration_time populated on 100% of 2,646 records, stamped observed_at; state at each capture only (no separate halt/postponement events)", ["arch:nfl-edge-finder:market-data:data/kalshi/capture", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
  "m.fees": (M, UK, "fee_type / fee_multiplier per series in config/kalshi_nfl_series.json (392 series, static catalog, not time-stamped or vintage-archived)", ["doc:nfl-edge-finder/config/kalshi_nfl_series.json"]),
  "nfl.skill_avail": (S, USE, "pit_availability: espn_event_rosters / espn_injuries non-empty in only 25% of sampled files", ["arch:nfl-edge-finder:market-data:data/pit_availability", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
  "m.rules_text": (S, UK, "latest open-set carries tickers only (0/161 series with rules text); settlement semantics hand-encoded in semantics/catalog.py", ["arch:nfl-edge-finder:market-data:data/kalshi", "doc:nfl-edge-finder/nfl_edge/semantics/catalog.py"]),
@@ -42,6 +44,7 @@ CUR = {
  "cfb.qb": (S, UK, "starter rows (1,040) are inferred from the prior game\u0027s passer (pf_cfb_prior_game_passer), status STARTING, not an announcement; 404 entities", ["arch:cfb-edge-finder:projection-data:availability/cfb", "doc:sift-alpha/research/audit/lineage/historical_archive_gaps.json"]),
  "m.rules_text": (M, UK, "rules_primary present on 18/19 catalog families; git-versioned on main, no dated archive branch", ["doc:cfb-edge-finder/data/live/cfb_market_catalog.json"]),
  "m.quote_history": (S, UK, "Quote history lives as git-versioned per-game shards on main (data/live/execution 1,306 files); no dedicated timestamped archive branch found in scanned branches", ["doc:cfb-edge-finder/data/live/cfb_market_catalog.json"]),
+ "m.lifecycle": (S, UK, "research-signals capture/2026/quotes.jsonl (4,420 records): status + kickoff_utc + captured_at on 100%, but no close/expiration time, volume, open interest or order book in this capture", ["arch:cfb-edge-finder:research-signals:capture", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
  "m.settlement_truth": (P, USE, "settlements/outcomes on projection-data 2026-10-20..10-31", ["arch:cfb-edge-finder:projection-data:settlements/cfb"]),
  "cfb.injuries": (S, UK, "availability/cfb: 3,085 records / 12 files / 404 entities, but only 35 are injury rows (ESPN core injuries, 1.1%); the rest are 2,010 roster and 1,040 starter rows (starter = prior-game passer inference with a source time). Not a usable injury feed", ["arch:cfb-edge-finder:projection-data:availability/cfb", "doc:sift-alpha/research/audit/lineage/historical_archive_gaps.json"]),
  "cfb.off_ppa": (U, UK, "CFBD /ppa primary; CFBD quota-recovery branch exists (quota risk)", ["doc:cfb-edge-finder/docs/DATA_SOURCES.md"]),
@@ -115,6 +118,7 @@ CUR = {
 "MLB": {
  "m.ladder_structure": (D, UK, "documented ladder semantics (docs/EDGELAB_KALSHI_TOTAL_LADDER_SEMANTICS.md); derived from quotes", ["doc:edge-finder-api/docs/EDGELAB_KALSHI_TOTAL_LADDER_SEMANTICS.md"]),
  "m.settlement_truth": (M, UK, "data/edgelab/settlements: 90 daily files 2026-08-02+, jsonl.gz on main; per-record timestamps not checked", ["doc:edge-finder-api/data/edgelab/settlements"]),
+ "m.volume_oi": (U, UK, "verified gap in the only MLB market file checked: data/edgelab/markets is a contract registry (328 records 2026-10-28) with no price, volume or open-interest field; files 2026-10-29..11-02 are empty. No MLB volume/OI archive located yet", ["doc:edge-finder-api/data/edgelab/markets", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
  "mlb.injuries_pit": (S, UK, "availability/mlb 35 files 2026-10-18..10-28 with captured_utc but 0 of 84 sampled records carry a source timestamp", ["arch:edge-finder-api:projection-data:availability/mlb", "doc:sift-alpha/research/audit/integrity/record_vs_batch_timing.json"]),
  "m.rules_text": (S, UK, "daily discovery contracts carry no rules text (0/15 families)", ["doc:edge-finder-api/data/kalshi/discovery/2026-10-28.json"]),
  "m.quote_history": (P, USE, "data/kalshi_registry_snapshots 582 files 2026-06-08..11-01; discovery daily; only 13 of 215 MLB series had counts enumerated on 2026-10-28", ["arch:edge-finder-api:main:data/kalshi_registry_snapshots", "doc:edge-finder-api/data/kalshi/discovery/2026-10-28_series_catalogue.json"]),
@@ -145,6 +149,9 @@ CUR = {
  "soc.referee": (N, NC, "results record has no referee field; no referee path in the archive", ["arch:soccer-edge-finder:data-archive:results", "doc:sift-alpha/research/audit/lineage/field_evidence.json"]),
 },
 "TENNIS": {
+ "m.orderbook_depth": (P, UK, "capture books.jsonl.gz (400 records, captured_at 2026-11-02T23:55Z): full orderbook populated on 100%", ["arch:Tennis-Edge-Finder:tennis-data:tennis-edge-finder/data/kalshi/capture", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
+ "m.volume_oi": (P, UK, "quotes.jsonl.gz (619 records): volume_fp / open_interest_fp / volume_24h_fp present on 100%, non-zero on 48.6% / 48.6% / 45.1%, stamped captured_at", ["arch:Tennis-Edge-Finder:tennis-data:tennis-edge-finder/data/kalshi/capture", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
+ "m.lifecycle": (P, UK, "quotes.jsonl.gz: status / close_time / expected_expiration_time / can_close_early / early_close_condition / settlement_timer_seconds on 100% of 619 records, stamped captured_at; state at each capture only", ["arch:Tennis-Edge-Finder:tennis-data:tennis-edge-finder/data/kalshi/capture", "doc:sift-alpha/research/audit/lineage/market_record_fields_extra.json"]),
  "m.fees": (M, UK, "fee_type / fee_multiplier per series in config/kalshi_tennis_series.json (static snapshot 2026-09-11)", ["doc:Tennis-Edge-Finder/config/kalshi_tennis_series.json"]),
  "m.rules_text": (S, UK, "config/kalshi_settlement_rules.json; 286 contract-terms PDFs listed but not parsed", ["doc:Tennis-Edge-Finder/docs/DATA_SOURCES.md"]),
  "m.quote_history": (P, USE, "tennis-data branch kalshi: 114,371 files 2026-09-11..11-02", ["arch:Tennis-Edge-Finder:tennis-data:tennis-edge-finder/data/kalshi"]),

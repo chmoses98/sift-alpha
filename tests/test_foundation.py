@@ -68,3 +68,21 @@ class Foundation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CuratedEvidencePaths(unittest.TestCase):
+    def test_every_cited_sift_alpha_evidence_file_exists_and_status_counts_are_consistent(self):
+        import json, os, re
+        from alpha_engine.collection_curated import CUR
+        root = os.path.join(os.path.dirname(__file__), "..")
+        cited = {e[len("doc:sift-alpha/"):] for sport in CUR.values() for v in sport.values() for e in v[3] if e.startswith("doc:sift-alpha/")}
+        self.assertTrue(cited)
+        for rel in cited:
+            self.assertTrue(os.path.exists(os.path.join(root, rel)), rel)
+        # regenerated gap report must agree with the curated table (no stale numbers on the dashboard)
+        g = json.load(open(os.path.join(root, "research", "audit", "collection_gap_report.json")))
+        st = json.load(open(os.path.join(root, "research", "audit", "collection_status.json")))
+        for sp, v in g["sports"].items():
+            n_ref = sum(1 for i in st["sports"][sp]["inputs"].values() if i["verification_class"] == "CODE_REFERENCE_ONLY")
+            self.assertEqual(v["verification_counts"].get("CODE_REFERENCE_ONLY", 0), n_ref, sp)
+        self.assertEqual(sum(v["verification_counts"].get("CODE_REFERENCE_ONLY", 0) for v in g["sports"].values()), 104)

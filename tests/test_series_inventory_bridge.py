@@ -4,8 +4,9 @@ import json
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
-from alpha_engine.series_pagination import capture_series
+from alpha_engine.series_pagination import verify_capture, capture_series
 from alpha_engine.series_inventory_bridge import audit_capture, append
 
 SERIES = "KXNFLGAME"
@@ -84,6 +85,32 @@ class BridgeTests(unittest.TestCase):
             page.write_bytes(b'{"markets":[]}')
             with self.assertRaises(ValueError):
                 audit_capture(d, m, "NFL")
+
+    def test_independent_verifier_enforces_aggregate_byte_budget(self):
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d, fetcher=fetch)
+            # A previously captured original can still fail a tighter
+            # independent verification budget; no page hashes are altered.
+            with patch("alpha_engine.series_pagination.MAX_TOTAL_BYTES", 1):
+                with self.assertRaisesRegex(ValueError, "total response budget"):
+                    verify_capture(d, m)
+
+    def test_independent_verifier_rejects_cyclic_cursor_even_with_matching_hash(self):
+        import hashlib
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d, fetcher=fetch)
+            page = Path(d) / SERIES / m["pages"][1]["file"]
+            payload = json.loads(page.read_bytes())
+            payload["cursor"] = "next"  # same cursor as the first page
+            raw = json.dumps(payload).encode()
+            page.write_bytes(raw)
+            m["pages"][1]["sha256"] = hashlib.sha256(raw).hexdigest()
+            m["pages"][1]["bytes"] = len(raw)
+            m["pages"][1]["next_cursor"] = "next"
+            m["pagination"] = "INCOMPLETE_PAGE_LIMIT"
+            m["all_reported_pages_retrieved"] = False
+            with self.assertRaisesRegex(ValueError, "Cyclic verified pagination cursor"):
+                verify_capture(d, m)
 
     def test_future_capture_clock_and_unsupported_sport(self):
         with TemporaryDirectory() as d:

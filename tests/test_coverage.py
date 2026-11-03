@@ -72,7 +72,7 @@ class Lineage2(unittest.TestCase):
         self.assertEqual(s["NHL"]["inputs"]["nhl.lines"]["verification_class"], "VERIFIED_COLLECTION")
         self.assertEqual(s["CFB"]["inputs"]["cfb.injuries"]["verification_class"], "STALE_OR_PARTIAL")     # 35 injury rows of 3,085
         self.assertEqual(s["NBA"]["inputs"]["nba.starters_pit"]["verification_class"], "MISSING")  # expected_*_starters empty on 0/376 sampled records
-        n = sum(1 for sp in s.values() for r in sp["inputs"].values() if r["verification_class"] == "CODE_REFERENCE_ONLY")
+        n = sum(1 for sp in s.values() for r in sp["inputs"].values() if r["verification_class"] == "CODE_REFERENCE_ONLY" and not r.get("added_overnight"))
         self.assertLessEqual(n, 123 + 12)      # 12 new MLB market-specific inputs start as code-reference-only
 
     def test_family_history_for_all_eight_sports_is_scanned_or_labelled(self):

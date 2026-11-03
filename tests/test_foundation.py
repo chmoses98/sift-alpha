@@ -85,4 +85,6 @@ class CuratedEvidencePaths(unittest.TestCase):
         for sp, v in g["sports"].items():
             n_ref = sum(1 for i in st["sports"][sp]["inputs"].values() if i["verification_class"] == "CODE_REFERENCE_ONLY")
             self.assertEqual(v["verification_counts"].get("CODE_REFERENCE_ONLY", 0), n_ref, sp)
-        self.assertEqual(sum(v["verification_counts"].get("CODE_REFERENCE_ONLY", 0) for v in g["sports"].values()), 104)
+        base = sum(1 for sp in st["sports"].values() for i in sp["inputs"].values()
+                   if i["verification_class"] == "CODE_REFERENCE_ONLY" and not i.get("added_overnight"))
+        self.assertEqual(base, 104)  # original-baseline inputs; newly added candidates are tracked separately

@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from .audit_schema import SCHEMA_VERSION
 from .input_catalog import INPUTS, BP, COMMON, COMMON_BP, LADDER_BP
+from .input_extras import EXTRA, COMMON_EXTRA
+NEW_IDS = {l.split("|")[0] for t in list(EXTRA.values()) + [COMMON_EXTRA] for l in t.splitlines()}
 from .collection_curated import CUR
 from .master_inventory import AUDIT, SPORTS, REPO
 
@@ -84,15 +86,20 @@ def main():
         ev = ce["sports"][sp]; rows = {}
         for iid, meta in allin.items():
             cur = CUR[sp].get(iid) or CUR[sp].get(iid)
-            code = ev["inputs"][iid]
+            code = ev["inputs"].get(iid)
+            if code is None:  # never audited: stay UNKNOWN, do not guess
+                rows[iid] = {"label": meta["label"], "collection": "UNKNOWN", "verification_class": "UNKNOWN", "model_use": "UNKNOWN", "curated": False,
+                             "note": "newly added candidate input; no code-evidence scan has been run yet", "evidence": [],
+                             "code": {"regex": None, "collect_files": 0, "model_files": 0, "examples": []}}
+                continue
             if cur:
                 coll, use, note, evid = cur
-            elif meta["category"] == "distribution":
+            elif meta["category"] == "distribution" and iid not in NEW_IDS:
                 coll, use, note, evid = "DERIVED", "UNKNOWN", "derived from archived results/prices; model implementation not verified in this pass", []
             else:
                 coll = "CODE_REFERENCE_ONLY" if code["collect_files"] else ("NO_REFERENCE_FOUND" if not code["files_total"] else "CODE_REFERENCE_ONLY")
                 use, note, evid = "UNKNOWN", ("keyword hits only in " + ("collection" if code["collect_files"] else "non-collection") + " code; archival and correct use unverified") if code["files_total"] else "no code reference matched the recorded regex", []
-            rows[iid] = {"label": meta["label"], "collection": coll, "verification_class": VCLASS[coll], "model_use": use, "curated": bool(cur), "note": note, "evidence": evid,
+            rows[iid] = {"label": meta["label"], "collection": coll, "verification_class": VCLASS[coll], "model_use": use, "curated": bool(cur), "added_overnight": iid in NEW_IDS, "note": note, "evidence": evid,
                          "code": {"regex": code["regex"], "collect_files": code["collect_files"], "model_files": code["model_files"], "examples": code["collect_examples"] + code["model_examples"][:2]}}
         cs["sports"][sp] = {"repo": ev["repo"], "commit": ev["commit"], "inputs": rows,
                             "archives": [{"key": k, "repo": v.get("repo"), "branch": v.get("branch"), "commit": v.get("commit"), "total_files": v.get("total_files")} for k, v in arch.items() if k.split(":")[0].lower().startswith(REPO[sp].lower().split("-")[0])]}

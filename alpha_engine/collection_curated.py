@@ -185,3 +185,29 @@ CUR["CBB"]["m.settlement_truth"] = (P, UK, "kalshi-archive snapshots 2026-10-05.
 
 # --- Tennis settlement: only the three pinned 2026-10-25 captures were verified (docs/TENNIS_SETTLEMENT_EVIDENCE.md); no continuous settlement archive was inspected ---
 CUR["TENNIS"]["m.settlement_truth"] = (S, UK, "three pinned 2026-10-25 captures, 36 settled contracts: status/result/settlement_value_dollars/settlement_ts populated, 17 YES / 17 NO / 2 scalar (0.5000 - neither side wins); occurrence_datetime is AFTER settlement_ts for 34 of 36 so it is not an independent result clock. One day only - the 114,371-file tennis-data kalshi tree was not checked for continuous settlement coverage", ["doc:sift-alpha/docs/TENNIS_SETTLEMENT_EVIDENCE.md", "doc:sift-alpha/research/tennis_settlement_pins.json"])
+
+# --- live source-field probe (run 41695557684; research/audit/lineage/source_field_probe.json): the FIELD EXISTS on completed games at a free public endpoint.
+# That is "source available, not collected" - no sport repo archives these fields, so none of these is counted as collected. 3 games per league (MLB statsapi: 1 game, season over).
+_FP = "doc:sift-alpha/research/audit/lineage/source_field_probe.json"
+_NOTE = " Post-game statistic: usable only as a lagged rate for LATER games. Presence on 3 sampled completed games, not a coverage rate; not archived by any collector."
+def _N(note, extra=()): return (N, NC, note + _NOTE, [_FP, *extra])
+CUR["NBA"]["nba.foul_rates"] = _N("ESPN summary: team `fouls`, player PF + MIN labels (3/3 games).")
+CUR["NBA"]["nba.three_volume"] = _N("ESPN summary: team threePointFieldGoalsMade-Attempted, player 3PT (3/3 games).")
+CUR["NBA"]["nba.steal_block_rates"] = _N("ESPN summary: team steals/blocks/turnovers, player STL/BLK/TO (3/3 games).")
+CUR["NBA"]["nba.ft_attempts"] = _N("ESPN summary: team freeThrowsMade-freeThrowsAttempted, player FT (3/3 games).")
+CUR["CBB"]["cbb.three_pt_dist"] = _N("ESPN summary: team threePointFieldGoalsMade-Attempted + player 3PT (3/3 games). Single-game variance needs a multi-season history that does not exist in any archive yet.")
+CUR["CBB"]["cbb.free_throw"] = _N("ESPN summary: team freeThrowsMade-Attempted, player FT (3/3 games).")
+CUR["CBB"]["cbb.player_foul"] = _N("ESPN summary: team fouls/technical/flagrant, player PF + MIN (3/3 games).")
+CUR["NFL"]["nfl.kicker"] = _N("ESPN summary player category `kicking`: FG, LONG, PCT, XP, PTS (3/3 games). Distance buckets / touchback rate are NOT in the box score (need play text).")
+CUR["CFB"]["cfb.kicker"] = _N("ESPN summary player category `kicking`: FG, LONG, PCT, XP, PTS (3/3 games). Distance buckets are NOT in the box score.")
+CUR["NFL"]["nfl.opening_script"] = _N("ESPN summary `drives` list present on 3/3 games (23-28 drives each) + scoringPlays; per-drive result/yards/plays must be parsed from it.")
+CUR["CFB"]["cfb.first_drive"] = _N("ESPN summary `drives` list present on 3/3 games (16-24 drives) + scoringPlays.")
+CUR["NHL"]["nhl.shots_against"] = _N("ESPN summary team `shotsTotal` for both teams (opponent's total = shots against) and goalie SA/GA/SV% labels (3/3 games).")
+CUR["NHL"]["nhl.penalty_rates"] = _N("ESPN summary team penalties, penaltyMinutes, powerPlayOpportunities/Goals/Pct (3/3 games); NHL api-web play-by-play has `penalty` events (7 in one game). Referee crew was not checked.")
+CUR["NHL"]["nhl.shot_location"] = _N("NHL api-web play-by-play: xCoord/yCoord on 115/115, 115/115 and 117/117 shot events (shot-on-goal, goal, missed, blocked) in 3 games.")
+CUR["NHL"]["nhl.shootout_record"] = (S, NC, "Partial. Period rows (period-scoring) give only an OT flag (43/192 games). SOURCES that resolve it exist: NHL api-web play-by-play periodDescriptor.periodType = REG/OT/SO (SO events present in 1 of 3 sampled games) and ESPN team `shootoutGoals` + goalie SOS/SOSA labels. Not archived." + _NOTE, [_PSV, _FP, _PS_WHERE + "/nhl"])
+CUR["MLB"]["mlb.k_rates"] = _N("MLB statsapi boxscore pitching: strikeOuts, battersFaced (1 game; MLB season over). Whiff/CSW need pitch-level data, not checked.")
+CUR["MLB"]["mlb.contact_dist"] = _N("MLB statsapi boxscore batting: hits, totalBases, rbi, plateAppearances, strikeOuts (1 game).")
+CUR["MLB"]["mlb.sb_context"] = _N("MLB statsapi batting stolenBases/caughtStealing (1 game). Pitcher hold time and catcher pop time were NOT found in the box score.")
+CUR["MLB"]["mlb.f3_split"] = _N("MLB statsapi linescore: runs for each of 9 innings, home and away (1 game); first-three-innings split is derivable. Kalshi KXMLBF3 (first 3 innings) has 1,419 settled markets in the MLB inventory.")
+CUR["TENNIS"]["ten.tiebreak"] = _N("ESPN tennis scoreboard competitor.linescores carry `tiebreak` scores (ATP sample: 7-6 set with tiebreak 7). Break points / serve statistics were NOT verified (competitor.statistics key exists, contents not inspected).")

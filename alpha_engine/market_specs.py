@@ -72,7 +72,7 @@ for _s, _spec, _names in [
  ("NHL", "hk_news_event", "non_hockey_or_office"),
  # MLB
  ("MLB", "bs_side", "game_result game_spread other_league_game_result"), ("MLB", "bs_total", "game_total"), ("MLB", "bs_team_total", "team_total"),
- ("MLB", "bs_inning_result", "inning_result"), ("MLB", "bs_f5", "inning_total first5_spread first5_total"), ("MLB", "bs_first_inning", "first_inning_runs"),
+ ("MLB", ["bs_inning_result", "bs_f3"], "inning_result"), ("MLB", "bs_f5", "inning_total first5_spread first5_total"), ("MLB", "bs_first_inning", "first_inning_runs"),
  ("MLB", "bs_margin", "winning_margin"), ("MLB", "bs_extras", "extra_innings"), ("MLB", "bs_delay", "game_delay"),
  ("MLB", "bs_hitter_hits", "hitter_hits hitter_hits_runs_rbis"), ("MLB", "bs_hitter_tb_rbi", "hitter_rbis hitter_stolen_bases hitter_total_bases"),
  ("MLB", "bs_hitter_hr", "hitter_home_runs"), ("MLB", "bs_pitcher_k", "pitcher_strikeouts"), ("MLB", "bs_pitcher_other", "pitcher_outs pitcher_earned_runs pitcher_hits_allowed pitcher_walks_allowed"),
@@ -103,9 +103,7 @@ UNSPECIFIED = {  # honest: named, with the reason a truthful spec cannot be writ
 OUT_OF_SCOPE = {"MLB/non_baseball": "not a baseball-outcome market", "MLB/non_baseball_esports": "esports, not baseball",
                 "MLB/SWEPT_EMPTY_SERIES": "71 swept series returned zero markets (nothing to specify)", "TENNIS/NOT_TENNIS": "not a tennis-outcome market"}
 ANTICIPATED = {  # classes the user named / sport norms imply; NOT observed in audited Kalshi snapshots
- "sc_corners": "soccer corners (not observed among the 48 ambiguous soccer series examined)", "sc_cards": "soccer cards/bookings (not observed)",
- "sc_shots": "soccer shots / shots on target (not observed)",
- "bs_f3": "MLB first-three-innings (not observed; F5 and first-inning are)"}
+ "sc_cards": "soccer cards/bookings: NO series with card/booking/yellow in its title among the 4,081 live Sports series (2026-11-03), so likely not offered"}
 
 
 def parse_driver(s):
@@ -204,7 +202,7 @@ def build():
             for i, t in parse_driver(SPEC[s]["drivers"][sp]).items():
                 if i not in drivers or "XCE".index(t) > "XCE".index(drivers[i]): drivers[i] = t
         ess = [i for i, t in drivers.items() if t == "E"]; vc = Counter(cs[sp]["inputs"][i]["verification_class"] for i in ess)
-        fams[fid] = {"sport": sp, "native_family": a["native_family"], "markets_now": a["markets_observed"], "status": "SPECIFIED", "specs": a["specs"], "drivers": drivers, "added_by_overlay": True, "reason": a["note"],
+        fams[fid] = {"sport": sp, "native_family": a["native_family"], "markets_now": a["markets_observed"], "status": a.get("status", "SPECIFIED"), "specs": a["specs"], "drivers": drivers, "added_by_overlay": True, "reason": a["note"],
                      "essential_total": len(ess), "essential_by_status": dict(vc), "essential_verified": vc.get("VERIFIED_COLLECTION", 0) + vc.get("DERIVED", 0),
                      "essential_missing": sorted(i for i in ess if cs[sp]["inputs"][i]["verification_class"] in ("MISSING", "UNKNOWN", "CODE_REFERENCE_ONLY"))}
     if unmapped:

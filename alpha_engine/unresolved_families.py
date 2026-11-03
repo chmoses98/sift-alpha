@@ -47,8 +47,12 @@ FAMILY_STATUS = {"NBA/UNMAPPED_SERIES": "SPECIFIED_BY_SERIES_SPLIT", "CBB/OTHER"
                  "NFL/NFL_MISC_UNCLASSIFIED": "SPECIFIED_BY_SERIES_SPLIT", "MLB/unknown": "MISMAPPED_REROUTED"}
 # families the master inventory omitted, discovered through the mis-filed series (additive overlay; master_inventory.json untouched)
 ADDED_FAMILIES = {"SOCCER/player_goalscorer": {"sport": "SOCCER", "native_family": "player_goalscorer", "kind": "player_scorer", "specs": ["sc_player"],
-                  "series": ["KXMLSFIRSTGOAL", "KXMLSGOAL"], "markets_observed": 28, "as_of": "2026-10-28 (MLB discovery file, one slate)",
-                  "note": "found under MLB/unknown; Kalshi soccer first-goalscorer / anytime-scorer contracts exist (MLS observed); other leagues not yet checked"}}
+                  "series": ["KXMLSFIRSTGOAL", "KXMLSGOAL"], "markets_observed": 28, "as_of": "2026-10-28 (MLB discovery file, one slate)", "status": "SPECIFIED",
+                  "note": "found under MLB/unknown; MLS first-goalscorer / anytime-scorer contracts observed. The live Kalshi list also has ~32 more goal/assist series for other leagues (kalshi_live_series.json), none inventoried"},
+ "SOCCER/corners": {"sport": "SOCCER", "native_family": "corners", "kind": "team_stat", "specs": ["sc_corners"], "series": [], "markets_observed": None, "as_of": "series list 2026-11-03", "status": "SPECIFIED_UNOBSERVED",
+                  "note": "22 live Kalshi series with 'corner' in the title (total/team corners: EPL, La Liga, Serie A, Bundesliga, Ligue 1, UCL, MLS, World Cup ...). Series exist; no market was ever archived, rules text unseen"},
+ "SOCCER/shots_sot": {"sport": "SOCCER", "native_family": "shots_sot", "kind": "team_stat", "specs": ["sc_shots"], "series": [], "markets_observed": None, "as_of": "series list 2026-11-03", "status": "SPECIFIED_UNOBSERVED",
+                  "note": "8 live Kalshi series (UCL/World Cup shots, shots on target, shots on goal; player and team). Series exist; no market archived, rules text unseen"}}
 
 
 def build(inv):

@@ -15,7 +15,7 @@ class Specs(unittest.TestCase):
         out = json.load(open(A / "market_specs.json"))
         added = {k for k, v in out["families"].items() if v.get("added_by_overlay")}
         self.assertEqual({f["id"] for f in master} | added, set(out["families"]))
-        self.assertEqual(added, {"SOCCER/player_goalscorer"})     # inventory omission found via a mis-filed series
+        self.assertEqual(added, {"SOCCER/player_goalscorer", "SOCCER/corners", "SOCCER/shots_sot"})   # omissions found via mis-filed series + live Kalshi series list
         for fid, r in out["families"].items():
             self.assertIn(r["status"], {"SPECIFIED", "SPECIFIED_UNOBSERVED", "SPECIFIED_BY_SERIES_SPLIT", "MISMAPPED_REROUTED", "UNSPECIFIED", "OUT_OF_SCOPE"}, fid)
             if r["status"] in ("UNSPECIFIED", "OUT_OF_SCOPE", "MISMAPPED_REROUTED"):

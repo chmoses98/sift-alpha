@@ -80,8 +80,8 @@ PERIOD_KINDS = {"winner", "spread", "total", "team_total", "btts", "game_stat", 
 RANK = {"E": 3, "C": 2, "X": 1}
 # cross-sport market inputs: every family gets the tape; ladder-structured families get strike hit rates
 COMMON_LINKS = {"all": ("m.trade_tape", "C"), "ladder": ("m.strike_hit_rates", "C")}
-UNLINKED = {"soc.corners": "no Kalshi soccer corners family observed in the 48 ambiguous series examined", "soc.shots": "no shots/SOT family observed",
-            "soc.fouls_cards": "no cards/fouls family observed"}
+UNLINKED = {"soc.corners": "series exist on Kalshi (22) but no market was archived; linked via the SOCCER/corners overlay family spec, not by rule", "soc.shots": "8 live series, none archived; linked via the SOCCER/shots_sot overlay spec",
+            "soc.fouls_cards": "no card/foul series found in the live Sports list (2026-11-03)"}
 
 
 def links_for(fam):

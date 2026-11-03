@@ -222,3 +222,11 @@ CUR["MLB"]["mlb.platoon"] = (M, UK, "batterHand + pitcherHand + outcome on every
 CUR["MLB"]["mlb.sp_workload"] = (M, UK, "pitcher_games index + per-pitch rows give pitches thrown and batters faced per pitcher-game (derivable, not stored)." + _SCN, _SC)
 CUR["MLB"]["mlb.sp_quality"] = (S, UK, "PARTIAL: raw inputs for stuff-style metrics are archived (pitch type 99.6%, release speed, spin, break, extension, plate location) but NO xFIP/SIERA/Stuff+ or projection exists." + _SCN, _SC)
 CUR["MLB"]["mlb.k_rates"] = (M, NC, "whiff/CSW/K derivable from pitch `description` (swinging_strike, called_strike) and `events`; none stored." + _SCN, _SC + [_FP])
+
+# --- soccer PR #39 live probe (run 41706413941; research/audit/lineage/soccer_pr39_live_probe.json): populated values verified on a runner, but the PR is an unmerged draft and
+# nothing archives these fields in production, so the class stays SOURCE_AVAILABLE_NOT_COLLECTED. Values are post-match: lagged inputs only.
+_SP = "doc:sift-alpha/research/audit/lineage/soccer_pr39_live_probe.json"
+_SPN = " LIVE RUN 41706413941 (PR #39 code, unmerged): 153 of 164 finished matches (19 leagues, 2026-10-29..11-03) carry populated shots, shots on target, corners, yellow and red for both sides with box_stats_captured_at and source; 0 impossible values (SOT<=shots always); 11 finished matches (bra.1, ita.1, ksa.1, league_cup) got no box stats - cause not yet determined; second run appended 0 rows and rewrote 0 timestamps (idempotent). Only a 5-day window; not production-archived; post-match (lagged) use only."
+CUR["SOCCER"]["soc.shots"] = (N, UK, "shots + shots on target." + _SPN, [_SP, "doc:sift-alpha/research/audit/lineage/soccer_archive_and_espn_probe_evidence.json"])
+CUR["SOCCER"]["soc.corners"] = (N, UK, "corners." + _SPN, [_SP, "doc:sift-alpha/research/audit/lineage/soccer_archive_and_espn_probe_evidence.json"])
+CUR["SOCCER"]["soc.fouls_cards"] = (N, UK, "yellow/red cards (153 exact box-score, 11 scoreboard-only 'unreconciled'). Fouls and referee not examined in the live run." + _SPN, [_SP, "doc:sift-alpha/research/audit/lineage/soccer_archive_and_espn_probe_evidence.json"])

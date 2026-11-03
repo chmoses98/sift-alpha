@@ -87,4 +87,4 @@ class CuratedEvidencePaths(unittest.TestCase):
             self.assertEqual(v["verification_counts"].get("CODE_REFERENCE_ONLY", 0), n_ref, sp)
         base = sum(1 for sp in st["sports"].values() for i in sp["inputs"].values()
                    if i["verification_class"] == "CODE_REFERENCE_ONLY" and not i.get("added_overnight"))
-        self.assertEqual(base, 100)  # baseline code-reference-only: 104 -> 100 (cfb.half_split, cbb.half_split via live period-scoring verification; CBB + Tennis m.settlement_truth via archive/pinned evidence); newly added candidates are tracked separately
+        self.assertEqual(base, 95)  # baseline code-reference-only: 104 -> 95 (cfb.half_split, cbb.half_split via live period-scoring verification; CBB + Tennis m.settlement_truth, CBB venue, MLB statcast-backed inputs via archive/pinned evidence); newly added candidates are tracked separately

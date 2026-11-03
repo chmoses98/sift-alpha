@@ -211,3 +211,14 @@ CUR["MLB"]["mlb.contact_dist"] = _N("MLB statsapi boxscore batting: hits, totalB
 CUR["MLB"]["mlb.sb_context"] = _N("MLB statsapi batting stolenBases/caughtStealing (1 game). Pitcher hold time and catcher pop time were NOT found in the box score.")
 CUR["MLB"]["mlb.f3_split"] = _N("MLB statsapi linescore: runs for each of 9 innings, home and away (1 game); first-three-innings split is derivable. Kalshi KXMLBF3 (first 3 innings) has 1,419 settled markets in the MLB inventory.")
 CUR["TENNIS"]["ten.tiebreak"] = _N("ESPN tennis scoreboard competitor.linescores carry `tiebreak` scores (ATP sample: 7-6 set with tiebreak 7). Break points / serve statistics were NOT verified (competitor.statistics key exists, contents not inspected).")
+
+CUR["CBB"]["cbb.venue"] = (P, UK, "schedule-archive rows 2026-10-06..11-03 (35 files, all read): 10,531 rows / 6,116 games, neutral_site 100% (382 neutral games), venue name/id/city/state 99.9%, record-level observed_at 100%. NOT present: altitude, venue coordinates, travel distance (the label's 'altitude' part is uncollected)", ["arch:cbb-edge-finder:schedule-archive:rows", "doc:sift-alpha/research/audit/lineage/cbb_archive_field_evidence.json"])
+
+# --- MLB Statcast pitch-level archive, all 643 game files read (research/audit/lineage/mlb_statcast_archive_evidence.json) ---
+_SC = ["arch:edge-finder-api:main:data/statcast_raw", "doc:sift-alpha/research/audit/lineage/mlb_statcast_archive_evidence.json"]
+_SCN = " RAW post-game pitch data: 643 games / 190,107 pitches, 2026-08-11..09-27 only; git-versioned on main (commit time unchecked) so PIT availability is unverified; aggregates/projections are not stored."
+CUR["MLB"]["mlb.hitter_quality"] = (M, UK, "per-pitch estimatedWOBA on 99.1% of 33,032 batted-ball rows (xwOBA source), launch speed/angle, batted-ball type, batter hand." + _SCN, _SC)
+CUR["MLB"]["mlb.platoon"] = (M, UK, "batterHand + pitcherHand + outcome on every pitch row; splits are derivable, none are stored." + _SCN, _SC)
+CUR["MLB"]["mlb.sp_workload"] = (M, UK, "pitcher_games index + per-pitch rows give pitches thrown and batters faced per pitcher-game (derivable, not stored)." + _SCN, _SC)
+CUR["MLB"]["mlb.sp_quality"] = (S, UK, "PARTIAL: raw inputs for stuff-style metrics are archived (pitch type 99.6%, release speed, spin, break, extension, plate location) but NO xFIP/SIERA/Stuff+ or projection exists." + _SCN, _SC)
+CUR["MLB"]["mlb.k_rates"] = (M, NC, "whiff/CSW/K derivable from pitch `description` (swinging_strike, called_strike) and `events`; none stored." + _SCN, _SC + [_FP])

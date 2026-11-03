@@ -366,3 +366,10 @@ BP = {
  "season_award": "ten.rankings:C",
  "off_field": "ten.news:E",
  "combo": "ten.set_dist:E"}}
+
+
+# overnight expansion: market-specific inputs (see input_extras.py); appended so original ids/ordering are unchanged
+from .input_extras import EXTRA as _EXTRA, COMMON_EXTRA as _COMMON_EXTRA  # noqa: E402
+for _sp, _txt in _EXTRA.items():
+    INPUTS[_sp] = INPUTS[_sp] + "\n" + _txt
+COMMON = COMMON + "\n" + _COMMON_EXTRA

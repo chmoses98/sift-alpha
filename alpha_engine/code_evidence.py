@@ -33,8 +33,31 @@ def scan(sport, repo_dir):
     return out
 
 
+def merge_missing(src, nfl=None):
+    """Scan ONLY ids absent from the committed code_evidence.json and merge them in, recording the scanned commit
+    per input so existing (older-commit) evidence is never silently re-based."""
+    path = AUDIT / "code_evidence.json"
+    res = json.loads(path.read_text()); added = {}
+    for sp in SPORTS:
+        d = Path(nfl) if (sp == "NFL" and nfl) else Path(src) / REPO[sp]
+        have = res["sports"][sp]["inputs"]
+        todo = [i for i in ids_for(sp) if i not in have]
+        if not todo:
+            continue
+        full = scan(sp, d)
+        commit = head(d)
+        for i in todo:
+            have[i] = {**full[i], "scanned_commit": commit}
+        added[sp] = len(todo)
+    path.write_text(json.dumps(res, indent=1))
+    return added
+
+
 def main(argv=None):
-    src = Path((argv or sys.argv[1:])[0]); nfl = Path("/home/user/nfl-edge-finder")
+    a = list(argv or sys.argv[1:])
+    if a and a[0] == "--merge-missing":
+        print(merge_missing(a[1])); return
+    src = Path(a[0]); nfl = Path("/home/user/nfl-edge-finder")
     res = {"schema_version": "audit-1.0", "note": "keyword hits in code; a hit is NOT proof of correct use, absence is limited by the recorded regex", "sports": {}}
     for sp in SPORTS:
         d = nfl if sp == "NFL" else src / REPO[sp]

@@ -21,3 +21,6 @@ KW = {
 # common market inputs
 "m.quote_history": r"quotes|bid|ask|candlestick", "m.orderbook_depth": r"orderbook|books", "m.volume_oi": r"open_interest|volume", "m.ladder_structure": r"ladder|monoton", "m.settlement_truth": r"settle", "m.rules_text": r"rules_primary", "m.external_lines": r"pinnacle|odds_api|sportsbook|consensus_line|pickcenter|b365", "m.fees": r"fee", "m.lifecycle": r"close_time|postpone|halt|expiration",
 }
+
+from .input_extras import KW_EXTRA as _KW_EXTRA  # noqa: E402
+KW.update(_KW_EXTRA)

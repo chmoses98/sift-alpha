@@ -16,7 +16,10 @@ def fetch(url):
     if "cursor=" not in url:
         rows = [{"ticker": SERIES + "-A", "series_ticker": SERIES,
                  "event_ticker": SERIES + "-EVENT",
-                 "rules_primary": "Team A wins", "rules_secondary": "Official final"}]
+                 "rules_primary": "Team A wins", "rules_secondary": "Official final",
+                 "cap_strike": 28.5, "yes_sub_title": "Over 28.5",
+                 "close_time": "2026-11-02T23:00:00Z", "status": "open",
+                 "result": ""}]
         cursor = "next"
     else:
         rows = [{"ticker": SERIES + "-B", "series_ticker": SERIES,
@@ -41,6 +44,11 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(len(row["observed_contracts"]), 2)
             self.assertEqual(len(row["source_page_sha256"]), 2)
             self.assertEqual(row["observed_contracts"][0]["rules_primary"], "Team A wins")
+            self.assertEqual(row["observed_contracts"][0]["cap_strike"], 28.5)
+            self.assertEqual(row["observed_contracts"][0]["yes_sub_title"], "Over 28.5")
+            self.assertEqual(row["observed_contracts"][0]["close_time"], "2026-11-02T23:00:00Z")
+            self.assertEqual(row["observed_contracts"][0]["status_at_receipt"], "open")
+            self.assertEqual(row["observed_contracts"][0]["result_at_receipt_unverified"], "")
             self.assertEqual(row["observed_contracts"][1]["rules_secondary"], "Official final")
             self.assertEqual(row["market_collection_status"], "COLLECTED_VALID")
             self.assertEqual(row["model_usage_status"], "UNKNOWN")

@@ -222,7 +222,8 @@ def verify_capture(directory, manifest):
             raise ValueError("Verified capture exceeds total response budget")
         payload = json.loads(raw)
         rows = payload.get("markets")
-        if not isinstance(rows, list) or len(rows) != page.get("n_contracts"):
+        if (not isinstance(rows, list) or len(rows) > MAX_MARKETS
+                or len(rows) != page.get("n_contracts")):
             raise ValueError("Page source denominator changed")
         for row in rows:
             ticker = row.get("ticker") if isinstance(row, dict) else None

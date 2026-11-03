@@ -1,0 +1,92 @@
+"""Offline end-to-end capture -> independently verified -> dashboard evidence."""
+import copy
+import json
+from tempfile import TemporaryDirectory
+from pathlib import Path
+import unittest
+
+from alpha_engine.series_pagination import capture_series
+from alpha_engine.series_inventory_bridge import audit_capture, append
+
+SERIES = "KXNFLGAME"
+NOW = "2026-11-02T18:00:00Z"
+
+
+def fetch(url):
+    if "cursor=" not in url:
+        rows = [{"ticker": SERIES + "-A", "series_ticker": SERIES,
+                 "event_ticker": SERIES + "-EVENT",
+                 "rules_primary": "Team A wins", "rules_secondary": "Official final"}]
+        cursor = "next"
+    else:
+        rows = [{"ticker": SERIES + "-B", "series_ticker": SERIES,
+                 "event_ticker": SERIES + "-EVENT",
+                 "rules_primary": "Team B wins", "rules_secondary": "Official final"}]
+        cursor = None
+    return json.dumps({"markets": rows, "cursor": cursor}).encode(), "Mon, 02 Nov 2026 18:00:00 GMT"
+
+
+def matrix():
+    return {"authority": "RESEARCH_ONLY_NOT_LIVE_COLLECTION",
+            "live_capture_running": False, "all_market_families_certified": False,
+            "family_rows": [], "missing_input_queue": []}
+
+
+class BridgeTests(unittest.TestCase):
+    def test_two_original_pages_become_dashboard_row_without_model_claims(self):
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d, fetcher=fetch)
+            row = audit_capture(d, m, "NFL")
+            self.assertEqual(row["observed_denominator"], 2)
+            self.assertEqual(len(row["observed_contracts"]), 2)
+            self.assertEqual(len(row["source_page_sha256"]), 2)
+            self.assertEqual(row["observed_contracts"][0]["rules_primary"], "Team A wins")
+            self.assertEqual(row["observed_contracts"][1]["rules_secondary"], "Official final")
+            self.assertEqual(row["market_collection_status"], "COLLECTED_VALID")
+            self.assertEqual(row["model_usage_status"], "UNKNOWN")
+            self.assertEqual(row["point_in_time_pregame_eligibility"], "UNKNOWN")
+            self.assertIsNone(row["independently_valid_evaluations"])
+            self.assertEqual(row["exact_settlement_rule_status"],
+                             "LITERAL_RULES_CAPTURED_NOT_INDEPENDENTLY_VERIFIED")
+            output = append(matrix(), row)
+            self.assertEqual(len(output["family_rows"]), 1)
+            self.assertEqual(output["missing_input_queue"][0]["denominator"], 2)
+            self.assertFalse(output["live_capture_running"])
+            self.assertFalse(output["all_market_families_certified"])
+            with self.assertRaisesRegex(ValueError, "already added"):
+                append(output, row)
+
+    def test_partial_capture_cannot_claim_complete(self):
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d, fetcher=fetch, max_pages=1)
+            row = audit_capture(d, m, "NFL")
+            self.assertEqual(row["observed_denominator"], 1)
+            self.assertFalse(row["all_reported_pages_retrieved"])
+            self.assertFalse(row["complete_series_or_market_tape"])
+            self.assertIn("REMAINING_SERIES_PAGES", append(matrix(), row)["missing_input_queue"][0]["missing"])
+
+    def test_tampered_source_or_manifest_rejected_before_dashboard(self):
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d, fetcher=fetch)
+            altered = copy.deepcopy(m)
+            altered["observed_denominator"] = 999
+            with self.assertRaises(ValueError):
+                audit_capture(d, altered, "NFL")
+            page = Path(d)/SERIES/m["pages"][0]["file"]
+            page.write_bytes(b'{"markets":[]}')
+            with self.assertRaises(ValueError):
+                audit_capture(d, m, "NFL")
+
+    def test_future_capture_clock_and_unsupported_sport(self):
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d, fetcher=fetch)
+            with self.assertRaises(ValueError):
+                audit_capture(d, m, "NOT_A_SPORT")
+            altered = copy.deepcopy(m)
+            altered["captured_at_utc"] = "2099-01-01T00:00:00Z"
+            with self.assertRaises(ValueError):
+                audit_capture(d, altered, "NFL")
+
+
+if __name__ == "__main__":
+    unittest.main()

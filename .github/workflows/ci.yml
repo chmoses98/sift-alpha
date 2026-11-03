@@ -42,7 +42,12 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_coverage.py' -v
           python3 -m unittest discover -s tests -p 'test_pit_guard.py' -v
           python3 -m unittest discover -s tests -p 'test_sweep_results.py' -v
+          python3 -m unittest discover -s tests -p 'test_sweep_ingest.py' -v
           pip install -q pyyaml && python3 -m unittest discover -s tests -p 'test_kalshi_sweep.py' -v
+      - name: Verify multi-page public series capture repairs 100-contract ceiling (offline)
+        run: python3 -m unittest discover -s tests -p 'test_series_pagination.py' -v
+      - name: Verify immutable prospective pages reach market-first dashboard without false certification
+        run: python3 -m unittest discover -s tests -p 'test_series_inventory_bridge.py' -v
       - name: Research director and fail-closed quality tests
         run: python3 -m unittest discover -s tests -p 'test_engine*.py' -v
       - name: Verify director produces only a planning artifact
@@ -435,6 +440,80 @@ jobs:
           assert all(len(r["source_sha256"])==64 for r in x["family_rows"])
           assert not x["all_market_families_certified"] and not x["live_capture_running"]
           print("Source-verified family inventory and explicit missing-input queue; no live/certified claims.")
+          PY
+      - name: Adversarial source-to-dashboard market-series audit tests
+        run: python3 -m unittest discover -s tests -p 'test_market_series_audit.py' -v
+      - name: Generate dashboard audit from source-verified NBA/NHL tape and eight-sport matrix
+        run: python3 -m alpha_engine.market_series_audit
+      - name: Guard dashboard artifact against inflated coverage and fabricated model authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("public/market-family-input-coverage.json").read_text())
+          assert x["schema_version"]==2
+          assert x["authority"]=="RESEARCH_ONLY_NOT_LIVE_COLLECTION"
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          assert set(x["literal_series_audit"])=={"NBA","NHL"}
+          assert x["discovered_literal_series_count"]>0
+          for sport, audit in x["literal_series_audit"].items():
+              assert audit["n_tickers_with_literal_series"]+audit["n_tickers_quarantined"]==audit["n_unique_tickers_in_prefix"], sport
+              assert audit["n_literal_series"]>0, sport
+              rows=[r for r in x["family_rows"] if r["sport"]==sport and r["family"].startswith("SERIES:")]
+              assert len(rows)==audit["n_literal_series"]
+              assert sum(r["observed_denominator"] for r in rows)==audit["n_tickers_with_literal_series"]
+              for r in rows:
+                  assert r["market_collection_status"]=="COLLECTED_VALID"
+                  assert r["model_usage_status"]=="UNKNOWN"
+                  assert r["input_collection_status"]=="UNKNOWN"
+                  assert r["independently_valid_evaluations"] is None
+                  assert r["settlement_outcome_join"]=="UNKNOWN"
+                  assert r["full_checkpoint_delta_replay"]=="VERIFIED_PREFIX_ONLY"
+          assert x["live_capture_running"] is False
+          assert x["all_market_families_certified"] is False
+          print("Source-verified literal-series dashboard artifact; no model or betting certification.")
+          PY
+      - name: Adversarial tests for complete CFB event-directory enumeration
+        run: python3 -m unittest discover -s tests -p 'test_cfb_shard_family_audit.py' -v
+      - name: Verify all 27 pinned CFB event shards and extend dashboard audit
+        run: python3 -m alpha_engine.cfb_shard_family_audit
+      - name: Guard CFB market-family denominator and no-false-authority claims
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("public/market-family-input-coverage.json").read_text())
+          a=x["cfb_event_shard_audit"]
+          assert a["n_event_shards"]==27
+          assert a["n_distinct_literal_events"]==27
+          assert a["n_distinct_market_tickers"]>100
+          assert a["n_native_family_period_groups"]>10
+          assert a["event_date_vs_game_key_conflict"]
+          assert not a["actual_game_start_verified"]
+          assert not a["archive_capture_clock_verified"]
+          assert not a["settlement_join_verified"]
+          assert not a["full_cfb_market_coverage_verified"]
+          rows=[r for r in x["family_rows"] if r["sport"]=="CFB" and r["family"].startswith("SHARD:")]
+          assert len(rows)==27
+          assert sum(r["observed_denominator"] for r in rows)==a["n_distinct_market_tickers"]
+          assert sum(len(r["observed_contracts"]) for r in rows)==a["n_distinct_market_tickers"]
+          assert all(r["model_usage_status"]=="UNKNOWN" and r["observed_at_utc"] is None for r in rows)
+          half=[r for r in rows if r["period"]=="first_half"]
+          assert half, "Expected real first-half contract shards"
+          assert all(r["generic_pricer_capability"]=="EXPLICIT_UNSUPPORTED_FIRST_HALF_ONLY" for r in half)
+          assert all(r["generic_pricer_evidence"]["source_git_blob_sha1"]=="7d73b0edce9dcc6ccdfb2375f001a1838f55a80e" for r in half)
+          assert all(r["generic_pricer_evidence"]["all_other_pricing_routes_audited"] is False for r in half)
+          assert all(r["generic_pricer_capability"]=="UNKNOWN" for r in rows if r["period"]!="first_half")
+          assert all(r["independently_valid_evaluations"] is None for r in rows)
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert not x["all_market_families_certified"] and not x["live_capture_running"]
+          print("CFB 27-shard source-to-dashboard inventory verified:",a["n_distinct_market_tickers"],"tickers")
           PY
       - name: Production build
         run: npm run build

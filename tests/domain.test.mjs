@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { STUDIES } from "../src/studies.mjs";
 import readiness from "../research/audit/essential_readiness.json" with { type: "json" };
+import valueEvidence from "../research/audit/lineage/source_value_probe_summary.json" with { type: "json" };
 import { readFileSync } from "node:fs";
 import { SPORTS, createDraft, filterStudies, makeSnapshot, readSnapshot, validSource } from "../src/domain.mjs";
 
@@ -100,4 +101,19 @@ test("dashboard reads strict essential evidence rather than a blueprint tally", 
     assert.equal(summary.ALL.verified, families.reduce((n, r) => n + r.verified, 0), sport);
     assert.equal(summary.ALL.required, families.reduce((n, r) => n + r.required, 0), sport);
   }
+});
+
+test("value-level evidence remains source only and is visible in dashboard", () => {
+  assert.equal(valueEvidence.workflow_run, 41713797744);
+  assert.equal(valueEvidence.soccer.original_missing, 11);
+  assert.equal(valueEvidence.soccer.now_retrievable_with_bilateral_shots_sot_corners_cards, 11);
+  assert.equal(valueEvidence.soccer.original_missing_kickoffs_older_than_probe_100h_lookback, 11);
+  assert.equal(valueEvidence.tennis.atp_competitor_statistics + valueEvidence.tennis.wta_competitor_statistics, 0);
+  assert.equal(valueEvidence.tennis.atp_completed + valueEvidence.tennis.wta_completed, 149);
+  assert.equal(valueEvidence.tennis.atp_linescores + valueEvidence.tennis.wta_linescores, 148);
+  assert.match(valueEvidence.classification, /SOURCE_AVAILABLE_NOT_COLLECTED/);
+  const dashboard = readFileSync(new URL("../src/foundation-dashboard.jsx", import.meta.url), "utf8");
+  assert.match(dashboard, /import valueEvidence from/);
+  assert.match(dashboard, /valueEvidence.soccer.now_retrievable_with_bilateral_shots_sot_corners_cards/);
+  assert.match(dashboard, /valueEvidence.tennis.atp_completed/);
 });

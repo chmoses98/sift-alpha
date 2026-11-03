@@ -56,6 +56,17 @@ def audit_capture(directory, manifest, sport):
                 "title": contract.get("title"),
                 "strike_type": contract.get("strike_type"),
                 "floor_strike": contract.get("floor_strike"),
+                # Preserve literal market mechanism fields; these are exchange
+                # claims at receipt, not independently verified settlements.
+                "cap_strike": contract.get("cap_strike"),
+                "yes_sub_title": contract.get("yes_sub_title"),
+                "no_sub_title": contract.get("no_sub_title"),
+                "expiration_time": contract.get("expiration_time"),
+                "close_time": contract.get("close_time"),
+                "expected_expiration_time": contract.get("expected_expiration_time"),
+                "status_at_receipt": contract.get("status"),
+                "result_at_receipt_unverified": contract.get("result"),
+                "settlement_value_at_receipt_unverified": contract.get("settlement_value"),
                 "rules_primary_sha256": _sha(rules_primary),
                 "rules_secondary_sha256": _sha(rules_secondary),
                 "rules_primary": rules_primary,

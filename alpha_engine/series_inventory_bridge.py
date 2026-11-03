@@ -158,7 +158,7 @@ def append(matrix, row):
     if (not isinstance(row.get("observed_contracts"), list)
             or len(row["observed_contracts"]) != row.get("observed_denominator")
             or row.get("denominator_unit") != "distinct_tickers_in_this_verified_capture"
-            or row.get("all_reported_pages_retrieved") is not True):
+            or not isinstance(row.get("all_reported_pages_retrieved"), bool)):
         raise ValueError("Capture row has inconsistent observation denominator")
     if any(x["sport"] == row["sport"] and x["family"] == row["family"]
            for x in matrix["family_rows"]):

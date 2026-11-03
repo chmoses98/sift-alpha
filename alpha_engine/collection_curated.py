@@ -166,3 +166,16 @@ CUR = {
  "ten.fitness": (U, UK, "withdrawals/retirements: no dedicated source documented", ["doc:Tennis-Edge-Finder/docs/DATA_SOURCES.md"]),
 },
 }
+
+# --- period-scoring verification (live ESPN backfill run 41686590798; see research/audit/period_scoring_verification.json) ---
+_PSV = "doc:sift-alpha/research/audit/period_scoring_verification.json"
+_PS_WHERE = "arch:sift-alpha:period-scoring-data:out/data"
+_PS_CAVEAT = ("POST-GAME rows: valid only as lagged features for LATER games. observed_at is the single backfill time (2026-11-03), so an observed_at-gated as-of join would drop every "
+              "historical row; availability must be game end (not recorded). Current-season only; branch is a force-pushed orphan (append-only within a run, not across runs). Not wired into any sport repo/model.")
+CUR["NFL"]["nfl.q_scoring"] = (M, NC, "ESPN scoreboard linescores: 121 completed 2026 games 2026-09-09..11-02, 121/121 sums reconcile to final, 0 failed days. " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/nfl"])
+CUR["CFB"]["cfb.q_scoring"] = (M, NC, "ESPN scoreboard linescores: 622 completed 2026 FBS games 2026-08-29..10-31, 622/622 reconcile. " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/cfb"])
+CUR["CFB"]["cfb.half_split"] = (M, NC, "1H/2H points = Q1+Q2 / Q3+Q4 of the 622 reconciled ESPN linescores (derived at read time, not stored). " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/cfb"])
+CUR["NBA"]["nba.q_scoring"] = (M, UK, "ESPN scoreboard linescores: 107 completed 2026-27 games 2026-10-20..11-02, 107/107 reconcile (quarter scoring only; first-quarter pace and starter-minutes parts of this input are NOT collected). Local nba-edge-finder code also references quarter scoring in simulate.py (use unverified). " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/nba"])
+CUR["CBB"]["cbb.half_split"] = (S, NC, "ESPN scoreboard linescores: only ONE slate collected (2026-11-02, season opener): 182 games, 182/182 reconcile; no history beyond that day. " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/cbb"])
+CUR["NHL"]["nhl.period_split"] = (M, NC, "was DERIVED-by-assumption; now backed by direct ESPN linescores: 192 games 2026-10-06..11-02, 190 reconcile, 2 SCORE_UNRECONCILED excluded (one-goal discrepancy vs ESPN final). " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/nhl"])
+CUR["NHL"]["nhl.shootout_record"] = (S, NC, "Only the OT flag is derivable from the period rows (43 of 192 games had >3 periods); ESPN shootout resolution and shooter/goalie shootout talent are not stored. " + _PS_CAVEAT, [_PSV, _PS_WHERE + "/nhl"])

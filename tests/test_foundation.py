@@ -87,4 +87,4 @@ class CuratedEvidencePaths(unittest.TestCase):
             self.assertEqual(v["verification_counts"].get("CODE_REFERENCE_ONLY", 0), n_ref, sp)
         base = sum(1 for sp in st["sports"].values() for i in sp["inputs"].values()
                    if i["verification_class"] == "CODE_REFERENCE_ONLY" and not i.get("added_overnight"))
-        self.assertEqual(base, 104)  # original-baseline inputs; newly added candidates are tracked separately
+        self.assertEqual(base, 102)  # baseline code-reference-only: 104 -> 102 after live period-scoring verification (cfb.half_split, cbb.half_split reclassified, see research/audit/period_scoring_verification.json); newly added candidates are tracked separately

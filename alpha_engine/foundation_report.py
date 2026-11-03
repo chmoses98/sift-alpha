@@ -8,6 +8,7 @@ from .input_catalog import INPUTS, BP, COMMON, COMMON_BP, LADDER_BP
 from .input_extras import EXTRA, COMMON_EXTRA
 NEW_IDS = {l.split("|")[0] for t in list(EXTRA.values()) + [COMMON_EXTRA] for l in t.splitlines()}
 from .collection_curated import CUR
+from .input_links import links_for, COMMON_LINKS, RANK as LRANK
 from .master_inventory import AUDIT, SPORTS, REPO
 
 VCLASS = {"PIT_ARCHIVED": "VERIFIED_COLLECTION", "DERIVED": "DERIVED", "COLLECTED_NOT_PIT_ARCHIVED": "COLLECTED_UNVERIFIED_PIT", "PARTIAL_OR_STALE": "STALE_OR_PARTIAL",
@@ -80,7 +81,15 @@ def main():
             if f["sport"] != sp: continue
             keys = bp_keys(sp, f["native_family"], f["canonical"]["kind"], f["canonical"]["periods"])
             ladder = f["canonical"]["kind"] in ("spread", "total", "team_total", "player_stat", "period_result", "season_outcome")
-            fams[f["id"]] = {"blueprints": keys, "inputs": expand(sp, keys, ladder) if keys else {i: t for i, t in (tok.rsplit(":", 1) for tok in COMMON_BP.split())}}
+            fi = expand(sp, keys, ladder) if keys else {i: t for i, t in (tok.rsplit(":", 1) for tok in COMMON_BP.split())}
+            added = {}
+            if keys:  # unspecified families get no hypothesised drivers
+                for iid, (tier, why) in links_for(f).items():
+                    if iid not in fi or LRANK[tier] > LRANK[fi[iid]]:
+                        fi[iid] = tier; added[iid] = tier
+            for iid, tier in (COMMON_LINKS["all"],) + ((COMMON_LINKS["ladder"],) if ladder else ()):
+                if iid not in fi: fi[iid] = tier; added[iid] = tier
+            fams[f["id"]] = {"blueprints": keys, "inputs": fi, "overnight_inputs_linked": sorted(added)}
         reg["sports"][sp] = {"inputs": inputs, "families": fams}
         # collection status
         ev = ce["sports"][sp]; rows = {}

@@ -88,6 +88,7 @@ def parse_scoreboard(body, league, observed_at, source_url):
 
 def collect(league, start, end, out_dir, fetch=None, sleep_s=0.4):
     path, q, _ = LEAGUES[league]
+    throttle = fetch is None                           # only throttle real network fetches (injected fetchers are tests)
     fetch = fetch or (lambda u: json.loads(urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "sift-alpha-period-scoring/1"}), timeout=30).read()))
     out_dir = Path(out_dir)
     stats = {"days": 0, "rows_new": 0, "rows_existing": 0, "rejected": Counter(), "failed_days": []}
@@ -117,7 +118,7 @@ def collect(league, start, end, out_dir, fetch=None, sleep_s=0.4):
         stats["rows_existing"] += len(rows) - len(new)
         stats["rejected"].update(rej)
         d += timedelta(days=1)
-        time.sleep(sleep_s) if fetch is None else None
+        time.sleep(sleep_s) if throttle else None
     stats["rejected"] = dict(stats["rejected"])
     return stats
 

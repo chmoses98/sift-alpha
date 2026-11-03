@@ -120,6 +120,14 @@ for pk in pks[:3]:
     if ls: rec["innings_listed"] = len(ls.get("innings", [])); rec["inning_has_runs"] = all("runs" in i.get("home", {}) for i in ls.get("innings", []))
     ml["games"].append(rec); time.sleep(0.3)
 res["sources"]["mlb_statsapi"] = ml
+
+# Kalshi public series list (no auth): completeness check of the market-family inventory
+ks = {}
+for cat in ("Sports",):
+    b, meta = get(f"https://api.elections.kalshi.com/trade-api/v2/series?category={cat}&include_volume=true")
+    ks[cat] = {"meta": meta, "series": [{k: x.get(k) for k in ("ticker", "title", "frequency", "category", "tags", "settlement_sources", "contract_url", "volume", "volume_fp")} for x in (b or {}).get("series", [])]}
+(out / "kalshi_series.json").write_text(json.dumps(ks, indent=1, sort_keys=True))
+res["sources"]["kalshi_series"] = {c: {"status": v["meta"].get("status") or v["meta"].get("error"), "n": len(v["series"])} for c, v in ks.items()}
 res["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 (out / "field_probe.json").write_text(json.dumps(res, indent=1, sort_keys=True))
 print(json.dumps({k: ({"games": v.get("games") if isinstance(v.get("games"), int) else len(v.get("games", []))} if isinstance(v, dict) else 0) for k, v in res["sources"].items()}))

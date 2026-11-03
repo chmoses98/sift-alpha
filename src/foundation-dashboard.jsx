@@ -6,7 +6,7 @@ import status from "../research/audit/collection_status.json";
 import gaps from "../research/audit/collection_gap_report.json";
 import specs from "../research/audit/market_specs.json";
 import modelVal from "../research/audit/model_validation.json";
-const VAL_MAP = {"NBA/player_points": "points", "NBA/player_rebounds": "rebounds", "NBA/player_assists": "assists", "NBA/player_threes": "threes", "NBA/player_pra": "pra", "NBA/team_total": "team_points"};
+const VAL_MAP = {"NBA/player_points": "points", "NBA/player_rebounds": "rebounds", "NBA/player_assists": "assists", "NBA/player_threes": "threes", "NBA/player_pra": "pra", "NBA/team_total": "team_points", "NHL/player_shots": "shots", "NHL/player_goals": "goals", "NHL/player_assists": "assists", "NHL/player_points": "points", "NHL/goalie_saves": "saves", "NHL/team_total": "team_goals"};
 import tennisIv from "../research/audit/sources/tennis_results_intervals.json";
 import soccerAmb from "../research/audit/resolutions/soccer_ambiguous.json";
 import soccerCtx from "../research/audit/lineage/soccer_context_lineage.json";

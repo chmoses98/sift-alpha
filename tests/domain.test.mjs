@@ -2,6 +2,8 @@ import { SPORT_REGISTRY, sportLabel, sportById, isCustomSport, SPORT_GROUPS } fr
 import test from "node:test";
 import assert from "node:assert/strict";
 import { STUDIES } from "../src/studies.mjs";
+import readiness from "../research/audit/essential_readiness.json" with { type: "json" };
+import { readFileSync } from "node:fs";
 import { SPORTS, createDraft, filterStudies, makeSnapshot, readSnapshot, validSource } from "../src/domain.mjs";
 
 test("curated records have real evidence URLs, honest status and a next action", () => {
@@ -77,4 +79,25 @@ test("source URLs accept only GitHub and Kalshi HTTPS hosts", () => {
   assert.ok(validSource("https://kalshi.com/markets/kxncaabbgame/college-baseball-game"));
   assert.equal(validSource("https://kalshi.com.evil.invalid/markets"), false);
   assert.equal(validSource("http://kalshi.com/markets"), false);
+});
+
+test("dashboard reads strict essential evidence rather than a blueprint tally", () => {
+  const dashboard = readFileSync(new URL("../src/foundation-dashboard.jsx", import.meta.url), "utf8");
+  assert.match(dashboard, /import readiness from/);
+  assert.match(dashboard, /Strict verified collection only/);
+  assert.match(dashboard, /er\\.dims/);
+  assert.match(dashboard, /er\\.gaps/);
+  assert.match(dashboard, /predictive validation is independent/);
+  for (const [id, family] of Object.entries(readiness.families)) {
+    assert.ok(family.required >= family.verified, id);
+    assert.equal(family.required - family.verified, family.gaps.length, id);
+    assert.equal(family.required, Object.values(family.dims).reduce((n, d) => n + d.required, 0), id);
+    assert.equal(family.verified, Object.values(family.dims).reduce((n, d) => n + d.verified, 0), id);
+    assert.ok(family.gaps.every(g => g.class !== "VERIFIED_COLLECTION"), id);
+  }
+  for (const [sport, summary] of Object.entries(readiness.sports)) {
+    const families = Object.values(readiness.families).filter(r => r.sport === sport);
+    assert.equal(summary.ALL.verified, families.reduce((n, r) => n + r.verified, 0), sport);
+    assert.equal(summary.ALL.required, families.reduce((n, r) => n + r.required, 0), sport);
+  }
 });

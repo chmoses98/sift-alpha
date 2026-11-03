@@ -36,6 +36,7 @@ if tips:
     wait = (tips[0] - timedelta(minutes=125) - utcnow()).total_seconds()
     if wait > 0:
         print("sleeping", round(wait / 60), "min until first window", flush=True); time.sleep(wait)
+t0 = utcnow()                      # polling budget starts at the first window, not at job start
 while (utcnow() - t0).total_seconds() < deadline_h * 3600:
     now = utcnow()
     games = slate()

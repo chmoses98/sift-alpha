@@ -1,0 +1,97 @@
+name: Kalshi series sweep (manual, public reads)
+# Manual only (workflow_dispatch). Unauthenticated public market-data GETs: no secrets, no trading, no paid service.
+# Bounded: request budget per run, per-request interval, Retry-After backoff, 30-minute timeout.
+# Resumable: state is restored from the newest cache for the same queue and re-saved; each run also uploads the state.
+# Run again until the log says "complete".  One run at a time (concurrency group).
+on:
+  workflow_dispatch:
+    inputs:
+      queue:
+        description: "Queue file under kalshi_sweep/queues/"
+        type: choice
+        options:
+          - mlb_queue.json
+          - soccer_ambiguous_queue.json
+        default: mlb_queue.json
+      max_requests:
+        description: "Request budget for this run (1-1000)"
+        type: number
+        default: 400
+permissions:
+  contents: read
+concurrency:
+  group: kalshi-series-sweep
+  cancel-in-progress: false
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      QUEUE: ${{ inputs.queue }}
+      MAX_REQUESTS: ${{ inputs.max_requests }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: sweep_state.json
+          key: sweep-state-${{ inputs.queue }}-${{ github.run_id }}
+          restore-keys: sweep-state-${{ inputs.queue }}-
+      - name: Sweep (exit 3 = budget/rate-limit stop; dispatch again to resume)
+        run: |
+          set +e
+          python3 -m kalshi_sweep.series_sweep "kalshi_sweep/queues/$QUEUE" sweep_state.json --max-requests "$MAX_REQUESTS" --min-interval 0.3
+          rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then exit "$rc"; fi
+      - name: Dump compact state to the job log (convenience only; the data branch is the durable transport)
+        if: always()
+        run: test -f sweep_state.json && python3 -m kalshi_sweep.dump_state sweep_state.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sweep-state-${{ inputs.queue }}
+          path: sweep_state.json
+  publish:
+    # Durable, git-readable transport: raw state + provenance manifest committed to the `sweep-data` branch ONLY.
+    # Only this job has write permission; it runs after a successful sweep and never touches any other ref.
+    needs: sweep
+    if: ${{ needs.sweep.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      QUEUE: ${{ inputs.queue }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: code
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: sweep-state-${{ inputs.queue }}
+          path: state
+      - name: Check out (or create) the sweep-data branch
+        run: |
+          set -e
+          rm -rf data && mkdir data && cd data
+          git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if git fetch -q --depth=1 origin sweep-data; then git checkout -q -B sweep-data FETCH_HEAD; else git checkout -q --orphan sweep-data; fi
+      - name: Publish raw state with provenance
+        working-directory: code
+        run: python3 -m kalshi_sweep.publish ../state/sweep_state.json "kalshi_sweep/queues/$QUEUE" ../data
+      - name: Commit to sweep-data only
+        working-directory: data
+        run: |
+          set -e
+          git config user.name "sift-alpha sweep"; git config user.email "sweep@users.noreply.github.com"
+          git add -A && git commit -q -m "sweep: ${QUEUE} run ${GITHUB_RUN_ID}"
+          for i in 1 2 3; do git push -q origin HEAD:refs/heads/sweep-data && exit 0; git fetch -q --depth=1 origin sweep-data && git rebase -q FETCH_HEAD || true; done
+          exit 1

@@ -4,6 +4,7 @@ import { STUDIES } from "./studies.mjs";
 import { STORAGE_KEY, STATES, createDraft, filterStudies, makeSnapshot, readSnapshot, validSource } from "./domain.mjs";
 import { SPORT_REGISTRY, SPORT_GROUPS, sportLabel, isCustomSport, registryStatus } from "./sport-registry.mjs";
 import { MarketIntelligence } from "./market-intelligence.jsx";
+import { FoundationDashboard } from "./foundation-dashboard.jsx";
 import "./styles.css";
 
 function loadLocal() {
@@ -198,6 +199,7 @@ function App() {
         <button className="button" type="submit">Save research question</button>
       </form>}
       <MarketIntelligence />
+      <FoundationDashboard />
       <section className="workspace" aria-label="Research workbench">
         <aside className="library" aria-label="Find a study">
           <div className="section-heading"><div><div className="eyebrow">YOUR WORK QUEUE</div><h2>Research library</h2></div><span className="count">{visible.length}</span></div>

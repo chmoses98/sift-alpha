@@ -1,0 +1,226 @@
+{
+ "schema_version": "audit-1.0",
+ "sport": "NFL",
+ "market_family": "TEAM_TOTAL",
+ "last_verified_utc": "2026-11-02T00:00:00Z",
+ "coverage": {
+  "series": [
+   "KXNFLTEAMTOTAL",
+   "KXNFL1HTEAMTOTAL"
+  ],
+  "snapshot_markets_seen": 55,
+  "note": "Registry snapshot 2026-09-04: KXNFLTEAMTOTAL 55 markets, KXNFL1HTEAMTOTAL 0 (unobserved, not nonexistent). Other period team-total series (1Q/2Q/...) are named in the taxonomy but absent from the registry: UNKNOWN.",
+  "evidence": [
+   {
+    "label": "series registry",
+    "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/config/kalshi_nfl_series.json"
+   }
+  ]
+ },
+ "settles_on": "Rung -{TEAM}{N}: YES iff that team's regulation+OT points >= N (floor_strike N-0.5, strike_type greater); no push.",
+ "settlement_evidence": [
+  {
+   "label": "taxonomy",
+   "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/docs/KALSHI_MARKET_TAXONOMY.md"
+  }
+ ],
+ "distribution": "Discrete team points from one joint (margin,total) simulation: market-implied centre + recency-weighted historical residual bank + overtime model; ladder hit probability = P(points >= N).",
+ "key_numbers": "3/6/7/10/14 mass preserved by integer-parity residual sampling matched on line fractional parts.",
+ "freshness": "Centre must be the latest Kalshi spread/total ladder (rows with bid-ask <= 0.08); injury vintage resolved at or before cutoff.",
+ "pricing_path": [
+  "Kalshi ledger rows -> fast_implied_lines (50% crossing of SPREAD and TOTAL ladders) -> GameInput -> ResidualBank.simulate_game -> home/away = (total\u00b1margin)/2 -> P(points >= threshold)"
+ ],
+ "inputs": [
+  {
+   "input": "Market-implied game spread (centre)",
+   "importance": "ESSENTIAL",
+   "collection": "COLLECTED",
+   "model_use": "USED_CORRECTLY",
+   "validation": "VALIDATED_OOS_HISTORICAL",
+   "evidence": [
+    {
+     "label": "spread uses floor_strike, correct continuity axis",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/057388670510a8e07c9eb767009d647e09da00bb/nfl_edge/sim/prospective.py#L66-L98"
+    }
+   ],
+   "defect": null
+  },
+  {
+   "input": "Market-implied game total (centre)",
+   "importance": "ESSENTIAL",
+   "collection": "COLLECTED",
+   "model_use": "USED_DEFECT_REPAIRED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "regression test reproduces 45.0 vs true 44.5",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/057388670510a8e07c9eb767009d647e09da00bb/tests/test_sim_engine.py"
+    },
+    {
+     "label": "fix commit",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/057388670510a8e07c9eb767009d647e09da00bb/nfl_edge/sim/prospective.py"
+    }
+   ],
+   "defect": "TOTAL ladder crossing used integer threshold N instead of floor_strike N-0.5, biasing the centre +0.5 pts (\u2248+2.0pp at the total median rung, \u2248+1.1pp on team-total rungs near the mean; synthetic-bank estimate). Repaired in nfl-edge-finder branch audit/nfl-team-total-implied-total-centre. No prospective/historical improvement measured yet: prospective Kalshi ladder history lives on market-data branch (\u22486 GB), not replayed."
+  },
+  {
+   "input": "Joint residual bank (score variance, key numbers)",
+   "importance": "ESSENTIAL",
+   "collection": "COLLECTED",
+   "model_use": "USED_CORRECTLY",
+   "validation": "VALIDATED_OOS_HISTORICAL",
+   "evidence": [
+    {
+     "label": "2016-2025 OOS: team-total reliability slope 1.01 over 36,946 rung-games (author-reported)",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/research/game_env/RESULTS.md"
+    },
+    {
+     "label": "implementation",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/pricing/game_env.py"
+    }
+   ],
+   "defect": null
+  },
+  {
+   "input": "Overtime / tie resolution",
+   "importance": "IMPORTANT",
+   "collection": "COLLECTED",
+   "model_use": "USED_CORRECTLY",
+   "validation": "VALIDATED_OOS_HISTORICAL",
+   "evidence": [
+    {
+     "label": "OT model; known 1-6 margin-bucket miscalibration noted by author",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/research/game_env/RESULTS.md"
+    }
+   ],
+   "defect": null
+  },
+  {
+   "input": "Team-total ladder prices as centre/consistency information",
+   "importance": "IMPORTANT",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "fast_implied_lines reads only SPREAD and TOTAL families",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/057388670510a8e07c9eb767009d647e09da00bb/nfl_edge/sim/prospective.py"
+    }
+   ],
+   "defect": "The market's own team-total ladder (the settled contract) is not used to anchor the home/away split; split is the symmetric (total\u00b1margin)/2 identity. Unquantified."
+  },
+  {
+   "input": "Opponent-adjusted offensive/defensive efficiency (EPA, success rate)",
+   "importance": "ESSENTIAL",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "team features built, but GAME families are support_state MARKET_CENTRED_GAME ('no football deviation claimed')",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/prospective.py#L346-L354"
+    },
+    {
+     "label": "feature table",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/features.py"
+    }
+   ],
+   "defect": "Football features reach player props only; no team-total deviation from the market centre is modeled."
+  },
+  {
+   "input": "Expected drives / pace / plays",
+   "importance": "ESSENTIAL",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "drives, rz_trips in team features; plays model feeds player volume, not team points",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/features.py"
+    }
+   ],
+   "defect": "Not an input to team-points distribution."
+  },
+  {
+   "input": "Quarterback / key-player availability (injuries)",
+   "importance": "ESSENTIAL",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "injury vintage + Sleeper feed only gate player eligibility; centre is market-observed",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/prospective.py#L168-L215"
+    }
+   ],
+   "defect": "Team points inherit injury news only through whatever the market has already priced."
+  },
+  {
+   "input": "Weather (wind/temp/precip)",
+   "importance": "IMPORTANT",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "author: 'weather never alters a simulated probability'; preregistered W1/W2 accumulating",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/weather_research.py"
+    }
+   ],
+   "defect": null
+  },
+  {
+   "input": "Offensive-line matchup",
+   "importance": "IMPORTANT",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "OL snap features exist for rushing only",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/rushing.py#L60-L111"
+    }
+   ],
+   "defect": "Not used for team points."
+  },
+  {
+   "input": "Red-zone / scoring-opportunity conversion",
+   "importance": "IMPORTANT",
+   "collection": "COLLECTED",
+   "model_use": "COLLECTED_UNUSED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "rz_trips / td_per_drive features",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/features.py"
+    }
+   ],
+   "defect": null
+  },
+  {
+   "input": "Game script / pass-rate conditioning",
+   "importance": "IMPORTANT",
+   "collection": "COLLECTED",
+   "model_use": "NOT_MODELED",
+   "validation": "NOT_VALIDATED",
+   "evidence": [
+    {
+     "label": "script lattice is research-only (RESEARCH_ONLY, no authority)",
+     "url": "https://github.com/chmoses98/nfl-edge-finder/blob/e72ee005f65250bd361f1db82b78252b4d2852cd/nfl_edge/sim/script_v2.py"
+    }
+   ],
+   "defect": null
+  },
+  {
+   "input": "Prospective out-of-sample team-total record (2026)",
+   "importance": "ESSENTIAL",
+   "collection": "UNKNOWN",
+   "model_use": "UNKNOWN",
+   "validation": "UNKNOWN",
+   "evidence": [],
+   "defect": null
+  }
+ ],
+ "repair_priority": "P1",
+ "repair_notes": "P1: replay prospective ladders from market-data branch to measure Brier change from the centre repair; then test whether any football feature (efficiency, pace, QB availability) beats the market-centred distribution for team totals (market encompasses incumbent per author's own results)."
+}

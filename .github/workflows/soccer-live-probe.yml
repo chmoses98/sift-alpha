@@ -1,0 +1,44 @@
+name: Soccer PR39 live archival probe (probe branch only)
+on:
+  push:
+    branches: ['probe/soccer-live']
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: chmoses98/soccer-edge-finder
+          ref: 2eae76e
+          path: soc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -q -e soc
+      - name: espn-sync run 1 (PR code, fresh dirs; 5 days back to include finished matches)
+        working-directory: soc
+        run: |
+          mkdir -p ../out/run1
+          python -m soccer_edge.cli espn-sync --out-dir ../out/run1 --back-days 5 --forward-days 1 --max-lineups 400 --post-lookback-hours 100 --weather-budget-seconds 5 | tee ../out/run1.log || true
+      - name: analyse run 1
+        run: python tools/probe/soccer_live_check.py out/run1 | tee out/analysis1.json
+      - name: espn-sync run 2 on the same dir (idempotency / append-only)
+        working-directory: soc
+        run: |
+          cp -r ../out/run1 ../out/run2
+          python -m soccer_edge.cli espn-sync --out-dir ../out/run2 --back-days 5 --forward-days 1 --max-lineups 400 --post-lookback-hours 100 --weather-budget-seconds 5 | tee ../out/run2.log || true
+      - name: analyse run 2 + row counts
+        run: |
+          python tools/probe/soccer_live_check.py out/run2 | tee out/analysis2.json
+          wc -l out/run1/results/espn/*.jsonl out/run2/results/espn/*.jsonl > out/rowcounts.txt || true
+      - name: publish data branch
+        if: always()
+        run: |
+          git config user.name "sift-alpha-probe"; git config user.email "probe@users.noreply.github.com"
+          git checkout --orphan soccer-live-probe-data
+          git rm -rf -q . || true
+          git add -f out && git commit -qm "soccer live probe ${GITHUB_RUN_ID}" && git push -f origin soccer-live-probe-data

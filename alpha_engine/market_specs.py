@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .input_catalog import INPUTS, COMMON, COMMON_BP
 from .market_specs_data import SPEC
+from . import unresolved_families as uf
 
 AUDIT = Path(__file__).resolve().parent.parent / "research" / "audit"
 SPORT_GROUP = {"NFL": "fb", "CFB": "fb", "NBA": "bb", "CBB": "bb", "NHL": "hk", "MLB": "bs", "SOCCER": "sc", "TENNIS": "tn"}
@@ -103,7 +104,7 @@ OUT_OF_SCOPE = {"MLB/non_baseball": "not a baseball-outcome market", "MLB/non_ba
                 "MLB/SWEPT_EMPTY_SERIES": "71 swept series returned zero markets (nothing to specify)", "TENNIS/NOT_TENNIS": "not a tennis-outcome market"}
 ANTICIPATED = {  # classes the user named / sport norms imply; NOT observed in audited Kalshi snapshots
  "sc_corners": "soccer corners (not observed among the 48 ambiguous soccer series examined)", "sc_cards": "soccer cards/bookings (not observed)",
- "sc_shots": "soccer shots / shots on target (not observed)", "sc_player": "soccer anytime scorer/assist (not observed)",
+ "sc_shots": "soccer shots / shots on target (not observed)",
  "bs_f3": "MLB first-three-innings (not observed; F5 and first-inning are)"}
 
 
@@ -153,14 +154,30 @@ def build():
     master = json.loads((AUDIT / "master_inventory.json").read_text())
     cs = json.loads((AUDIT / "collection_status.json").read_text())["sports"]
     fams, unmapped = {}, []
+    inv = {sp: json.loads((AUDIT / "inventory" / f"{sp}.json").read_text()) for sp in ("NFL", "NBA", "CBB", "NHL", "MLB")}
+    res_all = uf.build(inv)
+    (AUDIT / "resolutions" / "unresolved_families.json").write_text(json.dumps(res_all, indent=1))
     for f in master["families"]:
         fid, sp = f["id"], f["sport"]
         now = (f["observed"].get("markets_now") or 0)
         row = {"sport": sp, "native_family": f["native_family"], "markets_now": f["observed"].get("markets_now")}
         if fid in OUT_OF_SCOPE:
             row.update(status="OUT_OF_SCOPE", reason=OUT_OF_SCOPE[fid], specs=[])
-        elif fid in UNSPECIFIED:
-            row.update(status="UNSPECIFIED", reason=UNSPECIFIED[fid], specs=[])
+        elif fid in uf.FAMILY_STATUS:   # resolved by series split / mismapping (see resolutions/unresolved_families.json)
+            res = res_all["families"][fid]
+            row.update(status=uf.FAMILY_STATUS[fid], specs=res["classes"], reason=(
+                "all %d series routed: %s; %d series TITLE_ONLY (provisional: %s)" % (res["n_series"], ", ".join(res["classes"]) or "none (mis-filed/out of scope)", res["series_title_only"], res["missing_evidence"])
+                if res["series_title_only"] else "all %d series routed to %s from archived rules text" % (res["n_series"], ", ".join(res["classes"]))))
+            if fid != "MLB/unknown":
+                drivers = {}
+                for s in res["classes"]:
+                    for i, t in parse_driver(SPEC[s]["drivers"][sp]).items():
+                        if i not in drivers or "XCE".index(t) > "XCE".index(drivers[i]):
+                            drivers[i] = t
+                ess = [i for i, t in drivers.items() if t == "E"]
+                vc = Counter(cs[sp]["inputs"][i]["verification_class"] for i in ess)
+                row.update(drivers=drivers, essential_total=len(ess), essential_by_status=dict(vc), essential_verified=vc.get("VERIFIED_COLLECTION", 0) + vc.get("DERIVED", 0),
+                           essential_missing=sorted(i for i in ess if cs[sp]["inputs"][i]["verification_class"] in ("MISSING", "UNKNOWN", "CODE_REFERENCE_ONLY")))
         elif fid in M:
             drivers = {}
             for s in M[fid]:
@@ -181,6 +198,15 @@ def build():
             unmapped.append(fid)
             row.update(status="UNSPECIFIED", reason="no mapping in market_specs.M", specs=[])
         fams[fid] = row
+    for fid, a in res_all["added_families"].items():   # families the master inventory omitted (additive overlay)
+        sp = a["sport"]; drivers = {}
+        for s in a["specs"]:
+            for i, t in parse_driver(SPEC[s]["drivers"][sp]).items():
+                if i not in drivers or "XCE".index(t) > "XCE".index(drivers[i]): drivers[i] = t
+        ess = [i for i, t in drivers.items() if t == "E"]; vc = Counter(cs[sp]["inputs"][i]["verification_class"] for i in ess)
+        fams[fid] = {"sport": sp, "native_family": a["native_family"], "markets_now": a["markets_observed"], "status": "SPECIFIED", "specs": a["specs"], "drivers": drivers, "added_by_overlay": True, "reason": a["note"],
+                     "essential_total": len(ess), "essential_by_status": dict(vc), "essential_verified": vc.get("VERIFIED_COLLECTION", 0) + vc.get("DERIVED", 0),
+                     "essential_missing": sorted(i for i in ess if cs[sp]["inputs"][i]["verification_class"] in ("MISSING", "UNKNOWN", "CODE_REFERENCE_ONLY"))}
     if unmapped:
         raise SystemExit(f"families without any mapping/decision: {unmapped}")
     summary = {}

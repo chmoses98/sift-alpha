@@ -13,13 +13,24 @@ class Specs(unittest.TestCase):
     def test_every_inventoried_family_has_an_explicit_decision(self):
         master = json.load(open(A / "master_inventory.json"))["families"]
         out = json.load(open(A / "market_specs.json"))
-        self.assertEqual({f["id"] for f in master}, set(out["families"]))
+        added = {k for k, v in out["families"].items() if v.get("added_by_overlay")}
+        self.assertEqual({f["id"] for f in master} | added, set(out["families"]))
+        self.assertEqual(added, {"SOCCER/player_goalscorer"})     # inventory omission found via a mis-filed series
         for fid, r in out["families"].items():
-            self.assertIn(r["status"], {"SPECIFIED", "SPECIFIED_UNOBSERVED", "UNSPECIFIED", "OUT_OF_SCOPE"}, fid)
-            if r["status"] in ("UNSPECIFIED", "OUT_OF_SCOPE"):
+            self.assertIn(r["status"], {"SPECIFIED", "SPECIFIED_UNOBSERVED", "SPECIFIED_BY_SERIES_SPLIT", "MISMAPPED_REROUTED", "UNSPECIFIED", "OUT_OF_SCOPE"}, fid)
+            if r["status"] in ("UNSPECIFIED", "OUT_OF_SCOPE", "MISMAPPED_REROUTED"):
                 self.assertTrue(r["reason"], fid)       # gaps are named, never silently dropped
             else:
                 self.assertTrue(r["specs"] and r["essential_total"] > 0, fid)
+
+    def test_resolution_covers_every_series_and_marks_provisional(self):
+        res = json.load(open(A / "resolutions" / "unresolved_families.json"))
+        self.assertEqual(sum(v["n_series"] for v in res["families"].values()), 91)
+        nfl = res["families"]["NFL/NFL_MISC_UNCLASSIFIED"]
+        self.assertEqual(nfl["series_title_only"], nfl["n_series"])          # no rules text seen: provisional, named
+        self.assertTrue(nfl["missing_evidence"])
+        mlb = res["families"]["MLB/unknown"]
+        self.assertEqual({s["action"] for s in mlb["series"]}, {"OUT_OF_SCOPE", "REROUTE"})
 
     def test_market_specific_not_generic(self):
         q = SPEC["fb_quarter_total"]["drivers"]["CFB"]

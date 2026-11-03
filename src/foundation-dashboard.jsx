@@ -46,7 +46,7 @@ function FamilyDetail({fam, sport}) {
     <p className="fine">Settlement: {fam.settlement?.text || "unknown"} <em>({fam.settlement?.status || "UNKNOWN"}{fam.settlement?.source ? " · " + fam.settlement.source : ""})</em></p>
     {fam.historical && <p className="fine">Historical coverage: {fam.historical.state === "OBSERVED" ? <>first seen {fam.historical.first_seen}, last {fam.historical.last_seen}; present on {fam.historical.days_present} of {fam.historical.snapshot_days} archived days ({fam.historical.calendar_days_without_snapshot} calendar days in the span have no snapshot); peak {n(fam.historical.markets_peak)} markets/day. Basis: {fam.historical.basis}.</> : <b>{nice(fam.historical.state)}</b>}</p>}
     {sp && <div className="spec">
-      <h4>Market-specific blueprint <span className={"badge b-" + (sp.status === "SPECIFIED" ? "ok" : sp.status === "SPECIFIED_UNOBSERVED" ? "warn" : "bad")}>{nice(sp.status)}</span></h4>
+      <h4>Market-specific blueprint <span className={"badge b-" + (sp.status === "SPECIFIED" ? "ok" : sp.status === "SPECIFIED_UNOBSERVED" || sp.status === "SPECIFIED_BY_SERIES_SPLIT" || sp.status === "MISMAPPED_REROUTED" ? "warn" : "bad")}>{nice(sp.status)}</span></h4>
       {sp.specs.length > 0 ? <>
         {sp.specs.map(k => { const c = specs.classes[k]; return <div key={k} className="inp"><strong>{nice(k)}</strong>
           <p className="fine"><b>Outcome:</b> {c.outcome}</p><p className="fine"><b>Distribution:</b> {c.distribution}</p><p className="fine"><b>Key numbers:</b> {c.key_numbers}</p>

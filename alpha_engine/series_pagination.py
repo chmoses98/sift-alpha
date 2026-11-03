@@ -196,6 +196,8 @@ def verify_capture(directory, manifest):
     expected_cursor = None
     requested = clock(manifest.get("captured_at_utc"))
     previous_receipt = None
+    total_bytes = 0
+    seen_cursors = set()
     for index, page in enumerate(pages):
         name = page.get("file")
         if (not isinstance(name, str) or "/" in name or "\\" in name
@@ -215,6 +217,9 @@ def verify_capture(directory, manifest):
         if (not 0 < len(raw) <= MAX_BYTES or page.get("bytes") != len(raw)
                 or page.get("sha256") != hashlib.sha256(raw).hexdigest()):
             raise ValueError("Original source page tampered")
+        total_bytes += len(raw)
+        if total_bytes > MAX_TOTAL_BYTES:
+            raise ValueError("Verified capture exceeds total response budget")
         payload = json.loads(raw)
         rows = payload.get("markets")
         if not isinstance(rows, list) or len(rows) != page.get("n_contracts"):
@@ -228,6 +233,10 @@ def verify_capture(directory, manifest):
         if _cursor(payload.get("cursor")) != page.get("next_cursor"):
             raise ValueError("Cursor provenance changed")
         expected_cursor = page["next_cursor"]
+        if expected_cursor is not None:
+            if expected_cursor in seen_cursors:
+                raise ValueError("Cyclic verified pagination cursor")
+            seen_cursors.add(expected_cursor)
         if index < len(pages) - 1 and expected_cursor is None:
             raise ValueError("Page appended after terminal cursor")
     if (manifest.get("observed_denominator") != len(tickers)

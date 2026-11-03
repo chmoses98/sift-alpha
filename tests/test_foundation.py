@@ -88,3 +88,17 @@ class CuratedEvidencePaths(unittest.TestCase):
         base = sum(1 for sp in st["sports"].values() for i in sp["inputs"].values()
                    if i["verification_class"] == "CODE_REFERENCE_ONLY" and not i.get("added_overnight"))
         self.assertEqual(base, 95)  # baseline code-reference-only: 104 -> 95 (cfb.half_split, cbb.half_split via live period-scoring verification; CBB + Tennis m.settlement_truth, CBB venue, MLB statcast-backed inputs via archive/pinned evidence); newly added candidates are tracked separately
+
+
+class PitClassification(unittest.TestCase):
+    def test_every_source_names_class_availability_and_rule_and_cites_existing_evidence(self):
+        import json, os
+        root = os.path.join(os.path.dirname(__file__), "..")
+        d = json.load(open(os.path.join(root, "research", "audit", "pit_classification.json")))
+        classes = {"PREGAME_RECORD_STAMPED", "PREGAME_BATCH_STAMPED", "POSTGAME_LAGGED_ONLY", "POSTGAME_AVAILABILITY_UNRECORDED", "UNVERIFIED"}
+        for s in d["sources"]:
+            self.assertIn(s["class"], classes, s["source"])
+            self.assertTrue(s["availability_field"] and s["rule"], s["source"])
+            ev = s["evidence"]
+            if ev.startswith(("research/", "docs/")):
+                self.assertTrue(os.path.exists(os.path.join(root, ev)), ev)

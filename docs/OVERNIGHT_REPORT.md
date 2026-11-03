@@ -64,6 +64,8 @@ Kicker accuracy & range (NFL/CFB), quarter scoring (NFL/CFB/NBA), opening-drive 
 ## 6. Archive / point-in-time
 No sport-repo archive gained verified coverage this cycle. Period-scoring rows are post-game data, valid only as lagged features for later games.
 
+**PIT classification of every source examined: `research/audit/pit_classification.json`** (class, availability field, join rule per source; tested). Key rules: period-scoring and Statcast are post-game with unrecorded availability (lagged only, never `observed_at`-gated); CBB Kalshi snapshots are batch-stamped (latest snapshot <= T); CBB schedule rows are record-stamped.
+
 ## 6a. Period-scoring data (live ESPN scoreboard, verified from the published branch)
 | League | Games | Reconciled | Coverage | OT games |
 |---|---|---|---|---|

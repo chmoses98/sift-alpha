@@ -4,6 +4,7 @@ import master from "../research/audit/master_inventory.json";
 import registry from "../research/audit/input_registry.json";
 import status from "../research/audit/collection_status.json";
 import gaps from "../research/audit/collection_gap_report.json";
+import specs from "../research/audit/market_specs.json";
 import tennisIv from "../research/audit/sources/tennis_results_intervals.json";
 import soccerAmb from "../research/audit/resolutions/soccer_ambiguous.json";
 import soccerCtx from "../research/audit/lineage/soccer_context_lineage.json";
@@ -33,13 +34,24 @@ function FamilyDetail({fam, sport}) {
   const st = status.sports[sport].inputs;
   const defs = {...registry.common_inputs, ...registry.sports[sport].inputs};
   const groups = {E: [], C: [], X: []};
-  Object.entries(fr?.inputs || {}).forEach(([id, t]) => groups[t].push(id));
+  const sp = specs.families[fam.id];
+  // market-specific drivers (when specified) replace the kind-level blueprint; both are hypotheses
+  Object.entries(sp?.drivers || fr?.inputs || {}).forEach(([id, t]) => groups[t].push(id));
   const audit = FAMILY_AUDITS.find(a => a.sport === sport && a.market_family === fam.native_family);
   return <div className="fam-detail">
     <p><strong>{fam.native_family}</strong> · {fam.canonical.kind.replaceAll("_", " ")} · {fam.canonical.scope} · periods {fam.canonical.periods.join(", ")}</p>
     <p className="fine">Observed: <b>{nice(fam.observed.state)}</b> — {n(fam.observed.markets_now)} markets now ({fam.observed.basis}; as of {fam.observed.as_of || "unknown"}){fam.markets_prior_snapshot != null && <> · prior snapshot {n(fam.markets_prior_snapshot)} ({fam.prior_snapshot_date})</>}. Series: {fam.series_count}{fam.series_sample.length ? " e.g. " + fam.series_sample.join(", ") : ""}.</p>
     <p className="fine">Settlement: {fam.settlement?.text || "unknown"} <em>({fam.settlement?.status || "UNKNOWN"}{fam.settlement?.source ? " · " + fam.settlement.source : ""})</em></p>
     {fam.historical && <p className="fine">Historical coverage: {fam.historical.state === "OBSERVED" ? <>first seen {fam.historical.first_seen}, last {fam.historical.last_seen}; present on {fam.historical.days_present} of {fam.historical.snapshot_days} archived days ({fam.historical.calendar_days_without_snapshot} calendar days in the span have no snapshot); peak {n(fam.historical.markets_peak)} markets/day. Basis: {fam.historical.basis}.</> : <b>{nice(fam.historical.state)}</b>}</p>}
+    {sp && <div className="spec">
+      <h4>Market-specific blueprint <span className={"badge b-" + (sp.status === "SPECIFIED" ? "ok" : sp.status === "SPECIFIED_UNOBSERVED" ? "warn" : "bad")}>{nice(sp.status)}</span></h4>
+      {sp.specs.length > 0 ? <>
+        {sp.specs.map(k => { const c = specs.classes[k]; return <div key={k} className="inp"><strong>{nice(k)}</strong>
+          <p className="fine"><b>Outcome:</b> {c.outcome}</p><p className="fine"><b>Distribution:</b> {c.distribution}</p><p className="fine"><b>Key numbers:</b> {c.key_numbers}</p>
+          <p className="fine"><b>Verify in rules text:</b> {c.settle}</p><p className="fine"><b>Point-in-time hazard:</b> {c.pit}</p><p className="fine"><b>History needed:</b> {c.history}</p></div>; })}
+        <p className="fine"><b>Essential-input readiness:</b> {sp.essential_verified}/{sp.essential_total} verified or derived · {Object.entries(sp.essential_by_status).map(([k, v]) => v + " " + (VNAME[k] || nice(k))).join(", ")}
+          {sp.essential_missing.length > 0 && <> · <b>not yet usable:</b> {sp.essential_missing.join(", ")}</>}</p></> : <p className="fine">{sp.reason}</p>}
+    </div>}
     {audit && <p className="fine audited">End-to-end audit exists: repair priority {audit.repair_priority}, verified {audit.last_verified_utc}. See audit file for per-input evidence.</p>}
     {["E", "C", "X"].map(t => groups[t].length > 0 && <div key={t}><h4>{TIER[t]} candidate inputs ({groups[t].length})</h4>
       <div className="inp-grid">{groups[t].map(id => { const s = st[id]; return <div className="inp" key={id}>
@@ -72,6 +84,7 @@ export function FoundationDashboard() {
       <span>{g.inputs} candidate inputs ({g.curated_inputs} with curated evidence)</span><span>unclassified: {sm.unclassified_families.length ? sm.unclassified_families.join(", ") : "none"}</span>
     </div>
     <div className="status-row">{Object.entries(g.verification_counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => <span key={k} className={"badge b-" + (COLL[k] || "unk")}>{VNAME[k] || nice(k)}: {v}</span>)}</div>
+    <p className="fine">Market-specific blueprints ({sport}): {Object.entries(specs.summary[sport]).filter(([k]) => !["classes","families"].includes(k)).map(([k, v]) => v + " " + nice(k)).join(" · ")} of {specs.summary[sport].families} families, {specs.summary[sport].classes.length} market classes. A blueprint is a requirement list, not evidence of collection or predictive value.</p>
     <h3>Top collection gaps — {sport}</h3>
     <div className="gap-list">{g.top_gaps.slice(0, 6).map(r => <div className="gap" key={r.input}><strong>{r.label}</strong> <Badge v={r.verification_class || r.collection} raw={r.collection}/> <span className="badge b-use">model: {nice(r.model_use)}</span>
       <span className="fine"> essential for {r.essential_for_families} families · {(r.share_of_sport_markets * 100).toFixed(0)}% of this sport's observed markets</span><p className="fine">{r.note}</p></div>)}</div>

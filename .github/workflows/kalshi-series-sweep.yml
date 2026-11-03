@@ -56,14 +56,14 @@ jobs:
     # Durable, git-readable transport: raw state + provenance manifest committed to the `sweep-data` branch ONLY.
     # Only this job has write permission; it runs after a successful sweep and never touches any other ref.
     needs: sweep
-    if: ${{ needs.sweep.result == 'success' }}
+    # Write access only for runs of the default branch: a dispatch on any other ref can never publish.
+    if: ${{ needs.sweep.result == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     env:
       QUEUE: ${{ inputs.queue }}
-      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
@@ -78,19 +78,31 @@ jobs:
           name: sweep-state-${{ inputs.queue }}
           path: state
       - name: Check out (or create) the sweep-data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
+          # Token-derived header is masked and passed to git through process-local GIT_CONFIG_* env only:
+          # nothing is written to the remote URL, .git/config, ~/.gitconfig or any credential file.
+          B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$B64"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $B64"
           rm -rf data && mkdir data && cd data
           git init -q
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          git remote add origin "https://github.com/${REPO}.git"
           if git fetch -q --depth=1 origin sweep-data; then git checkout -q -B sweep-data FETCH_HEAD; else git checkout -q --orphan sweep-data; fi
       - name: Publish raw state with provenance
         working-directory: code
         run: python3 -m kalshi_sweep.publish ../state/sweep_state.json "kalshi_sweep/queues/$QUEUE" ../data
       - name: Commit to sweep-data only
         working-directory: data
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
+          B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$B64"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $B64"
           git config user.name "sift-alpha sweep"; git config user.email "sweep@users.noreply.github.com"
           git add -A && git commit -q -m "sweep: ${QUEUE} run ${GITHUB_RUN_ID}"
           for i in 1 2 3; do git push -q origin HEAD:refs/heads/sweep-data && exit 0; git fetch -q --depth=1 origin sweep-data && git rebase -q FETCH_HEAD || true; done

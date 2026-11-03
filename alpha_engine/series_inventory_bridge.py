@@ -56,6 +56,17 @@ def audit_capture(directory, manifest, sport):
                 "title": contract.get("title"),
                 "strike_type": contract.get("strike_type"),
                 "floor_strike": contract.get("floor_strike"),
+                # Preserve literal market mechanism fields; these are exchange
+                # claims at receipt, not independently verified settlements.
+                "cap_strike": contract.get("cap_strike"),
+                "yes_sub_title": contract.get("yes_sub_title"),
+                "no_sub_title": contract.get("no_sub_title"),
+                "expiration_time": contract.get("expiration_time"),
+                "close_time": contract.get("close_time"),
+                "expected_expiration_time": contract.get("expected_expiration_time"),
+                "status_at_receipt": contract.get("status"),
+                "result_at_receipt_unverified": contract.get("result"),
+                "settlement_value_at_receipt_unverified": contract.get("settlement_value"),
                 "rules_primary_sha256": _sha(rules_primary),
                 "rules_secondary_sha256": _sha(rules_secondary),
                 "rules_primary": rules_primary,
@@ -130,6 +141,25 @@ def append(matrix, row):
             or row.get("sport") not in SPORTS
             or row.get("observation_scope") != "OPT_IN_PUBLIC_OPEN_SERIES_PAGES_ONLY"):
         raise ValueError("Untrusted dashboard matrix or capture")
+    # A capture-only bridge must not accept caller-promoted forecast or outcome
+    # authority. The original page verifier cannot establish any of these.
+    expected = {
+        "market_collection_status": "COLLECTED_VALID",
+        "input_collection_status": "UNKNOWN",
+        "model_usage_status": "UNKNOWN",
+        "model_version_and_calibration": "UNKNOWN",
+        "settlement_outcome_join": "UNKNOWN",
+        "point_in_time_pregame_eligibility": "UNKNOWN",
+        "projected_outcome": None,
+        "complete_series_or_market_tape": False,
+    }
+    if any(row.get(key) != value for key, value in expected.items()):
+        raise ValueError("Capture row claims unverified model, outcome, or tape authority")
+    if (not isinstance(row.get("observed_contracts"), list)
+            or len(row["observed_contracts"]) != row.get("observed_denominator")
+            or row.get("denominator_unit") != "distinct_tickers_in_this_verified_capture"
+            or not isinstance(row.get("all_reported_pages_retrieved"), bool)):
+        raise ValueError("Capture row has inconsistent observation denominator")
     if any(x["sport"] == row["sport"] and x["family"] == row["family"]
            for x in matrix["family_rows"]):
         raise ValueError("Capture already added")

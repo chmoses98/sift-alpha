@@ -1,5 +1,6 @@
 """Adversarial offline acceptance: previously one page, now bounded multi-page."""
 import copy
+import hashlib
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -91,6 +92,24 @@ class MultiPageTests(unittest.TestCase):
             page.write_bytes(payload([SERIES + "-B"]))
             with self.assertRaisesRegex(ValueError, "tampered"):
                 verify_capture(d, m)
+
+    def test_independent_verifier_rejects_oversized_page_even_if_rehashed(self):
+        # A forged stored page must not bypass the collector's 100-row bound.
+        # Hash consistency alone is insufficient for a valid capture.
+        with TemporaryDirectory() as d:
+            m = capture_series(SERIES, NOW, d,
+                fetcher=lambda url: (payload([SERIES + "-A"]), None))
+            self.assertEqual(verify_capture(d, m)["observed_denominator"], 1)
+            forged = copy.deepcopy(m)
+            oversized = payload([SERIES + "-" + str(i) for i in range(101)])
+            page = Path(d)/SERIES/m["pages"][0]["file"]
+            page.write_bytes(oversized)
+            forged["pages"][0]["sha256"] = hashlib.sha256(oversized).hexdigest()
+            forged["pages"][0]["bytes"] = len(oversized)
+            forged["pages"][0]["n_contracts"] = 101
+            forged["observed_denominator"] = 101
+            with self.assertRaisesRegex(ValueError, "denominator"):
+                verify_capture(d, forged)
 
     def test_request_clock_cannot_bypass_receipt_rate_limit(self):
         with TemporaryDirectory() as d:

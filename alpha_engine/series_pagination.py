@@ -181,7 +181,9 @@ def verify_capture(directory, manifest):
     if (not isinstance(manifest, dict) or manifest.get("schema_version") != 2
             or manifest.get("authority") != "RESEARCH_ONLY_NO_EXECUTION"
             or manifest.get("complete_series_or_market_tape") is not False
-            or manifest.get("source_scope") != "PUBLIC_OPEN_MARKETS_ONLY"):
+            or manifest.get("source_scope") != "PUBLIC_OPEN_MARKETS_ONLY"
+            or manifest.get("actual_start_or_settlement_verified") is not False
+            or manifest.get("pregame_or_forecast_join_verified") is not False):
         raise ValueError("Untrusted capture manifest")
     series = manifest.get("series")
     if manifest.get("source_url") != endpoint(series):
@@ -196,6 +198,8 @@ def verify_capture(directory, manifest):
     expected_cursor = None
     requested = clock(manifest.get("captured_at_utc"))
     previous_receipt = None
+    total_bytes = 0
+    seen_cursors = set()
     for index, page in enumerate(pages):
         name = page.get("file")
         if (not isinstance(name, str) or "/" in name or "\\" in name
@@ -215,9 +219,13 @@ def verify_capture(directory, manifest):
         if (not 0 < len(raw) <= MAX_BYTES or page.get("bytes") != len(raw)
                 or page.get("sha256") != hashlib.sha256(raw).hexdigest()):
             raise ValueError("Original source page tampered")
+        total_bytes += len(raw)
+        if total_bytes > MAX_TOTAL_BYTES:
+            raise ValueError("Verified capture exceeds total response budget")
         payload = json.loads(raw)
         rows = payload.get("markets")
-        if not isinstance(rows, list) or len(rows) != page.get("n_contracts"):
+        if (not isinstance(rows, list) or len(rows) > MAX_MARKETS
+                or len(rows) != page.get("n_contracts")):
             raise ValueError("Page source denominator changed")
         for row in rows:
             ticker = row.get("ticker") if isinstance(row, dict) else None
@@ -228,6 +236,10 @@ def verify_capture(directory, manifest):
         if _cursor(payload.get("cursor")) != page.get("next_cursor"):
             raise ValueError("Cursor provenance changed")
         expected_cursor = page["next_cursor"]
+        if expected_cursor is not None:
+            if expected_cursor in seen_cursors:
+                raise ValueError("Cyclic verified pagination cursor")
+            seen_cursors.add(expected_cursor)
         if index < len(pages) - 1 and expected_cursor is None:
             raise ValueError("Page appended after terminal cursor")
     if (manifest.get("observed_denominator") != len(tickers)

@@ -6,6 +6,7 @@ import status from "../research/audit/collection_status.json";
 import gaps from "../research/audit/collection_gap_report.json";
 import specs from "../research/audit/market_specs.json";
 import modelVal from "../research/audit/model_validation.json";
+import readiness from "../research/audit/essential_readiness.json";
 const VAL_MAP = {"NBA/player_points": "points", "NBA/player_rebounds": "rebounds", "NBA/player_assists": "assists", "NBA/player_threes": "threes", "NBA/player_pra": "pra", "NBA/team_total": "team_points", "NHL/player_shots": "shots", "NHL/player_goals": "goals", "NHL/player_assists": "assists", "NHL/player_points": "points", "NHL/goalie_saves": "saves", "NHL/team_total": "team_goals"};
 import tennisIv from "../research/audit/sources/tennis_results_intervals.json";
 import soccerAmb from "../research/audit/resolutions/soccer_ambiguous.json";
@@ -37,6 +38,7 @@ function FamilyDetail({fam, sport}) {
   const defs = {...registry.common_inputs, ...registry.sports[sport].inputs};
   const groups = {E: [], C: [], X: []};
   const sp = specs.families[fam.id];
+  const er = readiness.families[fam.id];
   // market-specific drivers (when specified) replace the kind-level blueprint; both are hypotheses
   Object.entries(sp?.drivers || fr?.inputs || {}).forEach(([id, t]) => groups[t].push(id));
   const audit = FAMILY_AUDITS.find(a => a.sport === sport && a.market_family === fam.native_family);
@@ -51,8 +53,20 @@ function FamilyDetail({fam, sport}) {
         {sp.specs.map(k => { const c = specs.classes[k]; return <div key={k} className="inp"><strong>{nice(k)}</strong>
           <p className="fine"><b>Outcome:</b> {c.outcome}</p><p className="fine"><b>Distribution:</b> {c.distribution}</p><p className="fine"><b>Key numbers:</b> {c.key_numbers}</p>
           <p className="fine"><b>Verify in rules text:</b> {c.settle}</p><p className="fine"><b>Point-in-time hazard:</b> {c.pit}</p><p className="fine"><b>History needed:</b> {c.history}</p></div>; })}
-        <p className="fine"><b>Essential-input readiness:</b> {sp.essential_verified}/{sp.essential_total} verified or derived · {Object.entries(sp.essential_by_status).map(([k, v]) => v + " " + (VNAME[k] || nice(k))).join(", ")}
+        <p className="fine"><b>Legacy blueprint tally (not strict verification):</b> {sp.essential_verified}/{sp.essential_total} verified or derived · {Object.entries(sp.essential_by_status).map(([k, v]) => v + " " + (VNAME[k] || nice(k))).join(", ")}
           {sp.essential_missing.length > 0 && <> · <b>not yet usable:</b> {sp.essential_missing.join(", ")}</>}</p></> : <p className="fine">{sp.reason}</p>}
+    </div>}
+    {er && <div className="spec" aria-label={`Essential input readiness for ${fam.native_family}`}>
+      <h4>Essential input evidence · {er.verified}/{er.required} verified</h4>
+      <p className="fine"><b>Strict verified collection only.</b> {er.collected - er.verified} collected but not fully verified · {er.derived} derived (separate; never automatically verified) · {er.required - er.verified} not verified.</p>
+      <div className="inp-grid">{Object.entries(er.dims).map(([dim, d]) => <div className="inp" key={dim}>
+        <strong>{nice(dim)}</strong>
+        <p className="fine">{d.verified}/{d.required} verified · {d.collected} collected · {d.derived} derived</p>
+      </div>)}</div>
+      <p className="fine"><b>Model consumption:</b> {er.model_used}/{er.required} essential links marked used or partially used. <b>Predictive validation:</b> {nice(er.predictive_validation)} (independent evidence required). No collection or prediction authority is inferred from input names or source availability.</p>
+      {er.gaps.length > 0 && <details><summary>Inspect {er.gaps.length} unverified essential inputs</summary>
+        <ul className="fine">{er.gaps.map(g => <li key={g.input}><b>{g.input}</b> — {VNAME[g.class] || nice(g.class)} · {nice(g.dimension)}</li>)}</ul>
+      </details>}
     </div>}
     {VAL_MAP[fam.id] && modelVal.sports[sport]?.families[VAL_MAP[fam.id]] && (() => { const v = modelVal.sports[sport].families[VAL_MAP[fam.id]]; return <p className="fine"><b>Model validation (repo-reported, not reproduced by Alpha):</b> {v.model} · {v.readiness} — {v.reported}</p>; })()}
     {audit && <p className="fine audited">End-to-end audit exists: repair priority {audit.repair_priority}, verified {audit.last_verified_utc}. See audit file for per-input evidence.</p>}
@@ -76,6 +90,9 @@ export function FoundationDashboard() {
   const fam = fams.find(f => f.id === sel) || fams[0];
   const g = gaps.sports[sport];
   const sc = status.sports[sport];
+  const sr = readiness.sports[sport];
+  const essentialPriority = Object.values(readiness.families).filter(r => r.sport === sport && r.required > r.verified)
+    .sort((a, b) => ((b.markets_now || 0) * (b.required - b.verified) / b.required) - ((a.markets_now || 0) * (a.required - a.verified) / a.required)).slice(0, 6);
   const relevant = STUDIES.filter(x => x.sport === sport).slice(0, 3);
   return <section className="intelligence" aria-label="Data foundation dashboard">
     <div className="eyebrow">MARKET INTELLIGENCE / DATA FOUNDATION · generated from research/audit</div>
@@ -86,6 +103,17 @@ export function FoundationDashboard() {
       <strong>{sm.families} families · {sm.series} series</strong><span>{sm.families_observed_now} observed in latest snapshot · {master.families.filter(f => f.sport === sport && f.observed.state === "OBSERVED_PRIOR_SNAPSHOT_ONLY").length} only in an older snapshot · {master.families.filter(f => f.sport === sport && f.observed.state === "DEFINED_NOT_OBSERVED").length} defined, not observed</span>
       <span>{g.inputs} candidate inputs ({g.curated_inputs} with curated evidence)</span><span>unclassified: {sm.unclassified_families.length ? sm.unclassified_families.join(", ") : "none"}</span>
     </div>
+    <div className="intelligence-summary" aria-label="Strict essential input readiness">
+      <strong>Essential links: {sr.ALL.verified}/{sr.ALL.required} verified</strong>
+      <span>Family-by-input evidence links, not distinct fields or predictive performance · {sr.ALL.collected} collected · {sr.ALL.derived} derived</span>
+      <span>{sr.FAMILIES.fully_verified}/{sr.FAMILIES.n_with_essentials} families fully verified · {n(sr.FAMILIES.markets_in_fully_verified)} observed markets in those families</span>
+      <span>Model-use links: {sr.ALL.model_used}/{sr.ALL.required} · predictive validation is independent and not asserted by readiness</span>
+    </div>
+    <h3>Largest essential readiness gaps — {sport}</h3>
+    <ol className="fine">{essentialPriority.map(r => <li key={r.sport + "/" + r.family}>
+      <strong>{r.family}</strong> · {n(r.markets_now)} observed markets · {r.verified}/{r.required} essential links verified · {r.required - r.verified} not verified
+    </li>)}</ol>
+    <p className="fine">Ranking = current observed market count × share of essential links not strictly verified. It prioritizes research workload, not expected profitability. Drill into a family below for source categories and exact missing inputs.</p>
     <div className="status-row">{Object.entries(g.verification_counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => <span key={k} className={"badge b-" + (COLL[k] || "unk")}>{VNAME[k] || nice(k)}: {v}</span>)}</div>
     <p className="fine">Market-specific blueprints ({sport}): {Object.entries(specs.summary[sport]).filter(([k]) => !["classes","families"].includes(k)).map(([k, v]) => v + " " + nice(k)).join(" · ")} of {specs.summary[sport].families} families, {specs.summary[sport].classes.length} market classes. A blueprint is a requirement list, not evidence of collection or predictive value.</p>
     <h3>Top collection gaps — {sport}</h3>

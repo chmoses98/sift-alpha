@@ -85,8 +85,8 @@ test("dashboard reads strict essential evidence rather than a blueprint tally", 
   const dashboard = readFileSync(new URL("../src/foundation-dashboard.jsx", import.meta.url), "utf8");
   assert.match(dashboard, /import readiness from/);
   assert.match(dashboard, /Strict verified collection only/);
-  assert.match(dashboard, /er\\.dims/);
-  assert.match(dashboard, /er\\.gaps/);
+  assert.match(dashboard, /er\.dims/);
+  assert.match(dashboard, /er\.gaps/);
   assert.match(dashboard, /predictive validation is independent/);
   for (const [id, family] of Object.entries(readiness.families)) {
     assert.ok(family.required >= family.verified, id);

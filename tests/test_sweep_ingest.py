@@ -63,6 +63,36 @@ class Ingest(unittest.TestCase):
             d = json.load(open(os.path.join(root, f"{q}.json")))
             self.assertIn("sweep-data branch", d["provenance"]["transport"]); self.assertEqual(len(d["provenance"]["data_branch_commit"]), 40)
 
+    def test_real_run_41533525920_partial_is_verified_but_never_selected(self):
+        """Run 41533525920 published 1/48 soccer series (complete=false). Its raw file verifies against its manifest, but ingest must keep the completed 48-series inventory."""
+        raw = json.dumps({"requests_total": 5, "series": {"KXSOMETHING": {k: {"complete": k == "open", "markets": 0} for k in ("open", "unopened", "closed", "settled")}}}).encode()
+        sha = hashlib.sha256(raw).hexdigest()
+        seed_rows = [{"s": f"S{i}"} for i in range(48)]
+        with tempfile.TemporaryDirectory() as d:
+            self.repo(d); os.makedirs(os.path.join(d, "seed")); sd = os.path.join(d, "sweeps", "soccer_ambiguous_queue"); os.makedirs(sd)
+            json.dump({"meta": {"requests_total": 194}, "series": seed_rows, "provenance": {"job_id": "41505499041"}}, open(os.path.join(d, "seed", "soccer_ambiguous_queue.compact.json"), "w"))
+            fn = "state_20261102T234335Z_run41533525920.json"; open(os.path.join(sd, fn), "wb").write(raw)
+            entry = {"published_utc": "2026-11-02T23:43:35Z", "file": fn, "state_sha256": sha, "workflow_run_id": "41533525920", "series_complete": 1, "series_queued": 48, "complete": False, "requests_total": 5, "queue": "soccer_ambiguous_queue"}
+            open(os.path.join(d, "index.jsonl"), "w").write(json.dumps(entry) + "\n")
+            json.dump(entry, open(os.path.join(sd, "latest.json"), "w"))
+            git(d, "add", "-A"); git(d, "commit", "-q", "-m", "s")
+            self.assertEqual(hashlib.sha256(open(os.path.join(sd, fn), "rb").read()).hexdigest(), entry["state_sha256"])   # manifest matches raw file
+            meta, rows, prov = load(d, "HEAD", "soccer_ambiguous_queue")
+            self.assertEqual((len(rows), meta["requests_total"], prov["file"]), (48, 194, "seed/soccer_ambiguous_queue.compact.json"))
+            self.assertNotEqual(prov.get("workflow_run_id"), "41533525920")
+
+    def test_committed_classifications_intact(self):
+        root = os.path.join(os.path.dirname(__file__), "..", "research", "audit", "sweep_results")
+        sm = json.load(open(os.path.join(root, "summary.json")))
+        self.assertEqual((sm["mlb"]["series"], sm["mlb"]["complete"]), (215, 215))
+        self.assertIn("KXMLBBGAME", sm["mlb"]["resolved_non_baseball"])
+        so = sm["soccer"]
+        self.assertEqual((so["series"], so["complete"]), (48, 48))
+        self.assertEqual(so["classes"], {"NOT_SOCCER_BY_TITLE": 1, "EMPTY_NO_MARKETS_UNCONFIRMED": 24, "SOCCER_CONFIRMED_BY_TITLE": 23})
+        self.assertEqual(so["not_soccer_by_title"], ["KXSORONDO"])
+        for q, n in (("mlb", 215), ("soccer", 48)):
+            self.assertEqual(len(json.load(open(os.path.join(root, f"{q}.json")))["series"]), n)
+
 
 if __name__ == "__main__":
     unittest.main()

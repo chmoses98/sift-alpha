@@ -181,7 +181,9 @@ def verify_capture(directory, manifest):
     if (not isinstance(manifest, dict) or manifest.get("schema_version") != 2
             or manifest.get("authority") != "RESEARCH_ONLY_NO_EXECUTION"
             or manifest.get("complete_series_or_market_tape") is not False
-            or manifest.get("source_scope") != "PUBLIC_OPEN_MARKETS_ONLY"):
+            or manifest.get("source_scope") != "PUBLIC_OPEN_MARKETS_ONLY"
+            or manifest.get("actual_start_or_settlement_verified") is not False
+            or manifest.get("pregame_or_forecast_join_verified") is not False):
         raise ValueError("Untrusted capture manifest")
     series = manifest.get("series")
     if manifest.get("source_url") != endpoint(series):

@@ -1,18 +1,29 @@
 name: Publish SIFT Alpha research dashboard
 
-# FALLBACK ONLY. The canonical production deployment is Vercel (see docs/DEPLOYMENT.md).
-# Manual-only (workflow_dispatch); never runs on push/PR so it cannot compete with Vercel.
-# No Kalshi credentials, betting permissions or paid services.
+# Builds THIS repository's main (the single dashboard source: Vercel builds the same branch) and publishes it to GitHub Pages (free), then READS THE
+# PUBLISHED SITE BACK and verifies it. Manual dispatch, plus a 6-hourly schedule that refreshes the live collector status baked into the build.
+# No Kalshi credentials, betting permissions or paid services. Pull requests run validate only (no deploy).
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/pages.yml"
+  schedule:
+    - cron: '23 */6 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      commit: ${{ steps.stamp.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,53 +34,160 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Validate dashboard tests
         run: npm test
+      - name: Fetch live collector aggregates (published health files only; counters, no per-order data)
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request, datetime
+          def get(url):
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as r:
+                      return json.loads(r.read())
+              except Exception:
+                  return None
+          now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+          ec = get("https://raw.githubusercontent.com/chmoses98/kalshi-bet-router/entry-capture-data/stats.json")
+          sh = get("https://raw.githubusercontent.com/chmoses98/sift-alpha/shadow-data/health.json")
+          out = {"schema": "sift-collectors-status/1", "generated_at": now, "fetched": bool(ec or sh),
+                 "privacy": "aggregates only; counters from the collectors' published health files; no ids, tickers, prices, quantities or timestamps of orders",
+                 "entry_capture": None, "shadow_ledger": None, "note": "Filled at Pages build time from the collectors' published aggregates."}
+          if ec and "sampler" in ec and "totals" in ec:
+              keep = ("passes", "snapshots", "series_watched", "series_errors", "order_errors", "max_gap_seconds", "first_pass_at", "last_pass_at", "historical_not_capturable")
+              out["entry_capture"] = {"sampler": {k: ec["sampler"].get(k) for k in keep},
+                                      "totals": {k: ec["totals"].get(k) for k in ("orders", "ENTRY_FRESH", "STALE_NOT_ENTRY", "SNAPSHOT_AFTER_ORDER", "NO_SNAPSHOT", "SNAPSHOT_ONE_SIDED_OR_CROSSED")}}
+          if sh and "counts" in sh:
+              out["shadow_ledger"] = {"valid": bool(sh.get("valid")), "generated_at": sh.get("generated_at"), "capture_age_minutes": sh.get("capture_age_minutes"),
+                                      "capture_stale": sh.get("capture_stale"),
+                                      "counts": {k: sh["counts"].get(k) for k in ("placed", "prospective", "retrospective", "observed", "settled", "contracts", "games")}}
+          json.dump(out, open("research/audit/clv/collectors_status.json", "w"), indent=1)
+          print(json.dumps({"fetched": out["fetched"], "entry_capture": out["entry_capture"] is not None, "shadow_ledger": out["shadow_ledger"] is not None}))
+          PY
       - name: Confirm CLV payloads contain only aggregates
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          paths = [
-              Path("research/audit/clv/clv_summary.json"),
-              Path("research/audit/clv/execution_summary.json")
-          ]
-          forbidden = {"source_bet_key", "order_id", "fill_id", "recommendation_id", "market_ticker",
-                       "stake", "gross_return", "net_profit_loss", "actual_price",
-                       "execution_price", "ticker", "pnl", "roi"}
+          paths = [Path("research/audit/clv/clv_summary.json"), Path("research/audit/clv/execution_summary.json"),
+                   Path("research/audit/clv/live_execution_evidence.json"), Path("research/audit/clv/collectors_status.json")]
+          forbidden = {"source_bet_key", "order_id", "fill_id", "recommendation_id", "market_ticker", "stake", "gross_return", "net_profit_loss",
+                       "actual_price", "execution_price", "ticker", "pnl", "roi", "game_sums", "orders_seen"}
           def check(node):
               if isinstance(node, dict):
-                  assert forbidden.isdisjoint(node), "private wager field found in public CLV data"
+                  assert forbidden.isdisjoint(node), "private field found in public data"
                   for value in node.values(): check(value)
               elif isinstance(node, list):
                   for value in node: check(value)
           for path in paths:
               data = json.loads(path.read_text())
               assert "aggregates only" in data.get("privacy", "")
-              assert isinstance(data.get("real_wagers"), dict)
               check(data)
               print(f"{path}: aggregate data validated")
           PY
       - name: Build static Alpha dashboard
         run: npm run build
+      - name: Stamp build info (exact commit served)
+        id: stamp
+        run: |
+          echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          printf '{"commit":"%s","built_at":"%s"}\n' "${GITHUB_SHA}" "$(date -u +%FT%TZ)" > dist/build-info.json
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true  # one attempt with GITHUB_TOKEN; if Pages is not enabled and the token lacks admin, enable Settings > Pages > Source: GitHub Actions manually
       - name: Publish aggregate-only SIFT Alpha research desk
         id: deployment
         uses: actions/deploy-pages@v4
+
+  verify:
+    # Proves the PUBLISHED site: exact commit served, expected sections present, aggregate data vintage, no private patterns, desktop + 390 px layout.
+    if: github.event_name != 'pull_request'
+    needs: [validate, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify the served site (counters only)
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          EXPECT_SHA: ${{ needs.validate.outputs.commit }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys, time, urllib.request
+          base = os.environ["PAGE_URL"].rstrip("/") + "/"
+          want = os.environ["EXPECT_SHA"]
+          def get(path):
+              req = urllib.request.Request(base + path, headers={"Cache-Control": "no-cache"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return r.read().decode("utf-8", "replace")
+          info = None
+          for attempt in range(20):                       # CDN propagation
+              try:
+                  info = json.loads(get("build-info.json"))
+                  if info.get("commit") == want:
+                      break
+              except Exception:
+                  pass
+              time.sleep(15)
+          ok_sha = bool(info) and info.get("commit") == want
+          html = get("")
+          assets = re.findall(r'(?:src|href)="(\./assets/[^"]+\.(?:js|css))"', html)
+          bundle = "".join(get(a[2:]) for a in assets if a.endswith(".js"))
+          markers = {m: (m in bundle) for m in ["Execution & CLV", "Live execution evidence", "Live collector status", "sift-live-execution-evidence/1", "sift-clv-execution-summary/1"]}
+          private = {
+              "ticker_shaped": len(re.findall(r"KX[A-Z0-9]{2,}-\d{2}[A-Z]{3}\d{2}", bundle)),
+              "router_key": bundle.count("kalshi:v1:"),
+              "uuid": len(re.findall(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", bundle)),
+              "order_id_key": bundle.count('"order_id":'),
+          }
+          vintage = sorted(set(re.findall(r'"generated_at":"(20[0-9T:\-Z]+)"', bundle)))
+          print(json.dumps({"served_commit_matches": ok_sha, "served_commit": (info or {}).get("commit"), "markers": markers,
+                            "private_pattern_hits": private, "data_generated_at": vintage, "assets": len(assets)}, sort_keys=True))
+          sys.exit(1 if (not ok_sha) or not all(markers.values()) or any(private.values()) else 0)
+          PY
+      - name: Desktop and 390px layout check (Playwright)
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+        run: |
+          python -m pip install --quiet playwright && python -m playwright install --with-deps chromium >/dev/null 2>&1
+          python3 - <<'PY'
+          import json, os, sys
+          from playwright.sync_api import sync_playwright
+          url = os.environ["PAGE_URL"]
+          out, bad = {}, False
+          with sync_playwright() as p:
+              b = p.chromium.launch()
+              for name, w, scheme in (("desktop_light", 1280, "light"), ("desktop_dark", 1280, "dark"), ("mobile_390", 390, "light")):
+                  pg = b.new_page(viewport={"width": w, "height": 900}, color_scheme=scheme)
+                  errs = []
+                  pg.on("pageerror", lambda e: errs.append(1)); pg.on("console", lambda m: errs.append(1) if m.type == "error" else None)
+                  pg.goto(url, wait_until="networkidle")
+                  pg.wait_for_selector(".ex-dash", timeout=20000)
+                  sw = pg.evaluate("document.documentElement.scrollWidth")
+                  secs = pg.locator(".ex-dash").count()
+                  out[name] = {"scroll_width": sw, "exec_sections": secs, "console_errors": len(errs)}
+                  bad |= sw > w or secs < 2 or errs != []
+              b.close()
+          print(json.dumps(out, sort_keys=True))
+          sys.exit(1 if bad else 0)
+          PY

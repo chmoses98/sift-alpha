@@ -1,0 +1,69 @@
+{
+ "schema_version": "audit-1.0",
+ "note": "Point-in-time class of every data source examined directly in this audit. PIT-usable means: a value can be joined to a decision made at time T using only rows whose AVAILABILITY time <= T. 'availability' is when WE could have known it, never the event time. Classes: PREGAME_RECORD_STAMPED (record carries its own pre-event observation time), PREGAME_BATCH_STAMPED (only a file/batch time, resolution as stated), POSTGAME_LAGGED_ONLY (valid only for LATER games/events), POSTGAME_AVAILABILITY_UNRECORDED (post-game and the time we first held it is not recorded), UNVERIFIED.",
+ "sources": [
+  {
+   "source": "ESPN scoreboard per-period scoring (period-scoring-data)",
+   "class": "POSTGAME_AVAILABILITY_UNRECORDED",
+   "availability_field": "observed_at = single backfill time 2026-11-03T17:56-17:57Z for every row",
+   "rule": "usable for game G only if availability(row) <= start(G); use game-end (start + sport max duration) as a conservative availability, NOT observed_at; never for the same game",
+   "evidence": "research/audit/period_scoring_verification.json"
+  },
+  {
+   "source": "CBB kalshi-archive snapshots (prices, volume, OI, settlement)",
+   "class": "PREGAME_BATCH_STAMPED",
+   "availability_field": "captured_at (per snapshot), 2-4 snapshots/day",
+   "rule": "price at time T = latest snapshot with captured_at <= T; settlement known only from the first snapshot showing status=finalized (settlement_ts is the exchange time, a lower bound on availability only)",
+   "evidence": "research/audit/lineage/cbb_archive_field_evidence.json"
+  },
+  {
+   "source": "CBB schedule-archive rows (neutral site, venue, start time)",
+   "class": "PREGAME_RECORD_STAMPED",
+   "availability_field": "observed_at on 100% of 10,531 rows",
+   "rule": "join on observed_at <= T; later rows can change start time/venue, so take the latest row <= T",
+   "evidence": "research/audit/lineage/cbb_archive_field_evidence.json"
+  },
+  {
+   "source": "MLB Statcast pitch archive (edge-finder-api data/statcast_raw)",
+   "class": "POSTGAME_AVAILABILITY_UNRECORDED",
+   "availability_field": "none in the rows; git commit time of each file not checked",
+   "rule": "lagged features for later games only, with availability = max(game end, commit time); aggregates must be recomputed point-in-time",
+   "evidence": "research/audit/lineage/mlb_statcast_archive_evidence.json"
+  },
+  {
+   "source": "ESPN summary box scores / NHL api-web play-by-play and boxscore / MLB statsapi (live source probe)",
+   "class": "POSTGAME_LAGGED_ONLY",
+   "availability_field": "fetch time of whoever collects it (nothing archived yet)",
+   "rule": "may only enter features for games that start after the fetch time",
+   "evidence": "research/audit/lineage/source_field_probe.json"
+  },
+  {
+   "source": "ESPN core roster starter flags (NBA PR #87)",
+   "class": "PREGAME_RECORD_STAMPED",
+   "availability_field": "observed_at_utc stamped AFTER each fetch; CONFIRMED only if observed before tip and exactly 5 starter flags",
+   "rule": "usable at T only if CONFIRMED row observed_at <= T; starters appear ~19 min before tip (probe 41543056159) - coverage by lead time still being measured",
+   "evidence": "nba-edge-finder PR #87 data/starters.py; probe branch probe/nba-starters-live"
+  },
+  {
+   "source": "Soccer ESPN box score (PR #39 box_stats_*)",
+   "class": "POSTGAME_LAGGED_ONLY",
+   "availability_field": "box_stats_captured_at on the result row",
+   "rule": "lagged rates for later matches; never the same match; live run: box_stats_captured_at on 153/153 box rows, 2.7-99.5 h after kickoff",
+   "evidence": "research/audit/lineage/soccer_pr39_live_probe.json"
+  },
+  {
+   "source": "Tennis settlement captures (three pinned 2026-10-25 files)",
+   "class": "UNVERIFIED",
+   "availability_field": "settlement_ts exists; occurrence_datetime is AFTER settlement_ts for 34 of 36 rows",
+   "rule": "do not use occurrence_datetime as a result clock",
+   "evidence": "docs/TENNIS_SETTLEMENT_EVIDENCE.md"
+  },
+  {
+   "source": "Kalshi public series list (probe)",
+   "class": "UNVERIFIED",
+   "availability_field": "single fetch 2026-11-03",
+   "rule": "describes what exists now; not a historical record of when a series was created",
+   "evidence": "research/audit/resolutions/kalshi_live_series.json"
+  }
+ ]
+}

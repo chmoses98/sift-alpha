@@ -1,6 +1,6 @@
 # SIFT Alpha dashboard deployment
 
-**Canonical production: Vercel** — project `sift-alpha-dashboard` (team `moses-projects4`), production branch `main`.
+**One source: `main`.** Vercel and GitHub Pages both build it. Vercel — project `sift-alpha-dashboard` (team `moses-projects4`), production branch `main`.
 Canonical URL: the project's production domain (record it here once verified: see "Production URL" below).
 
 ## How it deploys
@@ -26,9 +26,12 @@ contain wager-level fields or if `dist/` contains data files.
 ## CI
 `.github/workflows/dashboard-ci.yml` (path-filtered) runs prerequisites check, `npm ci`, `npm test`, `npm run build` and the privacy check.
 
-## Fallback: GitHub Pages
-`.github/workflows/pages.yml` is manual-only (`workflow_dispatch`) and builds the same app from `main`. It is a fallback,
-not a second production; do not link it as the primary URL.
+## GitHub Pages (free, verified by the workflow)
+`.github/workflows/pages.yml` builds the SAME `main` as Vercel (there is no separate dashboard branch) and publishes it to GitHub Pages on manual dispatch and every 6 hours
+(the schedule refreshes the live collector status baked into the build). After deploying it reads the PUBLISHED site back and fails unless: the served
+`build-info.json` carries the exact commit built, the expected sections and schemas are in the served bundle, no private pattern (ticker-shaped strings, router keys, UUIDs,
+`order_id` keys) is present, and the site loads at 1280 px (light and dark) and 390 px with no console errors and no horizontal scroll. Its log prints the data vintage actually served.
+Vercel's free tier caps deployments per day, so it can reject builds; Pages is the path whose result is verified end to end.
 
 ## Production URL
 See the top of this file / README after first verified deploy.

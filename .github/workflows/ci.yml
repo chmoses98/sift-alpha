@@ -1,0 +1,535 @@
+name: Alpha research desk CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: alpha-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  research-desk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Unit tests
+        run: npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline tests for bounded retry and hash-verified pin cache
+        run: python3 -m unittest discover -s tests -p 'test_hitter_overlap_fetch.py' -v
+      - name: Test bounded autonomous repair queue fallback
+        run: python3 -m unittest discover -s tests -p 'test_repair_queue.py' -v
+      - name: Test season-aware evidence-gated eight-sport research scheduler
+        run: python3 -m unittest discover -s tests -p 'test_research_scheduler.py' -v
+      - name: Test opt-in bounded public market capture (no live requests)
+        run: python3 -m unittest discover -s tests -p 'test_free_market_capture.py' -v
+      - name: Validate market inventory, input registry and collection-gap artifacts
+        run: |
+          python3 -m unittest discover -s tests -p 'test_audit_schema.py' -v
+          python3 -m unittest discover -s tests -p 'test_foundation.py' -v
+          python3 -m unittest discover -s tests -p 'test_lineage.py' -v
+          python3 -m unittest discover -s tests -p 'test_coverage.py' -v
+          python3 -m unittest discover -s tests -p 'test_pit_guard.py' -v
+          python3 -m unittest discover -s tests -p 'test_sweep_results.py' -v
+          python3 -m unittest discover -s tests -p 'test_sweep_ingest.py' -v
+          python3 -m unittest discover -s tests -p 'test_essential_readiness.py' -v
+          pip install -q pyyaml && python3 -m unittest discover -s tests -p 'test_kalshi_sweep.py' -v
+      - name: Universal verification engine (statuses, denominators, ablation integrity)
+        run: |
+          python3 -m unittest discover -s tests -p 'test_verification_engine.py' -v
+          python3 -m alpha_engine.verification_engine >/dev/null && git diff --exit-code research/audit/verification/
+      - name: Verify multi-page public series capture repairs 100-contract ceiling (offline)
+        run: python3 -m unittest discover -s tests -p 'test_series_pagination.py' -v
+      - name: Verify immutable prospective pages reach market-first dashboard without false certification
+        run: python3 -m unittest discover -s tests -p 'test_series_inventory_bridge.py' -v
+      - name: Full Python suite (every tests/ module, including those without a dedicated step)
+        run: pip install -q -r requirements-dev.txt && python3 -m pytest tests -q
+      - name: Research director and fail-closed quality tests
+        run: python3 -m unittest discover -s tests -p 'test_engine*.py' -v
+      - name: Verify director produces only a planning artifact
+        run: python3 -m alpha_engine.cli > /tmp/alpha-plan.json
+      - name: Offline adversarial tests for pinned historical audit
+        run: python3 -m unittest discover -s tests -p 'test_historical*.py' -v
+      - name: Test Kalshi archive inventory guardrails (offline)
+        run: python3 -m unittest discover -s tests -p 'test_market_inventory.py' -v
+      - name: Audit genuine pinned CFB/MLB archived evidence
+        run: python3 -m alpha_engine.historical_cli --out artifacts/historical_diagnostics.json
+      - name: Verify audit did not claim betting authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("artifacts/historical_diagnostics.json").read_text())
+          assert report["authority"] == "RESEARCH_ONLY"
+          assert report["independent_review"]["passed"]
+          assert all(not item["promotion_eligible"] for item in report["studies"].values())
+          print("Research-only independent historical evidence audit passed.")
+          PY
+      - name: Test unified market timeline invariants (offline)
+        run: python3 -m unittest discover -s tests -p 'test_timeline.py' -v
+      - name: Adversarial test of CFB game-context time travel
+        run: python3 -m unittest discover -s tests -p 'test_game_context.py' -v
+      - name: Replay pinned NBA/NHL historical quote files (read-only)
+        run: python3 -m alpha_engine.timeline_cli --out artifacts/unified_timeline_pilot.json
+      - name: Verify timeline did not confer pregame or trading authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("artifacts/unified_timeline_pilot.json").read_text())
+          assert x["status"] == "RESEARCH_ONLY"
+          assert set(x["sport_tapes"]) == {"NBA", "NHL"}
+          assert len(x["provenance"]) == 7
+          cfb = x["known_game_context"]["CFB"]
+          assert cfb["game_count"] == 25
+          assert cfb["quote_coverage"]["priced_games"] == 24
+          assert cfb["quote_coverage"]["unpriced_games"] == 1
+          assert cfb["quote_coverage"]["quote_before_research"] == 19
+          assert cfb["quote_coverage"]["research_before_or_at_quote"] == 5
+          for sport, d in x["sport_tapes"].items():
+              assert d["research_authority"] == "DESCRIPTIVE_ONLY"
+              assert d["counts"].get("tickers", 0) > 0, f"{sport}: no valid market ticker rows"
+              assert all(z["pregame_cutoff"] == "UNVERIFIED" for z in d["examples"])
+          print("Pinned NBA/NHL real-source contract timelines verified, research-only.")
+          PY
+      - name: Test upstream-compatible Kalshi delta reconstruction (offline)
+        run: python3 -m unittest discover -s tests -p 'test_verified_chains.py' -v
+      - name: Verify six actual NBA/NHL market delta ticks
+        run: python3 -m alpha_engine.chain_cli
+      - name: Guard reconstructed timeline research-only authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path("artifacts/verified_chain_pilot.json").read_text())
+          assert a["research_authority"] == "RESEARCH_ONLY"
+          assert a["full_day_or_full_season"] is False
+          assert set(a["sport_chains"]) == {"NBA","NHL"}
+          for sport, chain in a["sport_chains"].items():
+              assert chain["status"] == "CHECKPOINT_AND_CONTIGUOUS_DELTA_PREFIX_VERIFIED"
+              assert chain["delta_ticks"] == 3
+              assert chain["profitability_authority"] == "NONE"
+              assert chain["not_pregame_without_independent_event_start"]
+              assert len(chain["source_files"]) == 4
+          print("Real Kalshi source delta chain hashes and no-trading constraints passed.")
+          PY
+      - name: Test all-sport archive-source safeguards
+        run: python3 -m unittest discover -s tests -p 'test_all_sport.py' -v
+      - name: Audit all eight sport archive metadata sources
+        run: python3 -m alpha_engine.all_sport_cli
+      - name: Verify all-sport report is evidence-only
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/all_sport_evidence_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert report["n_sports"]==8
+          assert {x["sport"] for x in report["sources"]}=={"NFL","CFB","NBA","NHL","MLB","CBB","SOCCER","TENNIS"}
+          for x in report["sources"]:
+              assert x["status"]=="PINNED_METADATA_AUDITED"
+              assert x["market_tape"]=="NOT_FULLY_RECONSTRUCTED"
+              assert x["game_outcome_join"]=="NOT_ESTABLISHED_BY_METADATA"
+          print("All sport sources verified: not a profitable trading signal.")
+          PY
+      - name: Adversarial tests for point-in-time sparse quote tape
+        run: python3 -m unittest discover -s tests -p 'test_verified_tape.py' -v
+      - name: Emit verified NBA/NHL sparse quote tape
+        run: python3 -m alpha_engine.verified_tape_cli
+      - name: Verify tape provenance and no betting authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/verified_sparse_tape_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert set(report["sports"])=={"NBA","NHL"}
+          with gzip.open("artifacts/verified_sparse_quote_tape.jsonl.gz","rt") as f:
+              rows=[json.loads(line) for line in f]
+          assert len(rows)==sum(x["n_sparse_tape_rows"] for x in report["sports"].values())
+          assert len(rows)>15000
+          for row in rows:
+              assert row["pregame_status"]=="UNVERIFIED"
+              assert row["quote_execution_authority"]=="NONE"
+              assert len(row["source_blob_sha1"])==40
+          for x in report["sports"].values():
+              assert x["n_verified_delta_ticks"]==3
+              assert x["market_tape_coverage"]=="VERIFIED_PREFIX_ONLY"
+              assert x["settlement_join"]=="NOT_VERIFIED"
+          print("Source-verified quote tape emitted with no trading claims.")
+          PY
+      - name: Adversarial tests for independent context source qualification
+        run: python3 -m unittest discover -s tests -p 'test_context_source_audit.py' -v
+      - name: Audit pinned independent NBA/NHL schedule and settlement sources
+        run: python3 -m alpha_engine.context_source_cli
+      - name: Guard source qualification against unsupported betting conclusions
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/context_join_qualification.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert set(report["sports"])=={"NBA","NHL"}
+          for sport,row in report["sports"].items():
+              assert row["schedule_source_available_at_tape_base"]
+              assert row["n_schedule_snapshots_after_tape_base_excluded_from_base"]==1
+              assert row["physical_game_join"]=="NOT_ESTABLISHED"
+              assert row["pregame_market_eligibility"]=="NOT_ESTABLISHED"
+              assert row["settlement_rules"]=="NOT_VERIFIED"
+              assert row["execution_or_profitability_authority"]=="NONE"
+              assert len(row["source_profiles"])==3
+          print("Independent source qualification passed; no pregame or ROI claims.")
+          PY
+      - name: Adversarial tests for independently observed scheduled starts
+        run: python3 -m unittest discover -s tests -p 'test_schedule_timeline.py' -v
+      - name: Reconstruct point-in-time NBA/NHL scheduled starts
+        run: python3 -m alpha_engine.schedule_timeline_cli
+      - name: Guard against falsely claiming actual starts or market joins
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/scheduled_start_timeline_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert set(report["sports"])=={"NBA","NHL"}
+          for sport, row in report["sports"].items():
+              assert row["n_accepted_point_in_time_schedule_rows"]>0, sport
+              assert row["source_diagnostics"]["source_schedule_files"]==2
+              assert row["asof_tape_base"]["n_games_with_known_schedule"]>0, sport
+              assert row["actual_game_start_verified"] is False
+              assert row["market_contract_join"]=="NOT_ESTABLISHED"
+              assert row["pregame_market_eligibility"]=="NOT_ESTABLISHED"
+              assert row["settlement_rule_authority"]=="NONE"
+              assert row["execution_or_profitability_authority"]=="NONE"
+              ticks=row["asof_verified_market_ticks"]
+              assert len(ticks)==4, sport
+              assert ticks[0]["asof_utc"]==row["asof_tape_base"]["asof_utc"]
+              assert ticks[-1]["asof_utc"]==row["asof_tape_end"]["asof_utc"]
+              assert ticks[0]["n_games_with_known_schedule"]==row["asof_tape_base"]["n_games_with_known_schedule"]
+              assert ticks[-1]["n_games_with_known_schedule"]==row["asof_tape_end"]["n_games_with_known_schedule"]
+              for snap in ticks:
+                  assert snap["pregame_authority"]=="NONE"
+                  assert snap["start_authority"]=="SCHEDULE_ONLY"
+              for name in ("asof_tape_base","asof_tape_end"):
+                  assert row[name]["pregame_authority"]=="NONE"
+          print("Independent schedule timeline validated, no pregame or betting authority.")
+          PY
+      - name: Adversarial literal contract ontology tests
+        run: python3 -m unittest discover -s tests -p 'test_contract_lineage.py' -v
+      - name: Qualify exact observed NBA/NHL contract identity
+        run: python3 -m alpha_engine.contract_lineage_cli
+      - name: Guard contract lineage against fabricated game or settlement joins
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/contract_lineage_qualification.json").read_text())
+          assert r["authority"]=="RESEARCH_ONLY"
+          assert set(r["sports"])=={"NBA","NHL"}
+          for sport, row in r["sports"].items():
+              assert row["n_unique_tickers"]>1000
+              assert row["n_verified_observation_ticks"]==4
+              assert row["coverage"]=="VERIFIED_CHECKPOINT_PLUS_DELTA_PREFIX_ONLY"
+              assert row["contract_to_physical_game"]=="NOT_ESTABLISHED"
+              assert row["exchange_settlement"]=="NOT_VERIFIED"
+              assert row["pregame_or_execution_authority"]=="NONE"
+          print("Literal contract identity qualified, no physical-game or ROI authority.")
+          PY
+      - name: Adversarial tests for point-in-time Kalshi event grouping
+        run: python3 -m unittest discover -s tests -p 'test_event_groups.py' -v
+      - name: Build exact observed NBA/NHL event-group ledger
+        run: python3 -m alpha_engine.event_groups_cli
+      - name: Guard event groups against invented physical-game or betting authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/literal_event_group_status.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY"
+          assert set(x["sports"])=={"NBA","NHL"}
+          with gzip.open("artifacts/literal_event_group_ledger.jsonl.gz","rt") as f:
+              groups=[json.loads(line) for line in f]
+          assert len(groups)==x["n_group_rows"] and len(groups)>0
+          for sport,data in x["sports"].items():
+              assert data["n_verified_board_ticks"]==4
+              assert data["event_to_physical_game"]=="NOT_ESTABLISHED"
+              assert data["exchange_settlement"]=="NOT_VERIFIED"
+              assert data["pregame_or_execution_authority"]=="NONE"
+              assert len(data["snapshots"])==4
+          for g in groups:
+              assert g["contract_to_physical_game"]=="NOT_ESTABLISHED"
+              assert g["actual_start"]=="NOT_VERIFIED"
+              assert g["exchange_settlement"]=="NOT_VERIFIED"
+              assert g["pregame_or_execution_authority"]=="NONE"
+              assert g["n_active_contract_tickers"]==len(g["active_contract_tickers"])
+          print("Exact event grouping verified without physical-game or ROI claims.")
+          PY
+      - name: Adversarial Tennis quote capture tests (offline)
+        run: python3 -m unittest discover -s tests -p 'test_tennis_capture.py' -v
+      - name: Qualify pinned Tennis historical capture (read-only)
+        run: python3 -m alpha_engine.tennis_capture_cli
+      - name: Verify Tennis archive scope and no trading authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from pathlib import Path
+          report=json.loads(Path("artifacts/tennis_capture_status.json").read_text())
+          assert report["authority"]=="RESEARCH_ONLY"
+          assert report["sport"]=="TENNIS"
+          assert report["n_observed_quote_rows"]==2054
+          assert [r["n_quote_rows_written"] for r in report["capture_reports"]]==[1411,286,357]
+          assert [r["snapshot_kind"] for r in report["capture_reports"]]==["HOURLY_FULL","CHANGED_ONLY","CHANGED_ONLY"]
+          assert report["full_board_at_later_ticks"]=="NOT_VERIFIED_REMOVALS_UNOBSERVED"
+          assert report["contract_to_physical_match"]=="NOT_ESTABLISHED"
+          assert report["exchange_settlement"]=="NOT_JOINED"
+          assert report["pregame_or_execution_authority"]=="NONE"
+          with gzip.open("artifacts/tennis_observed_quote_rows.jsonl.gz","rt") as f:
+              rows=[json.loads(line) for line in f]
+          assert len(rows)==2054
+          assert all(r["pregame_status"]=="UNVERIFIED" and r["quote_execution_authority"]=="NONE" for r in rows)
+          print("Real Tennis source verified, changed-only snapshots not mistaken for full tape.")
+          PY
+      - name: Adversarial Tennis settlement result tests (offline)
+        run: python3 -m unittest discover -s tests -p 'test_tennis_settlement.py' -v
+      - name: Verify pinned Tennis archived exchange-result fields
+        run: python3 -m alpha_engine.tennis_settlement_cli
+      - name: Guard Tennis scalar payouts, historical joins, and no trading authority
+        run: |
+          python3 - <<'PY'
+          import gzip,json
+          from decimal import Decimal
+          from pathlib import Path
+          r=json.loads(Path("artifacts/tennis_settlement_status.json").read_text())
+          assert r["authority"]=="RESEARCH_ONLY"
+          assert r["n_settlement_rows"]==36
+          assert r["n_distinct_settled_tickers"]==36
+          assert r["n_distinct_exchange_event_tickers"]==18
+          assert r["exchange_result_counts"]=={"yes":17,"no":17,"scalar":2}
+          assert r["n_occurrence_timestamps_after_reported_settlement"]==34
+          assert r["independently_authenticated_exchange_result"] is False
+          assert r["actual_match_start"]=="NOT_VERIFIED"
+          assert r["pregame_or_execution_authority"]=="NONE"
+          assert r["profitability_authority"]=="NONE"
+          assert r["historical_quote_overlap"]["pregame_eligibility"]=="NOT_VERIFIED_ACTUAL_MATCH_START"
+          with gzip.open("artifacts/tennis_settlement_rows.jsonl.gz","rt") as f:
+              rows=[json.loads(line) for line in f]
+          assert len(rows)==36
+          assert sum(x["exchange_reported_result"]=="scalar" and Decimal(x["exchange_reported_payout_dollars"])==Decimal("0.5") for x in rows)==2
+          assert all(x["actual_match_start_verified"] is False for x in rows)
+          print("Pinned Tennis result fields and 0.5 scalar settlement guarded; no pregame authority.")
+          PY
+      - name: Check scientific truth gates for game context and projections
+        run: python3 -m unittest discover -s tests -p 'test_science_quality.py' -v
+      - name: Test historical sport-truth evidence source integrity
+        run: python3 -m unittest discover -s tests -p 'test_sports_quality_evidence.py' -v
+      - name: Independently reproduce archived NBA roster and MLB coverage caveats
+        run: python3 -m alpha_engine.sports_quality_cli
+      - name: Prevent false game-context and projection certification
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/sports_quality_gaps.json").read_text())
+          assert x["authority"]=="HISTORICAL_QUALITY_LIMITATIONS_ONLY"
+          assert x["source_accuracy_certified"] is False
+          assert x["sport_source_audits"]["NBA"]["production_model_certified"] is False
+          assert x["sport_source_audits"]["MLB"]["model_accuracy_certified"] is False
+          assert "hitter_hits" in x["sport_source_audits"]["MLB"]["unmodeled_families_with_100plus_observations"]
+          print("Historical sport truth gaps preserved; no false scientific approval.")
+          PY
+      - name: Test bounded autonomous MLB research repair cycle (offline)
+        run: python3 -m unittest discover -s tests -p 'test_research_repair.py' -v
+      - name: Run pinned-source MLB detect-diagnose-repair-verification cycle
+        run: python3 -m alpha_engine.research_repair
+      - name: Assert no historical forecasts were fabricated or denominators altered
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/mlb_repair_cycle.json").read_text())
+          assert x["result"]=="BLOCKED_NO_SAFE_HISTORICAL_REPAIR"
+          assert x["diagnostic_repair_verified"] is True
+          assert x["historical_model_repair_performed"] is False
+          assert x["before"]==x["after"]
+          assert x["after"]["opportunity_rows"]==138158
+          assert x["after"]["model_evaluated_rows"]==694
+          assert x["after"]["families"]["hitter_hits"]=={"observed":23295,"model_evaluated":0}
+          assert x["after"]["independently_valid_evaluations"] is None
+          assert len(x["source_evidence"])==6
+          assert x["certified_model_or_profitability"] is False
+          print("Pinned MLB code and historical audit checked; no safe retroactive model repair.")
+          PY
+      - name: Adversarial hitter snapshot archive chronology tests (offline)
+        run: python3 -m unittest discover -s tests -p 'test_hitter_archive_gate.py' -v
+      - name: Verify pinned MLB hitter snapshot archive availability (read-only)
+        run: python3 -m alpha_engine.hitter_archive_gate
+      - name: Prevent snapshot backfill and false point-in-time evaluation claims
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/mlb_hitter_archive_gate.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY_NO_BACKFILL"
+          assert x["historical_opportunity_rows_unchanged"]==138158
+          assert x["historical_model_evaluated_rows_unchanged"]==694
+          assert x["historical_hitter_hits_observed_unchanged"]==23295
+          assert x["historical_hitter_hits_evaluated_unchanged"]==0
+          assert x["historical_observation_dates"]==20
+          assert x["archive_dates_overlapping_historical_report"]==["2026-08-19","2026-08-20"]
+          assert x["historical_dates_without_snapshot_file_at_pin"]==18
+          assert x["snapshot_archive_file_count"]==31
+          assert x["pilot"]["rows"]==31
+          assert x["pilot"]["forecasts_generated_after_recorded_market_observation"]==31
+          assert x["pilot"]["eligible_forecasts_at_recorded_market_observation"]==0
+          assert x["pilot"]["independently_valid_model_evaluations"] is None
+          assert x["pilot"]["verified_game_start"] is False
+          assert x["pilot"]["verified_player_team_at_game"] is False
+          assert x["repair_result"]=="BLOCKED_NO_SAFE_HISTORICAL_REPAIR"
+          assert x["source_accuracy_or_profitability_certified"] is False
+          print("Real source inventory + PIT pilot verified; no backfill, market join or trading authority.")
+          PY
+      - name: Adversarial tests for MLB historical overlap snapshot chronology
+        run: python3 -m unittest discover -s tests -p 'test_hitter_overlap_audit.py' -v
+      - name: Restore hash-verified pinned-source cache
+        uses: actions/cache@v4
+        with:
+          path: .pin-cache
+          key: pinned-hitter-snapshots-v1-6ab8d6e6a694-e60edec7a7e2
+      - name: Audit two pinned original MLB hitter snapshot archives (bounded retries, hash-verified cache, read-only)
+        env:
+          SIFT_PIN_CACHE: .pin-cache
+        run: python3 -m alpha_engine.hitter_overlap_audit
+      - name: Guard overlap evidence against fabricated model evaluations
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/mlb_hitter_overlap_audit.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY_NO_BACKFILL"
+          assert x["source_scope"]=="PINNED_HITTER_SNAPSHOTS_AUG19_20_ONLY"
+          assert x["source_rows_examined"]>0
+          assert set(x["days"])=={"2026-08-19","2026-08-20"}
+          assert all(d["source_rows"]>0 and len(d["source_sha256"])==64 for d in x["days"].values())
+          assert x["before"]==x["after"]=={"opportunity_rows":138158,"evaluated_rows":694,
+                                           "hitter_hits_observed":23295,"hitter_hits_evaluated":0}
+          assert x["independently_valid_historical_evaluations"] is None
+          assert x["repair_result"]=="BLOCKED_NO_SAFE_HISTORICAL_REPAIR"
+          assert x["profitability_or_execution_authority"]=="NONE"
+          print("Original Aug19/20 overlap sources audited, no historical evaluation backfill.")
+          PY
+      - name: Adversarial tests for market-first source-backed family registry
+        run: python3 -m unittest discover -s tests -p 'test_market_family_registry.py' -v
+      - name: Reconstruct eight-sport market-family and missing-input matrix from pinned sources
+        run: python3 -m alpha_engine.market_family_registry
+      - name: Guard real market-family matrix against denominator inflation and false certification
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("artifacts/market_family_input_coverage.json").read_text())
+          assert x["authority"]=="RESEARCH_ONLY_NOT_LIVE_COLLECTION"
+          assert set(x["supported_sports"])=={"NFL","CFB","NBA","NHL","MLB","CBB","SOCCER","TENNIS"}
+          assert x["checks"]["cbb_snapshot_contracts"]==12209
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          cbb=[r for r in x["family_rows"] if r["sport"]=="CBB"]
+          mlb=[r for r in x["family_rows"] if r["sport"]=="MLB"]
+          assert len(cbb)==7 and sum(r["observed_denominator"] for r in cbb)==12209
+          assert len(mlb)==14 and sum(r["observed_denominator"] for r in mlb)==138158
+          assert len(x["missing_input_queue"])==len(x["family_rows"])
+          assert all(r["independently_valid_evaluations"] is None for r in x["family_rows"])
+          assert all(len(r["source_sha256"])==64 for r in x["family_rows"])
+          assert not x["all_market_families_certified"] and not x["live_capture_running"]
+          print("Source-verified family inventory and explicit missing-input queue; no live/certified claims.")
+          PY
+      - name: Adversarial source-to-dashboard market-series audit tests
+        run: python3 -m unittest discover -s tests -p 'test_market_series_audit.py' -v
+      - name: Generate dashboard audit from source-verified NBA/NHL tape and eight-sport matrix
+        run: python3 -m alpha_engine.market_series_audit
+      - name: Guard dashboard artifact against inflated coverage and fabricated model authority
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("public/market-family-input-coverage.json").read_text())
+          assert x["schema_version"]==2
+          assert x["authority"]=="RESEARCH_ONLY_NOT_LIVE_COLLECTION"
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          assert set(x["literal_series_audit"])=={"NBA","NHL"}
+          assert x["discovered_literal_series_count"]>0
+          for sport, audit in x["literal_series_audit"].items():
+              assert audit["n_tickers_with_literal_series"]+audit["n_tickers_quarantined"]==audit["n_unique_tickers_in_prefix"], sport
+              assert audit["n_literal_series"]>0, sport
+              rows=[r for r in x["family_rows"] if r["sport"]==sport and r["family"].startswith("SERIES:")]
+              assert len(rows)==audit["n_literal_series"]
+              assert sum(r["observed_denominator"] for r in rows)==audit["n_tickers_with_literal_series"]
+              for r in rows:
+                  assert r["market_collection_status"]=="COLLECTED_VALID"
+                  assert r["model_usage_status"]=="UNKNOWN"
+                  assert r["input_collection_status"]=="UNKNOWN"
+                  assert r["independently_valid_evaluations"] is None
+                  assert r["settlement_outcome_join"]=="UNKNOWN"
+                  assert r["full_checkpoint_delta_replay"]=="VERIFIED_PREFIX_ONLY"
+          assert x["live_capture_running"] is False
+          assert x["all_market_families_certified"] is False
+          print("Source-verified literal-series dashboard artifact; no model or betting certification.")
+          PY
+      - name: Adversarial tests for complete CFB event-directory enumeration
+        run: python3 -m unittest discover -s tests -p 'test_cfb_shard_family_audit.py' -v
+      - name: Verify all 27 pinned CFB event shards and extend dashboard audit
+        run: python3 -m alpha_engine.cfb_shard_family_audit
+      - name: Guard CFB market-family denominator and no-false-authority claims
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path("public/market-family-input-coverage.json").read_text())
+          a=x["cfb_event_shard_audit"]
+          assert a["n_event_shards"]==27
+          assert a["n_distinct_literal_events"]==27
+          assert a["n_distinct_market_tickers"]>100
+          assert a["n_native_family_period_groups"]>10
+          assert a["event_date_vs_game_key_conflict"]
+          assert not a["actual_game_start_verified"]
+          assert not a["archive_capture_clock_verified"]
+          assert not a["settlement_join_verified"]
+          assert not a["full_cfb_market_coverage_verified"]
+          rows=[r for r in x["family_rows"] if r["sport"]=="CFB" and r["family"].startswith("SHARD:")]
+          assert len(rows)==27
+          assert sum(r["observed_denominator"] for r in rows)==a["n_distinct_market_tickers"]
+          assert sum(len(r["observed_contracts"]) for r in rows)==a["n_distinct_market_tickers"]
+          assert all(r["model_usage_status"]=="UNKNOWN" and r["observed_at_utc"] is None for r in rows)
+          half=[r for r in rows if r["period"]=="first_half"]
+          assert half, "Expected real first-half contract shards"
+          assert all(r["generic_pricer_capability"]=="EXPLICIT_UNSUPPORTED_FIRST_HALF_ONLY" for r in half)
+          assert all(r["generic_pricer_evidence"]["source_git_blob_sha1"]=="7d73b0edce9dcc6ccdfb2375f001a1838f55a80e" for r in half)
+          assert all(r["generic_pricer_evidence"]["all_other_pricing_routes_audited"] is False for r in half)
+          assert all(r["generic_pricer_capability"]=="UNKNOWN" for r in rows if r["period"]!="first_half")
+          assert all(r["independently_valid_evaluations"] is None for r in rows)
+          assert x["checks"]["cfb_1q_sample_contracts"]==11
+          assert x["checks"]["mlb_historical_opportunities"]==138158
+          assert x["checks"]["mlb_source_reported_evaluations"]==694
+          assert x["checks"]["mlb_hitter_hits"]==[0,23295]
+          assert not x["all_market_families_certified"] and not x["live_capture_running"]
+          print("CFB 27-shard source-to-dashboard inventory verified:",a["n_distinct_market_tickers"],"tickers")
+          PY
+      - name: Production build
+        run: npm run build

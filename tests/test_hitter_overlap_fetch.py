@@ -67,6 +67,28 @@ class Fetch(unittest.TestCase):
             self.assertEqual(ov.fetch_pinned(DATE, opener=self.opener([self.raw], calls3), sleep=lambda s: None), self.raw)
             self.assertEqual(len(calls3), 1)
 
+    def test_truncated_body_exception_is_retried(self):
+        import http.client
+        calls = []
+        out = ov.fetch_pinned(DATE, opener=self.opener([http.client.IncompleteRead(b"x"), self.raw], calls), sleep=lambda s: None)
+        self.assertEqual(out, self.raw); self.assertEqual(len(calls), 2)
+
+    def test_permanent_4xx_not_retried_but_429_is(self):
+        from urllib.error import HTTPError
+        calls = []
+        with self.assertRaises(ConnectionError):
+            ov.fetch_pinned(DATE, opener=self.opener([HTTPError("u", 404, "nf", {}, None)], calls), sleep=lambda s: None)
+        self.assertEqual(len(calls), 1)
+        calls = []
+        out = ov.fetch_pinned(DATE, opener=self.opener([HTTPError("u", 429, "slow", {}, None), self.raw], calls), sleep=lambda s: None)
+        self.assertEqual(len(calls), 2); self.assertEqual(out, self.raw)
+
+    def test_cache_path_is_directory_or_unwritable_does_not_break_fetch(self):
+        sha = self.pins[DATE][0]
+        with patch.dict(os.environ, {ov.CACHE_ENV: self.tmp.name}):
+            (Path(self.tmp.name) / f"{sha}.blob").mkdir()                         # a directory where the blob should be
+            self.assertEqual(ov.fetch_pinned(DATE, opener=self.opener([self.raw], []), sleep=lambda s: None), self.raw)
+
     def test_redirect_rejected(self):
         def op(req, timeout):
             r = fake(self.raw)(); r.url = "https://evil.example/x"; return r

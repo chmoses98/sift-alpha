@@ -46,15 +46,28 @@ OVERLAY = {
 }
 
 
+def rederive_ablation_verdict(ab: dict, variant: str) -> str:
+    """Recompute promotion eligibility from the RECORDED numbers; the file's own verdict string is never trusted."""
+    e = (ab.get("variants") or {}).get(variant) or {}
+    n_comp = sum(1 for v in ab.get("variants", {}).values() if v.get("compared_to"))
+    try:
+        ok = (ab.get("dependence_aware") is True and ab.get("n_eval", 0) >= ab.get("min_eval", 10**9) and e.get("compared_to") == "V0_league_mean"
+              and e.get("n_comparisons_family") == n_comp and e["mae_improvement_ci_bonferroni"][0] > 0 and min(e["chronological_halves_mean"]) > 0
+              and e.get("team_jackknife_min_mean") is not None and e["team_jackknife_min_mean"] > 0 and e.get("n_week_clusters", 0) >= 8)
+    except (KeyError, TypeError, IndexError):
+        ok = False
+    return "ELIGIBLE" if ok else "NOT_ELIGIBLE"
+
+
 def _j(p):
     return json.loads(Path(p).read_text())
 
 
-def may_validate(entry: dict, ablation_ok: bool, family_match: bool = True) -> bool:
+def may_validate(entry: dict, ablation_ok: bool, family_match: bool = True, transform_state: str = "PASS") -> bool:
     """VALIDATED_PREDICTIVE gate. ALL must hold: the input is verified collection, the model is recorded as ACTUALLY consuming it
     (model_use == USED; unused/unknown/partial never qualifies), the evidence is for this market family, and a chronological,
     multiplicity-corrected, dependence-aware ablation supports it. A contradictory unused record always blocks promotion."""
-    return bool(ablation_ok and family_match and entry.get("verification_class") == "VERIFIED_COLLECTION" and entry.get("model_use") == "USED")
+    return bool(ablation_ok and family_match and transform_state == "PASS" and entry.get("verification_class") == "VERIFIED_COLLECTION" and entry.get("model_use") == "USED")
 
 
 def input_status(entry: dict, validated: bool = False) -> str:
@@ -65,7 +78,7 @@ def input_status(entry: dict, validated: bool = False) -> str:
     if vc == "MISSING":
         return "UNSUPPORTED" if col == "NO_RELIABLE_SOURCE" else "MISSING"
     if vc in COLLECTED_CLASSES:
-        if validated and may_validate(entry, True):
+        if validated and may_validate(entry, True, transform_state=(entry.get("_transform_state") or "UNKNOWN")):
             return "VALIDATED_PREDICTIVE"
         if mu in UNUSED_MODEL_USE:
             return "COLLECTED_UNUSED"
@@ -162,11 +175,13 @@ def recompute_denominators(specs, master, cs, registry, readiness_file=None) -> 
         "essential_links": links, "essential_links_verified": ver, "families_with_all_essentials_verified": fully, "unclassified_links": unclassified,
         "per_sport": {s: dict(c) for s, c in per_sport.items()},
     }
+    n_rows, n_ids = len(inputs), len(distinct_ids)
+    cr_rows, cr_ids = cls.get("CODE_REFERENCE_ONLY", 0), rec["class_counts_distinct_ids"].get("CODE_REFERENCE_ONLY", 0)
     rec["reconciliation_notes"] = [
-        "275 = discovered families in master_inventory; 278 = market_specs families = 275 + 3 spec-only SOCCER blueprints (corners, player_goalscorer, shots_sot) that Kalshi has not been observed to list. None removed.",
-        "'285 inputs' is the BASELINE sport-input row count (docs/OVERNIGHT_REPORT.md). Authoritative rows are now 342 (285 + 57 overnight rows); they hold 265 DISTINCT input ids because 11 cross-sport m.* ids repeat in each of 8 sports and 14 overnight rows repeat an id.",
-        "'118 code-reference-only' (PR #8 text) vs recount: 122 sport-rows / 92 distinct ids in the committed artifact. The artifact is authoritative; the PR text predates later reclassification. No input was hidden or deleted to reach either number.",
-        "775/1,762 essential links and 5 fully-verified families are reproduced exactly from raw artifacts."]
+        f"{len(master_ids)} = discovered families in master_inventory; {len(spec_ids)} = market_specs families = {len(master_ids)} + {len(spec_ids - master_ids)} spec-only blueprints ({', '.join(sorted(spec_ids - master_ids))}) not observed on Kalshi. None removed.",
+        f"'285 inputs' is the BASELINE sport-input row count (docs/OVERNIGHT_REPORT.md). Authoritative rows are {n_rows}, holding {n_ids} DISTINCT input ids (cross-sport m.* ids repeat per sport).",
+        f"'118 code-reference-only' (PR #8 text) vs recount: {cr_rows} sport-rows / {cr_ids} distinct ids in the committed artifact. The artifact is authoritative; no input was hidden or deleted to reach either number.",
+        f"{ver}/{links} essential links verified and {fully} fully-verified families are recounted from raw artifacts."]
     if readiness_file is not None:
         r = readiness_file
         tot = sum(d["ALL"]["required"] for d in r["sports"].values()); vv = sum(d["ALL"]["verified"] for d in r["sports"].values())
@@ -281,7 +296,7 @@ def build():
         validated = set()
         if key in ablation:
             for var, ent in ablation[key]["variants"].items():
-                if ent.get("verdict") == "VALIDATED_PREDICTIVE" and var in ABLATION_INPUT and ablation[key].get("dependence_aware") and ablation[key].get("family") == key:
+                if rederive_ablation_verdict(ablation[key], var) == "ELIGIBLE" and var in ABLATION_INPUT and ablation[key].get("family") == key:
                     validated.add(ABLATION_INPUT[var])
         proj = projection_evidence(key, f, mv, intel, audits)
         orientation = proj.get("settles_on") if proj["state"] == "SPEC_ONLY" else (evidence.get("orientation") or {}).get(key)
@@ -298,7 +313,7 @@ def build():
                 counts[tier]["UNKNOWN"] += 1
                 continue
             ent = ctx_cs["sports"][s]["inputs"][i]
-            stt = "VALIDATED_PREDICTIVE" if i in validated and may_validate(ent, True, family_match=True) else rec["status"]
+            stt = "VALIDATED_PREDICTIVE" if i in validated and may_validate(ent, True, family_match=True, transform_state=rec["stages"]["transform"]["state"]) else rec["status"]
             rows.append({"input": i, "tier": tier, "origin": origin[i], "status": stt, "first_failure": rec["first_failure"]})
             counts[tier][stt] += 1
         mapping = market_mapping_stage(key, f, mi_by_id.get(key), inputs, orientation)
@@ -312,7 +327,7 @@ def build():
         ess = [r for r in rows if r["tier"] == "E"]
         fams[key] = {"sport": s, "family": f["native_family"], "markets_now": f.get("markets_now"), "spec_status": f["status"], "in_master_inventory": key in master_ids,
                      "inputs": rows, "counts_by_tier": {t: dict(c) for t, c in counts.items()}, "stages": fam_stage, "projection": proj,
-                     "essential_verified": sum(r["status"] in ("VERIFIED", "VALIDATED_PREDICTIVE") for r in ess), "essential_total": len(ess),
+                     "essential_verified": sum(r["status"] in ("VERIFIED", "VALIDATED_PREDICTIVE") for r in ess), "essential_total": len(ess), "essential_chain_complete": sum(1 for r in ess if r["status"] in ("VERIFIED", "VALIDATED_PREDICTIVE") and r["first_failure"] is None),
                      "essential_legacy_verified": sum(inputs.get(f"{s}:{r['input']}", {}).get("verification_class") == "VERIFIED_COLLECTION" for r in ess),
                      "ablation": f"verification/{ABLATION_FILES[key]}" if key in ablation else None}
     return {"specs": specs, "master": master, "cs": cs, "registry": registry, "ready": ready, "inputs": inputs, "fams": fams, "intel": intel, "ablation": ablation}
@@ -351,11 +366,11 @@ def summarize(ctx, rec) -> dict:
         el = sum(f["essential_total"] for f in fam)
         per[s] = {"inputs_by_status": dict(c), "families": len(fam), "markets_now": sum(f["markets_now"] or 0 for f in fam),
                   "essential_links": el, "essential_legacy_verified": sum(f["essential_legacy_verified"] for f in fam),
-                  "essential_strict_verified": sum(f["essential_verified"] for f in fam),
+                  "essential_collection_verified": sum(f["essential_verified"] for f in fam), "essential_chain_complete": sum(f["essential_chain_complete"] for f in fam),
                   "families_projection": dict(Counter(f["projection"]["state"] for f in fam)),
-                  "families_all_essentials_strict_verified": sum(1 for f in fam if f["essential_total"] and f["essential_verified"] == f["essential_total"])}
+                  "families_all_essentials_collection_verified": sum(1 for f in fam if f["essential_total"] and f["essential_verified"] == f["essential_total"])}
     return {"schema_version": "verification-1.0", "statuses": STATUSES, "stages": STAGES, "family_stages": FAMILY_STAGES,
-            "definitions": {"VERIFIED": "collected, point-in-time availability verified, model use not shown unused", "COLLECTED_UNVERIFIED": "collected but availability timestamps not verified",
+            "definitions": {"VERIFIED": "COLLECTION verified (point-in-time availability) and not recorded as unused. Says nothing about lineage or consumption: see essential_chain_complete", "COLLECTED_UNVERIFIED": "collected but availability timestamps not verified",
                             "COLLECTED_UNUSED": "collected but recorded as not consumed by any model", "STALE": "partial or stale coverage", "MISSING": "source exists, not collected",
                             "UNSUPPORTED": "no reliable source found", "UNKNOWN": "no evidence recorded (includes code-reference-only and derived)",
                             "VALIDATED_PREDICTIVE": "survived Bonferroni-adjusted chronological ablation vs a no-information baseline; NOT proof of an executable after-fee edge"},

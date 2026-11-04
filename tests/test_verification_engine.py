@@ -26,7 +26,8 @@ class Status(unittest.TestCase):
             self.assertEqual(ve.input_status(E(vc)), "UNKNOWN")
 
     def test_validated_requires_verified_collection(self):
-        self.assertEqual(ve.input_status(E("VERIFIED_COLLECTION", mu="USED"), validated=True), "VALIDATED_PREDICTIVE")
+        self.assertEqual(ve.input_status(E("VERIFIED_COLLECTION", mu="USED"), validated=True), "VERIFIED")        # no lineage -> not promoted
+        self.assertEqual(ve.input_status(dict(E("VERIFIED_COLLECTION", mu="USED"), _transform_state="PASS"), validated=True), "VALIDATED_PREDICTIVE")
         # a predictive result never upgrades unverified/missing collection
         for vc in ("COLLECTED_UNVERIFIED_PIT", "MISSING", "UNKNOWN", "STALE_OR_PARTIAL"):
             self.assertNotEqual(ve.input_status(E(vc), validated=True), "VALIDATED_PREDICTIVE")
@@ -139,9 +140,6 @@ class Ablation(unittest.TestCase):
         self.assertNotIn("VALIDATED_PREDICTIVE", [e.get("verdict") for e in d["variants"].values()])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ReviewRegressions(unittest.TestCase):
     """Adversarial regressions for PR #32 review findings 1-5."""
@@ -243,3 +241,54 @@ class ReviewRegressions(unittest.TestCase):
             rows.append(r)
         self.assertNotEqual(ab.ablate(rows)["variants"]["V5_team_only_total"]["verdict"], "VALIDATED_PREDICTIVE")
         self.assertTrue(ab.ablate(rows)["dependence_aware"])
+
+
+class ReviewRound2(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ctx, cls.rec, _, cls.summ = ve.run(write=False)
+
+    def test_verified_collection_with_unknown_chain_is_not_chain_complete(self):
+        for s in self.summ["sports"].values():
+            self.assertEqual(s["essential_chain_complete"], 0)
+            self.assertGreaterEqual(s["essential_collection_verified"], s["essential_chain_complete"])
+
+    def test_lineage_is_required_for_validated(self):
+        e = E("VERIFIED_COLLECTION", "PIT_ARCHIVED", "USED")
+        self.assertFalse(ve.may_validate(e, True, transform_state="UNKNOWN"))
+        self.assertFalse(ve.may_validate(e, True, transform_state="PARTIAL"))
+        self.assertTrue(ve.may_validate(e, True, transform_state="PASS"))
+
+    def test_forged_ablation_verdict_is_rederived_not_trusted(self):
+        good = json.loads((OUT / "CFB_quarter_total_ablation.json").read_text())
+        for v in good["variants"].values():
+            if "verdict" in v:
+                self.assertEqual(ve.rederive_ablation_verdict(good, "V5_team_only_total"), "NOT_ELIGIBLE")
+        forged = json.loads(json.dumps(good)); forged["variants"]["V5_team_only_total"]["verdict"] = "VALIDATED_PREDICTIVE"
+        self.assertEqual(ve.rederive_ablation_verdict(forged, "V5_team_only_total"), "NOT_ELIGIBLE")
+        passing = json.loads(json.dumps(good)); e = passing["variants"]["V5_team_only_total"]
+        e.update({"mae_improvement_ci_bonferroni": [0.1, 0.4], "chronological_halves_mean": [0.2, 0.1], "team_jackknife_min_mean": 0.05, "n_week_clusters": 12})
+        self.assertEqual(ve.rederive_ablation_verdict(passing, "V5_team_only_total"), "ELIGIBLE")
+        for k, bad in (("n_week_clusters", 3), ("team_jackknife_min_mean", -0.01), ("chronological_halves_mean", [0.2, -0.1]), ("compared_to", "V2_opp_defense")):
+            t = json.loads(json.dumps(passing)); t["variants"]["V5_team_only_total"][k] = bad
+            self.assertEqual(ve.rederive_ablation_verdict(t, "V5_team_only_total"), "NOT_ELIGIBLE", k)
+        t = json.loads(json.dumps(passing)); t["dependence_aware"] = False
+        self.assertEqual(ve.rederive_ablation_verdict(t, "V5_team_only_total"), "NOT_ELIGIBLE")
+
+    def test_all_committed_outputs_match_regeneration(self):
+        ctx, rec, tasks, summ = ve.run(write=False)
+        c = chain.build(ctx)
+        for name, obj in (("summary.json", summ), ("inputs.json", {"schema_version": "verification-1.0", "inputs": ctx["inputs"]}),
+                          ("families.json", {"schema_version": "verification-1.0", "families": ctx["fams"]}),
+                          ("repair_tasks.json", {"schema_version": "verification-1.0", "n": len(tasks), "tasks": tasks}),
+                          ("CFB_quarter_total_chain.json", c)):
+            self.assertEqual(json.loads((OUT / name).read_text()), json.loads(json.dumps(obj)), f"{name} stale")
+
+    def test_reconciliation_text_is_computed_not_hardcoded(self):
+        txt = " ".join(self.rec["reconciliation_notes"])
+        self.assertIn(str(self.rec["inputs_sport_rows_in_collection_status"]), txt)
+        self.assertIn(f"{self.rec['essential_links_verified']}/{self.rec['essential_links']}", txt)
+
+
+if __name__ == "__main__":
+    unittest.main()

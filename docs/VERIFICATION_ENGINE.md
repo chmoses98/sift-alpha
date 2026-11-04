@@ -11,3 +11,11 @@ Reference family: `CFB/quarter_total` — `CFB_quarter_total_chain.json` (26 can
 Overlay (`OVERLAY` in the engine) adds contextual links market_specs omitted; never essential, so the 1,762-link denominator is unchanged.
 
 Not done: no market-price baseline for Q1 (no joined quote history); sports other than CFB have chain status but no factor trace/ablation; external sources (ESPN, nflverse) were unreachable from the build sandbox, so no new collection was possible.
+
+## Multisport evidence layers (PR: multisport audits)
+- `model_use_static.json` (`alpha_engine.model_use_probe`): AST identifier-level evidence in sport repos (docstrings excluded). Gives at most PARTIAL on the transform stage.
+- `projection_outputs.json` (`scripts/audit_projection_outputs.py`): what NBA/CBB/NFL actually PUBLISH (pinned commits). An input-derived field populated and varying in the output + recorded USED gives consumption PASS; absence is never proof of non-use. A published output never makes a projection independently reproduced.
+- `pricing_paths.json` (`scripts/audit_pricing_paths.py`): per-family module list that prices the market; each driver is REFERENCED or NOT_FOUND_IN_PRICING_PATH (bounded static negative).
+- `source_verifications.json` (`scripts/measure_cfb_sources.py`): measurements of data already in sibling repos; can lift an input out of UNKNOWN/MISSING to COLLECTED_UNVERIFIED/STALE, never to VERIFIED.
+- `repair_ledger.json`: disposition of investigated repair tasks (states checked by tests against the regenerated engine output).
+- `CFB_quarter_total_ablation_pace_efficiency.json`: expanding-window ridge ablation using ESPN team-game pace/efficiency features.

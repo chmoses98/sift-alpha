@@ -3,8 +3,11 @@ import summary from "../research/audit/verification/summary.json";
 import famDoc from "../research/audit/verification/families.json";
 import inpDoc from "../research/audit/verification/inputs.json";
 import tasksDoc from "../research/audit/verification/repair_tasks.json";
+import outs from "../research/audit/verification/projection_outputs.json";
+import nbaEval from "../research/audit/verification/NBA_forecast_eval.json";
 import chain from "../research/audit/verification/CFB_quarter_total_chain.json";
 import ablation from "../research/audit/verification/CFB_quarter_total_ablation.json";
+import ablation2 from "../research/audit/verification/CFB_quarter_total_ablation_pace_efficiency.json";
 import {MarketIntel, intelFor} from "./market-intel.jsx";
 import "./verification-desk.css";
 
@@ -38,6 +41,14 @@ function Overview({sport, onSport}) {
       })}
     </div>
     <p className="vd-legend">{STATUS_ORDER.map(s => <Chip key={s} s={s}/>)}</p>
+    <details className="vd-recon"><summary>Published projection audits (what the sport repos actually publish)</summary>
+      <ul className="vd-fine">
+        <li><b>NBA</b> {outs.NBA.n_players.toLocaleString()} player projections, model {outs.NBA.source.model.version}, data as of {outs.NBA.data_asof_utc}; adjustments seen: {Object.entries(outs.NBA.adjustment_counts).map(([k, v]) => `${k} ${v}`).join(", ")}; gate {Object.entries(outs.NBA.gate_status).map(([k, v]) => `${k} ${v}`).join(", ")}; {outs.NBA.participation.implicit_not_listed.toLocaleString()} players treated as available only because they were not listed; oldest participation report {Math.round(outs.NBA.participation.max_report_age_minutes / 60)}h; starter flag visible: {String(outs.NBA.input_visibility["nba.starters_pit"].visible_in_output)}.</li>
+        <li><b>CBB</b> {outs.CBB.n_games} game projections ({outs.CBB.source.model_dir}); market price joined {(outs.CBB.market_joined_share * 100).toFixed(0)}%; matchup factors populated {(outs.CBB.matchup_factors_populated_share * 100).toFixed(0)}%; no first-half, injury or starter field in the output.</li>
+        <li><b>NBA independent evaluation</b> of archived pre-tip forecasts vs ESPN final box scores ({nbaEval.families.points.n_player_games.toLocaleString()} player-games, {nbaEval.families.points.n_dates} dates; no market baseline): challenger vs incumbent MAE of the mean — {Object.entries(nbaEval.families).filter(([, v]) => v.paired_vs_incumbent).map(([k, v]) => `${k} ${v.paired_vs_incumbent.challenger_mae} vs ${v.paired_vs_incumbent.incumbent_mae} (${v.paired_vs_incumbent.verdict.toLowerCase().replaceAll("_", " ")})`).join("; ")}. Participation Brier {nbaEval.participation.brier_model} ({(nbaEval.participation.explicit_report_share * 100).toFixed(0)}% of player-games had an explicit report; explicit {nbaEval.participation.explicit_brier} vs implicit {nbaEval.participation.implicit_brier}). Central-80% coverage {Object.entries(nbaEval.families).map(([k, v]) => `${k} ${v.challenger_coverage_80}`).join(", ")} (discrete lattices over-cover).</li>
+        <li><b>NHL</b> {outs.NHL.n_players} player projections ({Object.entries(outs.NHL.by_family).map(([k, v]) => `${k} ${v}`).join(", ")}), readiness {Object.entries(outs.NHL.readiness).map(([k, v]) => `${k} ${v}`).join(", ")}; goalie field visible in output: {String(outs.NHL.input_visibility["nhl.goalie_start"].visible_in_output)}.</li>
+        <li><b>NFL</b> {outs.NFL.n_forecasts} latest forecasts, families: {Object.keys(outs.NFL.families).join(", ")}; game-total/quarter/half distribution published: {String(outs.NFL.has_game_total_or_period_family)}.</li>
+      </ul><p className="vd-fine">{outs.NBA.limits}</p></details>
     <details className="vd-recon"><summary>Denominator reconciliation (recounted from raw artifacts; nothing deleted)</summary>
       <ul>
         <li>{rec.families_master_inventory} discovered families; {rec.families_market_specs} spec families (+{rec.spec_only_not_in_master_inventory.length} unobserved blueprints: {rec.spec_only_not_in_master_inventory.join(", ")}).</li>
@@ -59,12 +70,29 @@ function InputDetail({sport, input, famKey}) {
     <p className="vd-fine"><b>Recorded note:</b> {rec.note || "—"}</p>
     <p className="vd-fine"><b>Evidence:</b> {rec.evidence.length ? rec.evidence.join(" · ") : "none recorded"}</p>
     <p className="vd-fine"><b>Used by {users.length} families</b> ({users.filter(u => u.tier === "E").length} essential): {users.slice(0, 12).map(u => u.f.family + "(" + u.tier + ")").join(", ")}{users.length > 12 ? "…" : ""}</p>
+    {rec.static_use && <p className="vd-fine"><b>Static code evidence</b> ({rec.static_use.repo}@{rec.static_use.commit.slice(0, 7)}): {rec.static_use.collector_files} collector file(s), {rec.static_use.model_read_files} model file(s) read it, {rec.static_use.test_files} test file(s). {(rec.static_use.refs.model || []).slice(0, 3).map(r => `${r.file}:${r.lines[0]}`).join(" · ")} <em>(identifier-level AST; not an executed lineage)</em></p>}
+    {rec.output_visibility && <p className="vd-fine"><b>Published-output visibility:</b> {rec.output_visibility.visible_in_output ? "visible" : "not visible (absence is not proof of non-use)"} {rec.output_visibility.field ? `· field ${rec.output_visibility.field}` : ""} {(rec.output_visibility.visible_leaves || []).slice(0, 3).join(", ")}</p>}
+    {task && task.disposition && <p className="vd-fine vd-task"><b>Repair disposition: {task.disposition.state.replaceAll("_", " ").toLowerCase()}</b> — found: {task.disposition.found} · remaining: {task.disposition.remaining} · next: {task.disposition.next}</p>}
     {task && <p className="vd-fine vd-task"><b>Open repair task:</b> {task.kind.replaceAll("_", " ").toLowerCase()} · {task.n_families} families / {task.markets_affected.toLocaleString()} markets affected · failing stage <b>{task.defect.stage}</b>: {task.defect.why}</p>}
   </div>;
 }
 
+function AblationTable({ab, title}) {
+  const v = ab.variants;
+  return <div>
+    <h5>{title}</h5>
+    <table className="vd-table"><thead><tr><th>Variant</th><th>MAE</th><th>Δ MAE vs</th><th>95% CI</th><th>Bonferroni CI ({Object.values(v).find(x => x.n_comparisons_family)?.n_comparisons_family})</th><th>Halves</th><th>Min leave-one-team-out</th><th>Verdict</th></tr></thead><tbody>
+      {Object.entries(v).map(([k, x]) => <tr key={k}><td>{k}</td><td>{x.mae}</td><td>{x.compared_to ? `${x.mae_improvement_mean} vs ${x.compared_to.split("_")[0]}` : "baseline"}</td>
+        <td>{x.mae_improvement_ci95 ? `${x.mae_improvement_ci95[0]} … ${x.mae_improvement_ci95[1]}` : "—"}</td><td>{x.mae_improvement_ci_bonferroni ? `${x.mae_improvement_ci_bonferroni[0]} … ${x.mae_improvement_ci_bonferroni[1]}` : "—"}</td>
+        <td>{x.chronological_halves_mean ? x.chronological_halves_mean.join(" / ") : "—"}</td><td>{x.team_jackknife_min_mean ?? "—"}</td>
+        <td>{x.verdict ? <span className={"vd-chip " + (x.verdict === "VALIDATED_PREDICTIVE" ? "vd-VALIDATED_PREDICTIVE" : x.verdict === "HARMFUL" ? "vd-MISSING" : x.verdict === "SUGGESTIVE_UNCONFIRMED" ? "vd-STALE" : "vd-UNKNOWN")}>{nice(x.verdict)}</span> : "—"}</td></tr>)}
+    </tbody></table>
+    <p className="vd-fine">{Object.values(v).find(x => x.n_week_clusters)?.n_week_clusters} week clusters; {ab.dependence_method}.</p>
+  </div>;
+}
+
 function Q1Trace() {
-  const v = ablation.variants;
+
   return <div className="vd-q1">
     <h5>Reference audit · CFB 1st-quarter total · factor → input → status</h5>
     <p className="vd-fine">{chain.markets_now} markets · projection: <b>{nice(chain.projection.state)}</b> ({chain.projection.verdict}, n={chain.projection.n_eval}) · every factor is a <i>candidate mechanism</i> until verified.</p>
@@ -75,14 +103,11 @@ function Q1Trace() {
         <td className="vd-fine">{f.inputs.map(x => x.first_failure ? x.first_failure.stage : "—").join(", ") || "—"}</td></tr>)}
     </tbody></table>
     <p className="vd-fine">* link added by the verification overlay (market_specs does not list it); contextual tier only, essential denominators unchanged.</p>
-    <h5>Input ablation on {ablation.n_eval} held-out games (ESPN period scores, chronological, vs league-mean baseline)</h5>
-    <table className="vd-table"><thead><tr><th>Variant</th><th>MAE</th><th>Δ MAE vs</th><th>95% CI</th><th>Bonferroni CI ({Object.values(v).find(x => x.n_comparisons_family)?.n_comparisons_family})</th><th>Halves</th><th>Min leave-one-team-out</th><th>Verdict</th></tr></thead><tbody>
-      {Object.entries(v).map(([k, x]) => <tr key={k}><td>{k}</td><td>{x.mae}</td><td>{x.compared_to ? `${x.mae_improvement_mean} vs ${x.compared_to.split("_")[0]}` : "baseline"}</td>
-        <td>{x.mae_improvement_ci95 ? `${x.mae_improvement_ci95[0]} … ${x.mae_improvement_ci95[1]}` : "—"}</td><td>{x.mae_improvement_ci_bonferroni ? `${x.mae_improvement_ci_bonferroni[0]} … ${x.mae_improvement_ci_bonferroni[1]}` : "—"}</td>
-        <td>{x.chronological_halves_mean ? x.chronological_halves_mean.join(" / ") : "—"}</td><td>{x.team_jackknife_min_mean ?? "—"}</td><td>{x.verdict ? <span className={"vd-chip " + (x.verdict === "VALIDATED_PREDICTIVE" ? "vd-VALIDATED_PREDICTIVE" : x.verdict === "HARMFUL" ? "vd-MISSING" : x.verdict === "SUGGESTIVE_UNCONFIRMED" ? "vd-STALE" : "vd-UNKNOWN")}>{nice(x.verdict)}</span> : "—"}</td></tr>)}
-    </tbody></table>
+    <AblationTable ab={ablation} title={`Ablation 1 · opponent adjustment, recency, site (${ablation.n_eval} held-out games, ESPN period scores)`}/>
+    <AblationTable ab={ablation2} title={`Ablation 2 · pace / drives / success / explosiveness / pass rate from ESPN team-game logs (${ablation2.n_eval} held-out games, expanding-window ridge)`}/>
     <p className="vd-fine"><b>Market baseline:</b> {ablation.market_baseline}</p>
-    <p className="vd-fine">Intervals: {ablation.dependence_method} ({Object.values(v).find(x => x.n_week_clusters)?.n_week_clusters} week clusters). V3 is a negative control, not a signal. Positive MAE improvement means the variant is better. Predictive improvement ≠ executable after-fee advantage.</p>
+    <p className="vd-fine"><b>Availability:</b> {ablation2.availability_caveat}</p>
+    <p className="vd-fine">V3 is a negative control, not a signal. Positive MAE improvement means the variant is better. Predictive improvement ≠ executable after-fee advantage.</p>
   </div>;
 }
 
@@ -95,13 +120,15 @@ function FamilyView({famKey}) {
     <h4>{f.sport} · {f.family} <small>{(f.markets_now || 0).toLocaleString()} markets · spec {nice(f.spec_status)}</small></h4>
     <p className="vd-stages">{Object.entries(f.stages).map(([k, v]) => <Stage key={k} name={k.replace("_", " ")} st={v}/>)}</p>
     <ul className="vd-fine">{Object.entries(f.stages).map(([k, v]) => <li key={k}><b>{k.replace("_", " ")}</b> · {v.state} · {v.why}</li>)}</ul>
-    <p className="vd-fine"><b>Projection:</b> {nice(f.projection.state)}{f.projection.reported_readiness ? ` (repo-reported ${f.projection.reported_readiness}; not independently reproduced)` : ""}{f.projection.verdict ? ` · walk-forward verdict ${nice(f.projection.verdict)} on ${f.projection.n_eval} games` : ""}{f.projection.state === "NONE_FOUND" ? " — no market-specific projection or validation evidence found, so none is displayed." : ""}</p>
+    {f.pricing_path && <p className="vd-fine"><b>Pricing path audited:</b> {f.pricing_path.n_files} files / {f.pricing_path.files_total_lines.toLocaleString()} lines in {f.pricing_path.repo}@{f.pricing_path.commit.slice(0, 7)} ({f.pricing_path.path_globs.join(", ")}). "not found" = no identifier or key matching the input appears in those files (bounded static negative, not proof of non-use).</p>}
+    <p className="vd-fine"><b>Projection:</b> {nice(f.projection.state)}{f.projection.reported_readiness ? ` (repo-reported ${f.projection.reported_readiness}; not independently reproduced)` : ""}{f.projection.verdict ? ` · walk-forward verdict ${nice(f.projection.verdict)} on ${f.projection.n_eval} games` : ""}{f.projection.independent_evaluation ? ` · independent evaluation: ${f.projection.independent_evaluation.verdict.toLowerCase().replaceAll("_", " ")} (${f.projection.independent_evaluation.baseline})` : ""}{f.projection.published ? ` · published output ${f.projection.output_ref} as of ${f.projection.fresh_asof}` : ""}{f.projection.state === "NONE_FOUND" ? " — no market-specific projection or validation evidence found, so none is displayed." : ""}</p>
     {["E", "C", "X"].map(t => { const rows = f.inputs.filter(r => r.tier === t); return rows.length ? <div key={t}>
       <h5>{tiers[t]} · {rows.length} inputs</h5>
-      <table className="vd-table"><thead><tr><th>Input</th><th>Status</th><th>First failing stage</th><th>Stage chain</th></tr></thead><tbody>
+      <table className="vd-table"><thead><tr><th>Input</th><th>Status</th><th>First failing stage</th><th>Pricing path</th><th>Stage chain</th></tr></thead><tbody>
         {rows.map(r => { const rec = INPUTS[`${f.sport}:${r.input}`]; return <tr key={r.input} className={pick === r.input ? "on" : ""}>
           <td><button type="button" className="vd-link" onClick={() => setPick(pick === r.input ? null : r.input)}><code>{r.input}</code></button>{r.origin === "overlay" ? <small title="Added by the verification overlay"> +</small> : null}</td>
           <td><Chip s={r.status}/></td><td className="vd-fine">{r.first_failure ? `${r.first_failure.stage}: ${r.first_failure.why}` : "none"}</td>
+          <td className="vd-fine" title={(r.pricing_path_refs || []).map(x => `${x.file}:${x.lines[0]}`).join(" · ")}>{r.pricing_path ? (r.pricing_path === "REFERENCED" ? "referenced" : "not found") : "—"}</td>
           <td>{rec ? Object.entries(rec.stages).map(([k, v]) => <Stage key={k} name={k.slice(0, 4)} st={v}/>) : "—"}</td></tr>; })}
       </tbody></table></div> : null; })}
     {pick && <InputDetail key={pick} sport={f.sport} input={pick} famKey={famKey}/>}

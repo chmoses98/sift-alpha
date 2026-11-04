@@ -69,6 +69,12 @@ def main(argv=None):
         h = x.get("holdout") or {}
         cand.append(dict(sport="CFB", cell="|".join(f"{k}={v}" for k, v in x["cell"].items()), holdout_mean_cents=round(100 * h.get("mean", 0), 2), holdout_ci_cents=[round(100 * h.get("lo", 0), 2), round(100 * h.get("hi", 0), 2)], n_games=h.get("n_games"), status="NOT_DEMONSTRATED"))
     out["outcome_candidates"] = dict(note="Closest-to-market cells by holdout mean; none has a positive holdout interval. Kept separate from execution evidence.", cells=sorted(cand, key=lambda r: -r["holdout_mean_cents"]))
+    fs = L(R + "outcome_family_scan.json")
+    if fs:
+        out["outcome_candidates"]["family_scan"] = dict(
+            design=fs["design"], cells_tried=fs["cells_tried"], positive_validation_and_holdout=fs["cells_with_positive_validation_and_holdout_mean"], pass_holdout_holm_0p10=fs["cells_passing_holdout_holm_0p10"],
+            top=[dict(series=r["series"], horizon=r["horizon"], side=r["side"], n=r["n"], validation_mean_cents=r["validation"]["mean"], holdout_mean_cents=r["holdout"]["mean"],
+                      holdout_ci_cents=[r["holdout"]["lo"], r["holdout"]["hi"]], status="NOT_DEMONSTRATED") for r in fs["top"][:6]])
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     json.dump(out, open(a.out, "w"), indent=1, sort_keys=True)
     print("wrote", a.out, os.path.getsize(a.out))

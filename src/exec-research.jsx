@@ -65,7 +65,11 @@ function Outcome() {
   const o = d.outcome_candidates;
   return <div className="ex-card"><h3>Outcome research — separate from execution</h3><p className="ex-fine">{o.note}</p>
     <table className="ex-table ex-compact"><thead><tr><th>Cell</th><th>Holdout mean, ¢ [95%]</th><th>Games</th><th>Status</th></tr></thead>
-      <tbody>{o.cells.map(r => <tr key={r.cell}><th scope="row">{r.sport} {r.cell}</th><td>{f2(r.holdout_mean_cents)} [{f2(r.holdout_ci_cents[0])}, {f2(r.holdout_ci_cents[1])}]</td><td>{r.n_games}</td><td>{r.status}</td></tr>)}</tbody></table></div>;
+      <tbody>{o.cells.map(r => <tr key={r.cell}><th scope="row">{r.sport} {r.cell}</th><td>{f2(r.holdout_mean_cents)} [{f2(r.holdout_ci_cents[0])}, {f2(r.holdout_ci_cents[1])}]</td><td>{r.n_games}</td><td>{r.status}</td></tr>)}</tbody></table>
+    {o.family_scan && <><h4>Market-only scan of every family with pre-start quotes</h4>
+      <p className="ex-fine">{o.family_scan.design}. Cells tried: {o.family_scan.cells_tried}; positive in both validation and holdout: <b>{o.family_scan.positive_validation_and_holdout}</b>; passing a Holm-corrected holdout test: <b>{o.family_scan.pass_holdout_holm_0p10}</b>.</p>
+      <table className="ex-table ex-compact"><thead><tr><th>Family · horizon · side</th><th>Validation, ¢</th><th>Holdout, ¢ [95%]</th><th>n</th></tr></thead>
+        <tbody>{o.family_scan.top.map(r => <tr key={r.series + r.horizon + r.side}><th scope="row">{r.series} · {r.horizon} · {r.side}</th><td>{f2(r.validation_mean_cents)}</td><td>{f2(r.holdout_mean_cents)} [{f2(r.holdout_ci_cents[0])}, {f2(r.holdout_ci_cents[1])}]</td><td>{r.n}</td></tr>)}</tbody></table></>}</div>;
 }
 
 export function ExecutionResearch() {

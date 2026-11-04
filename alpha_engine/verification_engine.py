@@ -12,6 +12,7 @@ Each stage is PASS | PARTIAL | FAIL | UNKNOWN | NA with a reason; the first non-
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -49,6 +50,13 @@ def _j(p):
     return json.loads(Path(p).read_text())
 
 
+def may_validate(entry: dict, ablation_ok: bool, family_match: bool = True) -> bool:
+    """VALIDATED_PREDICTIVE gate. ALL must hold: the input is verified collection, the model is recorded as ACTUALLY consuming it
+    (model_use == USED; unused/unknown/partial never qualifies), the evidence is for this market family, and a chronological,
+    multiplicity-corrected, dependence-aware ablation supports it. A contradictory unused record always blocks promotion."""
+    return bool(ablation_ok and family_match and entry.get("verification_class") == "VERIFIED_COLLECTION" and entry.get("model_use") == "USED")
+
+
 def input_status(entry: dict, validated: bool = False) -> str:
     """Pure function of one collection_status entry (+ whether a surviving ablation validates it)."""
     vc, col, mu = entry.get("verification_class", "UNKNOWN"), entry.get("collection", "UNKNOWN"), entry.get("model_use", "UNKNOWN")
@@ -57,7 +65,7 @@ def input_status(entry: dict, validated: bool = False) -> str:
     if vc == "MISSING":
         return "UNSUPPORTED" if col == "NO_RELIABLE_SOURCE" else "MISSING"
     if vc in COLLECTED_CLASSES:
-        if validated and vc == "VERIFIED_COLLECTION":
+        if validated and may_validate(entry, True):
             return "VALIDATED_PREDICTIVE"
         if mu in UNUSED_MODEL_USE:
             return "COLLECTED_UNUSED"
@@ -65,7 +73,8 @@ def input_status(entry: dict, validated: bool = False) -> str:
     return "UNKNOWN"          # CODE_REFERENCE_ONLY, UNKNOWN, DERIVED (parents unaudited), NO_REFERENCE_FOUND
 
 
-def input_stages(entry: dict) -> dict:
+def input_stages(entry: dict, lineage: dict | None = None) -> dict:
+    """lineage: verified source->feature->model records for this (sport,input) from family_evidence.json (see _lineage_state)."""
     vc, col, mu = entry.get("verification_class", "UNKNOWN"), entry.get("collection", "UNKNOWN"), entry.get("model_use", "UNKNOWN")
     code = entry.get("code") or {}
     ev = entry.get("evidence") or []
@@ -83,12 +92,26 @@ def input_stages(entry: dict) -> dict:
     else:
         st["archive"] = S("UNKNOWN", f"collection={col}")
     st["timestamp"] = S("PASS", "availability timestamps verified") if vc == "VERIFIED_COLLECTION" else (S("FAIL", "collected but point-in-time availability NOT verified") if vc in ("COLLECTED_UNVERIFIED_PIT", "STALE_OR_PARTIAL") else (S("FAIL", "nothing archived to timestamp") if vc == "MISSING" else S("UNKNOWN", "not assessed")))
-    mf, cf = code.get("model_files", 0), code.get("collect_files", 0)
-    st["transform"] = S("PASS" if mf else "UNKNOWN", f"{mf} model file(s) reference it" if mf else "no model-code reference found (absence is not proof of non-use)")
+    mf = code.get("model_files", 0)
+    st["transform"] = _lineage_state(lineage, mf)
     st["consumption"] = (S("PASS", "model reads it (repo-reported)") if mu == "USED" else S("PARTIAL", "model reads it partially") if mu == "USED_PARTIAL" else
                          S("PARTIAL", "research-only use") if mu == "RESEARCH_ONLY" else S("FAIL", "collected but model does not consume it") if mu == "COLLECTED_UNUSED" else
                          S("FAIL", "not collected, so not consumable") if mu == "NOT_COLLECTED" else S("UNKNOWN", "model use not established"))
     return st
+
+
+def _lineage_state(lineage, model_files):
+    """A model-file keyword hit is NOT a transformation. PASS needs a PRODUCTION lineage record naming source, feature code and
+    model consumer AND an executed-run reference; a RESEARCH-scope record (e.g. an ablation script) is PARTIAL."""
+    if lineage:
+        need = ("source_ref", "feature_ref", "model_ref", "run_ref")
+        if lineage.get("scope") == "PRODUCTION" and all(lineage.get(k) for k in need):
+            return {"state": "PASS", "why": f"lineage verified: {lineage['source_ref']} -> {lineage['feature_ref']} -> {lineage['model_ref']} ({lineage['run_ref']})"}
+        if lineage.get("scope") == "RESEARCH" and lineage.get("feature_ref"):
+            return {"state": "PARTIAL", "why": f"research-only lineage ({lineage['feature_ref']}); not the production model"}
+    if model_files:
+        return {"state": "UNKNOWN", "why": f"{model_files} model file(s) mention it textually; no source-to-feature-to-model lineage record, so no transformation is claimed"}
+    return {"state": "UNKNOWN", "why": "no lineage record and no model-code reference (absence is not proof of non-use)"}
 
 
 def first_failure(stages: dict):
@@ -163,21 +186,71 @@ def projection_evidence(fkey, f, mv, intel, audits):
     if fkey in intel:
         v = intel[fkey]["validation"]
         return {"state": "RESEARCH_WALK_FORWARD", "verdict": v.get("verdict"), "n_eval": v.get("n_eval"), "evidence": f"intel/{fkey.replace('/', '_')}", "independently_reproduced": True}
-    if fkey in audits:
-        return {"state": "SPEC_ONLY", "evidence": audits[fkey], "independently_reproduced": False}
+    lk = f"{s}/{nat.lower()}"
+    if lk in audits:
+        return {"state": "SPEC_ONLY", "evidence": audits[lk]["file"], "settles_on": audits[lk]["settles_on"], "independently_reproduced": False}
     return {"state": "NONE_FOUND", "evidence": None, "independently_reproduced": False}
 
 
-def outcomes_evidence(f, links, cs_sport):
-    ent = cs_sport["inputs"].get("m.settlement_truth")
-    if "m.settlement_truth" not in links or ent is None:
+def _rules_ok(fkey, f, inputs):
+    """Family-specific rules evidence: the family itself links m.rules_text AND that input is verified collection."""
+    s = f["sport"]
+    linked = "m.rules_text" in f.get("drivers", {})
+    rec = inputs.get(f"{s}:m.rules_text")
+    return linked, bool(linked and rec and rec["verification_class"] == "VERIFIED_COLLECTION")
+
+
+def market_mapping_stage(fkey, f, mi, inputs, orientation):
+    """PASS needs ALL of: (identity) observed listing with archived series tickers, (rules) family-linked verified rules text plus a
+    sampled contract text, (orientation) a recorded settles-on/strike-direction statement. Anything less is PARTIAL; an unobserved
+    blueprint is FAIL. Missing rule linkage can never pass vacuously."""
+    ident = bool(mi and mi.get("series_sample") and mi["observed"]["state"] in ("OBSERVED_NOW", "OBSERVED_PRIOR_SNAPSHOT_ONLY", "OBSERVED_SETTLED_ONLY"))
+    linked, verified = _rules_ok(fkey, f, inputs)
+    text = bool(mi and mi["settlement"]["status"] == "SAMPLED_CONTRACT_TEXT")
+    rules = verified and text
+    if not orientation and text:       # orientation derived ONLY from a sampled contract text that states the Yes condition
+        orientation = bool(re.search(r"resolves? to (yes|no)\b", mi["settlement"].get("text") or "", re.I))
+    parts = {"identity": ident, "rules": rules, "orientation": bool(orientation)}
+    if not mi or f["status"] == "SPECIFIED_UNOBSERVED" or not ident and not linked:
+        state = "FAIL" if f["status"] == "SPECIFIED_UNOBSERVED" or not mi else "PARTIAL"
+    else:
+        state = "PASS" if all(parts.values()) else "PARTIAL"
+    missing = [k for k, v in parts.items() if not v]
+    return {"state": state, "why": "identity/rules/orientation all evidenced" if not missing else f"missing evidence: {', '.join(missing)} (rules linked={linked}, verified={verified}, sampled text={text})", "parts": parts}
+
+
+def outcomes_stage(fkey, f, inputs, evidence):
+    """PASS needs a family-specific, evidence-linked outcome join (ticker -> settled value -> period/void handling) recorded in
+    family_evidence.json['outcome_joins'] AND verified family rules. Sport-level settlement archives alone give at most PARTIAL."""
+    s = f["sport"]
+    rec = inputs.get(f"{s}:m.settlement_truth")
+    linked = "m.settlement_truth" in f.get("drivers", {})
+    rl, rv = _rules_ok(fkey, f, inputs)
+    join = (evidence.get("outcome_joins") or {}).get(fkey)
+    if not linked or rec is None:
         return {"state": "UNKNOWN", "why": "family does not link m.settlement_truth"}
-    return {"state": {"VERIFIED_COLLECTION": "PASS", "COLLECTED_UNVERIFIED_PIT": "PARTIAL", "STALE_OR_PARTIAL": "PARTIAL"}.get(ent["verification_class"], "FAIL" if ent["verification_class"] == "MISSING" else "UNKNOWN"),
-            "why": f"m.settlement_truth class={ent['verification_class']}"}
+    if join and join.get("verified") and join.get("evidence_ref") and rv and rec["verification_class"] == "VERIFIED_COLLECTION":
+        return {"state": "PASS", "why": f"family-specific join verified: {join['evidence_ref']}"}
+    base = {"VERIFIED_COLLECTION": "sport-level settlement archive verified", "COLLECTED_UNVERIFIED_PIT": "sport-level settlement collected, unverified"}.get(rec["verification_class"], f"settlement class {rec['verification_class']}")
+    state = "PARTIAL" if rec["verification_class"] in ("VERIFIED_COLLECTION", "COLLECTED_UNVERIFIED_PIT", "STALE_OR_PARTIAL") else ("FAIL" if rec["verification_class"] == "MISSING" else "UNKNOWN")
+    return {"state": state, "why": f"{base}; NO family-specific outcome join evidence (rules linked={rl}, verified={rv})"}
+
+
+def projection_stage(proj, mapping_state):
+    """PASS needs: independently reproduced model evidence, an actual projection output record, a PASSing market mapping and a valid
+    freshness timestamp. A repo-reported readiness flag proves none of those."""
+    ok = proj.get("independently_reproduced") and proj.get("output_ref") and proj.get("fresh_asof") and mapping_state == "PASS"
+    if ok:
+        return {"state": "PASS", "why": "reproduced, output present, fresh, mapped"}
+    why = {"NONE_FOUND": "no projection or validation evidence found", "SPEC_ONLY": "audit/spec only; no projection output",
+           "RESEARCH_WALK_FORWARD": "independently reproduced research walk-forward only; no production output record or freshness evidence",
+           }.get(proj["state"], "repo-reported readiness only: not reproduced, no output/freshness evidence linked here")
+    return {"state": "FAIL" if proj["state"] == "NONE_FOUND" else "PARTIAL", "why": why}
 
 
 def build():
     specs, master, cs = _j(A / "market_specs.json"), _j(A / "master_inventory.json"), _j(A / "collection_status.json")
+    ctx_cs = cs
     registry, mv, ready = _j(A / "input_registry.json"), _j(A / "model_validation.json"), _j(A / "essential_readiness.json")
     intel = {}
     for p in sorted((A / "intel").glob("*.json")):
@@ -186,17 +259,19 @@ def build():
     audits = {}
     for p in sorted((A / "audits").glob("*.json")):
         d = _j(p)
-        audits[f"{d['sport']}/{str(d['market_family']).lower()}"] = f"audits/{p.name}"
+        audits[f"{d['sport']}/{str(d['market_family']).lower()}"] = {"file": f"audits/{p.name}", "settles_on": d.get("settles_on")}
     ablation = {}
     for fk, fn in ABLATION_FILES.items():
         if (OUT / fn).exists():
             ablation[fk] = _j(OUT / fn)
     master_ids = {f["id"] for f in master["families"]}
+    mi_by_id = {f["id"]: f for f in master["families"]}
+    evidence = _j(OUT / "family_evidence.json") if (OUT / "family_evidence.json").exists() else {}
     # ---- input level (sport x input)
     inputs = {}
     for s, v in cs["sports"].items():
         for i, x in v["inputs"].items():
-            st = input_stages(x)
+            st = input_stages(x, (evidence.get("lineage") or {}).get(f"{s}:{i}"))
             inputs[f"{s}:{i}"] = {"sport": s, "input": i, "label": x["label"], "status": input_status(x), "collection": x["collection"], "verification_class": x["verification_class"],
                                   "model_use": x["model_use"], "stages": st, "first_failure": first_failure(st), "derived": x["verification_class"] == "DERIVED", "note": x["note"], "evidence": x["evidence"]}
     # ---- family level
@@ -206,9 +281,10 @@ def build():
         validated = set()
         if key in ablation:
             for var, ent in ablation[key]["variants"].items():
-                if ent.get("verdict") == "VALIDATED_PREDICTIVE" and var in ABLATION_INPUT:
+                if ent.get("verdict") == "VALIDATED_PREDICTIVE" and var in ABLATION_INPUT and ablation[key].get("dependence_aware") and ablation[key].get("family") == key:
                     validated.add(ABLATION_INPUT[var])
         proj = projection_evidence(key, f, mv, intel, audits)
+        orientation = proj.get("settles_on") if proj["state"] == "SPEC_ONLY" else (evidence.get("orientation") or {}).get(key)
         rows, counts = [], {"E": Counter(), "C": Counter(), "X": Counter()}
         drivers = dict(f.get("drivers", {}))
         origin = {i: "market_specs" for i in drivers}
@@ -221,16 +297,17 @@ def build():
                 rows.append({"input": i, "tier": tier, "origin": origin[i], "status": "UNKNOWN", "first_failure": {"stage": "source", "state": "UNKNOWN", "why": "input not in collection_status for this sport (never borrowed from another sport)"}})
                 counts[tier]["UNKNOWN"] += 1
                 continue
-            stt = "VALIDATED_PREDICTIVE" if i in validated and rec["verification_class"] == "VERIFIED_COLLECTION" else rec["status"]
+            ent = ctx_cs["sports"][s]["inputs"][i]
+            stt = "VALIDATED_PREDICTIVE" if i in validated and may_validate(ent, True, family_match=True) else rec["status"]
             rows.append({"input": i, "tier": tier, "origin": origin[i], "status": stt, "first_failure": rec["first_failure"]})
             counts[tier][stt] += 1
-        mm_ok = all(inputs.get(f"{s}:{i}", {}).get("verification_class") == "VERIFIED_COLLECTION" for i in ("m.rules_text",) if f"{s}:{i}" in inputs and i in f.get("drivers", {}))
+        mapping = market_mapping_stage(key, f, mi_by_id.get(key), inputs, orientation)
         fam_stage = {
-            "market_mapping": {"state": "PASS" if f["status"] == "SPECIFIED" and mm_ok else "PARTIAL" if f["status"].startswith("SPECIFIED") else "FAIL", "why": f"spec status {f['status']}; rules text {'verified' if mm_ok else 'not verified/not linked'}"},
-            "projection": {"state": {"RESEARCH_WALK_FORWARD": "PARTIAL", "NONE_FOUND": "FAIL", "SPEC_ONLY": "PARTIAL"}.get(proj["state"], "PARTIAL" if proj["state"].endswith("NOT_READY") else "PASS"), "why": proj["state"]},
-            "historical_eval": ({"state": "PASS" if proj.get("verdict") == "SUPPORTED" else "FAIL" if proj.get("verdict") == "NOT_SUPPORTED" else "UNKNOWN", "why": f"{proj.get('verdict')} n={proj.get('n_eval')}"} if proj["state"] == "RESEARCH_WALK_FORWARD" else
+            "market_mapping": mapping,
+            "projection": projection_stage(proj, mapping["state"]),
+            "historical_eval": ({"state": "PARTIAL" if proj.get("verdict") == "SUPPORTED" else "FAIL" if proj.get("verdict") == "NOT_SUPPORTED" else "UNKNOWN", "why": f"{proj.get('verdict')} n={proj.get('n_eval')}; no market-price baseline"} if proj["state"] == "RESEARCH_WALK_FORWARD" else
                                 {"state": "PARTIAL" if proj["state"].startswith("REPO_REPORTED") else "UNKNOWN", "why": "repo-reported, not independently reproduced" if proj["state"].startswith("REPO_REPORTED") else "no historical evaluation recorded"}),
-            "outcomes": outcomes_evidence(f, f.get("drivers", {}), cs["sports"][s]),
+            "outcomes": outcomes_stage(key, f, inputs, evidence),
         }
         ess = [r for r in rows if r["tier"] == "E"]
         fams[key] = {"sport": s, "family": f["native_family"], "markets_now": f.get("markets_now"), "spec_status": f["status"], "in_master_inventory": key in master_ids,

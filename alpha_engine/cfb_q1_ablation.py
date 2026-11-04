@@ -12,7 +12,7 @@ which inputs they consume. Variants (nested, each adds exactly one input to the 
 A variant is VALIDATED_PREDICTIVE only when the Bonferroni-adjusted (over every comparison tried) paired-bootstrap CI of its MAE
 improvement over its comparison is strictly > 0, n_eval >= MIN_EVAL, AND the improvement is positive in both chronological halves.
 An unadjusted-only pass is SUGGESTIVE_UNCONFIRMED and must not be promoted. Bootstrap is over games; teams recur across games, so intervals are optimistic
-(reported as `dependence_caveat`). No betting inference: this measures outcome prediction against a no-information baseline,
+(superseded: intervals are now week-clustered with a leave-one-team-out guard). No betting inference: this measures outcome prediction against a no-information baseline,
 NOT against a Kalshi price (no quote history is joined here)."""
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ HALF_LIFE = 4.0
 VARIANTS = ["V0_league_mean", "V1_team_offense", "V2_opp_defense", "V3_home_site", "V4_recency", "V5_team_only_total"]
 COMPARE = {"V1_team_offense": "V0_league_mean", "V2_opp_defense": "V0_league_mean", "V3_home_site": "V2_opp_defense",
            "V4_recency": "V2_opp_defense", "V5_team_only_total": "V0_league_mean"}
+MIN_CLUSTERS = 8
 N_COMPARISONS = len(COMPARE)  # Bonferroni family: every comparison tried is counted, none dropped
 INPUT_OF = {"V1_team_offense": "cfb.q_scoring (team scored)", "V2_opp_defense": "cfb.q_scoring (opponent allowed)",
             "V3_home_site": "cfb.venue/neutral_site", "V4_recency": "cfb.q_scoring (recency weighting)",
@@ -73,23 +74,51 @@ def predict_rows(games):
             v4 = (lm + rec(hh, 1) + rec(aa, 2)) + (lm + rec(aa, 1) + rec(hh, 2))
             # V5: each team's own scored+allowed, no opponent term (total = team mean of both sides, average of two teams)
             v5 = lt + (off(hh) + dfn(hh) + off(aa) + dfn(aa)) / 2
-            rows.append({"event_id": g["event_id"], "start_time_utc": g["start_time_utc"], "actual": hq + aq, "neutral_site": neutral,
+            rows.append({"event_id": g["event_id"], "start_time_utc": g["start_time_utc"], "home": h, "away": a, "actual": hq + aq, "neutral_site": neutral,
                          "V0_league_mean": lt, "V1_team_offense": v1, "V2_opp_defense": v2, "V3_home_site": v3, "V4_recency": v4, "V5_team_only_total": v5})
         pending.append({"avail": start + lag, "h": h, "a": a, "hq": hq, "aq": aq, "neutral": neutral})
     return rows
 
 
-def _boot(diffs, rng, alpha=0.05):
-    n = len(diffs); m = []
+def _week(r):
+    from datetime import datetime
+    y, w, _ = datetime.strptime(r["start_time_utc"], "%Y-%m-%dT%H:%MZ").isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+def _cluster_boot(diffs, keys, rng, alpha=0.05):
+    """Cluster bootstrap: resample whole calendar weeks (all games in a week move together) so repeated teams/schedule
+    shocks inside a week do not masquerade as independent evidence. Statistic = mean per-game difference over resampled games."""
+    groups = defaultdict(list)
+    for d, k in zip(diffs, keys):
+        groups[k].append(d)
+    gl = list(groups.values()); m = len(gl); means = []
     for _ in range(BOOT):
-        m.append(sum(diffs[rng.randrange(n)] for _ in range(n)) / n)
-    m.sort()
-    return m[int(alpha / 2 * BOOT)], m[min(BOOT - 1, int((1 - alpha / 2) * BOOT) - 1)]
+        tot = cnt = 0
+        for _ in range(m):
+            g = gl[rng.randrange(m)]; tot += sum(g); cnt += len(g)
+        means.append(tot / cnt)
+    means.sort()
+    return means[int(alpha / 2 * BOOT)], means[min(BOOT - 1, int((1 - alpha / 2) * BOOT) - 1)]
+
+
+def _team_jackknife(diffs, rows):
+    """Leave-one-team-out mean improvement: min over teams (every game involving the team dropped). Guards against one team driving a result."""
+    teams = {t for r in rows for t in (r.get("home"), r.get("away")) if t}
+    if not teams:
+        return None
+    worst = None
+    for t in teams:
+        kept = [d for d, r in zip(diffs, rows) if t not in (r.get("home"), r.get("away"))]
+        if kept:
+            mu = sum(kept) / len(kept)
+            worst = mu if worst is None else min(worst, mu)
+    return worst
 
 
 def ablate(rows, first_half_split=True):
     n = len(rows)
-    out = {"n_eval": n, "min_eval": MIN_EVAL, "dependence_caveat": "games share teams; bootstrap treats rows as independent so CIs are optimistic",
+    out = {"n_eval": n, "min_eval": MIN_EVAL, "dependence_aware": True, "dependence_method": "calendar-week cluster bootstrap + leave-one-team-out minimum; residual dependence across weeks (team strength persistence) is NOT modelled",
            "variants": {}}
     if n == 0:
         return out
@@ -99,17 +128,20 @@ def ablate(rows, first_half_split=True):
         ent = {"mae": round(sum(err[v]) / n, 4), "rmse": round((sum((r["actual"] - r[v]) ** 2 for r in rows) / n) ** 0.5, 4)}
         if v in COMPARE:
             c = COMPARE[v]; d = [err[c][i] - err[v][i] for i in range(n)]
-            lo, hi = _boot(d, rng)
-            blo, bhi = _boot(d, rng, 0.05 / N_COMPARISONS)
+            keys = [_week(r) if "start_time_utc" in r else i for i, r in enumerate(rows)]
+            lo, hi = _cluster_boot(d, keys, rng)
+            blo, bhi = _cluster_boot(d, keys, rng, 0.05 / N_COMPARISONS)
+            jk = _team_jackknife(d, rows)
             h = n // 2
             halves = [sum(d[:h]) / h, sum(d[h:]) / (n - h)] if h else [0.0, 0.0]
             ent.update({"input": INPUT_OF[v], "compared_to": c, "mae_improvement_mean": round(sum(d) / n, 4), "mae_improvement_ci95": [round(lo, 4), round(hi, 4)],
                         "mae_improvement_ci_bonferroni": [round(blo, 4), round(bhi, 4)], "n_comparisons_family": N_COMPARISONS,
-                        "chronological_halves_mean": [round(x, 4) for x in halves]})
+                        "chronological_halves_mean": [round(x, 4) for x in halves], "team_jackknife_min_mean": None if jk is None else round(jk, 4),
+                        "n_week_clusters": len(set(keys))})
             if n < MIN_EVAL:
                 ent["verdict"] = "INSUFFICIENT_DATA"
-            elif blo > 0 and min(halves) > 0:
-                ent["verdict"] = "VALIDATED_PREDICTIVE"          # survives multiplicity AND is positive in both chronological halves
+            elif blo > 0 and min(halves) > 0 and jk is not None and jk > 0 and len(set(keys)) >= MIN_CLUSTERS:
+                ent["verdict"] = "VALIDATED_PREDICTIVE"          # survives multiplicity, week-clustering, both halves AND leave-one-team-out
             elif lo > 0:
                 ent["verdict"] = "SUGGESTIVE_UNCONFIRMED"         # unadjusted CI > 0 only; must not be promoted
             elif hi < 0:
@@ -122,7 +154,7 @@ def ablate(rows, first_half_split=True):
         h = n // 2
         out["stability_V2_vs_V0"] = {"first_half_mean": round(sum(err["V0_league_mean"][i] - err["V2_opp_defense"][i] for i in range(h)) / h, 4),
                                      "second_half_mean": round(sum(err["V0_league_mean"][i] - err["V2_opp_defense"][i] for i in range(h, n)) / (n - h), 4)}
-    out["note_V3"] = "V3 is identical to V2 for a TOTAL by construction (a symmetric home shift cancels in home+away); reported to document that site is not a Q1-total input here."
+    out["note_V3"] = "NEGATIVE CONTROL (not a signal): V3 is identical to V2 for a TOTAL by construction (a symmetric home shift cancels in home+away); reported to document that site is not a Q1-total input here."
     return out
 
 

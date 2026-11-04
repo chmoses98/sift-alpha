@@ -116,7 +116,7 @@ class Ablation(unittest.TestCase):
     def test_pure_noise_is_not_validated(self):
         import random
         rng = random.Random(1)
-        rows = [{"actual": rng.choice([0, 3, 7, 10, 14]), **{v: 8.0 + rng.uniform(-1, 1) for v in ab.VARIANTS}} for _ in range(400)]
+        rows = [{"actual": rng.choice([0, 3, 7, 10, 14]), "start_time_utc": f"2026-{9 + i // 140:02d}-{1 + (i // 5) % 28:02d}T12:00Z", "home": f"H{i % 9}", "away": f"A{i % 7}", **{v: 8.0 + rng.uniform(-1, 1) for v in ab.VARIANTS}} for i in range(400)]
         res = ab.ablate(rows)
         for v, e in res["variants"].items():
             self.assertNotEqual(e.get("verdict"), "VALIDATED_PREDICTIVE", v)
@@ -125,8 +125,8 @@ class Ablation(unittest.TestCase):
         import random
         rng = random.Random(2)
         rows = []
-        for _ in range(400):
-            a = rng.choice([0, 3, 7, 10, 14]); r = {"actual": a}
+        for i in range(400):
+            a = rng.choice([0, 3, 7, 10, 14]); r = {"actual": a, "start_time_utc": f"2026-{9 + i // 140:02d}-{1 + (i // 5) % 28:02d}T12:00Z", "home": f"H{i % 9}", "away": f"A{i % 7}"}
             for v in ab.VARIANTS: r[v] = 8.0
             r["V5_team_only_total"] = a + rng.uniform(-0.5, 0.5)
             rows.append(r)
@@ -141,3 +141,105 @@ class Ablation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewRegressions(unittest.TestCase):
+    """Adversarial regressions for PR #32 review findings 1-5."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ctx, _, _, _ = ve.run(write=False)
+
+    # 1 -- outcomes
+    def test_1_sport_level_settlement_never_passes_a_family_outcome(self):
+        self.assertFalse([k for k, f in self.ctx["fams"].items() if f["stages"]["outcomes"]["state"] == "PASS"])
+        f = self.ctx["fams"]["CBB/TOTAL"]          # sport-level m.settlement_truth is VERIFIED_COLLECTION here
+        self.assertEqual(f["stages"]["outcomes"]["state"], "PARTIAL")
+        self.assertIn("NO family-specific outcome join", f["stages"]["outcomes"]["why"])
+
+    def test_1_outcome_pass_requires_join_evidence_and_verified_rules(self):
+        s = {"sport": "CBB", "drivers": {"m.settlement_truth": "E", "m.rules_text": "E"}}
+        v = {"verification_class": "VERIFIED_COLLECTION"}
+        inputs = {"CBB:m.settlement_truth": v, "CBB:m.rules_text": v}
+        ok = {"outcome_joins": {"CBB/X": {"verified": True, "evidence_ref": "reports/x.json"}}}
+        self.assertEqual(ve.outcomes_stage("CBB/X", s, inputs, ok)["state"], "PASS")
+        self.assertEqual(ve.outcomes_stage("CBB/X", s, inputs, {})["state"], "PARTIAL")
+        bad = {"outcome_joins": {"CBB/X": {"verified": True}}}                               # no evidence_ref
+        self.assertEqual(ve.outcomes_stage("CBB/X", s, inputs, bad)["state"], "PARTIAL")
+        inputs2 = {"CBB:m.settlement_truth": v, "CBB:m.rules_text": {"verification_class": "COLLECTED_UNVERIFIED_PIT"}}
+        self.assertEqual(ve.outcomes_stage("CBB/X", s, inputs2, ok)["state"], "PARTIAL")      # unverified rules block PASS
+
+    # 2 -- projection
+    def test_2_repo_reported_readiness_is_never_pass(self):
+        for k, f in self.ctx["fams"].items():
+            if f["projection"]["state"].startswith("REPO_REPORTED"):
+                self.assertEqual(f["stages"]["projection"]["state"], "PARTIAL", k)
+        self.assertEqual(self.ctx["fams"]["NBA/player_points"]["stages"]["projection"]["state"], "PARTIAL")
+
+    def test_2_projection_pass_needs_every_condition(self):
+        full = {"state": "X", "independently_reproduced": True, "output_ref": "o", "fresh_asof": "t"}
+        self.assertEqual(ve.projection_stage(full, "PASS")["state"], "PASS")
+        for drop in ("independently_reproduced", "output_ref", "fresh_asof"):
+            p = dict(full); p[drop] = None
+            self.assertNotEqual(ve.projection_stage(p, "PASS")["state"], "PASS", drop)
+        self.assertNotEqual(ve.projection_stage(full, "PARTIAL")["state"], "PASS")           # wrong/unproven market mapping
+
+    # 3 -- mapping
+    def test_3_missing_rules_linkage_cannot_pass_vacuously(self):
+        mi = {"series_sample": ["KX1"], "observed": {"state": "OBSERVED_NOW"}, "settlement": {"status": "SAMPLED_CONTRACT_TEXT", "text": "resolves to Yes if more than 3"}}
+        f = {"sport": "SOCCER", "status": "SPECIFIED", "drivers": {}}                         # rules_text not linked at all
+        self.assertNotEqual(ve.market_mapping_stage("SOCCER/x", f, mi, {}, None)["state"], "PASS")
+        self.assertEqual(self.ctx["fams"]["SOCCER/player_goalscorer"]["stages"]["market_mapping"]["state"], "FAIL")
+
+    def test_3_pass_needs_identity_rules_and_orientation(self):
+        mi = {"series_sample": ["KX1"], "observed": {"state": "OBSERVED_NOW"}, "settlement": {"status": "SAMPLED_CONTRACT_TEXT", "text": "If more than 3, the market resolves to Yes."}}
+        f = {"sport": "NBA", "status": "SPECIFIED", "drivers": {"m.rules_text": "E"}}
+        inputs = {"NBA:m.rules_text": {"verification_class": "VERIFIED_COLLECTION"}}
+        self.assertEqual(ve.market_mapping_stage("NBA/x", f, mi, inputs, None)["state"], "PASS")
+        no_orient = dict(mi, settlement={"status": "SAMPLED_CONTRACT_TEXT", "text": "A market about points."})
+        self.assertEqual(ve.market_mapping_stage("NBA/x", f, no_orient, inputs, None)["state"], "PARTIAL")
+        no_ident = dict(mi, series_sample=[])
+        self.assertEqual(ve.market_mapping_stage("NBA/x", f, no_ident, inputs, None)["state"], "PARTIAL")
+        unver = {"NBA:m.rules_text": {"verification_class": "COLLECTED_UNVERIFIED_PIT"}}
+        self.assertEqual(ve.market_mapping_stage("NBA/x", f, mi, unver, None)["state"], "PARTIAL")
+
+    # 4 -- transform
+    def test_4_code_reference_alone_is_not_a_transformation(self):
+        e = E("VERIFIED_COLLECTION", "PIT_ARCHIVED", "USED", code={"model_files": 9})
+        self.assertEqual(ve.input_stages(e)["transform"]["state"], "UNKNOWN")
+        self.assertTrue(all(i["stages"]["transform"]["state"] != "PASS" for i in self.ctx["inputs"].values()))
+
+    def test_4_lineage_scope_and_completeness(self):
+        e = E("VERIFIED_COLLECTION", "PIT_ARCHIVED", "USED")
+        full = {"scope": "PRODUCTION", "source_ref": "s", "feature_ref": "f", "model_ref": "m", "run_ref": "r"}
+        self.assertEqual(ve.input_stages(e, full)["transform"]["state"], "PASS")
+        self.assertEqual(ve.input_stages(e, dict(full, run_ref=None))["transform"]["state"], "UNKNOWN")      # no executed run
+        self.assertEqual(ve.input_stages(e, dict(full, scope="RESEARCH"))["transform"]["state"], "PARTIAL")  # ablation script != production
+
+    # 5 -- validated loophole
+    def test_5_unused_or_unknown_consumption_never_validates(self):
+        for mu in ("COLLECTED_UNUSED", "NOT_COLLECTED", "UNKNOWN", "USED_PARTIAL", "RESEARCH_ONLY"):
+            e = E("VERIFIED_COLLECTION", "PIT_ARCHIVED", mu)
+            self.assertNotEqual(ve.input_status(e, validated=True), "VALIDATED_PREDICTIVE", mu)
+            self.assertFalse(ve.may_validate(e, True), mu)
+        self.assertTrue(ve.may_validate(E("VERIFIED_COLLECTION", "PIT_ARCHIVED", "USED"), True))
+        self.assertFalse(ve.may_validate(E("VERIFIED_COLLECTION", "PIT_ARCHIVED", "USED"), True, family_match=False))
+        self.assertFalse(ve.may_validate(E("VERIFIED_COLLECTION", "PIT_ARCHIVED", "USED"), False))
+
+    def test_5_family_level_promotion_respects_unused(self):
+        # the committed ablation has a SUGGESTIVE result on cfb.q_scoring (COLLECTED_UNUSED): it must stay unpromoted
+        row = [r for r in self.ctx["fams"]["CFB/quarter_total"]["inputs"] if r["input"] == "cfb.q_scoring"][0]
+        self.assertEqual(row["status"], "COLLECTED_UNUSED")
+
+    def test_5_cluster_and_team_guards(self):
+        import random
+        rng = random.Random(3)
+        # a gain that exists in ONE team's games only must not validate (leave-one-team-out guard)
+        rows = []
+        for i in range(400):
+            a = rng.choice([0, 3, 7, 10, 14]); r = {"actual": a, "start_time_utc": f"2026-{9 + i // 140:02d}-{1 + (i // 5) % 28:02d}T12:00Z", "home": f"H{i % 9}", "away": f"A{i % 7}"}
+            for v in ab.VARIANTS: r[v] = 8.0
+            if i % 9 == 0: r["V5_team_only_total"] = a                                    # perfect only when team H0 is home
+            rows.append(r)
+        self.assertNotEqual(ab.ablate(rows)["variants"]["V5_team_only_total"]["verdict"], "VALIDATED_PREDICTIVE")
+        self.assertTrue(ab.ablate(rows)["dependence_aware"])

@@ -76,13 +76,13 @@ function Q1Trace() {
     </tbody></table>
     <p className="vd-fine">* link added by the verification overlay (market_specs does not list it); contextual tier only, essential denominators unchanged.</p>
     <h5>Input ablation on {ablation.n_eval} held-out games (ESPN period scores, chronological, vs league-mean baseline)</h5>
-    <table className="vd-table"><thead><tr><th>Variant</th><th>MAE</th><th>Δ MAE vs</th><th>95% CI</th><th>Bonferroni CI ({Object.values(v).find(x => x.n_comparisons_family)?.n_comparisons_family})</th><th>Halves</th><th>Verdict</th></tr></thead><tbody>
+    <table className="vd-table"><thead><tr><th>Variant</th><th>MAE</th><th>Δ MAE vs</th><th>95% CI</th><th>Bonferroni CI ({Object.values(v).find(x => x.n_comparisons_family)?.n_comparisons_family})</th><th>Halves</th><th>Min leave-one-team-out</th><th>Verdict</th></tr></thead><tbody>
       {Object.entries(v).map(([k, x]) => <tr key={k}><td>{k}</td><td>{x.mae}</td><td>{x.compared_to ? `${x.mae_improvement_mean} vs ${x.compared_to.split("_")[0]}` : "baseline"}</td>
         <td>{x.mae_improvement_ci95 ? `${x.mae_improvement_ci95[0]} … ${x.mae_improvement_ci95[1]}` : "—"}</td><td>{x.mae_improvement_ci_bonferroni ? `${x.mae_improvement_ci_bonferroni[0]} … ${x.mae_improvement_ci_bonferroni[1]}` : "—"}</td>
-        <td>{x.chronological_halves_mean ? x.chronological_halves_mean.join(" / ") : "—"}</td><td>{x.verdict ? <Chip s={x.verdict === "VALIDATED_PREDICTIVE" ? "VALIDATED_PREDICTIVE" : "UNKNOWN"}/> : "—"} <small>{x.verdict ? nice(x.verdict) : ""}</small></td></tr>)}
+        <td>{x.chronological_halves_mean ? x.chronological_halves_mean.join(" / ") : "—"}</td><td>{x.team_jackknife_min_mean ?? "—"}</td><td>{x.verdict ? <Chip s={x.verdict === "VALIDATED_PREDICTIVE" ? "VALIDATED_PREDICTIVE" : "UNKNOWN"}/> : "—"} <small>{x.verdict ? nice(x.verdict) : ""}</small></td></tr>)}
     </tbody></table>
     <p className="vd-fine"><b>Market baseline:</b> {ablation.market_baseline}</p>
-    <p className="vd-fine">{ablation.dependence_caveat}. Positive MAE improvement means the variant is better. Predictive improvement ≠ executable after-fee advantage.</p>
+    <p className="vd-fine">Intervals: {ablation.dependence_method} ({Object.values(v).find(x => x.n_week_clusters)?.n_week_clusters} week clusters). V3 is a negative control, not a signal. Positive MAE improvement means the variant is better. Predictive improvement ≠ executable after-fee advantage.</p>
   </div>;
 }
 

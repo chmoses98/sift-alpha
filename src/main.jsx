@@ -6,6 +6,7 @@ import { SPORT_REGISTRY, SPORT_GROUPS, sportLabel, isCustomSport, registryStatus
 import { MarketIntelligence } from "./market-intelligence.jsx";
 import { FoundationDashboard } from "./foundation-dashboard.jsx";
 import { ClvDashboard } from "./clv-dashboard.jsx";
+import { ExecutionDashboard } from "./execution-dashboard.jsx";
 import "./styles.css";
 
 function loadLocal() {
@@ -202,6 +203,7 @@ function App() {
       <MarketIntelligence />
       <FoundationDashboard />
       <ClvDashboard />
+      <ExecutionDashboard />
       <section className="workspace" aria-label="Research workbench">
         <aside className="library" aria-label="Find a study">
           <div className="section-heading"><div><div className="eyebrow">YOUR WORK QUEUE</div><h2>Research library</h2></div><span className="count">{visible.length}</span></div>

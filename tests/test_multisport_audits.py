@@ -242,8 +242,18 @@ class NbaStarterEvidence(unittest.TestCase):
     def test_evidence_keeps_the_four_categories_separate_and_claims_no_edge(self):
         d = json.loads((OUT / "NBA_starters_evidence.json").read_text())
         self.assertEqual(d["archive"]["starter_rows"], 0)
-        self.assertEqual(d["onoff_experiment"]["fixed_rule_flips_minutes_model_in"], [])
-        self.assertGreater(len(d["onoff_experiment"]["legacy_rule_flips_minutes_model_in"]), 0)
+        o = d["onoff_experiment"]
+        self.assertEqual(o["fixed_rule_flips_minutes_model_in"], [])
+        self.assertEqual(len(o["legacy_rule_flips_minutes_model_in"]), 4)
+        self.assertEqual(len(o["scenarios"]), 6)
+        for name, e in o["scenarios"].items():
+            for v in e.values():
+                self.assertEqual(v["ON_fixed_rule"]["p_play"], 0.995, name)
+                self.assertGreater(v["delta_p_play"], -1e-9, name)
+                self.assertEqual(v["minutes_model_changes_legacy"], name in o["legacy_rule_flips_minutes_model_in"], name)
+        self.assertEqual(len(o["generated_from"]["commit"]), 40)
+        self.assertTrue(any("project.py was NOT run" in c for c in o["caveats"]))
+        self.assertGreater(d["archive"]["rows_captured_within_150min_before_tip"], 0)
         for k in ("feature_availability", "verified_consumption", "projection_validity", "predictive_improvement", "market_advantage"):
             self.assertIn(k, d["separation"])
         self.assertIn("none established", d["separation"]["market_advantage"])

@@ -7,7 +7,7 @@ Status vocabulary: **implemented** (code written) · **tested** (unit tests pass
 
 **Soccer PR #39 live probe run 41706413941 (evidence: `research/audit/lineage/soccer_pr39_live_probe.json`, data branch `soccer-live-probe-data` @ 38736d0).** 164 finished matches over 2026-10-29..11-03: 153 carry populated shots, shots on target, corners, yellow and red for both sides with `box_stats_captured_at`; 0 violations (SOT<=shots, non-negative integers); xG 0/164. Run 2 on the same directory appended 0 rows and changed 0 timestamps (idempotent, no duplicate event ids). Gaps: 11 finished matches (bra.1 3, ita.1 2, ksa.1 5, league_cup 1) have no box stats - cause undetermined; 2 UCL matches were finalized 2.72 h after kickoff; weather DEGRADED (probe used a 5 s budget); 235 events skipped as unmapped teams. Only a 5-day window; PR is an unmerged draft, so classification stays SOURCE_AVAILABLE_NOT_COLLECTED.
 
-**NBA starters probe run 41694265861** still in_progress at this update (it publishes only after its polling window). No coverage or cadence numbers are claimed.
+**NBA starters probe run 41694265861 - NO DATA, my error.** 2026-11-03 had no NBA games (the first scheduled tip it found was 2026-11-05T00:00Z), so the probe slept ~27 h and was cancelled at the 6 h job cap with zero rows and zero polls (`out/console.txt` is 2 lines). Starter confirmation rates by minutes-to-tip and the real capture cadence remain **unmeasured**. Fixed on `probe/nba-starters-live` (2547111): it now exits `TOO_EARLY` instead of sleeping and can be started with workflow_dispatch; a relaunch is scheduled for 2026-11-04 21:30Z (window opens 21:55Z for the 00:00Z tip).
 
 **New: essential-input readiness** (`alpha_engine/essential_readiness.py` -> `research/audit/essential_readiness.json`, tested). Unit = family x input essential links, strict (only VERIFIED_COLLECTION counts as verified; shared inputs never borrow another sport's class). Essentials verified / required: NFL 120/325, CFB 19/162, NBA 243/419, CBB 44/72, NHL 153/189, MLB 62/250, SOCCER 109/199, TENNIS 25/146. Families with every essential verified: NHL 5 of 29, all other sports 0. Predictive validation is NOT_ASSESSED everywhere (repo-reported NBA/NHL readiness is a separate input).
 
@@ -121,4 +121,3 @@ Alpha local: 267 passed. NBA full suite: passed. Soccer: ruff clean; suite passe
 
 **Soccer live probe (branch `probe/soccer-live`, runs PR #39 head 2eae76e twice on a runner, data branch `soccer-live-probe-data`)** - launched; results not yet ingested.
 
-**NBA starters probe (run 41694265861)** - still running at the time of writing (it sleeps until T-125 min of tonight's first tip, then polls every 3 min); results are NOT in this report yet.

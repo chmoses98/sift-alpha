@@ -28,3 +28,12 @@ test("series fee schedule counts add up and flag disagreements", () => {
   assert.ok(f.published_multiplier_vs_observed_rate_disagreements >= 0);
   assert.ok(!JSON.stringify(f).match(/KX[A-Z]/));
 });
+
+test("order behaviour counters are internally consistent and make no resting-order claim", () => {
+  const b = ev.order_behavior;
+  assert.equal(b.executed_market_orders + b.executed_limit_orders, b.executed_orders_sampled);
+  assert.ok(b.executed_fully_filled <= b.executed_orders_sampled && b.executed_all_taker_fills <= b.executed_orders_sampled);
+  assert.equal(b.executed_with_any_maker_fill, 0);
+  assert.ok(b.canceled_with_zero_fill <= b.canceled_orders_total);
+  assert.equal(b.resting_orders_total, 0);
+});

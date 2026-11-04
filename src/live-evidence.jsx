@@ -27,6 +27,14 @@ export function LiveEvidence() {
       <table className="ex-table ex-compact"><tbody>
         <tr><th scope="row">Prospective fills with a prior entry quote</th><td>{n(e.prospective_fills_with_entry_quote)} / {n(e.prospective_fills_evaluated)}</td></tr>
         <tr><th scope="row">Historical entry quotes</th><td>{e.historical_entry_quotes}</td></tr></tbody></table></div>
+    {ev.order_behavior && <div className="ex-card"><h3>2b · How real orders actually executed</h3>
+      <p className="ex-fine"><span className="ex-badge ex-real">VERIFIED LIVE</span> {ev.order_behavior.evidence}</p>
+      <table className="ex-table ex-compact"><tbody>
+        <tr><th scope="row">Executed orders sampled (market / limit)</th><td>{n(ev.order_behavior.executed_orders_sampled)} ({n(ev.order_behavior.executed_market_orders)} / {n(ev.order_behavior.executed_limit_orders)})</td></tr>
+        <tr><th scope="row">Fully filled, all taker, within 5 s of placement</th><td>{n(ev.order_behavior.executed_fully_filled)} / {n(ev.order_behavior.executed_orders_sampled)}</td></tr>
+        <tr><th scope="row">Executed orders with any maker fill</th><td>{n(ev.order_behavior.executed_with_any_maker_fill)}</td></tr>
+        <tr><th scope="row">Canceled / resting orders in the account (all)</th><td>{n(ev.order_behavior.canceled_orders_total)} / {n(ev.order_behavior.resting_orders_total)}</td></tr></tbody></table>
+      <p className="ex-take"><b>Reading:</b> {ev.order_behavior.reading}</p></div>}
     <div className="ex-card"><h3>3 · Fees and maker/taker evidence</h3>
       <p className="ex-fine"><span className="ex-badge ex-real">VERIFIED ACTUAL FEES</span></p>
       <table className="ex-table ex-compact"><tbody>

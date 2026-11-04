@@ -32,7 +32,8 @@ export function LiveEvidence() {
       <table className="ex-table ex-compact"><tbody>
         <tr><th scope="row">Entry fees matching the taker schedule (0.07)</th><td>{n(f.taker_matches_0_07)} / {n(f.taker_fee_rows_validated)} across {n(f.series_checked)} series</td></tr>
         <tr><th scope="row">Maker fills observed in fee ledgers</th><td>{n(f.maker_fills_observed)}</td></tr>
-        <tr><th scope="row">Maker fee schedule</th><td>{f.maker_fee_status}</td></tr></tbody></table></div>
+        <tr><th scope="row">Maker fee schedule</th><td>{f.maker_fee_status}</td></tr></tbody></table>
+      {ev.series_fee_schedule && <p className="ex-take"><b>Published schedule ({ev.series_fee_schedule.series_checked} series):</b> {Object.entries(ev.series_fee_schedule.fee_type_counts).map(([k, v]) => `${v} × ${k.replaceAll("_", " ")}`).join(" · ")}. {ev.series_fee_schedule.reading}</p>}</div>
     <div className="ex-card"><h3>4 · Trade-tape and order-book coverage</h3>
       <table className="ex-table ex-compact"><tbody>{Object.entries(t).map(([k, v]) => <tr key={k}><th scope="row">{k}</th><td>{v}</td></tr>)}</tbody></table></div>
     <p className="ex-fine">Research confidence: {ev.confidence}</p>

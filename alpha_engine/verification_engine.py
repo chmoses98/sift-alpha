@@ -59,6 +59,26 @@ def rederive_ablation_verdict(ab: dict, variant: str) -> str:
     return "ELIGIBLE" if ok else "NOT_ELIGIBLE"
 
 
+WEAK_CLASSES = {"UNKNOWN", "CODE_REFERENCE_ONLY", "NO_REFERENCE_FOUND", "MISSING"}
+OVERRIDE_TARGETS = {"COLLECTED_UNVERIFIED_PIT", "STALE_OR_PARTIAL"}
+
+
+def apply_source_verification(entry: dict, sv: dict | None) -> dict:
+    """Let MEASURED evidence from an existing archive lift an input out of a weak class. Guardrails: never to VERIFIED_COLLECTION, never
+    downgrade, requires a pinned source (repo+commit) and measurements. Returns a new entry; the original is untouched."""
+    if not sv or entry.get("verification_class") not in WEAK_CLASSES and entry.get("verification_class") != "DERIVED":
+        return entry
+    m = sv.get("measured") or {}
+    src = m.get("source") or {}
+    if sv.get("verification_class") not in OVERRIDE_TARGETS or not (src.get("repo") and src.get("commit")):
+        return entry
+    e = dict(entry)
+    e.update(verification_class=sv["verification_class"], collection=sv["collection"], _source_verification={"why": sv["why"], "source": src})
+    e["evidence"] = list(entry.get("evidence", [])) + [f"measured:{src['repo']}@{src['commit'][:7]}:{src.get('path')}"]
+    e["note"] = (entry.get("note", "") + " | MEASURED: " + sv["why"]).strip(" |")
+    return e
+
+
 def _j(p):
     return json.loads(Path(p).read_text())
 
@@ -294,7 +314,6 @@ def projection_stage(proj, mapping_state):
 
 def build():
     specs, master, cs = _j(A / "market_specs.json"), _j(A / "master_inventory.json"), _j(A / "collection_status.json")
-    ctx_cs = cs
     registry, mv, ready = _j(A / "input_registry.json"), _j(A / "model_validation.json"), _j(A / "essential_readiness.json")
     intel = {}
     for p in sorted((A / "intel").glob("*.json")):
@@ -312,6 +331,7 @@ def build():
     mi_by_id = {f["id"]: f for f in master["families"]}
     static = _j(OUT / "model_use_static.json")["inputs"] if (OUT / "model_use_static.json").exists() else {}
     outs = _j(OUT / "projection_outputs.json") if (OUT / "projection_outputs.json").exists() else {}
+    paths = _j(OUT / "pricing_paths.json")["families"] if (OUT / "pricing_paths.json").exists() else {}
     vis = {}
     for sp, d in outs.items():
         if isinstance(d, dict):
@@ -320,13 +340,16 @@ def build():
     evidence = _j(OUT / "family_evidence.json") if (OUT / "family_evidence.json").exists() else {}
     # ---- input level (sport x input)
     inputs = {}
+    cs_raw = cs
+    svs = (_j(OUT / "source_verifications.json")["inputs"] if (OUT / "source_verifications.json").exists() else {})
+    cs = dict(cs); cs["sports"] = {sp: dict(v, inputs={i: apply_source_verification(x, svs.get(f"{sp}:{i}")) for i, x in v["inputs"].items()}) for sp, v in cs["sports"].items()}
     for s, v in cs["sports"].items():
         for i, x in v["inputs"].items():
             st = input_stages(x, (evidence.get("lineage") or {}).get(f"{s}:{i}"), static.get(f"{s}:{i}"), vis.get(f"{s}:{i}"))
             inputs[f"{s}:{i}"] = {"sport": s, "input": i, "label": x["label"], "status": input_status(x), "collection": x["collection"], "verification_class": x["verification_class"],
                                   "model_use": x["model_use"], "stages": st, "first_failure": first_failure(st), "derived": x["verification_class"] == "DERIVED", "note": x["note"], "evidence": x["evidence"],
                                   "static_use": ({k: static[f"{s}:{i}"][k] for k in ("repo", "commit", "collector_files", "model_read_files", "test_files", "refs")} if f"{s}:{i}" in static else None),
-                                  "output_visibility": vis.get(f"{s}:{i}")}
+                                  "output_visibility": vis.get(f"{s}:{i}"), "source_verification": x.get("_source_verification")}
     # ---- family level
     fams = {}
     for key, f in specs["families"].items():
@@ -351,9 +374,10 @@ def build():
                 rows.append({"input": i, "tier": tier, "origin": origin[i], "status": "UNKNOWN", "first_failure": {"stage": "source", "state": "UNKNOWN", "why": "input not in collection_status for this sport (never borrowed from another sport)"}})
                 counts[tier]["UNKNOWN"] += 1
                 continue
-            ent = ctx_cs["sports"][s]["inputs"][i]
+            ent = cs["sports"][s]["inputs"][i]
             stt = "VALIDATED_PREDICTIVE" if i in validated and may_validate(ent, True, family_match=True, transform_state=rec["stages"]["transform"]["state"]) else rec["status"]
-            rows.append({"input": i, "tier": tier, "origin": origin[i], "status": stt, "first_failure": rec["first_failure"]})
+            pp = (paths.get(key, {}).get("inputs") or {}).get(i)
+            rows.append({"input": i, "tier": tier, "origin": origin[i], "status": stt, "first_failure": rec["first_failure"], "pricing_path": pp["state"] if pp else None, "pricing_path_refs": (pp or {}).get("refs", [])[:2]})
             counts[tier][stt] += 1
         mapping = market_mapping_stage(key, f, mi_by_id.get(key), inputs, orientation)
         fam_stage = {
@@ -368,11 +392,13 @@ def build():
                      "inputs": rows, "counts_by_tier": {t: dict(c) for t, c in counts.items()}, "stages": fam_stage, "projection": proj,
                      "essential_verified": sum(r["status"] in ("VERIFIED", "VALIDATED_PREDICTIVE") for r in ess), "essential_total": len(ess), "essential_chain_complete": sum(1 for r in ess if r["status"] in ("VERIFIED", "VALIDATED_PREDICTIVE") and r["first_failure"] is None),
                      "essential_legacy_verified": sum(inputs.get(f"{s}:{r['input']}", {}).get("verification_class") == "VERIFIED_COLLECTION" for r in ess),
-                     "ablation": f"verification/{ABLATION_FILES[key]}" if key in ablation else None}
-    return {"specs": specs, "master": master, "cs": cs, "registry": registry, "ready": ready, "inputs": inputs, "fams": fams, "intel": intel, "ablation": ablation}
+                     "ablation": f"verification/{ABLATION_FILES[key]}" if key in ablation else None,
+                     "pricing_path": ({k: paths[key][k] for k in ("repo", "commit", "path_globs", "n_files", "files_total_lines")} if key in paths else None)}
+    return {"specs": specs, "master": master, "cs": cs, "cs_raw": cs_raw, "registry": registry, "ready": ready, "inputs": inputs, "fams": fams, "intel": intel, "ablation": ablation}
 
 
 def repair_tasks(ctx) -> list[dict]:
+    ledger = _j(OUT / "repair_ledger.json") if (OUT / "repair_ledger.json").exists() else {}
     """One task per (sport, input) that blocks essential links; ordered by markets affected. Reproducible, never 'resolved' here."""
     by = defaultdict(lambda: {"families": [], "markets": 0, "essential_in": []})
     for fk, f in ctx["fams"].items():
@@ -381,6 +407,8 @@ def repair_tasks(ctx) -> list[dict]:
                 continue
             b = by[(f["sport"], r["input"])]
             b["families"].append(fk); b["markets"] += f["markets_now"] or 0
+            if r.get("pricing_path") == "NOT_FOUND_IN_PRICING_PATH":
+                b.setdefault("not_in_path", []).append(fk)
     tasks = []
     for (s, i), b in by.items():
         rec = ctx["inputs"].get(f"{s}:{i}")
@@ -390,8 +418,9 @@ def repair_tasks(ctx) -> list[dict]:
         kind = {"archive": "COLLECT_OR_ARCHIVE", "timestamp": "PROVE_POINT_IN_TIME_AVAILABILITY", "source": "IDENTIFY_SOURCE", "transform": "AUDIT_FEATURE_TRANSFORM", "consumption": "WIRE_INTO_MODEL"}.get(ff.get("stage"), "REVIEW")
         if rec["status"] == "UNSUPPORTED":
             kind = "BLOCKED_NO_RELIABLE_SOURCE"
-        tasks.append({"id": f"{s}:{i}", "sport": s, "input": i, "status": rec["status"], "kind": kind, "defect": ff, "families_affected": sorted(b["families"]), "n_families": len(b["families"]),
-                      "markets_affected": b["markets"], "existing_evidence": rec["evidence"], "note": rec["note"], "state": "OPEN",
+        led = (ledger.get("entries") or {}).get(f"{s}:{i}")
+        tasks.append({"id": f"{s}:{i}", "disposition": ({k: led[k] for k in ("state", "found", "remaining", "next", "searched")} if led else None), "sport": s, "input": i, "status": rec["status"], "kind": kind, "defect": ff, "families_affected": sorted(b["families"]), "n_families": len(b["families"]),
+                      "markets_affected": b["markets"], "not_in_pricing_path_families": sorted(b.get("not_in_path", [])), "existing_evidence": rec["evidence"], "note": rec["note"], "state": "OPEN",
                       "rules": ["do not backfill with information unavailable before the event", "observed_at must be capture time, never batch/backfill time",
                                 "re-run `python -m alpha_engine.verification_engine` after any repair; status must change only via recorded evidence"]})
     return sorted(tasks, key=lambda t: (-t["markets_affected"], t["id"]))
@@ -403,7 +432,8 @@ def summarize(ctx, rec) -> dict:
         c = Counter(v["status"] for v in ctx["inputs"].values() if v["sport"] == s)
         fam = [f for f in ctx["fams"].values() if f["sport"] == s]
         el = sum(f["essential_total"] for f in fam)
-        per[s] = {"inputs_by_status": dict(c), "families": len(fam), "markets_now": sum(f["markets_now"] or 0 for f in fam),
+        before = Counter(input_status(x) for x in ctx["cs_raw"]["sports"][s]["inputs"].values())
+        per[s] = {"inputs_by_status": dict(c), "inputs_by_status_before_measured_evidence": dict(before), "families": len(fam), "markets_now": sum(f["markets_now"] or 0 for f in fam),
                   "essential_links": el, "essential_legacy_verified": sum(f["essential_legacy_verified"] for f in fam),
                   "essential_collection_verified": sum(f["essential_verified"] for f in fam), "essential_chain_complete": sum(f["essential_chain_complete"] for f in fam),
                   "families_projection": dict(Counter(f["projection"]["state"] for f in fam)),
@@ -419,7 +449,7 @@ def summarize(ctx, rec) -> dict:
 
 def run(write=True):
     ctx = build()
-    rec = recompute_denominators(ctx["specs"], ctx["master"], ctx["cs"], ctx["registry"], ctx["ready"])
+    rec = recompute_denominators(ctx["specs"], ctx["master"], ctx["cs_raw"], ctx["registry"], ctx["ready"])
     tasks = repair_tasks(ctx)
     summ = summarize(ctx, rec)
     if write:

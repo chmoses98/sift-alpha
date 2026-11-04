@@ -91,3 +91,93 @@ class Committed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceVerification(unittest.TestCase):
+    base = {"verification_class": "UNKNOWN", "collection": "UNKNOWN", "model_use": "UNKNOWN", "evidence": [], "code": {}, "note": "n", "label": "l"}
+    sv = {"verification_class": "COLLECTED_UNVERIFIED_PIT", "collection": "COLLECTED_NOT_PIT_ARCHIVED", "why": "w", "measured": {"source": {"repo": "o/r", "commit": "a" * 40, "path": "p"}}}
+
+    def test_lifts_weak_input_but_never_to_verified(self):
+        e = ve.apply_source_verification(self.base, self.sv)
+        self.assertEqual(ve.input_status(e), "COLLECTED_UNVERIFIED")
+        bad = dict(self.sv, verification_class="VERIFIED_COLLECTION")
+        self.assertEqual(ve.apply_source_verification(self.base, bad), self.base)
+
+    def test_never_downgrades_or_overrides_verified(self):
+        v = dict(self.base, verification_class="VERIFIED_COLLECTION", collection="PIT_ARCHIVED")
+        self.assertEqual(ve.apply_source_verification(v, self.sv), v)
+        s = dict(self.base, verification_class="STALE_OR_PARTIAL")
+        self.assertEqual(ve.apply_source_verification(s, self.sv), s)
+
+    def test_requires_pinned_source(self):
+        nosrc = dict(self.sv, measured={})
+        self.assertEqual(ve.apply_source_verification(self.base, nosrc), self.base)
+        nocommit = dict(self.sv, measured={"source": {"repo": "o/r"}})
+        self.assertEqual(ve.apply_source_verification(self.base, nocommit), self.base)
+
+    def test_committed_sources_do_not_change_verified_counts(self):
+        _, rec, _, summ = ve.run(write=False)
+        self.assertEqual((rec["essential_links"], rec["essential_links_verified"], rec["families_with_all_essentials_verified"]), (1762, 775, 5))
+        cfb = summ["sports"]["CFB"]
+        self.assertGreater(cfb["inputs_by_status"].get("COLLECTED_UNVERIFIED", 0), cfb["inputs_by_status_before_measured_evidence"].get("COLLECTED_UNVERIFIED", 0))
+        self.assertEqual(cfb["inputs_by_status"].get("VERIFIED"), cfb["inputs_by_status_before_measured_evidence"].get("VERIFIED"))
+
+    def test_sidecar_measurements_are_consistent(self):
+        d = json.loads((OUT / "source_verifications.json").read_text())["inputs"]
+        w = d["CFB:cfb.weather_pit"]["measured"]
+        self.assertEqual(w["git_commit_minus_fetched_minutes"]["rows_committed_before_fetched"], 0)
+        self.assertLess(w["coverage_of_completed_games"], 0.5)        # partial coverage must stay visible
+        for k, v in d.items():
+            self.assertNotEqual(v["verification_class"], "VERIFIED_COLLECTION", k)
+
+
+class Ledger(unittest.TestCase):
+    def test_ledger_states_match_engine(self):
+        ctx, _, tasks, _ = ve.run(write=False)
+        led = json.loads((OUT / "repair_ledger.json").read_text())["entries"]
+        ids = {t["id"] for t in tasks}
+        for k, e in led.items():
+            self.assertIn(e["state"], {"OPEN", "EVIDENCE_ADDED", "BLOCKED", "REPAIRED_VERIFIED"}, k)
+            self.assertTrue(e["found"] and e["remaining"] and e["next"], k)
+            if e["state"] == "REPAIRED_VERIFIED":
+                self.assertEqual(ctx["inputs"][k]["status"], "VERIFIED", k)
+            if e["state"] == "EVIDENCE_ADDED":
+                self.assertNotEqual(ctx["inputs"][k]["status"], "VERIFIED", k)
+        self.assertEqual(len([t for t in tasks if t["disposition"]]), len([k for k in led if k in ids]))
+
+
+class FeatureAblation(unittest.TestCase):
+    def data(self, n=140):
+        import random
+        rng = random.Random(7)
+        games, tg = [], []
+        for i in range(n):
+            h, a = f"T{i % 10}", f"T{(i * 3 + 1) % 10}"
+            day = f"2026-{9 + i // 70:02d}-{1 + (i // 5) % 28:02d}T{12 + i % 5:02d}:00Z"
+            gid = f"g{i}"
+            games.append({"event_id": gid, "start_time_utc": day, "home_team_id": h, "away_team_id": a, "home": h, "away": a, "home_periods": [rng.choice([0, 3, 7]), 0, 0, 0], "away_periods": [rng.choice([0, 3, 7]), 0, 0, 0]})
+            for t in (h, a):
+                tg.append({"game_id": gid, "team_id": t, "kickoff_utc": day, "box": {"plays": 60 + rng.random() * 10}, "pbp": {"scrim_plays": 60, "drives": 11, "success_plays": 27, "explosive_pass": 3, "explosive_rush": 1, "pass_plays": 30, "rush_plays": 30}})
+        return games, tg
+
+    def test_noise_features_do_not_validate_and_future_changes_nothing(self):
+        from alpha_engine import cfb_q1_features_ablation as fa
+        games, tg = self.data()
+        rows = fa.build_rows(tg, games)
+        preds = fa.predict_variants(rows)
+        self.assertTrue(preds)
+        res = fa.ablate(preds)
+        for v, e in res["variants"].items():
+            self.assertNotEqual(e.get("verdict"), "VALIDATED_PREDICTIVE", v)
+        games2 = [dict(g) for g in games]; games2[-1]["home_periods"] = [99, 0, 0, 0]
+        p2 = fa.predict_variants(fa.build_rows(tg, games2))
+        for a, b in zip(preds[:-1], p2[:-1]):
+            self.assertEqual(a["V11_all_pace_efficiency"], b["V11_all_pace_efficiency"])
+        self.assertEqual(preds[-1]["V11_all_pace_efficiency"], p2[-1]["V11_all_pace_efficiency"])
+
+    def test_ridge_recovers_signal(self):
+        from alpha_engine import cfb_q1_features_ablation as fa
+        X = [[i / 10.0] for i in range(100)]
+        y = [3 * x[0] + 1 for x in X]
+        beta, mu, xbar = fa.ridge_fit(X, y, lam=0.01)
+        self.assertAlmostEqual(beta[0], 3, delta=0.1)

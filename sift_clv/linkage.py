@@ -3,10 +3,13 @@
 The router stays the independent accounting source: it never learns about recommendations.  This module joins the
 two ledgers on EVIDENCE, and a join is only ``verified`` when the evidence is explicit:
 
-  EXACT_CLIENT_ORDER_ID   the exchange order's client_order_id carries the recommendation token ``sift:<rec_id>``
-  OWNER_ATTESTED          an append-only attestation names BOTH the recommendation id and the order key
-  CANDIDATE_ONLY          same ticker + side, one rec, one order in the window.  NEVER verified, never counted in
-                          verified CLV; reported only as a count so the gap is visible.
+  EXACT_CLIENT_ORDER_ID   the exchange order's client_order_id is ``sift:<recommendation_ref>``
+  OWNER_ATTESTED          an append-only attestation names BOTH the recommendation_ref and the order key
+  UNIQUE_WINDOW_MATCH     the router's own ``link_recommendation`` rule: exact ticker + side, recommendation created before
+                          the first fill and within an EXPLICIT window (no default), exactly one distinct recommendation.
+                          Two or more -> AMBIGUOUS, never "pick the nearest". NOT verified: ticker/time coincidence is
+                          not attribution. Counted separately and only usable as a labelled sensitivity view.
+  CANDIDATE_ONLY          (kept for compatibility) alias of UNIQUE_WINDOW_MATCH grade; see ``UNIQUE_WINDOW``.
 
 Every verified tier additionally requires: same exact ticker (threshold included) and side; recommendation created
 strictly before the first fill; first fill strictly before the scheduled start; an order claimed by at most one
@@ -29,9 +32,23 @@ from . import canonical as C
 VERSION = "sift-clv-linkage/1"
 EXACT = "EXACT_CLIENT_ORDER_ID"
 ATTESTED = "OWNER_ATTESTED"
-CANDIDATE = "CANDIDATE_ONLY"
+UNIQUE_WINDOW = "UNIQUE_WINDOW_MATCH"
+CANDIDATE = UNIQUE_WINDOW          # backwards-compatible name
 VERIFIED_TIERS = (EXACT, ATTESTED)
 TOKEN_PREFIX = "sift:"
+DIGEST_DOMAIN = "kalshi-router.execution-evidence.v1"
+DIGEST_HEX_CHARS = 32
+
+
+def id_digest(kind: str, value: str) -> str:
+    """The router's domain-separated digest (copy of the formula, as the router's contract instructs)."""
+    if kind not in ("order", "fill", "recommendation", "model_run"):
+        raise ValueError(f"unknown id kind {kind!r}")
+    return hashlib.sha256(f"{DIGEST_DOMAIN}|{kind}|{value}".encode()).hexdigest()[:DIGEST_HEX_CHARS]
+
+
+def recommendation_ref(rec_id: str) -> str:
+    return id_digest("recommendation", rec_id)
 
 # quarantine reasons
 TICKER_SIDE_MISMATCH = "TICKER_OR_SIDE_MISMATCH"
@@ -57,6 +74,10 @@ class Recommendation:
     projection: Optional[Decimal] = None
     confidence: Optional[Decimal] = None
 
+    @property
+    def ref(self) -> str:
+        return recommendation_ref(self.rec_id)
+
 
 @dataclass(frozen=True)
 class Order:
@@ -71,7 +92,7 @@ class Order:
 
 @dataclass(frozen=True)
 class Attestation:
-    rec_id: str
+    recommendation_ref: str              # digest, never the raw recommendation id
     order_key: str
     attested_at: datetime
     attested_by: str = "owner"
@@ -79,7 +100,7 @@ class Attestation:
 
 @dataclass(frozen=True)
 class Link:
-    rec_id: str
+    rec_ref: str                         # recommendation_ref digest (never the raw id)
     order_key: str
     tier: str
     verified: bool
@@ -87,12 +108,19 @@ class Link:
 
     @property
     def link_id(self) -> str:
-        return hashlib.sha256(f"{self.rec_id}|{self.order_key}".encode()).hexdigest()[:16]
+        return hashlib.sha256(f"{self.rec_ref}|{self.order_key}".encode()).hexdigest()[:16]
+
+    @property
+    def grade(self) -> str:
+        """EXPLICIT (client_order_id / attestation), UNIQUE_WINDOW (router rule; not verified), or UNLINKED."""
+        if self.tier in VERIFIED_TIERS:
+            return "EXPLICIT"
+        return "UNIQUE_WINDOW" if self.tier == UNIQUE_WINDOW and self.quarantine is None else "UNLINKED"
 
 
 def client_order_token(rec_id: str) -> str:
-    """The value forward capture must place in the exchange order's client_order_id."""
-    return f"{TOKEN_PREFIX}{rec_id}"
+    """The value forward capture must place in the exchange order's client_order_id: ``sift:<recommendation_ref>``."""
+    return f"{TOKEN_PREFIX}{recommendation_ref(rec_id)}"
 
 
 def _same_contract(r: Recommendation, o: Order) -> bool:
@@ -112,67 +140,75 @@ def _check(r: Recommendation, o: Order, start: Optional[datetime]) -> Optional[s
 
 
 def link_all(recs: Iterable[Recommendation], orders: Iterable[Order], attestations: Iterable[Attestation],
-             starts: dict) -> list:
-    """``starts``: {ticker: scheduled start}.  Returns Link rows (verified and quarantined)."""
-    recs, orders = {r.rec_id: r for r in recs}, {o.order_key: o for o in orders}
-    claims = defaultdict(set)                       # order_key -> {(rec_id, tier)}
+             starts: dict, *, window_seconds: Optional[float] = None) -> list:
+    """``starts``: {ticker: scheduled start}.  Returns Link rows (verified and quarantined), keyed by digests.
+
+    ``window_seconds`` enables the router's unique-window rule for orders with NO explicit claim; there is no default
+    window (a default would hide a guess). Without it only explicit evidence produces links."""
+    if window_seconds is not None and window_seconds <= 0:
+        raise ValueError("window_seconds must be positive: there is no default window to hide a guess in")
+    by_ref = {r.ref: r for r in recs}
+    orders = {o.order_key: o for o in orders}
+    claims = defaultdict(set)                       # order_key -> {(rec_ref, tier)}
     for o in orders.values():
         cid = o.client_order_id or ""
-        if cid.startswith(TOKEN_PREFIX) and cid[len(TOKEN_PREFIX):] in recs:
+        if cid.startswith(TOKEN_PREFIX) and cid[len(TOKEN_PREFIX):] in by_ref:
             claims[o.order_key].add((cid[len(TOKEN_PREFIX):], EXACT))
     out = []
     for a in attestations:
-        if a.rec_id not in recs:
-            out.append(Link(a.rec_id, a.order_key, ATTESTED, False, UNKNOWN_REC)); continue
+        if a.recommendation_ref not in by_ref:
+            out.append(Link(a.recommendation_ref, a.order_key, ATTESTED, False, UNKNOWN_REC)); continue
         if a.order_key not in orders:
-            out.append(Link(a.rec_id, a.order_key, ATTESTED, False, UNKNOWN_ORDER)); continue
+            out.append(Link(a.recommendation_ref, a.order_key, ATTESTED, False, UNKNOWN_ORDER)); continue
         if not a.attested_at:
             continue
-        claims[a.order_key].add((a.rec_id, ATTESTED))
+        claims[a.order_key].add((a.recommendation_ref, ATTESTED))
     for okey, cl in claims.items():
-        rec_ids = {rid for rid, _ in cl}
+        refs = {rf for rf, _ in cl}
         o = orders[okey]
-        for rid, tier in sorted(cl):
-            if len(rec_ids) > 1:
-                out.append(Link(rid, okey, tier, False, ORDER_CLAIMED_TWICE)); continue
-            why = _check(recs[rid], o, starts.get(o.ticker))
-            out.append(Link(rid, okey, tier, why is None, why))
-    # heuristic candidates: only for orders with no explicit claim; unique 1:1 on ticker+side, never verified
-    claimed = {l.order_key for l in out}
-    by_contract_recs = defaultdict(list)
-    for r in recs.values():
-        by_contract_recs[(r.ticker, C.norm_side(r.side))].append(r)
-    by_contract_orders = defaultdict(list)
-    for o in orders.values():
-        if o.order_key not in claimed:
-            by_contract_orders[(o.ticker, C.norm_side(o.side))].append(o)
-    for key, os_ in by_contract_orders.items():
-        rs = by_contract_recs.get(key, [])
-        if not rs:
-            continue
-        if len(rs) == 1 and len(os_) == 1 and _check(rs[0], os_[0], starts.get(os_[0].ticker)) is None:
-            out.append(Link(rs[0].rec_id, os_[0].order_key, CANDIDATE, False, None))
-        else:
-            for o in os_:
-                out.append(Link(rs[0].rec_id, o.order_key, CANDIDATE, False, AMBIGUOUS_CANDIDATE))
+        for rf, tier in sorted(cl):
+            if len(refs) > 1:
+                out.append(Link(rf, okey, tier, False, ORDER_CLAIMED_TWICE)); continue
+            why = _check(by_ref[rf], o, starts.get(o.ticker))
+            out.append(Link(rf, okey, tier, why is None, why))
+    if window_seconds is not None:
+        claimed = {l.order_key for l in out}
+        for o in orders.values():
+            if o.order_key in claimed:
+                continue
+            hits = [r for r in by_ref.values() if _same_contract(r, o) and
+                    0 <= (o.first_fill_at - r.created_at).total_seconds() <= window_seconds]
+            refs = sorted({r.ref for r in hits})
+            if not refs:
+                continue
+            if len(refs) > 1:
+                out.append(Link(refs[0], o.order_key, UNIQUE_WINDOW, False, AMBIGUOUS_CANDIDATE))   # never pick the nearest
+                continue
+            why = _check(by_ref[refs[0]], o, starts.get(o.ticker))
+            out.append(Link(refs[0], o.order_key, UNIQUE_WINDOW, False, why))
     return out
 
 
 def measure(link: Link, rec: Recommendation, order: Order, close: Optional[C.Quote], start: Optional[datetime],
-            max_close_age_seconds: Optional[int] = 3600) -> dict:
-    """Canonical CLV for one link.  Unverified links return no actual-execution numbers at all."""
-    if not link.verified:
+            max_close_age_seconds: Optional[int] = 3600, *, include_unique_window: bool = False) -> dict:
+    """Canonical CLV for one link.  Unverified links return no actual-execution numbers at all, unless the caller asks
+    for the labelled sensitivity view (``include_unique_window``): a unique, un-quarantined window match is then measured
+    and tagged ``evidence_grade="UNIQUE_WINDOW"`` so it can never be mistaken for verified."""
+    sens = include_unique_window and link.grade == "UNIQUE_WINDOW"
+    if not link.verified and not sens:
         return {"link_id": link.link_id, "tier": link.tier, "verified": False, "quarantine": link.quarantine}
     res = C.evaluate(ticker=order.ticker, side=order.side,
                      recommendation=C.Quote(rec.ticker, rec.yes_bid, rec.yes_ask, rec.created_at), close=close,
                      start=start, fills=list(order.fills), stake=order.stake,
                      max_close_age_seconds=max_close_age_seconds)
-    return {"link_id": link.link_id, "tier": link.tier, "verified": True, "quarantine": None, "clv": res}
+    return {"link_id": link.link_id, "tier": link.tier, "verified": link.verified, "quarantine": None,
+            "evidence_grade": link.grade, "clv": res}
 
 
 def public_row(m: dict) -> dict:
     """Privacy-safe aggregate row: no ticker, price, amount, order id or recommendation id."""
-    out = {"link_id": m["link_id"], "tier": m["tier"], "verified": m["verified"], "quarantine": m.get("quarantine")}
+    out = {"link_id": m["link_id"], "tier": m["tier"], "verified": m["verified"], "quarantine": m.get("quarantine"),
+           "evidence_grade": m.get("evidence_grade", "UNLINKED")}
     r = m.get("clv")
     if r is not None:
         out.update(status=r.status, selection_clv=_f(r.selection_clv), quoted_execution_clv=_f(r.quoted_execution_clv),
@@ -193,6 +229,7 @@ def coverage(links: Iterable[Link], n_recs: int, n_orders: int) -> dict:
         tiers[(l.tier, "verified" if l.verified else "unverified")] += 1
     return {"version": VERSION, "recommendations": n_recs, "orders": n_orders,
             "verified_links": sum(1 for l in links if l.verified),
+            "unique_window_unverified": sum(1 for l in links if l.grade == "UNIQUE_WINDOW"),
             "by_tier": {f"{t}:{v}": n for (t, v), n in sorted(tiers.items())},
             "quarantine": dict(sorted(_count(l.quarantine for l in links if l.quarantine).items()))}
 

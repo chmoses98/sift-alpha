@@ -1,0 +1,81 @@
+name: Publish SIFT Alpha research dashboard
+
+# This workflow MUST live on the default branch to expose "Run workflow".
+# The Vite app and its privacy-safe datasets live on build/alpha-research-desk.
+# No Vercel deployment, Kalshi credentials, betting permissions or paid services.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout dashboard source (not the code-only default branch)
+        uses: actions/checkout@v4
+        with:
+          ref: build/alpha-research-desk
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install (dashboard currently has no package-lock)
+        run: npm install --no-audit --no-fund
+      - name: Validate dashboard tests
+        run: npm test
+      - name: Confirm CLV payloads contain only aggregates
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          paths = [
+              Path("research/audit/clv/clv_summary.json"),
+              Path("research/audit/clv/execution_summary.json")
+          ]
+          forbidden = {"source_bet_key", "order_id", "fill_id", "recommendation_id", "market_ticker",
+                       "stake", "gross_return", "net_profit_loss", "actual_price",
+                       "execution_price", "ticker", "pnl", "roi"}
+          def check(node):
+              if isinstance(node, dict):
+                  assert forbidden.isdisjoint(node), "private wager field found in public CLV data"
+                  for value in node.values(): check(value)
+              elif isinstance(node, list):
+                  for value in node: check(value)
+          for path in paths:
+              data = json.loads(path.read_text())
+              assert "aggregates only" in data.get("privacy", "")
+              assert isinstance(data.get("real_wagers"), dict)
+              check(data)
+              print(f"{path}: aggregate data validated")
+          PY
+      - name: Build static Alpha dashboard
+        run: npm run build
+      - name: Upload Pages artifact (manual deploy only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Publish aggregate-only SIFT Alpha research desk
+        id: deployment
+        uses: actions/deploy-pages@v4

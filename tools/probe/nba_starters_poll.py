@@ -34,6 +34,10 @@ tips = sorted(parse_iso(g["start_time_utc"]) for g in games if g.get("status") i
 print("scheduled games in view:", len(tips), "first tip:", tips[:1], flush=True)
 if tips:
     wait = (tips[0] - timedelta(minutes=125) - utcnow()).total_seconds()
+    if wait > 200 * 60:     # never sleep through the job limit: a probe started too early collects nothing (run 41694265861 did exactly that)
+        print("TOO_EARLY: first window opens in", round(wait / 60), "min; exiting without polling. Start the workflow within 200 min of", tips[0], flush=True)
+        (out / "console_status.json").write_text(json.dumps({"status": "TOO_EARLY", "first_tip": tips[0].isoformat(), "wait_min": round(wait / 60)}))
+        raise SystemExit(0)
     if wait > 0:
         print("sleeping", round(wait / 60), "min until first window", flush=True); time.sleep(wait)
 t0 = utcnow()                      # polling budget starts at the first window, not at job start

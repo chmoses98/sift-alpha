@@ -277,13 +277,14 @@ def attach_gamepk(obs, games):
     o["pk_src"] = np.where(o["pk"].notna(), "row", None)
     peer = o.dropna(subset=["pk"]).groupby("gc")["pk"].first()
     m = o["pk"].isna()
-    o.loc[m, "pk"] = o.loc[m, "gc"].map(peer)
-    o.loc[m & o["pk"].notna(), "pk_src"] = "gamecode_peer"
+    if m.any():       # guard + explicit float cast: newer pandas rejects assigning an empty/object-typed mapped column into float64
+        o.loc[m, "pk"] = pd.to_numeric(o.loc[m, "gc"].map(peer), errors="coerce").astype(float)
+        o.loc[m & o["pk"].notna(), "pk_src"] = "gamecode_peer"
     m = o["pk"].isna()
     if m.any():
         ab = build_abbr_map(o, games)
         res = gamecode_to_pk(o.loc[m, "gc"].unique(), ab, games)
-        o.loc[m, "pk"] = o.loc[m, "gc"].map(res)
+        o.loc[m, "pk"] = pd.to_numeric(o.loc[m, "gc"].map(res), errors="coerce").astype(float)
         o.loc[m & o["pk"].notna(), "pk_src"] = "schedule_match"
     return o
 

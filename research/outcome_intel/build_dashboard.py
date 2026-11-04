@@ -39,7 +39,7 @@ def central_status(c, agent_status, hg):
         return "INCONCLUSIVE_UNDERPOWERED", f"no gain estimate behind sport-level status {agent_status}"
     if agent_status in ("MISSING_DATA", "INVALID_EVIDENCE"):
         return agent_status, None
-    st = S.classify_gain(g, hg, g.get("holm_p"), nc_of(c))
+    st = S.classify_gain(g, hg, g.get("holm_p"), nc_of(c), c.get("validation_gates"))
     note = None
     if hg is None:
         note = "holdout game count not recorded -> cannot verify power"
@@ -64,7 +64,7 @@ def norm(c, sport=None):
                               settlement_source=c.get("settlement_source") or UNK("not recorded")),
                 market_probability=c.get("market_metrics") or UNK("no pregame market price"),
                 model_probability=c.get("model_metrics") or UNK("no archived pregame model probability"),
-                incremental_gain=gain, validation_status=st if st in S.ALL else "INVALID_EVIDENCE", reason=c.get("reason"))
+                incremental_gain=gain, validation_gates={k: (c.get("validation_gates") or {}).get(k) for k in S.GATES}, validation_status=st if st in S.ALL else "INVALID_EVIDENCE", reason=c.get("reason"))
 
 
 def cfb_cells(d):

@@ -40,7 +40,7 @@ class TestStatus(unittest.TestCase):
         return dict(status="OK", holdout_games=games, gain_vs_calibrated_market_logloss=dict(mean=mean, lo=lo, hi=hi))
 
     def test_all_branches(self):
-        self.assertEqual(S.classify(self.cell(.02, .01, .03), 0.01, dict(mean=0, lo=-.001, hi=.001)), "VALIDATED_IMPROVEMENT")
+        self.assertEqual(S.classify(self.cell(.02, .01, .03), 0.01, dict(mean=0, lo=-.001, hi=.001), {k: 1 for k in S.GATES}), "VALIDATED_IMPROVEMENT")
         self.assertEqual(S.classify(self.cell(.02, .01, .03), 0.2, None), "PROMISING_INSUFFICIENT")
         self.assertEqual(S.classify(self.cell(0, -.004, .004), None, None), "NO_DEMONSTRATED_IMPROVEMENT")
         self.assertEqual(S.classify(self.cell(0, -.03, .03), None, None), "INCONCLUSIVE_UNDERPOWERED")
@@ -59,6 +59,7 @@ if __name__ == "__main__":
 class TestCentralClassifier(unittest.TestCase):
     G = lambda self, m, lo, hi: dict(mean=m, lo=lo, hi=hi, holm_p=0.01)
     CLEAN = dict(mean=0.0, lo=-0.001, hi=0.001)
+    ALL_GATES = {k: 1 for k in S.GATES}
 
     def test_reviewer_scenarios(self):
         # mean -0.002, CI [-0.023,+0.019], 100 games -> must NOT be a null verdict
@@ -72,8 +73,14 @@ class TestCentralClassifier(unittest.TestCase):
         self.assertEqual(S.classify_gain(self.G(.02, .01, .03), None, .01, self.CLEAN), "INCONCLUSIVE_UNDERPOWERED")
         self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, None), "PROMISING_INSUFFICIENT")          # control not run
         self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, dict(mean=.0015, lo=.0005, hi=.0025)), "PROMISING_INSUFFICIENT")
-        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, self.CLEAN), "VALIDATED_IMPROVEMENT")
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, self.CLEAN, self.ALL_GATES), "VALIDATED_IMPROVEMENT")
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, self.CLEAN), "PROMISING_INSUFFICIENT")     # no gates supplied
         self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .2, self.CLEAN), "PROMISING_INSUFFICIENT")
+
+    def test_each_missing_gate_blocks_validation(self):
+        for k in S.GATES:
+            g = dict(self.ALL_GATES, **{k: None})
+            self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, self.CLEAN, g), "PROMISING_INSUFFICIENT", k)
 
     def test_dashboard_reclassifies_and_never_invents_missing(self):
         import build_dashboard as B

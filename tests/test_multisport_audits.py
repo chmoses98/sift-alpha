@@ -236,3 +236,15 @@ class NbaEval(unittest.TestCase):
         txt = json.dumps(d)
         for bad in ("entity_name", "espn:", "player_id"):
             self.assertNotIn(bad, txt)
+
+
+class NbaStarterEvidence(unittest.TestCase):
+    def test_evidence_keeps_the_four_categories_separate_and_claims_no_edge(self):
+        d = json.loads((OUT / "NBA_starters_evidence.json").read_text())
+        self.assertEqual(d["archive"]["starter_rows"], 0)
+        self.assertEqual(d["onoff_experiment"]["fixed_rule_flips_minutes_model_in"], [])
+        self.assertGreater(len(d["onoff_experiment"]["legacy_rule_flips_minutes_model_in"]), 0)
+        for k in ("feature_availability", "verified_consumption", "projection_validity", "predictive_improvement", "market_advantage"):
+            self.assertIn(k, d["separation"])
+        self.assertIn("none established", d["separation"]["market_advantage"])
+        self.assertIn("not reproduced", d["oracle_upper_bound_repo_reported"]["note"])

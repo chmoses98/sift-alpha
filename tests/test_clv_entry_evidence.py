@@ -1,7 +1,8 @@
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal as D
-import pytest
+import tempfile, unittest
+from pathlib import Path
 from sift_clv import canonical as C, executable as X, entry_conditions as E, evidence_import as EV, linkage as L
 
 T0 = datetime(2026, 11, 1, 18, 0, tzinfo=timezone.utc)
@@ -61,7 +62,7 @@ def test_coverage_counts_unavailable_without_imputing_and_is_private():
     rs = [ev([snap(-30)]), ev([]), ev([snap(+9)])]
     c = E.coverage(rs)
     assert c["fills"] == 3 and c["status_counts"][E.ENTRY_OK] == 1 and c["status_counts"][E.NO_SNAPSHOT] == 1
-    assert c["entry_quote_coverage"] == pytest.approx(1 / 3, abs=1e-3)
+    assert abs(c["entry_quote_coverage"] - 1 / 3) < 1e-3
     blob = json.dumps(c) + json.dumps(E.public_row(rs[0]))
     assert "KXNFL" not in blob and "0.50" not in blob
 
@@ -88,8 +89,8 @@ def test_importer_refuses_raw_ids_and_wrong_shapes():
     assert EV.refusal_reason(row(kind="CLOSE")) == "NOT_EXECUTION_KIND"
 
 
-def test_load_is_idempotent_conflicts_are_dropped_not_merged(tmp_path):
-    p = tmp_path / "e.jsonl"
+def test_load_is_idempotent_conflicts_are_dropped_not_merged():
+    p = Path(tempfile.mkdtemp()) / "e.jsonl"
     p.write_text("\n".join(json.dumps(x) for x in [row(), row(recorded_at="2026-11-02T00:00:00Z"), row(all_taker=False),
                                                    row(source_bet_key="kalshi:v1:" + "cd" * 32), {"junk": 1}]) + "\n")
     good, c = EV.load_evidence(p)
@@ -98,7 +99,7 @@ def test_load_is_idempotent_conflicts_are_dropped_not_merged(tmp_path):
 
 def test_order_needs_evidence_and_never_borrows_wager_time():
     f = (C.Fill.of("0.5", 10, "0.17", None),)
-    with pytest.raises(ValueError):
+    with unittest.TestCase().assertRaises(ValueError):
         EV.order_with_evidence(order_key=KEY, ticker=TK, side="YES", fills=f, evidence=None)
     o, src = EV.order_with_evidence(order_key=KEY, ticker=TK, side="YES", fills=f, evidence=row())
     assert o.first_fill_at.tzinfo is not None and o.fills[0].is_taker is True and src == "EXECUTION_EVIDENCE"
@@ -122,3 +123,12 @@ def test_coverage_is_counts_only():
     c = EV.coverage([KEY, "kalshi:v1:" + "cd" * 32], good, {"accepted": 1})
     assert c["with_execution_evidence"] == 1 and c["evidence_share"] == 0.5 and c["all_taker"] == 1
     assert "kalshi:v1" not in json.dumps(c)
+
+
+class EntryEvidenceTests(unittest.TestCase):
+    """CI runs unittest discovery: expose every module-level test function as a TestCase method."""
+
+
+for _n, _f in list(globals().items()):
+    if _n.startswith("test_") and callable(_f):
+        setattr(EntryEvidenceTests, _n, lambda self, _f=_f: _f())

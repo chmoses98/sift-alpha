@@ -70,11 +70,13 @@ def main():
     ap.add_argument("--nfl-real", required=True)
     ap.add_argument("--cfb-real", required=True)
     ap.add_argument("--nba-real", required=True)
+    ap.add_argument("--nhl-real", default=None)
     ap.add_argument("--nfl-shadow", required=True)
     ap.add_argument("--sources", required=True, help="JSON: provenance + before/after notes supplied by the operator")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     nfl, cfb, nba = (json.load(open(p)) for p in (a.nfl_real, a.cfb_real, a.nba_real))
+    nhl = json.load(open(a.nhl_real)) if a.nhl_real else None
     shadow, src = json.load(open(a.nfl_shadow)), json.load(open(a.sources))
     out = {
         "schema": "sift-clv-public-summary/1",
@@ -86,6 +88,7 @@ def main():
             "NFL": real_block(nfl, "nfl_real_wagers", "nfl handicap-data wagers+amended settlements; market-data canonical closes"),
             "CFB": real_block(cfb, "", "cfb accounting-data wagers; main git-history catalog snapshots (closing PROXY <= 60 min)"),
             "NBA": real_block(nba, "", "nba accounting-data wagers; data-archive checkpoint+delta reconstruction (hash-verified)"),
+            **({"NHL": real_block(nhl, "", "nhl accounting-data wagers; data-archive checkpoint+delta reconstruction (hash-verified)")} if nhl else {}),
         },
         "hypothetical_selections": {
             "NFL_shadow_v2": {
@@ -96,6 +99,7 @@ def main():
                 "after_gated_deduped": shadow["after_gated_deduped"],
                 "by_horizon": shadow["by"]["horizon"], "by_price_bucket": shadow["by"]["price_bucket"],
                 "by_week_chronological": shadow["by"]["week"], "by_family": shadow["by"]["family"],
+                "chronological_split": shadow["by"].get("chronological_split", {}),
                 "rank_basis": shadow["rank_basis"],
                 "ranked_families_by_selection": shadow["ranked_families_by_selection"],
                 "ranked_families_by_fee_adjusted": shadow["ranked_families_by_fee_adjusted"],

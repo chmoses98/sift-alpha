@@ -32,6 +32,7 @@ class PublicSummary(unittest.TestCase):
         self.assertIsNone(re.search(r"kalshi:v1:[0-9a-f]{16,}", blob))
 
     def test_every_real_wager_block_has_denominators_and_reasons(self):
+        self.assertTrue({"NFL", "CFB", "NBA", "NHL"} <= set(self.d["real_wagers"]))
         for sport, b in self.d["real_wagers"].items():
             den = b["denominators"]
             self.assertEqual(set(den), {"wagers_in_ledger", "pregame_entries_eligible", "verified_clv_observations"}, sport)

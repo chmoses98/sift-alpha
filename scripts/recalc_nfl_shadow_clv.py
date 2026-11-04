@@ -91,7 +91,7 @@ def cell(g, with_ci=True):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--clv-root", required=True)
+    ap.add_argument("--clv-root", required=True, nargs="+", help="one or more clv roots (weeks may be split across checkouts)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-age", type=float, default=3600.0)
     ap.add_argument("--min-n", type=int, default=100, help="minimum records for a cell to be ranked")
@@ -101,8 +101,9 @@ def main():
     seen, counts = set(), defaultdict(int)
     overall = Group()
     dims = {"family": defaultdict(Group), "horizon": defaultdict(Group), "price_bucket": defaultdict(Group),
-            "week": defaultdict(Group)}
-    for path in sorted(glob.glob(os.path.join(a.clv_root, "*", "*.clv_v2.jsonl.gz"))):
+            "week": defaultdict(Group), "chronological_split": defaultdict(Group)}
+    paths = sorted(p for root in a.clv_root for p in glob.glob(os.path.join(root, "*", "*.clv_v2.jsonl.gz")))
+    for path in paths:
         game = os.path.basename(os.path.dirname(path))
         week = game.split("_")[1] if "_" in game else "?"
         with gzip.open(path, "rt") as fh:
@@ -133,6 +134,7 @@ def main():
                 dims["horizon"][str(r.get("horizon_label"))].add(game, sel, qex, net)
                 dims["price_bucket"][price_bucket(r.get("entry_executable_price"))].add(game, sel, qex, net)
                 dims["week"][week].add(game, sel, qex, net)
+                dims["chronological_split"]["weeks_01-04" if week.isdigit() and int(week) <= 4 else "weeks_05-08"].add(game, sel, qex, net)
     out = {"definition": __doc__.strip().splitlines()[0], "counts": dict(counts), "max_close_age_seconds": a.max_age,
            "unit": "probability points (dollars per contract); positive = market moved toward / beat the benchmark",
            "before_pooled_as_published": {f: stats(v) for f, v in before.items()},

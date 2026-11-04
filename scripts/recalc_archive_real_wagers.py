@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Re-measure NBA real wagers with the canonical CLV measures, closes rebuilt from the hash-chained market archive.
+"""Re-measure real wagers (NBA, NHL) with the canonical CLV measures, closes rebuilt from the hash-chained archive.
 
-    recalc_nba_real_wagers.py --archive <nba data-archive checkout> --nba-repo <nba-edge-finder checkout> \
-        --accounting <nba accounting-data checkout> --out out.json
+    recalc_archive_real_wagers.py --sport nba --archive <data-archive checkout> --repo <sport repo checkout> \
+        --accounting <accounting-data checkout> --out out.json
 
 Close = the board reconstructed by ``nba_edge.archive.reconstruct.reconstruct_at`` at (tip - 1s): the last captured
 tick strictly before the start, point-in-time safe (only artifacts observed at or before that instant are read) and
@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from sift_clv import canonical as C, historical as H  # noqa: E402
 
-EVENT_RE = re.compile(r"^[A-Z0-9]+-(\d{2})([A-Z]{3})(\d{2})([A-Z]{3})([A-Z]{3})-")
+EVENT_RE = re.compile(r"^[A-Z0-9]+-(\d{2})([A-Z]{3})(\d{2})([A-Z]+)-")   # group 4 = away+home team codes (2-3 letters each)
 MONTHS = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
 
 
@@ -30,13 +30,25 @@ def ts(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
 
 
-def load_schedule(archive):
+SPORTS = {  # package, schedule field names
+    "nba": {"pkg": "nba_edge", "away": "away_tricode", "home": "home_tricode", "label": "NBA"},
+    "nhl": {"pkg": "nhl_edge", "away": "away_abbrev", "home": "home_abbrev", "label": "NHL"},
+}
+
+
+# Kalshi event codes that differ from the league API's abbreviation (NHL). Only codes proven by the ledger tickers.
+KALSHI_CODE = {"nhl": {"LAK": "LA", "NJD": "NJ", "TBL": "TB", "SJS": "SJ"}}
+
+
+def load_schedule(archive, cfg, sport=None):
     games = {}
     for p in sorted(Path(archive, "context", "schedule").glob("dt=*/*.jsonl.gz")):
         with gzip.open(p, "rt") as fh:
             for line in fh:
                 r = json.loads(line)
-                k = (r["game_date_et"], r["away_tricode"], r["home_tricode"])
+                alias = KALSHI_CODE.get(sport, {})
+                away, home = alias.get(r[cfg["away"]], r[cfg["away"]]), alias.get(r[cfg["home"]], r[cfg["home"]])
+                k = (r["game_date_et"], away + home)   # exact concatenation: no 2/3-letter ambiguity
                 prev = games.get(k)
                 if prev is None or r["_observed_at_utc"] >= prev["_observed_at_utc"]:
                     games[k] = r
@@ -49,18 +61,21 @@ def dollars(x):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--sport", required=True, choices=sorted(SPORTS))
     ap.add_argument("--archive", required=True)
-    ap.add_argument("--nba-repo", required=True)
+    ap.add_argument("--repo", required=True, help="the sport's edge-finder checkout (provides archive.reconstruct)")
     ap.add_argument("--accounting", required=True)
     ap.add_argument("--max-age", type=int, default=3600)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    sys.path.insert(0, os.path.join(a.nba_repo, "src"))
-    from nba_edge.archive.reconstruct import reconstruct_at  # noqa: E402
+    cfg = SPORTS[a.sport]
+    sys.path.insert(0, os.path.join(a.repo, "src"))
+    import importlib
+    reconstruct_at = importlib.import_module(cfg["pkg"] + ".archive.reconstruct").reconstruct_at
 
     W = jl(os.path.join(a.accounting, "data", "accounting", "wagers.jsonl"))
     S = {s["source_bet_key"]: s for s in jl(os.path.join(a.accounting, "data", "accounting", "settlements.jsonl"))}
-    sched = load_schedule(a.archive)
+    sched = load_schedule(a.archive, cfg, a.sport)
     boards, board_err = {}, defaultdict(int)
     obs, why = [], defaultdict(int)
     for w in W:
@@ -68,8 +83,8 @@ def main():
         m = EVENT_RE.match(t)
         start = close = None
         if m:
-            yy, mon, dd, away, home = m.groups()
-            g = sched.get((f"20{yy}-{MONTHS[mon]:02d}-{dd}", away, home))
+            yy, mon, dd, teams = m.groups()
+            g = sched.get((f"20{yy}-{MONTHS[mon]:02d}-{dd}", teams))
             if g:
                 start = ts(g["start_time_utc"])
                 if g.get("actual_tip_utc"):
@@ -103,11 +118,11 @@ def main():
             gross, net = C.D(s["gross_return"]), C.D(s["net_profit_loss"])
         obs.append(H.Obs(wager_id=w["wager_id"], ticker=t, side=w["side"], contracts=C.D(w["contracts"]),
                          price=C.D(w["execution_price"]), fees=C.D(w["fees_paid"]), stake=C.D(w["stake"]),
-                         game=(m.group(1) + m.group(2) + m.group(3) + m.group(4) + m.group(5)) if m else "?",
+                         game=(m.group(1) + m.group(2) + m.group(3) + m.group(4)) if m else "?",
                          family=t.split("-")[0], start=start, close=close, entry_eligible=pregame,
                          gross_return=gross, net_recorded=net))
-    res = H.summarize(obs, max_close_age_seconds=a.max_age, label="NBA real wagers 2026 (owner-placed, router fills)")
-    res["close_source"] = "nba_edge.archive.reconstruct.reconstruct_at(start-1s): checkpoint+hash-verified deltas"
+    res = H.summarize(obs, max_close_age_seconds=a.max_age, label=f"{cfg['label']} real wagers 2026 (owner-placed, router fills)")
+    res["close_source"] = f"{cfg['pkg']}.archive.reconstruct.reconstruct_at(start-1s): checkpoint+hash-verified deltas"
     res["evidence_gaps"] = dict(sorted(why.items()))
     res["reconstruction_errors"] = dict(sorted(board_err.items()))
     res["distinct_boards_reconstructed"] = sum(1 for v in boards.values() if v is not None)

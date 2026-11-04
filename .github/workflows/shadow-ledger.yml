@@ -43,10 +43,20 @@ jobs:
         run: |
           python3 research/exec_track/shadow_ledger.py --ext shadow_data/extract --ledger shadow_data/nfl_2026.jsonl --games /tmp/games.csv
           python3 research/exec_track/shadow_report.py --ledger shadow_data/nfl_2026.jsonl --out shadow_data/summary.json
-      - name: Publish to shadow-data
+      - name: Validate output (a green job without VALID output is not success)
         run: |
+          python3 research/exec_track/validate_shadow_output.py --ledger shadow_data/nfl_2026.jsonl --state shadow_data/extract/state.json \
+            --health shadow_data/health.json --runs shadow_data/runs.jsonl --append-run
+      - name: Publish to shadow-data (identity set INSIDE the publish repo; every failure is fatal; push is confirmed)
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/pub && mkdir /tmp/pub && cp -r shadow_data/. /tmp/pub/ && cd /tmp/pub
+          git init -q . && git checkout -q -b shadow-data
           git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
-          rm -rf /tmp/pub && mkdir /tmp/pub && cp -r shadow_data/. /tmp/pub/ && cd /tmp/pub && git init -q . && git checkout -q -b shadow-data
-          git add -A && git commit -q -m "shadow ledger $(date -u +%FT%TZ)" || exit 0
+          git add -A
+          git commit -q -m "shadow ledger $(date -u +%FT%TZ)"
           git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
           git push -q --force origin shadow-data
+          LOCAL="$(git rev-parse HEAD)"; REMOTE="$(git ls-remote origin refs/heads/shadow-data | cut -f1)"
+          [ "${LOCAL}" = "${REMOTE}" ] || { echo "::error::push to shadow-data not confirmed (${LOCAL} vs ${REMOTE})"; exit 1; }
+          echo "published shadow-data ${LOCAL}"

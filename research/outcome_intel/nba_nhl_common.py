@@ -321,7 +321,7 @@ def run_cell(rows, **kw):
 
 def classify(res, holm_p, min_holdout_games=30, alpha=0.05, n_tested=None, min_promising_games=20):
     """Status rule (fixed in advance):
-    UNDERPOWERED (too little train/holdout) -> INCONCLUSIVE_UNDERPOWERED;
+    UNDERPOWERED (too little train/holdout) -> INCONCLUSIVE_UNDERPOWERED; CI above 0 while the cell's own shuffled negative control also shows a gain -> INVALID_EVIDENCE;
     VALIDATED_IMPROVEMENT  = Holm p <= alpha AND CI lower bound > 0 AND holdout games >= min_holdout_games AND positive control detected AND negative control not significant;
     PROMISING_INSUFFICIENT = CI lower bound > 0 (uncorrected) but not validated;
     NO_DEMONSTRATED_IMPROVEMENT = enough holdout games and CI upper bound <= 0.002 logloss (can exclude a gain larger than that) OR point estimate <= 0 with
@@ -336,6 +336,9 @@ def classify(res, holm_p, min_holdout_games=30, alpha=0.05, n_tested=None, min_p
     nc_ok = not (nc and nc["lo"] > 0)
     if holm_p is not None and holm_p <= alpha and g["lo"] > 0 and res["holdout_games"] >= min_holdout_games and pc_ok and nc_ok:
         return "VALIDATED_IMPROVEMENT", "Holm-adjusted p<=0.05, game-cluster CI above 0, controls behave"
+    if g["lo"] > 0 and not nc_ok:
+        return "INVALID_EVIDENCE", (f"uncorrected CI [{g['lo']:.4f},{g['hi']:.4f}] is above 0 but the game-shuffled negative control ALSO shows a spurious gain in this cell "
+                                    f"({nc['mean']:.4f}, CI [{nc['lo']:.4f},{nc['hi']:.4f}]), so the interval cannot be trusted at this sample size")
     if g["lo"] > 0 and g["mean"] < MATERIAL_GAIN:
         return "NO_DEMONSTRATED_IMPROVEMENT", (f"uncorrected CI [{g['lo']:.4f},{g['hi']:.4f}] is above 0 but the gain ({g['mean']:.4f} nats) is below the {MATERIAL_GAIN} materiality floor "
                                                f"(Holm p={holm_p if holm_p is None else round(holm_p, 3)}); not a usable improvement")

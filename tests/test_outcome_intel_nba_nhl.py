@@ -332,6 +332,11 @@ class TestClassifyRules(unittest.TestCase):
         st, _ = C.classify(self._res(0.02, 0.01, 0.03, pc_lo=-0.1), 0.001, n_tested=50)
         self.assertEqual(st, "PROMISING_INSUFFICIENT")
 
+    def test_negative_control_gain_invalidates_positive_cell(self):
+        st, why = C.classify(self._res(0.02, 0.01, 0.03, nc_lo=0.002, nc_hi=0.03), 0.01, n_tested=50)
+        self.assertEqual(st, "INVALID_EVIDENCE")
+        self.assertIn("negative control", why)
+
     def test_q_vs_mid_diagnostic(self):
         rows = [dict(game=f"g{i}", t=float(i), mid=0.3 + 0.004 * (i % 100), q=0.3 + 0.004 * (i % 100), y=i % 2) for i in range(400)]
         res = C.run_cell(rows)

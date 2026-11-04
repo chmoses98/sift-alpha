@@ -432,7 +432,7 @@ def main():
 
     out_cells = []
     for src in srcs:
-        fams_src = sorted({k[1] for k in cell_rows if k[0] == src} | ({f for f in fams if (src in ("SIFT_V1", "SIFT_V2") and f in GAME_FAMS) or (src == "PLAYER_SIM_V1" and f in PLAYER_FAMS) or (src.startswith("OA:") and f == "game_winner") or (src == "SPORTSBOOK" and f == "game_winner")}))
+        fams_src = sorted({k[1] for k in cell_rows if k[0] == src and not k[1].startswith("ALL_MODELLED")} | ({f for f in fams if (src in ("SIFT_V1", "SIFT_V2") and f in GAME_FAMS) or (src == "PLAYER_SIM_V1" and f in PLAYER_FAMS) or (src.startswith("OA:") and f == "game_winner") or (src == "SPORTSBOOK" and f == "game_winner")}))
         for fam in fams_src:
             for lab, tgt, lo, hi in HZ:
                 k = (src, fam, lab)

@@ -8,6 +8,7 @@ import { FoundationDashboard } from "./foundation-dashboard.jsx";
 import { ClvDashboard } from "./clv-dashboard.jsx";
 import { ExecutionDashboard } from "./execution-dashboard.jsx";
 import { LiveEvidence } from "./live-evidence.jsx";
+import { CollectorsStatus } from "./collectors-status.jsx";
 import { VerificationDesk } from "./verification-desk.jsx";
 import "./styles.css";
 
@@ -207,6 +208,7 @@ function App() {
       <FoundationDashboard />
       <ClvDashboard />
       <ExecutionDashboard />
+      <CollectorsStatus />
       <LiveEvidence />
       <section className="workspace" aria-label="Research workbench">
         <aside className="library" aria-label="Find a study">

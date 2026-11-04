@@ -358,6 +358,7 @@ def build():
     static = _j(OUT / "model_use_static.json")["inputs"] if (OUT / "model_use_static.json").exists() else {}
     outs = _j(OUT / "projection_outputs.json") if (OUT / "projection_outputs.json").exists() else {}
     nbaev = _j(OUT / "NBA_forecast_eval.json") if (OUT / "NBA_forecast_eval.json").exists() else {}
+    nfltot = _j(OUT / "NFL_totals_incremental.json") if (OUT / "NFL_totals_incremental.json").exists() else {}
     paths = _j(OUT / "pricing_paths.json")["families"] if (OUT / "pricing_paths.json").exists() else {}
     vis = {}
     for sp, d in outs.items():
@@ -394,6 +395,11 @@ def build():
             proj = dict(proj, independent_evaluation={"ref": "verification/NBA_forecast_eval.json", "n_paired": pv["n"], "verdict": pv["verdict"], "mae_improvement_mean": pv["mae_improvement_mean"], "ci_bonferroni": pv["ci_bonferroni"], "baseline": "existing (incumbent) model; NO market-price baseline"})
         elif ev:
             proj = dict(proj, independent_evaluation={"ref": "verification/NBA_forecast_eval.json", "n_paired": 0, "verdict": "NO_BASELINE", "baseline": "none archived for this family"})
+        if nfltot and key == nfltot.get("family"):
+            gv = [g["verdict"] for g in nfltot["groups"].values()]
+            proj = dict(proj, independent_evaluation={"ref": "verification/NFL_totals_incremental.json", "n_paired": nfltot["n_test_games"],
+                                                      "verdict": "INCREMENTAL_GAIN_VALIDATED" if "VALIDATED_INCREMENTAL" in gv else "NO_INCREMENTAL_GAIN_VS_MARKET",
+                                                      "baseline": "market line (near-close consensus, not point-in-time); NO Kalshi price baseline; game totals only"})
         orientation = proj.get("settles_on") if proj["state"] == "SPEC_ONLY" else (evidence.get("orientation") or {}).get(key)
         rows, counts = [], {"E": Counter(), "C": Counter(), "X": Counter()}
         drivers = dict(f.get("drivers", {}))

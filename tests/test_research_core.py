@@ -91,14 +91,50 @@ class Shadow(unittest.TestCase):
         with self.assertRaises(ValueError): S.observed(p, evidence="FILLED", observed_at=datetime(2026, 11, 8, tzinfo=UTC))
         with self.assertRaises(ValueError): S.observed(p, evidence="TAPE_TOUCH", observed_at=datetime(2026, 11, 1, tzinfo=UTC))
 
-    def test_evaluate_bounds(self):
-        p = self._p(); t = datetime(2026, 11, 7, tzinfo=UTC)
+    def test_evaluate_bounds_fee_adjusted(self):
+        p = self._p(qty=10); t = datetime(2026, 11, 7, tzinfo=UTC)
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "l.jsonl")
             S.append(f, p); S.append(f, S.observed(p, evidence="TAPE_TOUCH", observed_at=t))
             S.append(f, S.observed(p, evidence="TAPE_FILL_BOUND_UP", observed_at=t)); S.append(f, S.settled(p, win=1, settled_at=t))
             r = S.evaluate(f)["by_action"]["LIMIT"]
-            self.assertEqual((r["touched"], r["fill_up"], r["fill_lo"]), (1, 1, 0)); self.assertAlmostEqual(r["pnl_up_cents"], 50.0); self.assertEqual(r["pnl_lo_cents"], 0.0)
+            self.assertEqual((r["touched"], r["fill_up"], r["fill_lo"], r["fill_unresolved"]), (1, 1, 0, 1))
+            # 10 contracts at 50c, win: gross 500c; maker M25 fee = ceil(0.0175*10*.25*100)=5c ; M0 = 0 ; M100 = ceil(17.5)=18c
+            self.assertAlmostEqual(r["net_pnl_cents"]["M25"]["best"], 495.0); self.assertEqual(r["net_pnl_cents"]["M25"]["worst"], 0.0)
+            self.assertAlmostEqual(r["net_pnl_cents"]["M0"]["best"], 500.0); self.assertAlmostEqual(r["net_pnl_cents"]["M100"]["best"], 482.0)
+
+    def test_loss_bounds_are_ordered_correctly(self):
+        # a LOSING contract: the larger fill is the WORSE P&L; v1 reported it as the better ('pnl_up') result
+        p = self._p(qty=10); t = datetime(2026, 11, 7, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "l.jsonl")
+            S.append(f, p); S.append(f, S.observed(p, evidence="TAPE_FILL_BOUND_UP", observed_at=t)); S.append(f, S.settled(p, win=0, settled_at=t))
+            r = S.evaluate(f)["by_action"]["LIMIT"]["net_pnl_cents"]["M25"]
+            self.assertAlmostEqual(r["worst"], -505.0); self.assertEqual(r["best"], 0.0)
+
+    def test_buy_now_wait_and_fallback_are_evaluated(self):
+        t = datetime(2026, 11, 7, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "l.jsonl")
+            bn = self._p(action="BUY_NOW", limit=None, qty=10, horizon="b"); wt = self._p(action="WAIT", limit=None, qty=10, horizon="w")
+            fb = self._p(action="LIMIT", qty=10, fallback="TAKE_AT_CLOSE", horizon="f")
+            for x in (bn, wt, fb):
+                S.append(f, x); S.append(f, S.settled(x, win=1, settled_at=t, close_bid=0.50, close_ask=0.54))
+            r = S.evaluate(f)["by_action"]
+            # BUY_NOW 10 @52c taker fee ceil(0.07*10*.52*.48*100)=18c -> 480-18 ; WAIT 10 @54c fee ceil(17.388)=18 -> 460-18
+            self.assertAlmostEqual(r["BUY_NOW"]["net_pnl_cents"]["M25"]["best"], 462.0); self.assertAlmostEqual(r["WAIT"]["net_pnl_cents"]["M25"]["best"], 442.0)
+            # fallback with zero fill evidence = full take at the close ask (equal exposure)
+            self.assertAlmostEqual(r["LIMIT"]["net_pnl_cents"]["M25"]["best"], 442.0); self.assertEqual(r["LIMIT"]["exposure_contracts_lo"], 0.0)
+
+    def test_missing_close_is_counted_not_zeroed(self):
+        t = datetime(2026, 11, 7, tzinfo=UTC); wt = self._p(action="WAIT", limit=None, qty=10)
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "l.jsonl"); S.append(f, wt); S.append(f, S.settled(wt, win=1, settled_at=t))
+            r = S.evaluate(f)["by_action"]["WAIT"]; self.assertEqual((r["unevaluable_no_close"], r["settled"]), (1, 0))
+
+    def test_evidence_after_kickoff_rejected(self):
+        p = self._p()
+        with self.assertRaises(ValueError): S.observed(p, evidence="TAPE_FILL_BOUND_UP", observed_at=datetime(2026, 11, 8, 19, tzinfo=UTC))
 
 
 if __name__ == "__main__":

@@ -39,6 +39,8 @@ class Obs:
     gross_return: Optional[Decimal] = None
     net_recorded: Optional[Decimal] = None   # as filed by the producing repo (may carry the v1 double fee)
     recommendation_linked: bool = False      # a verified recommendation -> order join exists
+    executed_at: Optional[datetime] = None   # first fill time (entry timing), when the ledger has it
+    book: Optional[object] = None            # sift_clv.executable.Book of the CLOSING depth, when an archive has one
 
 
 def money_identity(o: Obs) -> str:

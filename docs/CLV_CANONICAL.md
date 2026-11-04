@@ -25,7 +25,7 @@ Aggregates of hypothetical model selections only are committed under `reports/cl
 |---|---|---|
 | `scripts/recalc_nfl_real_wagers.py` | NFL real wagers | canonical closes (`market-data` shadow/v2/closes), multiple roots |
 | `scripts/recalc_cfb_real_wagers.py` | CFB real wagers | `cfb_evidence_join` closing proxy (<= 3600 s, pregame entries only) |
-| `scripts/recalc_archive_real_wagers.py --sport nba|nhl` | NBA / NHL real wagers | `reconstruct_at(tip-1s)` over the hash-verified checkpoint+delta archive |
+| `scripts/recalc_archive_real_wagers.py --sport nba or nhl` | NBA / NHL real wagers | `reconstruct_at(tip-1s)` over the hash-verified checkpoint+delta archive |
 | `scripts/recalc_nfl_shadow_clv.py` | NFL hypothetical selections | clv-2.0.0 records, gated and de-duplicated |
 | `scripts/build_clv_public_summary.py` | all | assembles `reports/clv_recalc/clv_public_summary_*.json` (aggregates only) |
 

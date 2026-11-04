@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import http.client
 import json
+import os
+import time
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from . import hitter_archive_gate as gate
@@ -25,20 +29,66 @@ MAX_TOTAL_BYTES = 9200000
 FAMILIES = {"hitter_hits", "hitter_total_bases", "hitter_hits_runs_rbis", "hitter_rbis"}
 
 
-def fetch_pinned(date):
-    """Exactly two public, revision-pinned reads; fail closed on redirects/size."""
+CACHE_ENV = "SIFT_PIN_CACHE"          # optional directory; entries are keyed by git blob id and re-verified on every read
+ATTEMPTS = 4
+BACKOFF_SECONDS = (2, 4, 8)
+TIMEOUT_SECONDS = 60
+
+
+def _verified(raw, sha, size):
+    return len(raw) == size and gate.git_hash("blob", raw) == sha
+
+
+def _cache_path(sha):
+    d = os.environ.get(CACHE_ENV)
+    return Path(d) / f"{sha}.blob" if d else None
+
+
+def fetch_pinned(date, opener=urlopen, sleep=time.sleep):
+    """Exactly two public, revision-pinned reads; fail closed on redirects/size/hash.
+
+    Network failures are retried a bounded number of times. A cached copy is trusted ONLY if it passes the same
+    size + git-blob-hash check as a fresh download (a corrupt or substituted cache entry is ignored, never accepted).
+    A hash/size/redirect mismatch is a hard failure and is NOT retried: the assertions are unchanged."""
     if date not in PINS:
         raise ValueError("Unapproved historical date")
     sha, size = PINS[date]
+    cp = _cache_path(sha)
+    if cp is not None:
+        try:
+            raw = cp.read_bytes()
+            if _verified(raw, sha, size):
+                return raw
+        except OSError:
+            pass                          # missing/unreadable/directory cache entry: ignore, fetch fresh
     url = (f"https://raw.githubusercontent.com/{rr.REPO}/{rr.COMMIT}/"
            f"data/edgelab/hitter_projection_snapshots/{date}.jsonl")
-    with urlopen(Request(url, headers={"User-Agent": "SIFT-Alpha-overlap-audit/1"}), timeout=25) as response:
-        if response.geturl() != url:
-            raise ValueError("Redirected historical source")
-        raw = response.read(size + 1)
-    if len(raw) != size or gate.git_hash("blob", raw) != sha:
-        raise ValueError("Historical snapshot size/hash mismatch: " + date)
-    return raw
+    last = None
+    for attempt in range(ATTEMPTS):
+        try:
+            with opener(Request(url, headers={"User-Agent": "SIFT-Alpha-overlap-audit/1"}), timeout=TIMEOUT_SECONDS) as response:
+                if response.geturl() != url:
+                    raise ValueError("Redirected historical source")
+                raw = response.read(size + 1)
+        except ValueError:
+            raise
+        except (OSError, TimeoutError, http.client.HTTPException) as exc:   # URLError/socket timeout are OSError; IncompleteRead is HTTPException
+            if isinstance(exc, HTTPError) and 400 <= exc.code < 500 and exc.code not in (408, 425, 429):
+                raise ConnectionError(f"pinned source rejected ({exc.code}): {date}") from exc      # permanent client error: do not retry
+            last = exc
+            if attempt < ATTEMPTS - 1:
+                sleep(BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)])
+            continue
+        if not _verified(raw, sha, size):
+            raise ValueError("Historical snapshot size/hash mismatch: " + date)
+        if cp is not None:
+            try:                              # a failed cache write must never fail an already-verified fetch
+                cp.parent.mkdir(parents=True, exist_ok=True)
+                tmp = cp.with_suffix(f".{os.getpid()}.tmp"); tmp.write_bytes(raw); tmp.replace(cp)
+            except OSError:
+                pass
+        return raw
+    raise ConnectionError(f"pinned source unreachable after {ATTEMPTS} attempts: {date}: {last!r}")
 
 
 def _clock(row, name):

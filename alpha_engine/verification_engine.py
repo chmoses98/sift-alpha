@@ -283,6 +283,20 @@ def attach_output(proj, fkey, f, outs):
     return proj
 
 
+def historical_stage(proj):
+    ie = proj.get("independent_evaluation")
+    if ie and ie.get("verdict") == "CHALLENGER_BETTER":
+        return {"state": "PASS", "why": f"independent chronological evaluation of ARCHIVED forecasts vs ESPN final box scores: challenger beats the incumbent model (n={ie['n_paired']} paired player-games, Bonferroni CI {ie['ci_bonferroni']}, positive in both halves and leave-one-player-out); NO market-price baseline, so this is predictive accuracy, not edge"}
+    if ie:
+        return {"state": "PARTIAL", "why": f"independent evaluation exists but verdict {ie['verdict'].lower()}: baseline {ie['baseline']}"}
+    if proj["state"] == "RESEARCH_WALK_FORWARD":
+        v = proj.get("verdict")
+        return {"state": "PARTIAL" if v == "SUPPORTED" else "FAIL" if v == "NOT_SUPPORTED" else "UNKNOWN", "why": f"{v} n={proj.get('n_eval')}; no market-price baseline"}
+    if proj["state"].startswith("REPO_REPORTED"):
+        return {"state": "PARTIAL", "why": "repo-reported, not independently reproduced"}
+    return {"state": "UNKNOWN", "why": "no historical evaluation recorded"}
+
+
 def outcomes_stage(fkey, f, inputs, evidence):
     """PASS needs a family-specific, evidence-linked outcome join (ticker -> settled value -> period/void handling) recorded in
     family_evidence.json['outcome_joins'] AND verified family rules. Sport-level settlement archives alone give at most PARTIAL."""
@@ -333,6 +347,7 @@ def build():
     mi_by_id = {f["id"]: f for f in master["families"]}
     static = _j(OUT / "model_use_static.json")["inputs"] if (OUT / "model_use_static.json").exists() else {}
     outs = _j(OUT / "projection_outputs.json") if (OUT / "projection_outputs.json").exists() else {}
+    nbaev = _j(OUT / "NBA_forecast_eval.json") if (OUT / "NBA_forecast_eval.json").exists() else {}
     paths = _j(OUT / "pricing_paths.json")["families"] if (OUT / "pricing_paths.json").exists() else {}
     vis = {}
     for sp, d in outs.items():
@@ -363,6 +378,12 @@ def build():
                     validated.add(ABLATION_INPUT[var])
         proj = projection_evidence(key, f, mv, intel, audits)
         proj = attach_output(proj, key, f, outs)
+        ev = (nbaev.get("families") or {}).get(MV_MAP.get("NBA", {}).get(f["native_family"], "")) if s == "NBA" else None
+        if ev and ev.get("paired_vs_incumbent"):
+            pv = ev["paired_vs_incumbent"]
+            proj = dict(proj, independent_evaluation={"ref": "verification/NBA_forecast_eval.json", "n_paired": pv["n"], "verdict": pv["verdict"], "mae_improvement_mean": pv["mae_improvement_mean"], "ci_bonferroni": pv["ci_bonferroni"], "baseline": "existing (incumbent) model; NO market-price baseline"})
+        elif ev:
+            proj = dict(proj, independent_evaluation={"ref": "verification/NBA_forecast_eval.json", "n_paired": 0, "verdict": "NO_BASELINE", "baseline": "none archived for this family"})
         orientation = proj.get("settles_on") if proj["state"] == "SPEC_ONLY" else (evidence.get("orientation") or {}).get(key)
         rows, counts = [], {"E": Counter(), "C": Counter(), "X": Counter()}
         drivers = dict(f.get("drivers", {}))
@@ -385,8 +406,7 @@ def build():
         fam_stage = {
             "market_mapping": mapping,
             "projection": projection_stage(proj, mapping["state"]),
-            "historical_eval": ({"state": "PARTIAL" if proj.get("verdict") == "SUPPORTED" else "FAIL" if proj.get("verdict") == "NOT_SUPPORTED" else "UNKNOWN", "why": f"{proj.get('verdict')} n={proj.get('n_eval')}; no market-price baseline"} if proj["state"] == "RESEARCH_WALK_FORWARD" else
-                                {"state": "PARTIAL" if proj["state"].startswith("REPO_REPORTED") else "UNKNOWN", "why": "repo-reported, not independently reproduced" if proj["state"].startswith("REPO_REPORTED") else "no historical evaluation recorded"}),
+            "historical_eval": historical_stage(proj),
             "outcomes": outcomes_stage(key, f, inputs, evidence),
         }
         ess = [r for r in rows if r["tier"] == "E"]

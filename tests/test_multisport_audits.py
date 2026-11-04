@@ -181,3 +181,58 @@ class FeatureAblation(unittest.TestCase):
         y = [3 * x[0] + 1 for x in X]
         beta, mu, xbar = fa.ridge_fit(X, y, lam=0.01)
         self.assertAlmostEqual(beta[0], 3, delta=0.1)
+
+
+class NbaEval(unittest.TestCase):
+    def fc(self, eid, gid, fam, role, mean, arch, start="2026-10-20T19:00:00Z", probs=None, lo=0):
+        return {"entity_id": eid, "game_id": gid, "family": fam, "model_role": role, "mean": mean, "archived_utc": arch, "game_start_utc": start,
+                "probs": probs if probs is not None else [], "lo": lo, "participation": {}}
+
+    def build(self, n=300, noise=False):
+        import random
+        from alpha_engine import nba_forecast_eval as ev
+        rng = random.Random(5)
+        fc, oc = {}, {}
+        for i in range(n):
+            e, g, day = f"p{i % 40}", f"g{i}", f"2026-10-{1 + i // 20:02d}"
+            y = rng.choice([8, 12, 16, 20, 24])
+            pm = [1 / 40] * 40
+            r = self.fc(e, g, "points", "challenger", y + (rng.uniform(-6, 6) if noise else rng.uniform(-0.5, 0.5)), "2026-10-20T10:00:00Z", probs=pm)
+            inc = self.fc(e, g, "points", "incumbent", y + (rng.uniform(-6, 6) if noise else rng.uniform(-5, 5)), "2026-10-20T10:00:00Z")
+            fc[(e, g, "points", "challenger")] = r; fc[(e, g, "points", "incumbent")] = inc
+            oc[(e, g, "points")] = {"actual": float(y), "participated": True, "game_date": day, "final": True, "in_box": True}
+        return ev, fc, oc
+
+    def test_real_gain_detected_and_noise_not(self):
+        ev, fc, oc = self.build()
+        self.assertEqual(ev.evaluate(fc, oc)["families"]["points"]["paired_vs_incumbent"]["verdict"], "CHALLENGER_BETTER")
+        ev, fc, oc = self.build(noise=True)
+        self.assertNotEqual(ev.evaluate(fc, oc)["families"]["points"]["paired_vs_incumbent"]["verdict"], "CHALLENGER_BETTER")
+
+    def test_post_tip_forecast_is_never_used(self):
+        import gzip
+        import os
+        from alpha_engine import nba_forecast_eval as ev
+        d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
+        os.makedirs(f"{d.name}/forecasts/nba/2026-10-20"); os.makedirs(f"{d.name}/outcomes/nba/2026-10-20")
+        pre = self.fc("p", "g", "points", "challenger", 10, "2026-10-20T10:00:00Z", probs=[0.5, 0.5])
+        post = self.fc("p", "g", "points", "challenger", 99, "2026-10-20T21:00:00Z", probs=[0.5, 0.5])
+        with gzip.open(f"{d.name}/forecasts/nba/2026-10-20/a.jsonl.gz", "wt") as f:
+            f.write(json.dumps(pre) + "\n" + json.dumps(post) + "\n")
+        with gzip.open(f"{d.name}/outcomes/nba/2026-10-20/o.jsonl.gz", "wt") as f:
+            f.write(json.dumps({"entity_id": "p", "game_id": "g", "family": "points", "actual": 10, "participated": True, "final": True, "in_box": True, "game_date": "2026-10-20"}) + "\n")
+        fc, oc = ev.load(d.name)
+        self.assertEqual(fc[("p", "g", "points", "challenger")]["mean"], 10)
+
+    def test_crps_and_interval(self):
+        from alpha_engine import nba_forecast_eval as ev
+        self.assertAlmostEqual(ev.crps([0, 1.0], 0, 1), 0.0)
+        self.assertGreater(ev.crps([1.0, 0], 0, 1), 0.5)
+        self.assertTrue(ev.interval80([0.1, 0.8, 0.1], 0, 1))
+
+    def test_committed_eval_has_no_market_claim(self):
+        d = json.loads((OUT / "NBA_forecast_eval.json").read_text())
+        self.assertIn("NOT_EVALUATED", d["price_baseline"])
+        txt = json.dumps(d)
+        for bad in ("entity_name", "espn:", "player_id"):
+            self.assertNotIn(bad, txt)

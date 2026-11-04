@@ -3,6 +3,7 @@ import summary from "../research/audit/verification/summary.json";
 import famDoc from "../research/audit/verification/families.json";
 import inpDoc from "../research/audit/verification/inputs.json";
 import tasksDoc from "../research/audit/verification/repair_tasks.json";
+import outs from "../research/audit/verification/projection_outputs.json";
 import chain from "../research/audit/verification/CFB_quarter_total_chain.json";
 import ablation from "../research/audit/verification/CFB_quarter_total_ablation.json";
 import {MarketIntel, intelFor} from "./market-intel.jsx";
@@ -38,6 +39,12 @@ function Overview({sport, onSport}) {
       })}
     </div>
     <p className="vd-legend">{STATUS_ORDER.map(s => <Chip key={s} s={s}/>)}</p>
+    <details className="vd-recon"><summary>Published projection audits (what the sport repos actually publish)</summary>
+      <ul className="vd-fine">
+        <li><b>NBA</b> {outs.NBA.n_players.toLocaleString()} player projections, model {outs.NBA.source.model.version}, data as of {outs.NBA.data_asof_utc}; adjustments seen: {Object.entries(outs.NBA.adjustment_counts).map(([k, v]) => `${k} ${v}`).join(", ")}; gate {Object.entries(outs.NBA.gate_status).map(([k, v]) => `${k} ${v}`).join(", ")}; {outs.NBA.participation.implicit_not_listed.toLocaleString()} players treated as available only because they were not listed; oldest participation report {Math.round(outs.NBA.participation.max_report_age_minutes / 60)}h; starter flag visible: {String(outs.NBA.input_visibility["nba.starters_pit"].visible_in_output)}.</li>
+        <li><b>CBB</b> {outs.CBB.n_games} game projections ({outs.CBB.source.model_dir}); market price joined {(outs.CBB.market_joined_share * 100).toFixed(0)}%; matchup factors populated {(outs.CBB.matchup_factors_populated_share * 100).toFixed(0)}%; no first-half, injury or starter field in the output.</li>
+        <li><b>NFL</b> {outs.NFL.n_forecasts} latest forecasts, families: {Object.keys(outs.NFL.families).join(", ")}; game-total/quarter/half distribution published: {String(outs.NFL.has_game_total_or_period_family)}.</li>
+      </ul><p className="vd-fine">{outs.NBA.limits}</p></details>
     <details className="vd-recon"><summary>Denominator reconciliation (recounted from raw artifacts; nothing deleted)</summary>
       <ul>
         <li>{rec.families_master_inventory} discovered families; {rec.families_market_specs} spec families (+{rec.spec_only_not_in_master_inventory.length} unobserved blueprints: {rec.spec_only_not_in_master_inventory.join(", ")}).</li>
@@ -59,6 +66,8 @@ function InputDetail({sport, input, famKey}) {
     <p className="vd-fine"><b>Recorded note:</b> {rec.note || "—"}</p>
     <p className="vd-fine"><b>Evidence:</b> {rec.evidence.length ? rec.evidence.join(" · ") : "none recorded"}</p>
     <p className="vd-fine"><b>Used by {users.length} families</b> ({users.filter(u => u.tier === "E").length} essential): {users.slice(0, 12).map(u => u.f.family + "(" + u.tier + ")").join(", ")}{users.length > 12 ? "…" : ""}</p>
+    {rec.static_use && <p className="vd-fine"><b>Static code evidence</b> ({rec.static_use.repo}@{rec.static_use.commit.slice(0, 7)}): {rec.static_use.collector_files} collector file(s), {rec.static_use.model_read_files} model file(s) read it, {rec.static_use.test_files} test file(s). {(rec.static_use.refs.model || []).slice(0, 3).map(r => `${r.file}:${r.lines[0]}`).join(" · ")} <em>(identifier-level AST; not an executed lineage)</em></p>}
+    {rec.output_visibility && <p className="vd-fine"><b>Published-output visibility:</b> {rec.output_visibility.visible_in_output ? "visible" : "not visible (absence is not proof of non-use)"} {rec.output_visibility.field ? `· field ${rec.output_visibility.field}` : ""} {(rec.output_visibility.visible_leaves || []).slice(0, 3).join(", ")}</p>}
     {task && <p className="vd-fine vd-task"><b>Open repair task:</b> {task.kind.replaceAll("_", " ").toLowerCase()} · {task.n_families} families / {task.markets_affected.toLocaleString()} markets affected · failing stage <b>{task.defect.stage}</b>: {task.defect.why}</p>}
   </div>;
 }
@@ -95,7 +104,7 @@ function FamilyView({famKey}) {
     <h4>{f.sport} · {f.family} <small>{(f.markets_now || 0).toLocaleString()} markets · spec {nice(f.spec_status)}</small></h4>
     <p className="vd-stages">{Object.entries(f.stages).map(([k, v]) => <Stage key={k} name={k.replace("_", " ")} st={v}/>)}</p>
     <ul className="vd-fine">{Object.entries(f.stages).map(([k, v]) => <li key={k}><b>{k.replace("_", " ")}</b> · {v.state} · {v.why}</li>)}</ul>
-    <p className="vd-fine"><b>Projection:</b> {nice(f.projection.state)}{f.projection.reported_readiness ? ` (repo-reported ${f.projection.reported_readiness}; not independently reproduced)` : ""}{f.projection.verdict ? ` · walk-forward verdict ${nice(f.projection.verdict)} on ${f.projection.n_eval} games` : ""}{f.projection.state === "NONE_FOUND" ? " — no market-specific projection or validation evidence found, so none is displayed." : ""}</p>
+    <p className="vd-fine"><b>Projection:</b> {nice(f.projection.state)}{f.projection.reported_readiness ? ` (repo-reported ${f.projection.reported_readiness}; not independently reproduced)` : ""}{f.projection.verdict ? ` · walk-forward verdict ${nice(f.projection.verdict)} on ${f.projection.n_eval} games` : ""}{f.projection.published ? ` · published output ${f.projection.output_ref} as of ${f.projection.fresh_asof}` : ""}{f.projection.state === "NONE_FOUND" ? " — no market-specific projection or validation evidence found, so none is displayed." : ""}</p>
     {["E", "C", "X"].map(t => { const rows = f.inputs.filter(r => r.tier === t); return rows.length ? <div key={t}>
       <h5>{tiers[t]} · {rows.length} inputs</h5>
       <table className="vd-table"><thead><tr><th>Input</th><th>Status</th><th>First failing stage</th><th>Stage chain</th></tr></thead><tbody>

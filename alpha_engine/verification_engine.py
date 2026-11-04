@@ -86,7 +86,7 @@ def input_status(entry: dict, validated: bool = False) -> str:
     return "UNKNOWN"          # CODE_REFERENCE_ONLY, UNKNOWN, DERIVED (parents unaudited), NO_REFERENCE_FOUND
 
 
-def input_stages(entry: dict, lineage: dict | None = None) -> dict:
+def input_stages(entry: dict, lineage: dict | None = None, static: dict | None = None, visible: dict | None = None) -> dict:
     """lineage: verified source->feature->model records for this (sport,input) from family_evidence.json (see _lineage_state)."""
     vc, col, mu = entry.get("verification_class", "UNKNOWN"), entry.get("collection", "UNKNOWN"), entry.get("model_use", "UNKNOWN")
     code = entry.get("code") or {}
@@ -107,9 +107,15 @@ def input_stages(entry: dict, lineage: dict | None = None) -> dict:
     st["timestamp"] = S("PASS", "availability timestamps verified") if vc == "VERIFIED_COLLECTION" else (S("FAIL", "collected but point-in-time availability NOT verified") if vc in ("COLLECTED_UNVERIFIED_PIT", "STALE_OR_PARTIAL") else (S("FAIL", "nothing archived to timestamp") if vc == "MISSING" else S("UNKNOWN", "not assessed")))
     mf = code.get("model_files", 0)
     st["transform"] = _lineage_state(lineage, mf)
-    st["consumption"] = (S("PASS", "model reads it (repo-reported)") if mu == "USED" else S("PARTIAL", "model reads it partially") if mu == "USED_PARTIAL" else
+    if st["transform"]["state"] == "UNKNOWN" and static and static.get("static_consumption_candidate"):
+        st["transform"] = {"state": "PARTIAL", "why": f"STATIC AST evidence only (not an executed lineage): {static['collector_files']} collector and {static['model_read_files']} model file(s) reference it in {static['repo']}@{static['commit'][:7]}"}
+    st["consumption"] = (S("PARTIAL", "recorded as USED by the sport repo (repo-reported; not independently verified)") if mu == "USED" else S("PARTIAL", "model reads it partially") if mu == "USED_PARTIAL" else
                          S("PARTIAL", "research-only use") if mu == "RESEARCH_ONLY" else S("FAIL", "collected but model does not consume it") if mu == "COLLECTED_UNUSED" else
                          S("FAIL", "not collected, so not consumable") if mu == "NOT_COLLECTED" else S("UNKNOWN", "model use not established"))
+    if mu == "USED" and visible and visible.get("visible_in_output"):
+        st["consumption"] = {"state": "PASS", "why": f"recorded USED and input-derived field(s) populated/varying in the PUBLISHED projection ({', '.join(visible.get('visible_leaves') or [visible.get('field', '')])})"}
+    elif st["consumption"]["state"] == "UNKNOWN" and visible and visible.get("visible_in_output"):
+        st["consumption"] = {"state": "PARTIAL", "why": f"input-derived field(s) populated and varying in the PUBLISHED projection ({', '.join(visible.get('visible_leaves') or [visible.get('field', '')])}); model not re-run, so correctness/causality unproven"}
     return st
 
 
@@ -234,6 +240,27 @@ def market_mapping_stage(fkey, f, mi, inputs, orientation):
     return {"state": state, "why": "identity/rules/orientation all evidenced" if not missing else f"missing evidence: {', '.join(missing)} (rules linked={linked}, verified={verified}, sampled text={text})", "parts": parts}
 
 
+OUTPUT_FAMILIES = {"CBB": {"TOTAL": "projection.total", "GAME_WINNER": "projection.home_win_prob", "SPREAD": "projection.margin", "TEAM_TOTAL": "projection.home_score/away_score"},
+                   "NFL": {"PLAYER_STAT": "forecasts: receiving/rushing/passing player stat distributions"}}
+
+
+def attach_output(proj, fkey, f, outs):
+    """Link a family to an actual PUBLISHED projection output (file + freshness) when one exists. Never sets independently_reproduced."""
+    s, nat = f["sport"], f["native_family"]
+    d = outs.get(s) if isinstance(outs, dict) else None
+    if not isinstance(d, dict):
+        return proj
+    src = d.get("source", {})
+    ref = f"{src.get('repo')}@{str(src.get('commit'))[:7]}:{src.get('path') or src.get('branch')}"
+    if s == "NBA" and nat in MV_MAP["NBA"] and MV_MAP["NBA"][nat] in (d.get("by_family") or {}) or (s == "NBA" and MV_MAP["NBA"].get(nat) == "team_points"):
+        return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NBA"].get(nat)), published=True)
+    if s in OUTPUT_FAMILIES and nat in OUTPUT_FAMILIES[s]:
+        asof = (d.get("generated_range") or [None, None])[1] or d.get("generated_utc")
+        base = proj if proj["state"] != "NONE_FOUND" else {"state": "PUBLISHED_OUTPUT", "independently_reproduced": False, "evidence": None}
+        return dict(base, output_ref=ref, fresh_asof=asof, published=True, output_field=OUTPUT_FAMILIES[s][nat])
+    return proj
+
+
 def outcomes_stage(fkey, f, inputs, evidence):
     """PASS needs a family-specific, evidence-linked outcome join (ticker -> settled value -> period/void handling) recorded in
     family_evidence.json['outcome_joins'] AND verified family rules. Sport-level settlement archives alone give at most PARTIAL."""
@@ -257,6 +284,8 @@ def projection_stage(proj, mapping_state):
     ok = proj.get("independently_reproduced") and proj.get("output_ref") and proj.get("fresh_asof") and mapping_state == "PASS"
     if ok:
         return {"state": "PASS", "why": "reproduced, output present, fresh, mapped"}
+    if proj.get("published"):
+        return {"state": "PARTIAL", "why": f"published output exists ({proj['output_ref']}, as of {proj['fresh_asof']}) but it is not independently reproduced"}
     why = {"NONE_FOUND": "no projection or validation evidence found", "SPEC_ONLY": "audit/spec only; no projection output",
            "RESEARCH_WALK_FORWARD": "independently reproduced research walk-forward only; no production output record or freshness evidence",
            }.get(proj["state"], "repo-reported readiness only: not reproduced, no output/freshness evidence linked here")
@@ -281,14 +310,23 @@ def build():
             ablation[fk] = _j(OUT / fn)
     master_ids = {f["id"] for f in master["families"]}
     mi_by_id = {f["id"]: f for f in master["families"]}
+    static = _j(OUT / "model_use_static.json")["inputs"] if (OUT / "model_use_static.json").exists() else {}
+    outs = _j(OUT / "projection_outputs.json") if (OUT / "projection_outputs.json").exists() else {}
+    vis = {}
+    for sp, d in outs.items():
+        if isinstance(d, dict):
+            for iid, v in (d.get("input_visibility") or {}).items():
+                vis[f"{sp}:{iid}"] = v
     evidence = _j(OUT / "family_evidence.json") if (OUT / "family_evidence.json").exists() else {}
     # ---- input level (sport x input)
     inputs = {}
     for s, v in cs["sports"].items():
         for i, x in v["inputs"].items():
-            st = input_stages(x, (evidence.get("lineage") or {}).get(f"{s}:{i}"))
+            st = input_stages(x, (evidence.get("lineage") or {}).get(f"{s}:{i}"), static.get(f"{s}:{i}"), vis.get(f"{s}:{i}"))
             inputs[f"{s}:{i}"] = {"sport": s, "input": i, "label": x["label"], "status": input_status(x), "collection": x["collection"], "verification_class": x["verification_class"],
-                                  "model_use": x["model_use"], "stages": st, "first_failure": first_failure(st), "derived": x["verification_class"] == "DERIVED", "note": x["note"], "evidence": x["evidence"]}
+                                  "model_use": x["model_use"], "stages": st, "first_failure": first_failure(st), "derived": x["verification_class"] == "DERIVED", "note": x["note"], "evidence": x["evidence"],
+                                  "static_use": ({k: static[f"{s}:{i}"][k] for k in ("repo", "commit", "collector_files", "model_read_files", "test_files", "refs")} if f"{s}:{i}" in static else None),
+                                  "output_visibility": vis.get(f"{s}:{i}")}
     # ---- family level
     fams = {}
     for key, f in specs["families"].items():
@@ -299,6 +337,7 @@ def build():
                 if rederive_ablation_verdict(ablation[key], var) == "ELIGIBLE" and var in ABLATION_INPUT and ablation[key].get("family") == key:
                     validated.add(ABLATION_INPUT[var])
         proj = projection_evidence(key, f, mv, intel, audits)
+        proj = attach_output(proj, key, f, outs)
         orientation = proj.get("settles_on") if proj["state"] == "SPEC_ONLY" else (evidence.get("orientation") or {}).get(key)
         rows, counts = [], {"E": Counter(), "C": Counter(), "X": Counter()}
         drivers = dict(f.get("drivers", {}))

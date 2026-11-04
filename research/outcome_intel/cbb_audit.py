@@ -96,11 +96,10 @@ def load_periods(root):
 def derive_y(row, final, per):
     """Independent outcome from final score / period scores using only the parsed contract semantics. None if not derivable."""
     mt, p, side, k, d = row["mt"], row["per"], row["side"], row["strike"], row["dirn"]
-    if final is None:
-        return None
-    H, A = final
     if p == "FULL":
-        h, a = H, A
+        if final is None:
+            return None
+        h, a = final
     elif p in ("1H", "2H") and per:
         h1, a1 = per["first_half_home"], per["first_half_away"]
         if p == "1H":
@@ -111,9 +110,11 @@ def derive_y(row, final, per):
     else:
         return None
     if mt == "WINNER":
+        if side == "tie":
+            return int(h == a)
         if h == a:
             return None
-        return int((h > a) if side == "home" else (a > h))
+        return int((h > a) if side == "home" else (a > h)) if side in ("home", "away") else None
     if mt == "MARGIN":
         m = (h - a) if side == "home" else (a - h)
         return int(m > k) if d == "greater" else None
@@ -282,6 +283,10 @@ def main():
                  conflicting_kalshi_results=sum(1 for s in sett.values() if len(s["results"]) > 1),
                  conflicting_espn_finals=sum(1 for g, s in sched["final"].items() if len(s) > 1),
                  raw_vs_panel=xchk, projection_archive=proj)
+    dg = collections.Counter(s["gid"] for s in sett.values() if s["y_kalshi"] is not None and s["y_derived"] is not None and s["y_kalshi"] != s["y_derived"])
+    integ["kalshi_vs_derived_disagreement_games"] = dict(n_games=len(dg), n_tickers=sum(dg.values()), games={str(k): v for k, v in dg.items()},
+        diagnosis="all disagreements are in games whose ESPN home/away label is opposite to the panel's subject_side mapping (e.g. neutral-site or ESPN label swap); "
+                  "those tickers are excluded from every test; a mapping swap would also invert the model probability, so this is a panel mapping risk")
     # tip-time agreement: panel game_start vs latest ESPN start_date observed
     tipmis = tipchk = 0
     gtip = {}
@@ -438,8 +443,8 @@ def main():
         settlement_coverage_by_bucket={k: dict(v) for k, v in sorted(sb.items())},
         capture_window_exclusions=dict(pcnt),
         universe_inventory_all_families={"%s|%s" % k: v for k, v in sorted(inv.items())},
-        cells=cells + nomodel,
-        status_counts=dict(collections.Counter(c["status"] for c in cells + nomodel)))
+        cells=C.normalize_cells(cells + nomodel),
+        status_counts=dict(collections.Counter(c["status"] for c in cells + nomodel)), control_summary=C.neg_control_summary(chal))
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump(report, open(a.out, "w"), indent=1, sort_keys=True, default=str)
     print(json.dumps(report["status_counts"]), json.dumps(integ, default=str)[:1500])

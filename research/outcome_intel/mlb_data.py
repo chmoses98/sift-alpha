@@ -212,3 +212,237 @@ def season_split(seasons, train, valid, holdout):
     if train and valid and max(train) >= min(valid) or valid and holdout and max(valid) >= min(holdout) or (not valid and train and holdout and max(train) >= min(holdout)):
         raise ValueError("seasons not chronologically ordered")
     return np.isin(seasons, list(tr)), np.isin(seasons, list(va)), np.isin(seasons, list(ho))
+
+
+# ----------------------------------------------------------------------------- game identity: Kalshi game code -> gamePk
+GC_RE = re.compile(r"^(\d{2}[A-Z]{3}\d{2}\d{4})([A-Z0-9]+?)(?:G(\d))?$")
+
+
+def game_code(ticker):
+    parts = str(ticker).split("-")
+    return parts[1] if len(parts) > 1 else None
+
+
+def build_abbr_map(obs, games):
+    """Kalshi team abbreviation -> MLB team id, learned only from observations that carry a numeric gamePk found in the schedule."""
+    pk = pd.to_numeric(obs["mlbGameId"].where(obs["mlbGameId"].notna(), obs["gameId"]), errors="coerce")
+    k = pd.DataFrame(dict(pk=pk, h=obs["homeTeam"], a=obs["awayTeam"])).dropna().drop_duplicates()
+    gi = games.set_index("gamePk")
+    k = k[k["pk"].isin(gi.index)]
+    ab = {}
+    for pkv, h, a in k.itertuples(index=False):
+        ab.setdefault(h, set()).add(int(gi.loc[pkv, "homeId"]))
+        ab.setdefault(a, set()).add(int(gi.loc[pkv, "awayId"]))
+    return {a: sorted(v)[0] for a, v in ab.items() if len(v) == 1}
+
+
+def gamecode_to_pk(codes, abbr, games):
+    """Resolve 'YYMONDDHHMMAWAYHOME[Gn]' (ET local start) against the schedule. Returns dict code->gamePk for codes that resolve uniquely
+    (doubleheader G1/G2 resolved by gameNumber). Unresolved codes are simply absent (never guessed)."""
+    g = games.copy()
+    st = pd.to_datetime(g["gameDate"], utc=True).dt.tz_convert("America/New_York")
+    g["dkey"] = st.dt.strftime("%y%b%d").str.upper()
+    g["tkey"] = g["dkey"] + st.dt.strftime("%H%M")
+    by_t, by_d = {}, {}
+    for r in g.itertuples():
+        by_t.setdefault((r.tkey, r.awayId, r.homeId), []).append(r.gamePk)
+        by_d.setdefault((r.dkey, r.awayId, r.homeId), []).append((r.gameNumber or 1, r.gamePk))
+    out = {}
+    abl = sorted(abbr, key=len, reverse=True)
+    for gc in set(c for c in codes if c):
+        m = GC_RE.match(gc)
+        if not m:
+            continue
+        tkey, teams, dh = m.group(1), m.group(2), m.group(3)
+        for a in abl:
+            if teams.startswith(a) and teams[len(a):] in abbr:
+                aid, hid = abbr[a], abbr[teams[len(a):]]
+                v = by_t.get((tkey, aid, hid))
+                if v and len(v) == 1:
+                    out[gc] = v[0]
+                elif dh:
+                    w = [pk for n, pk in by_d.get((tkey[:7], aid, hid), []) if int(n) == int(dh)]
+                    if len(w) == 1:
+                        out[gc] = w[0]
+                break
+    return out
+
+
+def attach_gamepk(obs, games):
+    """Adds columns pk (float gamePk or NaN), pk_src in {'row','gamecode_peer','schedule_match',None}. Row-level id first, then any peer row with the
+    same Kalshi game code, then ET-time schedule match."""
+    o = obs.copy()
+    o["pk"] = pd.to_numeric(o["mlbGameId"].where(o["mlbGameId"].notna(), o["gameId"]), errors="coerce")
+    o["gc"] = o["marketTicker"].map(game_code)
+    o["pk_src"] = np.where(o["pk"].notna(), "row", None)
+    peer = o.dropna(subset=["pk"]).groupby("gc")["pk"].first()
+    m = o["pk"].isna()
+    o.loc[m, "pk"] = o.loc[m, "gc"].map(peer)
+    o.loc[m & o["pk"].notna(), "pk_src"] = "gamecode_peer"
+    m = o["pk"].isna()
+    if m.any():
+        ab = build_abbr_map(o, games)
+        res = gamecode_to_pk(o.loc[m, "gc"].unique(), ab, games)
+        o.loc[m, "pk"] = o.loc[m, "gc"].map(res)
+        o.loc[m & o["pk"].notna(), "pk_src"] = "schedule_match"
+    return o
+
+
+# ----------------------------------------------------------------------------- panel: pregame price observations joined to settlement
+SERIES_FAMILY = {  # Kalshi series -> (family key, horizon). Resolved from the series ticker, not the (sometimes None) marketHorizon.
+    "KXMLBGAME": ("moneyline", "FULL"), "KXMLBF3": ("f3_result", "F3"), "KXMLBF5": ("f5_result", "F5"), "KXMLBF7": ("f7_result", "F7"),
+    "KXMLBSPREAD": ("run_line", "FULL"), "KXMLBTOTAL": ("game_total", "FULL"), "KXMLBTEAMTOTAL": ("team_total", "FULL"),
+    "KXMLBF5TOTAL": ("f5_total", "F5"), "KXMLBF3TOTAL": ("f3_total", "F3"), "KXMLBF7TOTAL": ("f7_total", "F7"),
+    "KXMLBF5SPREAD": ("f5_run_line", "F5"), "KXMLBF3SPREAD": ("f3_run_line", "F3"), "KXMLBF7SPREAD": ("f7_run_line", "F7"),
+    "KXMLBRFI": ("nrfi_yrfi", "F1"), "KXMLBKS": ("pitcher_strikeouts", "FULL"), "KXMLBOUTS": ("pitcher_outs", "FULL"),
+    "KXMLBHIT": ("hitter_hits", "FULL"), "KXMLBTB": ("hitter_total_bases", "FULL"), "KXMLBHRR": ("hitter_hits_runs_rbis", "FULL"),
+    "KXMLBRBI": ("hitter_rbis", "FULL"), "KXMLBSB": ("hitter_stolen_bases", "FULL"),
+}
+
+
+def series_of(ticker):
+    return str(ticker).split("-")[0]
+
+
+def family_of(ticker, market_family=None):
+    s = series_of(ticker)
+    if s in SERIES_FAMILY:
+        return SERIES_FAMILY[s][0]
+    return "other:" + (str(market_family) if market_family else s)
+
+
+def ticker_start_utc(gc):
+    m = re.match(r"^(\d{2})([A-Z]{3})(\d{2})(\d{2})(\d{2})", gc or "")
+    if not m:
+        return pd.NaT
+    try:
+        return pd.Timestamp(f"20{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}", tz="America/New_York").tz_convert("UTC")
+    except Exception:
+        return pd.NaT
+
+
+def build_panel(obs, games):
+    """Pregame, two-sided-quote observations only. t_first_pitch = MIN over every known start (obs scheduledStart, schedule gameDate, ticker ET time)
+    so a postponement/reschedule can only make an observation *less* eligible. Pregame = t_cap < t_first_pitch. Duplicate (ticker, capturedAt) dropped."""
+    o = attach_gamepk(obs, games)
+    gi = games.set_index("gamePk")
+    o["t_sched"] = pd.to_datetime(gi["gameDate"].reindex(o["pk"]).values, utc=True)
+    gcs = o["gc"].dropna().unique()
+    tk = {c: ticker_start_utc(c) for c in gcs}
+    o["t_tick"] = pd.to_datetime(o["gc"].map(tk), utc=True)
+    o["t_fp"] = o[["t_start", "t_sched", "t_tick"]].min(axis=1)
+    o["season"] = o["t_cap"].dt.year
+    o["series"] = o["marketTicker"].map(series_of)
+    o["family"] = [family_of(t, f) for t, f in zip(o["marketTicker"], o["marketFamily"])]
+    o["mins_before"] = (o["t_fp"] - o["t_cap"]).dt.total_seconds() / 60.0
+    o = o.drop_duplicates(["marketTicker", "capturedAt"])
+    return o
+
+
+def pregame_quotes(panel, max_spread=0.10):
+    p = panel[(panel["mins_before"] > 0)].copy()
+    yb, ya = p["yesBid"].astype(float), p["yesAsk"].astype(float)
+    ok = yb.notna() & ya.notna() & (ya >= yb) & (ya > 0)
+    p = p[ok].copy()
+    p["mid"] = (p["yesBid"].astype(float) + p["yesAsk"].astype(float)) / 200.0
+    p["spread"] = (p["yesAsk"].astype(float) - p["yesBid"].astype(float)) / 100.0
+    p["two_sided_ok"] = p["spread"] <= max_spread
+    return p
+
+
+def parse_suffix(ticker):
+    """Kalshi ticker 'SERIES-GAMECODE-SUFFIX' -> (team or None, n or None). TOTAL: ('',N). TEAMTOTAL/SPREAD: ('PIT',8). GAME/F-series: ('LAD',None)."""
+    p = str(ticker).split("-")
+    if len(p) < 3:
+        return None, None
+    suf = p[2]
+    if suf.isdigit():
+        return None, int(suf)
+    m = re.match(r"^([A-Z]+?)(\d+)$", suf)
+    if m and series_of(ticker) in ("KXMLBTEAMTOTAL", "KXMLBSPREAD", "KXMLBF5SPREAD", "KXMLBF3SPREAD", "KXMLBF7SPREAD"):
+        return m.group(1), int(m.group(2))
+    return suf, None
+
+
+FULLGAME_FAMILY = {"moneyline": "game_result", "game_total": "game_total", "team_total": "team_total", "run_line": "winning_margin"}
+
+
+def derive_from_ticker(ticker, family, home_abbr, away_abbr, home_runs, away_runs):
+    """Independent settlement of one full-game contract from final runs. Uses ticker suffix N: YES iff stat >= N (Kalshi ladder rule)."""
+    if family not in FULLGAME_FAMILY:
+        return None
+    team, n = parse_suffix(ticker)
+    if family == "moneyline":
+        return derive_binary_outcome("game_result", team, home_abbr, away_abbr, home_runs, away_runs)
+    if n is None:
+        return None
+    return derive_binary_outcome(FULLGAME_FAMILY[family], team, home_abbr, away_abbr, home_runs, away_runs, threshold=n)
+
+
+# ----------------------------------------------------------------------------- outcomes with the total-ladder boundary correction
+TOTAL_FIX_DATE = "2026-09-01"  # first game date whose stored game_total settlements follow Kalshi's '>= N' rule (empirically verified, see audit)
+TOTAL_FAMILIES = ("game_total", "f3_total", "f5_total", "f7_total")
+
+
+def pin_team_runs(panel, y_by_ticker):
+    """Exact team runs per (gamePk, team) from settled team_total ladders: runs = max N with YES, valid only when N+1 settled NO and every lower rung YES /
+    every higher rung NO. Team-total settlements were verified 100% against final scores, so this reproduces game totals in games the schedule lacks."""
+    T = panel.drop_duplicates("marketTicker")
+    T = T[T["family"] == "team_total"][["marketTicker", "pk"]].copy()
+    T["y"] = T["marketTicker"].map(y_by_ticker)
+    T["team"] = [parse_suffix(t)[0] for t in T["marketTicker"]]
+    T["n"] = [parse_suffix(t)[1] for t in T["marketTicker"]]
+    T = T.dropna(subset=["y", "pk", "n"])
+    pins = {}
+    for (pk, tm), g in T.groupby(["pk", "team"]):
+        ys = g.set_index("n")["y"].sort_index()
+        if (ys == 1).any() and (ys == 0).any():
+            hi, lo = ys[ys == 1].index.max(), ys[ys == 0].index.min()
+            if lo == hi + 1 and (ys[ys.index <= hi] == 1).all() and (ys[ys.index >= lo] == 0).all():
+                pins[(pk, tm)] = int(hi)
+    return pins
+
+
+def build_outcomes(panel, games, settle):
+    """Returns DataFrame indexed by marketTicker: y (0/1/NaN), y_src, y_edgelab, flags. Policy:
+      * edgelab SETTLED YES/NO is the base outcome (Kalshi's official result is NOT archived: kalshiOfficialResult is null on every row);
+      * game_total with game date < TOTAL_FIX_DATE: stored result used strict '>' at total == N, so it is RE-DERIVED from final runs (schedule, else
+        team-total pins) with '>= N'; if no total is derivable the contract is DROPPED (y NaN, y_src='dropped_total_boundary_unverifiable');
+      * f3/f5/f7 totals before the fix date: same defect, no period scores archived -> DROPPED;
+      * full-game moneyline/run line/team total: independent derivation from schedule runs compared, stored value kept (it agrees 100%)."""
+    sd, _ = dedup_settlements(settle)
+    base = sd[sd["status"] == "SETTLED"].set_index("marketTicker")["result"].map({"YES": 1, "NO": 0})
+    T = panel.drop_duplicates("marketTicker")[["marketTicker", "family", "pk", "homeTeam", "awayTeam", "t_fp"]].set_index("marketTicker")
+    T["y_edgelab"] = base.reindex(T.index)
+    gi = games.set_index("gamePk")
+    final = (gi["state"] == "Final")
+    T["hr"] = gi["homeRuns"].where(final).reindex(T["pk"]).values  # runs only from FINAL schedule records (cache snapshots of live games carry 0-0)
+    T["ar"] = gi["awayRuns"].where(final).reindex(T["pk"]).values
+    pins = pin_team_runs(panel, base.to_dict())
+    T["gdate"] = T["t_fp"].dt.tz_convert("America/New_York").dt.strftime("%Y-%m-%d")
+    T["y"] = T["y_edgelab"]
+    T["y_src"] = np.where(T["y_edgelab"].notna(), "edgelab_settlement(MLB_STATS_API)", None)
+    T["y_indep"] = np.nan
+    for t, r in zip(T.index, T.itertuples()):
+        if r.family in FULLGAME_FAMILY and pd.notna(r.hr) and pd.notna(r.ar):
+            d = derive_from_ticker(t, r.family, r.homeTeam, r.awayTeam, r.hr, r.ar)
+            if d is not None:
+                T.at[t, "y_indep"] = d
+    pre_fix = T["gdate"] < TOTAL_FIX_DATE
+    for t in T.index[(T["family"] == "game_total") & pre_fix & T["y_edgelab"].notna()]:
+        r = T.loc[t]
+        n = parse_suffix(t)[1]
+        tot = None
+        if pd.notna(r.hr) and pd.notna(r.ar):
+            tot = r.hr + r.ar
+        else:
+            h, a = pins.get((r.pk, r.homeTeam)), pins.get((r.pk, r.awayTeam))
+            tot = None if h is None or a is None else h + a
+        if tot is None or n is None:
+            T.at[t, "y"], T.at[t, "y_src"] = np.nan, "dropped_total_boundary_unverifiable"
+        else:
+            T.at[t, "y"], T.at[t, "y_src"] = float(tot >= n), "rederived_ge_N(schedule_or_team_total_pins)"
+            T.at[t, "y_indep"] = float(tot >= n)
+    for t in T.index[T["family"].isin(["f3_total", "f5_total", "f7_total"]) & pre_fix & T["y_edgelab"].notna()]:
+        T.at[t, "y"], T.at[t, "y_src"] = np.nan, "dropped_total_boundary_unverifiable"
+    return T

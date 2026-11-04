@@ -97,22 +97,37 @@ def run_challenger(rows):
 
 
 def classify(c, holm_p):
-    """Fixed, pre-declared status rule. c = run_challenger output."""
+    """Fixed, pre-declared status rule. c = run_challenger output.
+    A significant negative control invalidates only cells that would otherwise claim an improvement (a chance exceedance is expected in ~5% of
+    cells, so it is noted on the others and summarised globally by neg_control_summary)."""
     if c is None:
         return "MISSING_DATA", "no challenger rows"
     if c.get("status") != "OK":
         return "INCONCLUSIVE_UNDERPOWERED", "train/holdout split too small (train_games=%s holdout_games=%s)" % (c.get("train_games"), c.get("holdout_games"))
     g = c["gain_vs_calibrated_market_logloss"]
     nc = c.get("negative_control_gain")
-    if nc and nc["lo"] > 0 and nc["p"] < 0.05:
-        return "INVALID_EVIDENCE", "negative control (shuffled challenger) shows a significant gain: pipeline leaks or is mis-specified"
+    nc_sig = bool(nc and nc["lo"] > 0 and nc["p"] < 0.05)
+    note = " [negative control also nominally significant: chance exceedance or leakage, interpret nothing from this cell]" if nc_sig else ""
     if g["lo"] > 0 and holm_p is not None and holm_p <= 0.05:
-        return "VALIDATED_IMPROVEMENT", "holdout gain CI excludes 0 and Holm p<=0.05 over all cells tried (retrospective-chronological, not yet prospective-confirmed)"
+        return ("INVALID_EVIDENCE", "claimed gain but negative control (shuffled challenger) is also significant") if nc_sig else \
+               ("VALIDATED_IMPROVEMENT", "holdout gain CI excludes 0 and Holm p<=0.05 over all cells tried (retrospective chronological holdout, not prospective-confirmed)")
     if g["mean"] > 0 and g["p"] < PROMISING_RAW_P:
+        if nc_sig:
+            return "INVALID_EVIDENCE", "positive-looking gain but negative control (shuffled challenger) is also significant"
         return "PROMISING_INSUFFICIENT", "positive holdout gain (raw p=%.3f) but CI includes 0 and/or Holm p=%.3f > 0.05" % (g["p"], holm_p if holm_p is not None else float("nan"))
     if c["holdout_games"] >= POWER_MIN_HOLDOUT_GAMES:
-        return "NO_DEMONSTRATED_IMPROVEMENT", "holdout gain %.4f [%.4f, %.4f] over %d holdout games; not shown to help (absence of evidence, power still limited)" % (g["mean"], g["lo"], g["hi"], c["holdout_games"])
-    return "INCONCLUSIVE_UNDERPOWERED", "only %d holdout games (<%d); gain %.4f [%.4f, %.4f] cannot distinguish zero from a modest effect" % (c["holdout_games"], POWER_MIN_HOLDOUT_GAMES, g["mean"], g["lo"], g["hi"])
+        return "NO_DEMONSTRATED_IMPROVEMENT", "holdout gain %.4f [%.4f, %.4f] over %d holdout games; not shown to help (absence of evidence, power limited)%s" % (g["mean"], g["lo"], g["hi"], c["holdout_games"], note)
+    return "INCONCLUSIVE_UNDERPOWERED", "only %d holdout games (<%d); gain %.4f [%.4f, %.4f] cannot distinguish zero from a modest effect%s" % (c["holdout_games"], POWER_MIN_HOLDOUT_GAMES, g["mean"], g["lo"], g["hi"], note)
+
+
+def neg_control_summary(chal):
+    """Global view: share of testable cells whose shuffled-challenger control is nominally significant (expect ~2.5% one-sided under the null)."""
+    ok = [c for c in chal.values() if c.get("status") == "OK" and c.get("negative_control_gain")]
+    sig = [c for c in ok if c["negative_control_gain"]["lo"] > 0 and c["negative_control_gain"]["p"] < 0.05]
+    pos = [c for c in chal.values() if c.get("status") == "OK" and c.get("positive_control_gain")]
+    det = [c for c in pos if c["positive_control_gain"]["lo"] > 0]
+    return dict(testable_cells=len(ok), negative_control_nominally_significant=len(sig), expected_under_null_approx=round(0.025 * len(ok), 1),
+                positive_control_detected=len(det), positive_control_cells=len(pos))
 
 
 def gain_block(c, holm_p):
@@ -123,10 +138,12 @@ def gain_block(c, holm_p):
 
 
 def holm_over(cells):
-    """cells: dict name -> challenger result. Adds holm_p (over every OK cell tried) and returns dict name->holm p."""
-    ok = [k for k, c in cells.items() if c.get("status") == "OK"]
-    adj = I.holm([cells[k]["gain_vs_calibrated_market_logloss"]["p"] for k in ok]) if ok else []
-    return {k: float(p) for k, p in zip(ok, adj)}
+    """cells: dict name -> challenger result. Holm over EVERY cell tried: cells that could not be tested (status != OK) count in the
+    family with p=1 (conservative; they can never be rejected). Returns dict name->adjusted p for OK cells."""
+    names = list(cells)
+    p = [cells[k]["gain_vs_calibrated_market_logloss"]["p"] if cells[k].get("status") == "OK" else 1.0 for k in names]
+    adj = I.holm(p) if names else []
+    return {k: float(a) for k, a in zip(names, adj) if cells[k].get("status") == "OK"}
 
 
 def model_metrics(rows):
@@ -137,3 +154,16 @@ def model_metrics(rows):
     q = np.array([r["q"] for r in rows], float)
     b, l = brier_ll(q, y)
     return dict(n_rows=len(rows), brier=b, logloss=l)
+
+
+CELL_KEYS = ("sport", "family", "horizon", "inputs_available", "n_games", "n_contracts", "price_coverage", "settlement_source", "market_metrics", "model_metrics", "incremental_gain", "status", "reason")
+
+
+def normalize_cells(cells):
+    """Guarantee the delivery schema on every cell (absent -> None, never silently dropped)."""
+    for c in cells:
+        for k in CELL_KEYS:
+            c.setdefault(k, None)
+        g = c.get("incremental_gain") or {}
+        c["incremental_gain"] = dict(g, **{k: g.get(k) for k in ("mean", "lo", "hi", "holm_p")})
+    return cells

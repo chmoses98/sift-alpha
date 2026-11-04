@@ -1,0 +1,59 @@
+name: Dashboard CI
+
+# Validates exactly what Vercel deploys. Runs only when dashboard inputs change.
+on:
+  pull_request:
+    paths: &p
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.mjs"
+      - "index.html"
+      - "vercel.json"
+      - ".nvmrc"
+      - "src/**"
+      - "tests/*.test.mjs"
+      - "research/audit/**"
+      - ".github/workflows/dashboard-ci.yml"
+  push:
+    branches: [main]
+    paths: *p
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Build prerequisites present
+        run: |
+          for f in package.json package-lock.json vite.config.mjs index.html src/main.jsx vercel.json .nvmrc; do
+            test -f "$f" || { echo "::error::missing $f (Vercel build needs it)"; exit 1; }
+          done
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - name: Public bundle must contain only aggregates
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          forbidden = {"source_bet_key","order_id","fill_id","recommendation_id","market_ticker","stake",
+                       "gross_return","net_profit_loss","actual_price","execution_price","ticker","pnl","roi"}
+          def check(n):
+              if isinstance(n, dict):
+                  assert forbidden.isdisjoint(n), "private wager field in public data"
+                  [check(v) for v in n.values()]
+              elif isinstance(n, list): [check(v) for v in n]
+          for p in ["research/audit/clv/clv_summary.json","research/audit/clv/execution_summary.json"]:
+              d = json.loads(pathlib.Path(p).read_text()); assert "aggregates only" in d.get("privacy",""); check(d)
+          out = [p.name for p in pathlib.Path("dist").rglob("*") if p.is_file()]
+          assert not [n for n in out if n.endswith((".json",".jsonl",".gz",".csv",".py",".env"))], out
+          print("ok", out)
+          PY

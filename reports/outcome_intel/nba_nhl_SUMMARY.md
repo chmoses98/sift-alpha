@@ -142,13 +142,13 @@ Inputs: NBA `chmoses98/nba-edge-finder@data-archive` ea34ea59c048eae8e03dd26ba4d
 * Kalshi official result: **not in the archive** (board `result` empty on every captured market (resolved markets leave the board); no Kalshi settlement values in the archive; settlements are derived by nhl-settle/period-settle/player-settle from the NHL API boxscore/PBP). Exchange cross-check on the owner's settled wagers: {'agree': 30, 'available': True, 'disagree': 0, 'disagree_tickers': [], 'exchange_settled_wagers_compared': 30, 'not_derivable': 7, 'not_derivable_tickers': ['KXNHLPTS-26SEP29MTLTOR-MTLNSUZUKI14-1', 'KXNHLPTS-26SEP29FLACAR-FLABTKACHUK7-1', 'KXNHLPTS-26SEP29MTLTOR-MTLNSUZUKI14-1', 'KXNHLPTS-26SEP29NYRBOS-BOSDPASTRNAK88-1', 'KXNHLPTS-26SEP29CHIVGK-VGKMSTONE61-1', 'KXNHLTEAMTOTAL-26OCT14DALCOL-DAL3', 'KXMVECROSSCATEGORY-S2026F7W3JVYNGPLRBXRQ-5HS3OZ4LT']}.
 * Price history: 198 full-board checkpoints + 4243 chained deltas; chain breaks 0, count mismatches 0, non-monotonic boards 0. Order-book ladders cover 6117 verified tickers (<=300 tickers/capture); best bid/ask and their sizes exist for every listed market on every board.
 * Row drops before testing: {'mid_in_decided_tail': 11044, 'not_two_sided_or_wide': 43662, 'stale_board': 8}.
-* Cells: 138 reported, 97 tested (Holm over all 97). Status counts: {'INCONCLUSIVE_UNDERPOWERED': 51, 'NO_DEMONSTRATED_IMPROVEMENT': 69, 'MISSING_DATA': 15, 'PROMISING_INSUFFICIENT': 3}.
+* Cells: 114 reported, 97 tested (Holm over all 97). Status counts: {'INCONCLUSIVE_UNDERPOWERED': 39, 'NO_DEMONSTRATED_IMPROVEMENT': 57, 'MISSING_DATA': 15, 'INVALID_EVIDENCE': 1, 'PROMISING_INSUFFICIENT': 2}.
 * Largest point-estimate gains (all uncorrected for the selection of best):
   * PLAYER_SIM_V1 / goalie_saves / CLOSING: 0.0185 [0.0044, 0.0329], Holm p=0.816, 155 games, PROMISING_INSUFFICIENT
-  * OA:OA_SVA / ALL_MODELLED(pooled, exploratory) / CLOSING: 0.0170 [-0.0267, 0.0592], Holm p=1.000, 72 games, INCONCLUSIVE_UNDERPOWERED
   * OA:OA_SVA / game_winner / CLOSING: 0.0170 [-0.0267, 0.0592], Holm p=1.000, 72 games, INCONCLUSIVE_UNDERPOWERED
   * OA:OA_SVA / ALL_MODELLED(pooled, exploratory) / CLOSING: 0.0170 [-0.0267, 0.0592], Holm p=1.000, 72 games, INCONCLUSIVE_UNDERPOWERED
   * PLAYER_SIM_V1 / goalie_saves / T_1H: 0.0157 [0.0055, 0.0258], Holm p=0.242, 189 games, PROMISING_INSUFFICIENT
+  * OA:OA_SVA_C1 / game_winner / CLOSING: 0.0143 [-0.0314, 0.0592], Holm p=1.000, 72 games, INCONCLUSIVE_UNDERPOWERED
 
 ### Family coverage
 
@@ -173,31 +173,19 @@ Inputs: NBA `chmoses98/nba-edge-finder@data-archive` ea34ea59c048eae8e03dd26ba4d
 
 | challenger | family | horizon | games | rows | holdout games | cal. market logloss | challenger logloss | gain [95% game-cluster CI] | Holm p | status |
 |---|---|---|---:|---:|---:|---:|---:|---|---:|---|
-| OA:OA_SVA | ALL_MODELLED(pooled, exploratory) | T_12H | 81 | 162 | 27 | 0.6278 | 0.6245 | 0.0033 [-0.0173, 0.0247] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA | ALL_MODELLED(pooled, exploratory) | T_6H | 81 | 162 | 27 | 0.6243 | 0.6150 | 0.0093 [-0.0267, 0.0457] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA | ALL_MODELLED(pooled, exploratory) | T_1H | 81 | 162 | 27 | 0.6216 | 0.6105 | 0.0111 [-0.0273, 0.0485] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA | ALL_MODELLED(pooled, exploratory) | CLOSING | 72 | 144 | 24 | 0.6279 | 0.6109 | 0.0170 [-0.0267, 0.0592] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA | game_winner | T_12H | 81 | 162 | 27 | 0.6278 | 0.6245 | 0.0033 [-0.0173, 0.0247] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA | game_winner | T_6H | 81 | 162 | 27 | 0.6243 | 0.6150 | 0.0093 [-0.0267, 0.0457] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA | game_winner | T_1H | 81 | 162 | 27 | 0.6216 | 0.6105 | 0.0111 [-0.0273, 0.0485] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA | game_winner | CLOSING | 72 | 144 | 24 | 0.6279 | 0.6109 | 0.0170 [-0.0267, 0.0592] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA_C1 | ALL_MODELLED(pooled, exploratory) | T_12H | 81 | 162 | 27 | 0.6278 | 0.6260 | 0.0018 [-0.0208, 0.0251] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA_C1 | ALL_MODELLED(pooled, exploratory) | T_6H | 81 | 162 | 27 | 0.6243 | 0.6170 | 0.0073 [-0.0319, 0.0463] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA_C1 | ALL_MODELLED(pooled, exploratory) | T_1H | 81 | 162 | 27 | 0.6216 | 0.6132 | 0.0084 [-0.0309, 0.0470] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| OA:OA_SVA_C1 | ALL_MODELLED(pooled, exploratory) | CLOSING | 72 | 144 | 24 | 0.6279 | 0.6136 | 0.0143 [-0.0314, 0.0592] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA_C1 | game_winner | T_12H | 81 | 162 | 27 | 0.6278 | 0.6260 | 0.0018 [-0.0208, 0.0251] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA_C1 | game_winner | T_6H | 81 | 162 | 27 | 0.6243 | 0.6170 | 0.0073 [-0.0319, 0.0463] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA_C1 | game_winner | T_1H | 81 | 162 | 27 | 0.6216 | 0.6132 | 0.0084 [-0.0309, 0.0470] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | OA:OA_SVA_C1 | game_winner | CLOSING | 72 | 144 | 24 | 0.6279 | 0.6136 | 0.0143 [-0.0314, 0.0592] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| PLAYER_SIM_V1 | ALL_MODELLED(pooled, exploratory) | T_12H | 215 | 15908 | 72 | 0.4084 | 0.4084 | 0.0001 [-0.0006, 0.0008] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| PLAYER_SIM_V1 | ALL_MODELLED(pooled, exploratory) | T_6H | 240 | 24626 | 80 | 0.4411 | 0.4411 | -0.0000 [-0.0000, 0.0000] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| PLAYER_SIM_V1 | ALL_MODELLED(pooled, exploratory) | T_1H | 241 | 27188 | 80 | 0.4410 | 0.4410 | 0.0000 [-0.0001, 0.0001] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| PLAYER_SIM_V1 | ALL_MODELLED(pooled, exploratory) | CLOSING | 171 | 19628 | 57 | 0.4431 | 0.4431 | -0.0000 [-0.0002, 0.0002] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | PLAYER_SIM_V1 | first_goal | T_12H | 73 | 840 | 24 | 0.1698 | 0.1693 | 0.0005 [-0.0062, 0.0080] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | PLAYER_SIM_V1 | first_goal | T_6H | 111 | 864 | 37 | 0.1894 | 0.1880 | 0.0014 [-0.0014, 0.0044] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | PLAYER_SIM_V1 | first_goal | T_1H | 199 | 1080 | 66 | 0.2011 | 0.2008 | 0.0003 [-0.0008, 0.0016] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | PLAYER_SIM_V1 | first_goal | CLOSING | 156 | 911 | 52 | 0.1896 | 0.1892 | 0.0003 [-0.0014, 0.0020] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| PLAYER_SIM_V1 | goalie_saves | T_6H | 129 | 179 | 43 | 0.6778 | 0.6712 | 0.0066 [0.0001, 0.0132] | 1.000 | PROMISING_INSUFFICIENT |
+| PLAYER_SIM_V1 | goalie_saves | T_6H | 129 | 179 | 43 | 0.6778 | 0.6712 | 0.0066 [0.0001, 0.0132] | 1.000 | INVALID_EVIDENCE |
 | PLAYER_SIM_V1 | goalie_saves | T_1H | 189 | 302 | 63 | 0.6709 | 0.6552 | 0.0157 [0.0055, 0.0258] | 0.242 | PROMISING_INSUFFICIENT |
 | PLAYER_SIM_V1 | goalie_saves | CLOSING | 155 | 249 | 52 | 0.6700 | 0.6514 | 0.0185 [0.0044, 0.0329] | 0.816 | PROMISING_INSUFFICIENT |
 | PLAYER_SIM_V1 | player_assists | T_12H | 201 | 4107 | 67 | 0.4937 | 0.4941 | -0.0004 [-0.0016, 0.0007] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
@@ -212,10 +200,6 @@ Inputs: NBA `chmoses98/nba-edge-finder@data-archive` ea34ea59c048eae8e03dd26ba4d
 | PLAYER_SIM_V1 | player_points | T_6H | 238 | 8728 | 79 | 0.5002 | 0.5004 | -0.0002 [-0.0007, 0.0004] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | PLAYER_SIM_V1 | player_points | T_1H | 239 | 9836 | 80 | 0.4969 | 0.4969 | 0.0000 [-0.0005, 0.0006] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | PLAYER_SIM_V1 | player_points | CLOSING | 169 | 7040 | 56 | 0.4934 | 0.4934 | 0.0001 [-0.0002, 0.0004] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V1 | ALL_MODELLED(pooled, exploratory) | T_12H | 245 | 5768 | 82 | 0.5321 | 0.5353 | -0.0032 [-0.0069, 0.0005] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V1 | ALL_MODELLED(pooled, exploratory) | T_6H | 246 | 5790 | 82 | 0.5272 | 0.5278 | -0.0006 [-0.0010, -0.0001] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V1 | ALL_MODELLED(pooled, exploratory) | T_1H | 246 | 5775 | 82 | 0.5277 | 0.5287 | -0.0010 [-0.0017, -0.0002] | 0.816 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V1 | ALL_MODELLED(pooled, exploratory) | CLOSING | 174 | 4085 | 58 | 0.5311 | 0.5275 | 0.0036 [-0.0005, 0.0075] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | SIFT_V1 | game_spread | T_12H | 245 | 980 | 82 | 0.5357 | 0.5371 | -0.0014 [-0.0032, 0.0003] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SIFT_V1 | game_spread | T_6H | 246 | 984 | 82 | 0.5333 | 0.5315 | 0.0018 [-0.0001, 0.0038] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | SIFT_V1 | game_spread | T_1H | 246 | 984 | 82 | 0.5339 | 0.5334 | 0.0005 [0.0000, 0.0010] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
@@ -232,10 +216,6 @@ Inputs: NBA `chmoses98/nba-edge-finder@data-archive` ea34ea59c048eae8e03dd26ba4d
 | SIFT_V1 | team_total | T_6H | 246 | 2441 | 82 | 0.5338 | 0.5345 | -0.0007 [-0.0012, -0.0001] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SIFT_V1 | team_total | T_1H | 246 | 2442 | 82 | 0.5335 | 0.5350 | -0.0016 [-0.0028, -0.0003] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SIFT_V1 | team_total | CLOSING | 174 | 1729 | 58 | 0.5404 | 0.5372 | 0.0032 [-0.0004, 0.0066] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| SIFT_V2 | ALL_MODELLED(pooled, exploratory) | T_12H | 241 | 10930 | 80 | 0.5360 | 0.5362 | -0.0001 [-0.0005, 0.0003] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V2 | ALL_MODELLED(pooled, exploratory) | T_6H | 245 | 11566 | 82 | 0.5257 | 0.5264 | -0.0006 [-0.0015, 0.0003] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V2 | ALL_MODELLED(pooled, exploratory) | T_1H | 246 | 11629 | 82 | 0.5257 | 0.5261 | -0.0003 [-0.0008, 0.0001] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SIFT_V2 | ALL_MODELLED(pooled, exploratory) | CLOSING | 174 | 8235 | 58 | 0.5252 | 0.5247 | 0.0005 [-0.0014, 0.0024] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | SIFT_V2 | game_spread | T_12H | 241 | 964 | 80 | 0.5324 | 0.5319 | 0.0004 [-0.0022, 0.0029] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | SIFT_V2 | game_spread | T_6H | 245 | 980 | 82 | 0.5333 | 0.5331 | 0.0002 [-0.0002, 0.0007] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SIFT_V2 | game_spread | T_1H | 246 | 984 | 82 | 0.5339 | 0.5337 | 0.0002 [-0.0003, 0.0008] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
@@ -264,9 +244,6 @@ Inputs: NBA `chmoses98/nba-edge-finder@data-archive` ea34ea59c048eae8e03dd26ba4d
 | SIFT_V2 | team_total | T_6H | 245 | 2431 | 82 | 0.5333 | 0.5326 | 0.0008 [-0.0007, 0.0021] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | SIFT_V2 | team_total | T_1H | 246 | 2442 | 82 | 0.5335 | 0.5329 | 0.0005 [-0.0004, 0.0014] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SIFT_V2 | team_total | CLOSING | 174 | 1729 | 58 | 0.5404 | 0.5399 | 0.0005 [-0.0061, 0.0070] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| SPORTSBOOK | ALL_MODELLED(pooled, exploratory) | T_6H | 214 | 428 | 71 | 0.6475 | 0.6466 | 0.0009 [-0.0228, 0.0250] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
-| SPORTSBOOK | ALL_MODELLED(pooled, exploratory) | T_1H | 236 | 472 | 79 | 0.6487 | 0.6537 | -0.0050 [-0.0248, 0.0150] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
-| SPORTSBOOK | ALL_MODELLED(pooled, exploratory) | CLOSING | 246 | 492 | 82 | 0.6327 | 0.6513 | -0.0186 [-0.0412, 0.0037] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SPORTSBOOK | game_winner | T_6H | 214 | 428 | 71 | 0.6475 | 0.6466 | 0.0009 [-0.0228, 0.0250] | 1.000 | INCONCLUSIVE_UNDERPOWERED |
 | SPORTSBOOK | game_winner | T_1H | 236 | 472 | 79 | 0.6487 | 0.6537 | -0.0050 [-0.0248, 0.0150] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
 | SPORTSBOOK | game_winner | CLOSING | 246 | 492 | 82 | 0.6327 | 0.6513 | -0.0186 [-0.0412, 0.0037] | 1.000 | NO_DEMONSTRATED_IMPROVEMENT |
@@ -310,16 +287,16 @@ Inputs: NBA `chmoses98/nba-edge-finder@data-archive` ea34ea59c048eae8e03dd26ba4d
 
 ## Findings, caveats and what was not done
 
-* **VALIDATED_IMPROVEMENT cells: 0** (NBA tested 61, NHL tested 120; Holm is applied across all tested cells of each sport separately, challenger x family x horizon plus exploratory pooled cells).
-* PROMISING_INSUFFICIENT (uncorrected CI above 0, >= 20 holdout games, gain >= 0.002 nats, fails Holm): SIFT/period_team_total/T_6H (73 games, gain 0.0483 [0.0082, 0.0891], Holm p 0.88); SIFT/player_blocks/T_6H (72 games, gain 0.0031 [0.0006, 0.0056], Holm p 1.00); PLAYER_SIM_V1/goalie_saves/T_6H (129 games, gain 0.0066 [0.0001, 0.0132], Holm p 1.00); PLAYER_SIM_V1/goalie_saves/T_1H (189 games, gain 0.0157 [0.0055, 0.0258], Holm p 0.24); PLAYER_SIM_V1/goalie_saves/CLOSING (155 games, gain 0.0185 [0.0044, 0.0329], Holm p 0.82). At this multiplicity a few such cells are expected by chance; only the NHL `PLAYER_SIM_V1` goalie-saves cells repeat across three horizons and deserve a pre-registered prospective re-test.
+* **VALIDATED_IMPROVEMENT cells: 0** (NBA tested 61, NHL tested 97; Holm is applied across all tested cells of each sport separately, challenger x family x horizon plus exploratory pooled cells).
+* PROMISING_INSUFFICIENT (uncorrected CI above 0, >= 20 holdout games, gain >= 0.002 nats, fails Holm): SIFT/period_team_total/T_6H (73 games, gain 0.0483 [0.0082, 0.0891], Holm p 0.88); SIFT/player_blocks/T_6H (72 games, gain 0.0031 [0.0006, 0.0056], Holm p 1.00); PLAYER_SIM_V1/goalie_saves/T_1H (189 games, gain 0.0157 [0.0055, 0.0258], Holm p 0.24); PLAYER_SIM_V1/goalie_saves/CLOSING (155 games, gain 0.0185 [0.0044, 0.0329], Holm p 0.82). At this multiplicity a few such cells are expected by chance; only the NHL `PLAYER_SIM_V1` goalie-saves cells (T-1h, closing promising; T-6h is INVALID_EVIDENCE because its own shuffled negative control shows a spurious gain) recur across horizons and deserve a pre-registered prospective re-test.
 * Everything else is NO_DEMONSTRATED_IMPROVEMENT (enough holdout games and the CI excludes a material gain, or the challenger is reliably worse than the calibrated market) or INCONCLUSIVE_UNDERPOWERED (holdout < 30 games or CI too wide). Underpowered cells are not negatives.
 * The SIFT models are not market-beating on the moneylines/spreads/totals archived so far: standalone logloss is worse than the market in the NBA moneyline cells (about 0.70 vs 0.56 at T-6h) and the NHL V1/V2 win-probability cells show gains of -0.003 to -0.015 (V2 at T-6h: CI excludes 0 on the negative side). The NHL sportsbook consensus (6 providers, de-vigged) adds nothing beyond the Kalshi mid either.
-* Controls: the look-ahead positive control is detected (CI lower bound > 0) in 61/61 NBA and 120/120 NHL tested cells; the shuffled negative control has a CI strictly above 0 in 0 NBA and 2 NHL cells (the harness does not manufacture gains).
+* Controls: the look-ahead positive control is detected (CI lower bound > 0) in 61/61 NBA and 97/97 NHL tested cells; the shuffled negative control has a CI strictly above 0 in 0 NBA and 2 NHL cells (about the 5% chance rate across ~100 cells; a cell whose own negative control fires while its gain CI is above 0 is marked INVALID_EVIDENCE).
 * **Settlement is derived, not official.** The board `result` field is empty everywhere (resolved markets leave the board), so there is no archived Kalshi settlement value. Outcomes come from the engines (ESPN box for NBA, NHL API box/PBP for NHL) and were re-derived independently here from final box scores / goal events / player rows; only outcomes where the independent derivation agrees enter any test. The only exchange evidence is the owner's settled wagers (NBA 44/44 and NHL 30/30 agree with our derivation).
-* NHL: shootout-ambiguous spread/total/team-total contracts (33) and period/first-goal contracts of the one game whose goal events do not sum to the final score (2026020155) are excluded; period `TIE` contracts are derived. NBA: 2H contracts treat OT as outside the half; none of the 8 OT games changes a 1H/FULL derivation, and all 2H derivations agreed with the engine.
+* NHL: shootout-ambiguous spread/total/team-total contracts (33) and period/first-goal contracts of the one game whose goal events do not sum to the final score (2026020155) are excluded; period `TIE` contracts are derived. NBA: FULL contracts include overtime (8 OT games), 2H contracts are derived as Q3+Q4 and agreed with the engine on every settled contract.
 * NBA predictions carry no embedded quote (`p_market` null, `no_quote`), so the market input is the latest board captured at or before `predicted_at` (median age ~3 min; > 30 min is dropped), not the exact quote the model saw. NHL rows embed the quote and it equals the reconstructed board mid in 100% of rows.
 * Only tight, two-sided markets are tested (spread <= 10c, mid in [0.03, 0.97]); thin or one-sided contracts are dropped (NBA 29k, NHL 44k candidate rows), so conclusions do not extend to illiquid strikes. Depth: best-bid/ask size is archived for every market; full ladders only for <= 300 tickers per capture (NBA 18k/54k and NHL 6k/51k verified tickers appear at least once).
-* Window is short (NBA 2026-10-03..11-03, 158 final games; NHL 2026-10-07..11-03, 246 final games), rows within a game and strike ladders are heavily dependent, so every interval resamples games and holdouts are only 12-80 games.
+* Window is short (NBA 2026-10-03..11-03, 158 final games; NHL 2026-09-29..11-03, 246 final games), rows within a game and strike ladders are heavily dependent, so every interval resamples games and holdouts are only 12-80 games.
 * NOT done: standalone structured pregame inputs (rest/back-to-back, injuries, rosters, lineups, goalie status) as challengers (they exist as time-stamped context snapshots and are only used inside the SIFT models); fee/executable-price economics; CLV; the `projection-data` branches; Kalshi-official settlement comparison beyond the owner wagers.
 * Collection repairs: (1) archive the Kalshi settlement value/result per market at close; (2) store the exact quote (bid/ask/sizes) in the NBA prediction rows and a full-depth ladder per decision; (3) prove and settle the UNSETTLEABLE families (NBA `game_overtime`, `game_points_leader`, `game_race_to`, `game_win_margin`, `player_stocks`, protected-prop families; NHL `game_early_goal`, `game_overtime`); (4) price NHL period markets in V1 (V2 does) and archive horizon-specific model rows at T-24h; (5) keep accumulating - most cells need 3-5x more games.
 

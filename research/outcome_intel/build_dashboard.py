@@ -77,6 +77,11 @@ def main():
     for c in cells:
         tree[c["sport"]][c["family"]].append(c)
     counts = collections.Counter(c["validation_status"] for c in cells)
+    tested = [c for c in cells if isinstance(c["incremental_gain"], dict) and c["incremental_gain"].get("mean") is not None]
+    ranked = sorted(tested, key=lambda c: (-(c["incremental_gain"]["lo"] if c["incremental_gain"].get("lo") is not None else -9), -c["incremental_gain"]["mean"]))
+    rank_row = lambda c: dict(sport=c["sport"], family=c["family"], horizon=c["horizon"], challenger=c["challenger"], holdout_games=c["evidence"]["holdout_games"],
+                              gain_mean=c["incremental_gain"]["mean"], gain_lo=c["incremental_gain"].get("lo"), gain_hi=c["incremental_gain"].get("hi"),
+                              holm_p=c["incremental_gain"].get("holm_p"), status=c["validation_status"], status_note=c["status_note"])
     ledger = []
     for sp, fams in sorted(tree.items()):
         for fam, cs in sorted(fams.items()):
@@ -84,6 +89,9 @@ def main():
                                max_holdout_games=max([c["evidence"]["holdout_games"] or 0 for c in cs] + [0]),
                                reasons=sorted({c["reason"] for c in cs if c["reason"]})[:3]))
     out = dict(status="RESEARCH_ONLY", schema="sift-outcome-intel-dashboard/1", status_counts=dict(counts), validated=[(c["sport"], c["family"], c["horizon"], c["challenger"]) for c in cells if c["validation_status"] == "VALIDATED_IMPROVEMENT"],
+               tested_cells=len(tested), ranked_signals_top25_by_ci_lower_bound=[rank_row(c) for c in ranked[:25]],
+               worst5_by_mean_gain=[rank_row(c) for c in sorted(tested, key=lambda c: c["incremental_gain"]["mean"])[:5]],
+               sport_status_counts={sp: dict(collections.Counter(c["validation_status"] for c in cells if c["sport"] == sp)) for sp in sorted({c["sport"] for c in cells})},
                ledger=ledger, tree={s: {f: v for f, v in fs.items()} for s, fs in tree.items()})
     json.dump(out, open(os.path.join(a.dir, "dashboard.json"), "w"), indent=1, sort_keys=True, default=str)
     json.dump(dict(status="RESEARCH_ONLY", schema="sift-outcome-intel-coverage/2", ledger=ledger, status_counts=dict(counts)), open(os.path.join(a.dir, "coverage_ledger.json"), "w"), indent=1, sort_keys=True)

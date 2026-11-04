@@ -294,6 +294,9 @@ def positive_control(rows, seed=3, leak=0.35, **kw):
     return I.incremental_test(fake, **kw)
 
 
+MATERIAL_GAIN = 0.002  # nats of logloss per row: below this a statistically positive gain is economically negligible
+
+
 def run_cell(rows, **kw):
     """-> dict with incremental result + controls. rows: dicts game,t,mid,q,y."""
     res = I.incremental_test(rows, **kw)
@@ -308,6 +311,11 @@ def run_cell(rows, **kw):
     res["positive_control"] = pc.get("gain_vs_calibrated_market_logloss")
     _, te = I.split_games(rows)
     res["q_alone_holdout"] = q_alone_metrics([r for r in rows if r["game"] in te])
+    q = np.array([r["q"] for r in rows], float)
+    m = np.array([r["mid"] for r in rows], float)
+    lq, lm = I.logit(q), I.logit(m)
+    res["q_vs_mid"] = dict(mean_abs_diff=float(np.mean(np.abs(q - m))), corr_logit=float(np.corrcoef(lq, lm)[0, 1]) if len(q) > 2 and lq.std() > 0 and lm.std() > 0 else None,
+                           note="corr near 1 and tiny mean_abs_diff would mean the challenger is not independent of the market")
     return res
 
 
@@ -328,6 +336,9 @@ def classify(res, holm_p, min_holdout_games=30, alpha=0.05, n_tested=None, min_p
     nc_ok = not (nc and nc["lo"] > 0)
     if holm_p is not None and holm_p <= alpha and g["lo"] > 0 and res["holdout_games"] >= min_holdout_games and pc_ok and nc_ok:
         return "VALIDATED_IMPROVEMENT", "Holm-adjusted p<=0.05, game-cluster CI above 0, controls behave"
+    if g["lo"] > 0 and g["mean"] < MATERIAL_GAIN:
+        return "NO_DEMONSTRATED_IMPROVEMENT", (f"uncorrected CI [{g['lo']:.4f},{g['hi']:.4f}] is above 0 but the gain ({g['mean']:.4f} nats) is below the {MATERIAL_GAIN} materiality floor "
+                                               f"(Holm p={holm_p if holm_p is None else round(holm_p, 3)}); not a usable improvement")
     if g["lo"] > 0 and res["holdout_games"] >= min_promising_games:
         return "PROMISING_INSUFFICIENT", (f"uncorrected game-cluster CI [{g['lo']:.4f},{g['hi']:.4f}] above 0 ({res['holdout_games']} holdout games) but Holm-adjusted p={holm_p if holm_p is None else round(holm_p, 3)}"
                                           f" across {n_tested} tested cells fails the validation gate; a few such cells are expected by chance at that multiplicity")

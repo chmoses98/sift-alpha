@@ -388,7 +388,7 @@ def main():
                 mm = dict(holdout_logloss_raw_market=res["logloss"]["raw_market"], holdout_logloss_calibrated_market=res["logloss"]["calibrated_market"],
                           holdout_brier_raw_market=res["brier"]["raw_market"], holdout_brier_calibrated_market=res["brier"]["calibrated_market"],
                           calibration_gain_of_market_alone=res["calibration_gain_of_market_alone_logloss"], coef_calibration=res["coef_baseline"])
-                md = dict(model="nba-sim-0.1.0 p_data_only (market-independent)", holdout_alone=res["q_alone_holdout"], holdout_logloss_challenger=res["logloss"]["challenger"],
+                md = dict(model="nba-sim-0.1.0 p_data_only (market-independent)", holdout_alone=res["q_alone_holdout"], q_vs_mid=res["q_vs_mid"], holdout_logloss_challenger=res["logloss"]["challenger"],
                           holdout_brier_challenger=res["brier"]["challenger"], coef_challenger=res["coef_challenger"], train_games=res["train_games"], holdout_games=res["holdout_games"],
                           n_train_rows=res["n_train"], n_holdout_rows=res["n_holdout"])
             else:
@@ -420,7 +420,7 @@ def main():
             g = res["gain_vs_calibrated_market_logloss"]
             st, why = C.classify(res, holm_of[k], n_tested=len(okk))
             cell.update(market_metrics=dict(holdout_logloss_raw_market=res["logloss"]["raw_market"], holdout_logloss_calibrated_market=res["logloss"]["calibrated_market"]),
-                        model_metrics=dict(holdout_alone=res["q_alone_holdout"], holdout_logloss_challenger=res["logloss"]["challenger"], holdout_games=res["holdout_games"]),
+                        model_metrics=dict(holdout_alone=res["q_alone_holdout"], q_vs_mid=res["q_vs_mid"], holdout_logloss_challenger=res["logloss"]["challenger"], holdout_games=res["holdout_games"]),
                         incremental_gain=dict(mean=g["mean"], lo=g["lo"], hi=g["hi"], holm_p=holm_of[k], p_uncorrected=g["p"], negative_control=res["negative_control"], positive_control=res["positive_control"]),
                         status=st, reason=why)
         else:
@@ -441,7 +441,7 @@ def main():
             st, why = C.classify(res, holm_of[k], n_tested=len(okk))
             cell.update(market_metrics=dict(holdout_logloss_raw_market=res["logloss"]["raw_market"], holdout_logloss_calibrated_market=res["logloss"]["calibrated_market"],
                                             holdout_brier_raw_market=res["brier"]["raw_market"], holdout_brier_calibrated_market=res["brier"]["calibrated_market"]),
-                        model_metrics=dict(holdout_alone=res["q_alone_holdout"], holdout_logloss_challenger=res["logloss"]["challenger"], holdout_games=res["holdout_games"]),
+                        model_metrics=dict(holdout_alone=res["q_alone_holdout"], q_vs_mid=res["q_vs_mid"], holdout_logloss_challenger=res["logloss"]["challenger"], holdout_games=res["holdout_games"]),
                         incremental_gain=dict(mean=g["mean"], lo=g["lo"], hi=g["hi"], holm_p=holm_of[k], p_uncorrected=g["p"], negative_control=res["negative_control"], positive_control=res["positive_control"]),
                         status=st, reason=why)
         else:

@@ -305,5 +305,39 @@ class TestIncrementalControls(unittest.TestCase):
         self.assertEqual(C.classify(res, 0.4, n_tested=5)[0], "PROMISING_INSUFFICIENT")
 
 
+class TestClassifyRules(unittest.TestCase):
+    def _res(self, mean, lo, hi, games=60, status="OK", pc_lo=0.3, nc_lo=-0.01, nc_hi=0.01):
+        g = dict(mean=mean, lo=lo, hi=hi, p=0.01, n=100, n_games=games)
+        return dict(status=status, holdout_games=games, train_games=games * 2, n_holdout=100, n_train=200, gain_vs_calibrated_market_logloss=g,
+                    positive_control=dict(lo=pc_lo, hi=1.0, mean=0.5), negative_control=dict(lo=nc_lo, hi=nc_hi, mean=0.0))
+
+    def test_negligible_positive_gain_is_not_promising(self):
+        st, why = C.classify(self._res(0.0005, 0.00002, 0.001), 1.0, n_tested=50)
+        self.assertEqual(st, "NO_DEMONSTRATED_IMPROVEMENT")
+        self.assertIn("materiality", why)
+
+    def test_reliably_worse_model_is_no_improvement_even_with_few_games(self):
+        st, _ = C.classify(self._res(-0.02, -0.04, -0.005, games=15), 0.5, n_tested=50)
+        self.assertEqual(st, "NO_DEMONSTRATED_IMPROVEMENT")
+
+    def test_wide_interval_small_holdout_is_underpowered_not_negative(self):
+        st, _ = C.classify(self._res(-0.01, -0.08, 0.06, games=15), 1.0, n_tested=50)
+        self.assertEqual(st, "INCONCLUSIVE_UNDERPOWERED")
+
+    def test_positive_but_tiny_holdout_is_not_a_finding(self):
+        st, _ = C.classify(self._res(0.03, 0.005, 0.06, games=13), 1.0, n_tested=50)
+        self.assertEqual(st, "INCONCLUSIVE_UNDERPOWERED")
+
+    def test_validated_blocked_when_positive_control_fails(self):
+        st, _ = C.classify(self._res(0.02, 0.01, 0.03, pc_lo=-0.1), 0.001, n_tested=50)
+        self.assertEqual(st, "PROMISING_INSUFFICIENT")
+
+    def test_q_vs_mid_diagnostic(self):
+        rows = [dict(game=f"g{i}", t=float(i), mid=0.3 + 0.004 * (i % 100), q=0.3 + 0.004 * (i % 100), y=i % 2) for i in range(400)]
+        res = C.run_cell(rows)
+        self.assertLess(res["q_vs_mid"]["mean_abs_diff"], 1e-9)   # challenger identical to the market -> flagged as not independent
+        self.assertGreater(res["q_vs_mid"]["corr_logit"], 0.999)
+
+
 if __name__ == "__main__":
     unittest.main()

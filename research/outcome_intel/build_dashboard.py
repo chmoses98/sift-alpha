@@ -3,19 +3,42 @@
 Tree: sport -> family -> cells[horizon/challenger]; each cell carries inputs -> evidence -> model prob -> market prob -> incremental gain -> confidence -> status.
 Anything not supported is UNKNOWN with a reason. usage: build_dashboard.py [--dir reports/outcome_intel]"""
 from __future__ import annotations
-import argparse, collections, glob, json, os, sys
+import argparse, collections, glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import status as S
 
 UNK = lambda why: dict(value="UNKNOWN", reason=why)
 
 
+def holdout_games_of(c):
+    g = c.get("incremental_gain") or {}
+    for v in (c.get("holdout_games"), g.get("n_holdout_games")):
+        if isinstance(v, (int, float)):
+            return int(v)
+    m = re.search(r"(\d+) (?:holdout|HOLDOUT)[ -]?(?:games|matches)|holdout (?:only )?(\d+) (?:games|matches)|over (\d+) holdout", c.get("reason") or "")
+    return int(next(x for x in m.groups() if x)) if m else None
+
+
+def guard(c, st, hg):
+    """Central consistency rules applied to every sport's own classification (agents used equivalent but separate classifiers)."""
+    g = c.get("incremental_gain") or {}
+    note = None
+    if st in ("VALIDATED_IMPROVEMENT", "PROMISING_INSUFFICIENT", "NO_DEMONSTRATED_IMPROVEMENT") and (hg is None or hg < S.MIN_GAMES):
+        return "INCONCLUSIVE_UNDERPOWERED", f"downgraded from {st}: holdout games {hg} < {S.MIN_GAMES}"
+    if st == "VALIDATED_IMPROVEMENT" and not (g.get("lo") is not None and g["lo"] > 0 and g.get("holm_p") is not None and g["holm_p"] <= 0.05):
+        return "PROMISING_INSUFFICIENT", "downgraded from VALIDATED_IMPROVEMENT: CI lower bound or Holm p failed the central check"
+    return st, note
+
+
 def norm(c, sport=None):
     g = c.get("incremental_gain") or c.get("gain") or {}
     gain = UNK(c.get("reason") or "no incremental test run") if not g or g.get("mean") is None else dict(
         metric="logloss_gain_vs_calibrated_market (positive = challenger better)", mean=g["mean"], lo=g.get("lo"), hi=g.get("hi"), holm_p=g.get("holm_p"))
-    st = c.get("status") or c.get("evidence_status") or "MISSING_DATA"
-    return dict(sport=sport or c.get("sport"), family=c.get("family", "UNKNOWN"), horizon=c.get("horizon", "all"), challenger=c.get("challenger") or "UNKNOWN",
+    st0 = c.get("status") or c.get("evidence_status") or "MISSING_DATA"
+    hg = holdout_games_of(c)
+    st, note = guard(c, st0, hg)
+    c = dict(c, holdout_games=hg)
+    return dict(agent_status=st0, status_note=note, sport=sport or c.get("sport"), family=c.get("family", "UNKNOWN"), horizon=c.get("horizon", "all"), challenger=c.get("challenger") or "UNKNOWN",
                 inputs_available=c.get("inputs_available") or UNK("not recorded"),
                 evidence=dict(n_games=c.get("n_games"), n_contracts=c.get("n_contracts"), holdout_games=c.get("holdout_games"), price_coverage=c.get("price_coverage") or UNK("not recorded"),
                               settlement_source=c.get("settlement_source") or UNK("not recorded")),

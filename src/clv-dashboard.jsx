@@ -10,7 +10,7 @@ const cents = v => (v == null ? "—" : f2(c(v)) + "¢");
 const int = v => (v == null ? "—" : Number(v).toLocaleString());
 const pct = (a, b) => (b ? (100 * a / b).toFixed(0) + "%" : "—");
 const sign = v => (v == null ? "na" : Math.abs(v) < 0.00005 ? "zero" : v > 0 ? "pos" : "neg");
-const SPORTS = ["NFL", "CFB", "NBA"];
+const SPORTS = ["NFL", "CFB", "NBA", "NHL"];
 const REASON = {NO_CLOSE: "no archived pregame close", CLOSE_STALE: "close older than 60 min", NOT_A_PREGAME_ENTRY: "placed at/after start (live)",
   CLOSE_ONE_SIDED: "one-sided close", CLOSE_CROSSED: "crossed close", CLOSE_AFTER_START: "close not before start", TICKER_MISMATCH: "ticker mismatch", OK: "verified"};
 
@@ -82,7 +82,7 @@ function Decomposition() {
     {label: "− modelled entry fee (once)", v: -a.fee_drag_mean, note: "schedule estimate, not a fill"},
     {label: "= Fee-adjusted difference", v: a.fee_adjusted.mean, ci: ci("fee_adjusted")}];
   return <div className="clv-card"><h3>3 · Hypothetical NFL selections: market movement vs spread vs fee</h3>
-    <p className="clv-fine">{int(a.selection.n)} records from {a.games} games (weeks 1–4), one per game·ticker·horizon·arm, close ≤ 60 min old, model-preferred side. <b>Descriptive: not bets, not profit.</b>
+    <p className="clv-fine">{int(a.selection.n)} records from {a.games} games (weeks 1–8), one per game·ticker·horizon·arm, close ≤ 60 min old, model-preferred side. <b>Descriptive: not bets, not profit.</b>
       Median selection CLV is {cents(a.selection.median)}; {a.selection.positive_pct.toFixed(0)}% positive, {a.selection.zero_pct.toFixed(0)}% unchanged.</p>
     <Legend/><BarRows rows={rows} ariaLabel="Decomposition of selection CLV into spread drag, quoted execution, fee drag and fee-adjusted result"/></div>;
 }
@@ -141,6 +141,7 @@ export function ClvDashboard() {
     <Definitions/><Coverage/><RealCLV/><Decomposition/>
     <Slice title="Entry timing · Horizon" data={sh.by_horizon} order={["CYCLE", "T-24h", "T-6h", "T-90m", "T-30m"]} caption="Selection CLV by how long before the start the quote was taken (same denominators as above)."/>
     <Slice title="Probability bucket · Entry price" data={sh.by_price_bucket} caption="Entry executable price of the model side."/>
-    <Slice title="Chronological · NFL week" data={sh.by_week_chronological} caption="Weeks are evaluated in order; later weeks are not tuned on earlier ones. Only weeks 1–4 have closes in this corpus."/>
+    <Slice title="Chronological holdout · Weeks" data={sh.chronological_split} order={["weeks_01-04", "weeks_05-08"]} caption="Weeks 1–4 versus weeks 5–8: the later block was not used to choose anything in the earlier one. Selection CLV persisted out of sample; after spread and fee both blocks are negative."/>
+    <Slice title="Chronological · NFL week" data={sh.by_week_chronological} caption="Week by week, in order. Week 8 is a single game (recovery of that week was partial at the time of capture); intervals with very few games are wide or absent."/>
     <Families/><BeforeAfter/><Gaps/></section>;
 }

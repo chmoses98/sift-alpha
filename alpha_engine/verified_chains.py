@@ -15,6 +15,7 @@ import json
 import re
 from pathlib import Path
 from urllib.request import urlopen, Request
+from .netretry import read_with_retry
 
 from .source_delta import (
     Delta, canonical_board, board_sha256, apply_delta_in_place, BoardHash,
@@ -75,10 +76,7 @@ def pinned_read(chain, entry, downloader=None):
         payload = downloader(chain, entry)
     else:
         request = Request(url, headers={"User-Agent": "SIFT-Alpha-zero-cost-market-research/1"})
-        with urlopen(request, timeout=20) as response:
-            if response.geturl() != url:
-                raise ValueError("Unexpected redirect: don't access unapproved host")
-            payload = response.read(entry["bytes"] + 1)
+        payload = read_with_retry(request, 20, entry["bytes"], opener=urlopen, expect_url=url)
     if len(payload) != entry["bytes"]:
         raise ValueError("Archive byte-length differs from reviewed manifest")
     digest = hashlib.sha1(b"blob " + str(len(payload)).encode() + b"\0" + payload).hexdigest()

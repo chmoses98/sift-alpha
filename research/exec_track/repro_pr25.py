@@ -18,7 +18,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     ref = json.load(open(a.pr25))
     ticks = NS.load_ticks(a.backfill, a.games, a.cache)
-    rows, audit = ST.build_rows(ticks, expiry_min=0, through_any_side=False)        # PR #25 parity: rests to kickoff, qualifying-side prints only
+    rows, audit = ST.build_rows(ticks, expiry_min=0, through_any_side=False, queue_inside_spread=True)        # PR #25 parity: rests to kickoff, qualifying-side prints only
     ev = ST.evaluate(rows, FE.MAKER_COEF)
     det = {}
     for i, r in enumerate(rows):

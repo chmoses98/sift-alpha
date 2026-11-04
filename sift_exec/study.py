@@ -47,7 +47,7 @@ def limit_price(rule, b, a):
     return p if p >= 1 else None
 
 
-def build_rows(ticks, horizons=HORIZONS, rules=RULES, queues=QUEUES, expiry_min=CLOSE_MIN, through_any_side=True):
+def build_rows(ticks, horizons=HORIZONS, rules=RULES, queues=QUEUES, expiry_min=CLOSE_MIN, through_any_side=True, queue_inside_spread=False):
     """List of order dicts, one per (contract-side, horizon, rule, queue).  Outcome (``win``) is attached but never used for placement."""
     rows, audit = [], {}
 
@@ -85,7 +85,10 @@ def build_rows(ticks, horizons=HORIZONS, rules=RULES, queues=QUEUES, expiry_min=
                     if lim is None:
                         continue
                     for qn, (qa, thr) in queues.items():
-                        fr = replay_buy(t.tape, side, lim, QTY, placed, ko - expiry_min * 60, qa, thr, through_any_side)
+                        # a scenario queue only exists at a level that already rests: a bid ABOVE the best bid (inside the spread) is first in line (PR #25 applied it
+                        # everywhere; queue_inside_spread=True keeps that parity for the reproduction)
+                        qa_eff = qa if (lim <= b or queue_inside_spread) else 0.0
+                        fr = replay_buy(t.tape, side, lim, QTY, placed, ko - expiry_min * 60, qa_eff, thr, through_any_side)
                         cc = cclass[(side, lim)]
                         if cc == CA.THROUGH:
                             flo = fhi = float(QTY)

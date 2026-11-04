@@ -202,22 +202,25 @@ def prereg(rows, allg, coef=FE.MAKER_COEF):
         disc = {k: float(np.mean(v["discovery"][0])) for k, v in per.items()}
         best = max(disc, key=disc.get)
         ks = list(per)
-        pv = [S.cluster_bootstrap(per[k]["validation"][0], per[k]["validation"][1], N_BOOT, 41)["p"] for k in ks]
-        holm, bh = S.holm(pv), S.benjamini_hochberg(pv)
 
         def one_sided(k, sp):
+            """H1: mean > 0.  p = half the two-sided SHIFT-method bootstrap p (resampling games; floor 1/(B+1)) when the mean is positive, else 1 - p/2.
+            ``ci95`` is the two-sided percentile interval; one-sided p < 0.05 corresponds to the lower end of the 90% interval (``ci90``) exceeding 0,
+            so a holdout can have ci95 lower < 0 and p_one_sided < 0.05 without contradiction."""
             r = S.cluster_bootstrap(per[k][sp][0], per[k][sp][1], N_BOOT, 42)
-            return r, (r["p"] / 2 if r["mean"] > 0 else 1 - r["p"] / 2)
-        rv, pv1 = one_sided(best, "validation")
-        rh, ph1 = one_sided(best, "holdout")
+            r90 = S.cluster_bootstrap(per[k][sp][0], per[k][sp][1], N_BOOT, 42, alpha=0.10)
+            return r, r90, (r["p"] / 2 if r["mean"] > 0 else 1 - r["p"] / 2)
+        p1 = [one_sided(k, "validation")[2] for k in ks]            # ONE-sided p for every cell, so Holm/BH match the test applied to the selected cell
+        holm, bh = S.holm(p1), S.benjamini_hochberg(p1)
+        rv, rv90, pv1 = one_sided(best, "validation")
+        rh, rh90, ph1 = one_sided(best, "holdout")
         out[claim] = dict(cells_in_family=len(per), selected=dict(horizon=best[1], rule=best[2]), discovery_mean=num(disc[best]),
-                          validation=dict(mean=num(rv["mean"]), lo=num(rv["lo"]), hi=num(rv["hi"]), p_one_sided=num(pv1), n=rv["n"], games=rv["n_clusters"]),
+                          validation=dict(mean=num(rv["mean"]), ci95=[num(rv["lo"]), num(rv["hi"])], ci90=[num(rv90["lo"]), num(rv90["hi"])], p_one_sided=num(pv1), n=rv["n"], games=rv["n_clusters"]),
                           validation_holm_adj_p_selected=num(holm[ks.index(best)]), validation_bh_q_selected=num(bh[ks.index(best)]),
                           cells_passing_validation_holm_0p05=int((holm < 0.05).sum()), cells_with_positive_validation_mean=int(sum(float(np.mean(v["validation"][0])) > 0 for v in per.values())),
-                          validation_passed=bool(pv1 < 0.05 and rv["mean"] > 0),
-                          holdout=dict(mean=num(rh["mean"]), lo=num(rh["lo"]), hi=num(rh["hi"]), p_one_sided=num(ph1), n=rh["n"], games=rh["n_clusters"],
-                                       tested_under_protocol=bool(pv1 < 0.05 and rv["mean"] > 0),
-                                       passed=bool(pv1 < 0.05 and rv["mean"] > 0 and ph1 < 0.05 and rh["mean"] > 0)))
+                          validation_passed=bool(holm[ks.index(best)] < 0.05 and rv["mean"] > 0),
+                          holdout=dict(mean=num(rh["mean"]), ci95=[num(rh["lo"]), num(rh["hi"])], ci90=[num(rh90["lo"]), num(rh90["hi"])], p_one_sided=num(ph1), n=rh["n"], games=rh["n_clusters"],
+                                       tested_under_protocol=bool(holm[ks.index(best)] < 0.05 and rv["mean"] > 0), passed=bool(holm[ks.index(best)] < 0.05 and rv["mean"] > 0 and ph1 < 0.05 and rh["mean"] > 0)))
     return out
 
 

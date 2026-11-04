@@ -1,0 +1,47 @@
+name: CFB availability archive source audit (pinned; research only)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'alpha_engine/cfb_availability_archive.py'
+      - 'research/audit/lineage/cfb_availability_archive_pin.json'
+      - 'tests/test_cfb_availability_archive.py'
+      - '.github/workflows/cfb-availability-source-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline schema, source-pin and future-leakage tests
+        run: python -m unittest discover -s tests -p 'test_cfb_availability_archive.py' -v
+      - name: Fetch one immutable CFB archive source; compare full Git blob hash
+        run: |
+          python -m alpha_engine.cfb_availability_archive --out artifacts/cfb_injury_archive_probe.json
+      - name: Ensure only evidence and no betting authority
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path("artifacts/cfb_injury_archive_probe.json").read_text())
+          assert p["source_blob_sha1"] == "4212b907fac277b93fbdec5d7ee56c08e10ab97e"
+          assert p["authority"] == "PINNED_ARCHIVE_FILE_CONTENT_AUDITED_RESEARCH_ONLY"
+          assert p["trading_authority"] == "NONE"
+          assert p["player_participation_completeness"] == "NOT_ESTABLISHED"
+          assert p["counts"]["rows"] > 0
+          PY
+      - name: Publish aggregated evidence only, no raw injury/player rows
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfb-injury-source-health
+          path: artifacts/cfb_injury_archive_probe.json
+          if-no-files-found: error
+          retention-days: 30

@@ -20,6 +20,7 @@ import math
 import numpy as np
 
 from . import fees
+from sift_exec import fees as FE
 
 STATUS = "RESEARCH_ONLY"
 BUY_NOW, LIMIT, WAIT, PASS = "BUY_NOW", "LIMIT", "WAIT", "PASS"
@@ -47,6 +48,7 @@ class ExecParams:
     risk_aversion: float = 0.5                                    # lambda in ev - 0.5*lambda*variance
     min_lcb: float = 0.0                                          # required lower confidence bound on EV/contract
     z: float = 1.64
+    maker_coef: float = FE.MAKER_COEF                             # maker fee scenario coefficient (0 / 0.0175 / 0.07); evidence per series: sift_exec.fees
 
 
 @dataclass(frozen=True)
@@ -84,7 +86,7 @@ def _eval_limit(o: Opportunity, ep: ExecParams, cents_below: int) -> Optional[Ac
     if f is None:
         return None
     f_lo = ep.fill_prob_lo.get(cents_below, f)
-    fee = float(fees.fee_per_contract(L, o.contracts, "maker"))
+    fee = _maker_fee(L, o.contracts, ep)
     p_f = max(0.0, o.p - ep.adverse_selection - ep.stale_haircut)
     ev = f * (p_f - L - fee)
     # conservative: lower fill probability only matters if per-fill EV>0; LCB also shades p by its se
@@ -95,6 +97,36 @@ def _eval_limit(o: Opportunity, ep: ExecParams, cents_below: int) -> Optional[Ac
     sd = math.sqrt(max(m2 - (f * (p_f - L)) ** 2, 0.0))
     notes = ("MODELLED_MAKER_FEE", "FILL_FROM_TAPE_SIMULATION") + (("ADVERSE_SELECTION_APPLIED",) if ep.adverse_selection else ())
     return ActionEval(LIMIT, L, ev, lcb, sd, ev - 0.5 * ep.risk_aversion * sd ** 2, f, notes)
+
+
+def _maker_fee(L, contracts, ep):
+    """Maker fee per contract for an order of ``contracts`` (whole-order cent rounding: 1 contract at 50c costs a full cent, 10 contracts 0.5c each)."""
+    c = max(1, int(contracts))
+    return FE.order_fee(int(round(L * 100)), c, ep.maker_coef) / c
+
+
+def _eval_limit_fb(o: Opportunity, ep: ExecParams, cents_below: int) -> Optional[ActionEval]:
+    """Resting bid at ask-k with the unfilled remainder TAKEN at the later ask: EQUAL EXPOSURE to BUY_NOW (the like-for-like action).
+    p = f p_f + (1-f) p_u (martingale), so p_u absorbs the adverse selection: orders that do not fill are the ones where the price ran away."""
+    L = round(o.ask - cents_below / 100.0, 2)
+    f = ep.fill_prob.get(cents_below)
+    if f is None or L < 0.01:
+        return None
+    f_lo = ep.fill_prob_lo.get(cents_below, f)
+    p_f = max(0.0, o.p - ep.adverse_selection - ep.stale_haircut)
+    ask2 = float(np.clip(o.ask + ep.drift_mean, 0.01, 0.99))
+    mfee = _maker_fee(L, o.contracts, ep)
+    tfee = float(FE.order_fee(int(round(ask2 * 100)), max(1, o.contracts), FE.TAKER_COEF)) / max(1, o.contracts)
+
+    def ev_at(ff):
+        p_u = (o.p - ff * p_f) / (1 - ff) if ff < 1 else o.p
+        return ff * (p_f - L - mfee) + (1 - ff) * (min(max(p_u, 0.0), 1.0) - ask2 - tfee)
+    ev = ev_at(f)
+    gain_from_fill = (p_f - L - mfee) - (o.p - ask2 - tfee)
+    lcb = ev_at(f_lo if gain_from_fill > 0 else f) - ep.z * o.p_se
+    sd = _sd_buy(o.p, L)
+    return ActionEval("LIMIT_FB", L, ev, lcb, sd, ev - 0.5 * ep.risk_aversion * sd ** 2, f,
+                      ("EQUAL_EXPOSURE_WITH_TAKER_FALLBACK", "MAKER_FEE_SCENARIO", "FILL_FROM_TAPE_SIMULATION"))
 
 
 def _eval_wait(o: Opportunity, ep: ExecParams, n=2001) -> ActionEval:
@@ -109,13 +141,19 @@ def _eval_wait(o: Opportunity, ep: ExecParams, n=2001) -> ActionEval:
     return ActionEval(WAIT, None, ev, lcb, pnl_sd, ev - 0.5 * ep.risk_aversion * pnl_sd ** 2, None, ("OPTION_VALUE_ASSUMES_MARTINGALE_P",))
 
 
-def decide(o: Opportunity, ep: ExecParams) -> Dict:
-    """Ranked comparison. A non-PASS action is recommended only if its EV lower confidence bound exceeds ``min_lcb``."""
+def decide(o: Opportunity, ep: ExecParams, include_fallback: bool = False) -> Dict:
+    """Ranked comparison. A non-PASS action is recommended only if its EV lower confidence bound exceeds ``min_lcb``.
+    ``include_fallback`` adds LIMIT_FB (equal exposure to BUY_NOW).  NOTE: LIMIT (unfilled = no bet), WAIT (option value) and BUY_NOW have DIFFERENT
+    exposures, so ranking them on EV per submitted contract favours the smaller exposure when EV<0 and the larger when EV>0; use LIMIT_FB for like-for-like."""
     evals: List[ActionEval] = [_eval_buy_now(o, ep)]
     for c in sorted(ep.fill_prob):
         e = _eval_limit(o, ep, c)
         if e:
             evals.append(e)
+        if include_fallback:
+            e = _eval_limit_fb(o, ep, c)
+            if e:
+                evals.append(e)
     evals.append(_eval_wait(o, ep))
     evals.append(ActionEval(PASS, None, 0.0, 0.0, 0.0, 0.0, None))
     eligible = [e for e in evals if e.action == PASS or e.ev_lcb > ep.min_lcb]

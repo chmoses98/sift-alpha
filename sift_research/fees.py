@@ -2,7 +2,9 @@
 
 taker: ceil_to_cent(0.07 * C * P * (1-P)); maker: ceil_to_cent(0.0175 * C * P * (1-P)).
 Agrees with ``sift_clv.canonical.estimate_fee`` (tested). HYPOTHETICAL entries only: real wagers carry exchange-reported fees.
-The maker rate is an assumption (some series charge no maker fee); every maker result is labelled MODELLED_FEE.
+The maker coefficient is NOT observed anywhere. The exchange's own series fee_type (market-data data/kalshi/fees) labels KXNFLGAME/SPREAD/TOTAL
+`quadratic_with_maker_fees` (maker pays) and 367/392 other NFL-family series `quadratic` (maker pays 0): see sift_exec.fees + docs/EXECUTION_RESEARCH.md §2.
+Every maker result is a SCENARIO (M0 / M25 / M100).
 """
 from __future__ import annotations
 import math

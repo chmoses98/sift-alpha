@@ -19,3 +19,12 @@ test("counters are internally consistent", () => {
   assert.ok(o.fills_joined_to_order_by_order_id <= o.fills_sampled);
   assert.ok(ev.fees.taker_matches_0_07 <= ev.fees.taker_fee_rows_validated);
 });
+
+test("series fee schedule counts add up and flag disagreements", () => {
+  const f = ev.series_fee_schedule;
+  assert.equal(Object.values(f.fee_type_counts).reduce((a, b) => a + b, 0), f.series_checked);
+  assert.equal(Object.values(f.fee_multiplier_counts).reduce((a, b) => a + b, 0), f.series_checked);
+  assert.equal(f.maker_fills_observed, 0);
+  assert.ok(f.published_multiplier_vs_observed_rate_disagreements >= 0);
+  assert.ok(!JSON.stringify(f).match(/KX[A-Z]/));
+});

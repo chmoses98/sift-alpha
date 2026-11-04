@@ -1,4 +1,4 @@
-import importlib.util, json, os, re
+import importlib.util, json, os, re, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("vfs", os.path.join(HERE, "..", "scripts", "validate_fee_schedule.py"))
 vfs = importlib.util.module_from_spec(spec); spec.loader.exec_module(vfs)
@@ -24,3 +24,12 @@ def test_report_is_aggregate_only_and_taker_dominant():
     n = sum(v["n"] for v in d["by_series"].values()); t = sum(v.get("TAKER_0.07", 0) for v in d["by_series"].values())
     assert n >= 600 and t / n > 0.99
     assert sum(v.get("MAKER_0.0175", 0) for v in d["by_series"].values()) == 0   # no maker fill observed: maker rate stays UNVERIFIED
+
+
+class FeeValidationTests(unittest.TestCase):
+    """CI runs unittest discovery: expose every module-level test function as a TestCase method."""
+
+
+for _n, _f in list(globals().items()):
+    if _n.startswith("test_") and callable(_f):
+        setattr(FeeValidationTests, _n, lambda self, _f=_f: _f())

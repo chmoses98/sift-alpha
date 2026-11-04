@@ -1,15 +1,22 @@
 name: Shadow-order ledger (research-only, hypothetical, no orders)
 
-# Every 30 minutes: sync new live-capture runs from nfl-edge-finder market-data (public, read-only), record point-in-time PLACED snapshots for every matched
-# tactic (BUY_NOW / WAIT / LIMIT / LIMIT_FB / PASS), then append fill evidence and SETTLED rows once each deadline has passed. Output is an append-only JSONL on the
-# `shadow-data` branch of THIS repo. Nothing here can place an order: no credentials, no client, GET-only git reads.
+# CONDUCTOR: one runner loops every 10 minutes for ~5h35m (successor dispatched first, hourly cron as backstop), because a 30-minute cron is best-effort and lags,
+# and a decision only counts as PROSPECTIVE when it is recorded within 30 minutes of its quote. Each pass: sync new live-capture runs from nfl-edge-finder market-data
+# (public, read-only), record point-in-time PLACED snapshots for every matched tactic, append fill evidence and SETTLED rows after each deadline, VALIDATE the output
+# (a green job without valid output is not success) and publish to the `shadow-data` branch with a confirmed push. Nothing here can place an order: no credentials, GET-only reads.
 on:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '41 * * * *'
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: "how long this link loops (max 335)"
+        required: false
+        default: "335"
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: shadow-ledger
@@ -18,45 +25,48 @@ concurrency:
 jobs:
   ledger:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 358
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install numpy
+      - name: Dispatch the successor link (a refused dispatch leaves the hourly cron as backstop)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run shadow-ledger.yml --ref main && echo "successor dispatched"
       - name: Restore ledger + extract from shadow-data
         run: |
           git fetch --depth=1 origin shadow-data || true
           mkdir -p shadow_data
           if git rev-parse --verify origin/shadow-data >/dev/null 2>&1; then git --work-tree=shadow_data checkout origin/shadow-data -- . ; git reset -q; fi
           ls shadow_data | head
-      - name: Blobless clone of market-data (names only until sparse checkout)
+      - name: Loop sync + build + validate + publish (every 10 minutes)
+        env:
+          MINUTES: ${{ inputs.minutes || '335' }}
         run: |
-          rm -rf /tmp/md && mkdir /tmp/md && cd /tmp/md && git init -q . && git remote add origin https://github.com/chmoses98/nfl-edge-finder
-          git fetch -q --depth=1 --filter=blob:none origin market-data
-      - name: Sync new capture runs
-        run: python3 research/exec_track/shadow_sync.py --clone /tmp/md --extract-dir shadow_data/extract
-      - name: Fetch nflverse results
-        run: curl -fsSL https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv -o /tmp/games.csv || true
-      - name: Build ledger + matched report
-        run: |
-          python3 research/exec_track/shadow_ledger.py --ext shadow_data/extract --ledger shadow_data/nfl_2026.jsonl --games /tmp/games.csv
-          python3 research/exec_track/shadow_report.py --ledger shadow_data/nfl_2026.jsonl --out shadow_data/summary.json
-      - name: Validate output (a green job without VALID output is not success)
-        run: |
-          python3 research/exec_track/validate_shadow_output.py --ledger shadow_data/nfl_2026.jsonl --state shadow_data/extract/state.json \
-            --health shadow_data/health.json --runs shadow_data/runs.jsonl --append-run
-      - name: Publish to shadow-data (identity set INSIDE the publish repo; every failure is fatal; push is confirmed)
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/pub && mkdir /tmp/pub && cp -r shadow_data/. /tmp/pub/ && cd /tmp/pub
-          git init -q . && git checkout -q -b shadow-data
-          git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "shadow ledger $(date -u +%FT%TZ)"
-          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          git push -q --force origin shadow-data
-          LOCAL="$(git rev-parse HEAD)"; REMOTE="$(git ls-remote origin refs/heads/shadow-data | cut -f1)"
-          [ "${LOCAL}" = "${REMOTE}" ] || { echo "::error::push to shadow-data not confirmed (${LOCAL} vs ${REMOTE})"; exit 1; }
-          echo "published shadow-data ${LOCAL}"
+          set -uo pipefail
+          case "${MINUTES}" in ''|*[!0-9]*) echo "::error::bad minutes"; exit 1;; esac
+          [ "${MINUTES}" -le 335 ] || { echo "::error::minutes > 335"; exit 1; }
+          git config --global user.name "github-actions[bot]"; git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/md && mkdir /tmp/md && ( cd /tmp/md && git init -q . && git remote add origin https://github.com/chmoses98/nfl-edge-finder )
+          END=$(( $(date +%s) + MINUTES * 60 ))
+          PASS=0
+          while [ "$(date +%s)" -lt "${END}" ]; do
+            START=$(date +%s); PASS=$((PASS+1))
+            ( cd /tmp/md && git fetch -q --depth=1 --filter=blob:none origin market-data ) || { echo "::warning::market-data fetch failed (pass ${PASS})"; sleep 60; continue; }
+            python3 research/exec_track/shadow_sync.py --clone /tmp/md --extract-dir shadow_data/extract --since-days 2 --max-runs 400 || { echo "::error::sync failed"; exit 1; }
+            curl -fsSL https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv -o /tmp/games.csv || true
+            python3 research/exec_track/shadow_ledger.py --ext shadow_data/extract --ledger shadow_data/nfl_2026.jsonl --games /tmp/games.csv || { echo "::error::ledger build failed"; exit 1; }
+            python3 research/exec_track/shadow_report.py --ledger shadow_data/nfl_2026.jsonl --out shadow_data/summary.json || exit 1
+            python3 research/exec_track/validate_shadow_output.py --ledger shadow_data/nfl_2026.jsonl --state shadow_data/extract/state.json \
+              --health shadow_data/health.json --runs shadow_data/runs.jsonl --append-run || { echo "::error::output failed validation; NOT publishing"; exit 1; }
+            rm -rf /tmp/pub && mkdir /tmp/pub && cp -r shadow_data/. /tmp/pub/
+            ( cd /tmp/pub && git init -q . && git checkout -q -b shadow-data && git add -A && git commit -q -m "shadow ledger pass ${PASS} $(date -u +%FT%TZ)" \
+              && git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" && git push -q --force origin shadow-data \
+              && [ "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/shadow-data | cut -f1)" ] ) \
+              && echo "pass ${PASS} published $(date -u +%T)" || { echo "::error::publish not confirmed (pass ${PASS})"; exit 1; }
+            ELAPSED=$(( $(date +%s) - START )); [ "${ELAPSED}" -lt 600 ] && sleep $(( 600 - ELAPSED ))
+          done

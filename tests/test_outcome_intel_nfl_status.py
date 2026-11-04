@@ -54,3 +54,31 @@ class TestStatus(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCentralClassifier(unittest.TestCase):
+    G = lambda self, m, lo, hi: dict(mean=m, lo=lo, hi=hi, holm_p=0.01)
+    CLEAN = dict(mean=0.0, lo=-0.001, hi=0.001)
+
+    def test_reviewer_scenarios(self):
+        # mean -0.002, CI [-0.023,+0.019], 100 games -> must NOT be a null verdict
+        self.assertEqual(S.classify_gain(self.G(-.002, -.023, .019), 100, 1.0, self.CLEAN), "INCONCLUSIVE_UNDERPOWERED")
+        self.assertEqual(S.classify_gain(self.G(0, -.1, .1), 30, 1.0, self.CLEAN), "INCONCLUSIVE_UNDERPOWERED")
+        self.assertEqual(S.classify_gain(self.G(-.04, -.097, .006), 109, 1.0, None), "INCONCLUSIVE_UNDERPOWERED")
+        self.assertEqual(S.classify_gain(self.G(-.001, -.004, .004), 60, 1.0, None), "NO_DEMONSTRATED_IMPROVEMENT")
+        self.assertEqual(S.classify_gain(self.G(-.07, -.12, -.03), 40, 1.0, None), "NO_DEMONSTRATED_IMPROVEMENT")   # reliably worse
+
+    def test_missing_game_count_or_control_blocks_validation(self):
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), None, .01, self.CLEAN), "INCONCLUSIVE_UNDERPOWERED")
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, None), "PROMISING_INSUFFICIENT")          # control not run
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, dict(mean=.0015, lo=.0005, hi=.0025)), "PROMISING_INSUFFICIENT")
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .01, self.CLEAN), "VALIDATED_IMPROVEMENT")
+        self.assertEqual(S.classify_gain(self.G(.02, .01, .03), 80, .2, self.CLEAN), "PROMISING_INSUFFICIENT")
+
+    def test_dashboard_reclassifies_and_never_invents_missing(self):
+        import build_dashboard as B
+        cell = dict(incremental_gain=self.G(0, -.1, .1), reason="holdout 80 games")
+        self.assertEqual(B.central_status(cell, "NO_DEMONSTRATED_IMPROVEMENT", 80)[0], "INCONCLUSIVE_UNDERPOWERED")
+        self.assertEqual(B.central_status({}, "MISSING_DATA", None)[0], "MISSING_DATA")
+        self.assertEqual(B.central_status({}, "NO_DEMONSTRATED_IMPROVEMENT", None)[0], "INCONCLUSIVE_UNDERPOWERED")
+        self.assertEqual(B.holdout_games_of(dict(challenger_detail=dict(holdout_games=44))), 44)

@@ -12,21 +12,41 @@ UNK = lambda why: dict(value="UNKNOWN", reason=why)
 
 def holdout_games_of(c):
     g = c.get("incremental_gain") or {}
-    for v in (c.get("holdout_games"), g.get("n_holdout_games")):
+    d = c.get("challenger_detail") or {}
+    m_ = c.get("model_metrics") or {}
+    for v in (c.get("holdout_games"), g.get("n_holdout_games"), d.get("holdout_games"), m_.get("holdout_games") if isinstance(m_, dict) else None):
         if isinstance(v, (int, float)):
             return int(v)
     m = re.search(r"(\d+) (?:holdout|HOLDOUT)[ -]?(?:games|matches)|holdout (?:only )?(\d+) (?:games|matches)|over (\d+) holdout", c.get("reason") or "")
     return int(next(x for x in m.groups() if x)) if m else None
 
 
-def guard(c, st, hg):
-    """Central consistency rules applied to every sport's own classification (agents used equivalent but separate classifiers)."""
+def nc_of(c):
     g = c.get("incremental_gain") or {}
+    d = c.get("challenger_detail") or {}
+    for v in (c.get("negative_control"), g.get("negative_control"), d.get("negative_control_gain"), c.get("negative_control_gain_vs_calibrated")):
+        if isinstance(v, dict) and v.get("lo") is not None:
+            return v
+    return None
+
+
+def central_status(c, agent_status, hg):
+    """The ONLY authority for cells that carry a gain estimate; sport-level statuses are kept as `agent_status` for traceability."""
+    g = c.get("incremental_gain") or {}
+    if agent_status in ("MISSING_DATA", "INVALID_EVIDENCE", "INCONCLUSIVE_UNDERPOWERED") and g.get("mean") is None:
+        return agent_status, None
+    if g.get("mean") is None:      # a positive/null verdict without any gain estimate is unsupported
+        return "INCONCLUSIVE_UNDERPOWERED", f"no gain estimate behind sport-level status {agent_status}"
+    if agent_status in ("MISSING_DATA", "INVALID_EVIDENCE"):
+        return agent_status, None
+    st = S.classify_gain(g, hg, g.get("holm_p"), nc_of(c))
     note = None
-    if st in ("VALIDATED_IMPROVEMENT", "PROMISING_INSUFFICIENT", "NO_DEMONSTRATED_IMPROVEMENT") and (hg is None or hg < S.MIN_GAMES):
-        return "INCONCLUSIVE_UNDERPOWERED", f"downgraded from {st}: holdout games {hg} < {S.MIN_GAMES}"
-    if st == "VALIDATED_IMPROVEMENT" and not (g.get("lo") is not None and g["lo"] > 0 and g.get("holm_p") is not None and g["holm_p"] <= 0.05):
-        return "PROMISING_INSUFFICIENT", "downgraded from VALIDATED_IMPROVEMENT: CI lower bound or Holm p failed the central check"
+    if hg is None:
+        note = "holdout game count not recorded -> cannot verify power"
+    elif st == "PROMISING_INSUFFICIENT" and g["mean"] < S.MEANINGFUL:
+        note = f"CI lower bound > 0 but mean gain {g['mean']:.4f} < {S.MEANINGFUL} logloss (economically negligible); sport-level status was {agent_status}"
+    elif st != agent_status:
+        note = f"recomputed centrally: sport-level status was {agent_status}"
     return st, note
 
 
@@ -36,7 +56,7 @@ def norm(c, sport=None):
         metric="logloss_gain_vs_calibrated_market (positive = challenger better)", mean=g["mean"], lo=g.get("lo"), hi=g.get("hi"), holm_p=g.get("holm_p"))
     st0 = c.get("status") or c.get("evidence_status") or "MISSING_DATA"
     hg = holdout_games_of(c)
-    st, note = guard(c, st0, hg)
+    st, note = central_status(c, st0, hg)
     c = dict(c, holdout_games=hg)
     return dict(agent_status=st0, status_note=note, sport=sport or c.get("sport"), family=c.get("family", "UNKNOWN"), horizon=c.get("horizon", "all"), challenger=c.get("challenger") or "UNKNOWN",
                 inputs_available=c.get("inputs_available") or UNK("not recorded"),

@@ -16,21 +16,28 @@ MEANINGFUL = 0.005        # logloss improvement that would matter economically (
 ALL = ("VALIDATED_IMPROVEMENT", "PROMISING_INSUFFICIENT", "NO_DEMONSTRATED_IMPROVEMENT", "INCONCLUSIVE_UNDERPOWERED", "MISSING_DATA", "INVALID_EVIDENCE")
 
 
+def nc_clean(nc):
+    """Negative control must have been RUN and its CI must contain 0. None = not run = not clean (blocks VALIDATED)."""
+    return nc is not None and nc.get("lo") is not None and nc["lo"] <= 0 <= nc["hi"]
+
+
+def classify_gain(gain, holdout_games, holm_p, nc):
+    """Single authority for sport/family/horizon cells that have a gain estimate (dict mean/lo/hi). holdout_games None -> INCONCLUSIVE (loud, never silent)."""
+    if not gain or gain.get("mean") is None or gain.get("lo") is None:
+        return "MISSING_DATA"
+    if holdout_games is None or holdout_games < MIN_GAMES:
+        return "INCONCLUSIVE_UNDERPOWERED"
+    if gain["lo"] > 0:
+        return "VALIDATED_IMPROVEMENT" if (holm_p is not None and holm_p <= 0.05 and nc_clean(nc)) else "PROMISING_INSUFFICIENT"
+    if gain["hi"] < 0 or ((gain["hi"] - gain["lo"]) / 2 <= POWER_HALFWIDTH and gain["hi"] < MEANINGFUL):
+        return "NO_DEMONSTRATED_IMPROVEMENT"      # CI excludes any gain (challenger reliably worse) or is tight enough to exclude a meaningful one
+    return "INCONCLUSIVE_UNDERPOWERED"
+
+
 def classify(cell, holm_p=None, negative_control=None):
-    """cell: dict from incremental.incremental_test. negative_control: its 'gain_vs_calibrated_market_logloss' dict (or None)."""
+    """cell: dict from incremental.incremental_test."""
     if not cell or cell.get("status") == "MISSING":
         return "MISSING_DATA"
     if cell.get("status") != "OK":
         return "INCONCLUSIVE_UNDERPOWERED"
-    g = cell["gain_vs_calibrated_market_logloss"]
-    nc_clean = negative_control is None or (negative_control["lo"] <= 0 <= negative_control["hi"] or abs(negative_control["mean"]) < 0.002)
-    if cell["holdout_games"] < MIN_GAMES:
-        return "INCONCLUSIVE_UNDERPOWERED"
-    if g["lo"] > 0 and (holm_p is not None and holm_p <= 0.05) and nc_clean:
-        return "VALIDATED_IMPROVEMENT"
-    if g["lo"] > 0 and g["mean"] > 0:
-        return "PROMISING_INSUFFICIENT"
-    half = (g["hi"] - g["lo"]) / 2
-    if half <= POWER_HALFWIDTH and g["hi"] < MEANINGFUL:
-        return "NO_DEMONSTRATED_IMPROVEMENT"
-    return "INCONCLUSIVE_UNDERPOWERED"
+    return classify_gain(cell["gain_vs_calibrated_market_logloss"], cell["holdout_games"], holm_p, negative_control)

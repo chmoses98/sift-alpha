@@ -3,7 +3,7 @@
 Question (P2): the production NFL total/team-total pricer centres on the market line and a residual bank and references NO football
 input. For each candidate input group we fit, on PAST seasons only, a ridge model of the market residual  y = total - total_line  and
 score it on the next season (expanding-window by season; test seasons 2020..2025). Baselines: B0 = the market line itself (residual 0) and
-B1 = market + past mean residual. A group counts as an incremental improvement only if its squared-error gain over B0 is positive after
+B1 = market + past mean residual. A group counts as an incremental improvement only if its squared-error gain over B1 (the stricter baseline, so the intercept's bias shift cannot win) is positive after
 a calendar-week-cluster bootstrap, Bonferroni over every group tried, in both halves of the test period, and with each test season
 dropped in turn. Nothing here is a betting claim: the line is a near-close consensus of undocumented timing (not point-in-time at a
 horizon), there are no prices or fees, and `ctx.*_qb_change` uses the REALISED starter (a pregame-availability caveat, reported)."""
@@ -82,7 +82,8 @@ def b1(df) -> np.ndarray:
     return out
 
 
-def _boot(d, keys, rng, alpha):
+def _boot(d, keys, rng, alphas):
+    """One set of cluster resamples, several nested quantile intervals (so a Bonferroni interval always contains the 95% one)."""
     g = defaultdict(list)
     for x, k in zip(d, keys):
         g[k].append(x)
@@ -95,7 +96,7 @@ def _boot(d, keys, rng, alpha):
         cnt = sum(len(gl[i]) for i in idx)
         means.append(tot / cnt)
     means.sort()
-    return means[int(alpha / 2 * BOOT)], means[min(BOOT - 1, int((1 - alpha / 2) * BOOT) - 1)]
+    return [(means[int(a / 2 * BOOT)], means[min(BOOT - 1, int((1 - a / 2) * BOOT) - 1)]) for a in alphas]
 
 
 def evaluate(df) -> dict[str, Any]:
@@ -114,18 +115,19 @@ def evaluate(df) -> dict[str, Any]:
     seasons = df["season"].to_numpy()
     for name, feats in G.items():
         p = predict(df, feats)
-        d_sq = ((y - 0.0) ** 2 - (y - p) ** 2)[test]               # >0: the model beats the market line itself
-        d_sq1 = ((y - base1) ** 2 - (y - p) ** 2)[test]
-        d_abs = (np.abs(y) - np.abs(y - p))[test]
-        lo, hi = _boot(d_sq, tk, rng, 0.05)
-        blo, bhi = _boot(d_sq, tk, rng, 0.05 / len(G))
+        d_sq0 = ((y - 0.0) ** 2 - (y - p) ** 2)[test]               # >0: the model beats the market line itself (B0)
+        d_sq = ((y - base1) ** 2 - (y - p) ** 2)[test]              # >0: the model beats market + past mean residual (B1). THE GATE: a feature group must beat B1,
+        d_abs = (np.abs(y) - np.abs(y - p))[test]                   # otherwise a group could "win" on the intercept's bias shift alone
+        (lo, hi), (blo, bhi) = _boot(d_sq, tk, rng, (0.05, 0.05 / len(G)))
         h = n // 2
         halves = [float(d_sq[:h].mean()), float(d_sq[h:].mean())]
         loso = {int(s): round(float(d_sq[seasons[test] != s].mean()), 4) for s in TEST_SEASONS}
+        base_mse = float(np.mean((y[test] - base1[test]) ** 2))
         verdict = ("VALIDATED_INCREMENTAL" if blo > 0 and min(halves) > 0 and min(loso.values()) > 0 else
                    "SUGGESTIVE_UNCONFIRMED" if lo > 0 else "WORSE_THAN_MARKET" if bhi < 0 else "NOT_DEMONSTRATED")
-        res["groups"][name] = {"features": feats, "mse_gain_vs_market_line": round(float(d_sq.mean()), 4), "ci95_week_cluster": [round(float(lo), 4), round(float(hi), 4)], "ci_bonferroni": [round(float(blo), 4), round(float(bhi), 4)],
-                               "mse_gain_vs_B1": round(float(d_sq1.mean()), 4), "mae_gain_vs_market_line": round(float(d_abs.mean()), 4), "halves_mse_gain": [round(x, 4) for x in halves],
-                               "leave_one_season_out_mse_gain": loso, "rmse": round(float(np.sqrt(np.mean(((y - p)[test]) ** 2))), 4), "verdict": verdict}
+        res["groups"][name] = {"features": feats, "mse_gain_vs_B1": round(float(d_sq.mean()), 4), "ci95_week_cluster": [round(float(lo), 4), round(float(hi), 4)], "ci_bonferroni": [round(float(blo), 4), round(float(bhi), 4)],
+                               "bonferroni_ci_halfwidth_pct_of_base_mse": round(100 * float(bhi - blo) / 2 / base_mse, 2), "mse_gain_vs_market_line_B0": round(float(d_sq0.mean()), 4),
+                               "mae_gain_vs_market_line": round(float(d_abs.mean()), 4), "halves_mse_gain": [round(x, 4) for x in halves], "leave_one_season_out_mse_gain": loso,
+                               "rmse": round(float(np.sqrt(np.mean(((y - p)[test]) ** 2))), 4), "verdict": verdict}
     res["n_week_clusters"] = len(set(tk))
     return res

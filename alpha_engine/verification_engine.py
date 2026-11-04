@@ -397,8 +397,9 @@ def build():
             proj = dict(proj, independent_evaluation={"ref": "verification/NBA_forecast_eval.json", "n_paired": 0, "verdict": "NO_BASELINE", "baseline": "none archived for this family"})
         if nfltot and key == nfltot.get("family"):
             gv = [g["verdict"] for g in nfltot["groups"].values()]
-            proj = dict(proj, independent_evaluation={"ref": "verification/NFL_totals_incremental.json", "n_paired": nfltot["n_test_games"],
-                                                      "verdict": "INCREMENTAL_GAIN_VALIDATED" if "VALIDATED_INCREMENTAL" in gv else "NO_INCREMENTAL_GAIN_VS_MARKET",
+            proj = dict(proj, independent_evaluation={"ref": "verification/NFL_totals_incremental.json", "n_paired": nfltot["n_test_games"], "n_groups": len(gv),
+                                                      "verdict": "INCREMENTAL_GAIN_VALIDATED" if "VALIDATED_INCREMENTAL" in gv else "NOT_DEMONSTRATED_VS_MARKET_UNDERPOWERED",
+                                                      "group_verdicts": {v: gv.count(v) for v in sorted(set(gv))},
                                                       "baseline": "market line (near-close consensus, not point-in-time); NO Kalshi price baseline; game totals only"})
         orientation = proj.get("settles_on") if proj["state"] == "SPEC_ONLY" else (evidence.get("orientation") or {}).get(key)
         rows, counts = [], {"E": Counter(), "C": Counter(), "X": Counter()}

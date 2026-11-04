@@ -81,6 +81,8 @@ def derive_outcome(c, res, goals=None, players=None, goalies=None, player_id=Non
             v = h + a
         else:
             if _isnan(tid):
+                if fam == "period_winner" and str(c.get("ticker", "")).endswith("-TIE"):
+                    return ("YES" if h == a else "NO"), float(h - a)
                 return None, None
             v = (h - a) if int(tid) == res["home_team_id"] else (a - h)
         thr = 0.0 if (fam == "period_winner" and _isnan(thr)) else thr
@@ -232,7 +234,7 @@ def pred_source_rows(root, subdir, tickers, fields, qfield, extra=None):
             continue
         lin = max([C.snapshot_ts_from_path(v) or 0 for v in (r.get("input_snapshot_ids") or {}).values() if isinstance(v, str)] or [0]) or None
         out.append(dict(ticker=r["ticker"], game=str(r["game_id"]), t=C.ts(r["predicted_at_utc"]), cutoff=C.ts(r.get("data_cutoff_utc")), q=float(q), lineage_ts=lin,
-                        emb_bid=r.get("market_yes_bid"), emb_ask=r.get("market_yes_ask"), emb_mid=r.get("p_market"), mins=r.get("minutes_to_start"), pregame=bool(r.get("pregame"))))
+                        emb_bid=r.get("market_yes_bid"), emb_ask=r.get("market_yes_ask"), emb_mid=r.get("p_market"), mins=r.get("minutes_to_start"), pregame=bool(r.get("pregame", True))))  # V2 rows carry no flag: pregame-ness is enforced by predicted_at < scheduled start below
     return out, dict(raw_rows=raw, rows_for_verified_tickers_with_q=len(out), q_null_for_verified_tickers=qnull)
 
 
@@ -261,6 +263,9 @@ def main():
             pid.setdefault(r["ticker"], int(r["player_id"]))
     print("player ids", len(pid), time.time() - t0, flush=True)
 
+    # goal-event completeness: only games whose goal rows add up to the final score (minus the shootout goal) may be used for period / first-goal derivations
+    goals_ok = {g for g, r in results.items() if len(goals.get(g, [])) == r["home_final"] + r["away_final"] - (1 if r["last_period_type"] == "SO" else 0)}
+
     # --- derivation vs engine
     derived, cmp = {}, collections.defaultdict(collections.Counter)
     for tk, s in sett.items():
@@ -269,7 +274,7 @@ def main():
             cmp["_no_contract"]["n"] += 1
             continue
         g = str(c["game_id"])
-        d, v = derive_outcome(c, results.get(g), goals.get(g), players, goalies, pid.get(tk))
+        d, v = derive_outcome(dict(c, ticker=tk), results.get(g), goals.get(g) if g in goals_ok else None, players, goalies, pid.get(tk))
         derived[tk] = d
         e = s["outcome"]
         fam = c["family"]
@@ -427,7 +432,7 @@ def main():
 
     out_cells = []
     for src in srcs:
-        fams_src = sorted({k[1] for k in cell_rows if k[0] == src} | ({f for f in fams if (src in ("SIFT_V1", "SIFT_V2") and f in GAME_FAMS + PLAYER_FAMS) or (src == "PLAYER_SIM_V1" and f in PLAYER_FAMS) or (src.startswith("OA:") and f == "game_winner") or (src == "SPORTSBOOK" and f == "game_winner")}))
+        fams_src = sorted({k[1] for k in cell_rows if k[0] == src} | ({f for f in fams if (src in ("SIFT_V1", "SIFT_V2") and f in GAME_FAMS) or (src == "PLAYER_SIM_V1" and f in PLAYER_FAMS) or (src.startswith("OA:") and f == "game_winner") or (src == "SPORTSBOOK" and f == "game_winner")}))
         for fam in fams_src:
             for lab, tgt, lo, hi in HZ:
                 k = (src, fam, lab)
@@ -439,8 +444,11 @@ def main():
                         reason = f"no contract of this family has a settlement verified against independent derivation (engine outcomes {fi['engine_outcomes']}). Repair: prove semantics and settle it, then re-run."
                     else:
                         npr = len([r for r in cand.get(src, []) if (r.get('fam') or fam_of.get(r['ticker'])) == fam])
-                        reason = (f"challenger {src} has {npr} pregame probability rows for verified {fam} contracts but none yields a two-sided pregame Kalshi quote within {MAX_STALE_S//60} min at this horizon"
-                                  f" (e.g. the model does not price this family/horizon). Repair: archive the model probability and the quote together at this horizon for every listed contract.")
+                        if npr == 0:
+                            reason = (f"challenger {src} archives no non-null probability for verified {fam} contracts (gate UNSUPPORTED / not priced). Repair: price this family and archive the probability with its timestamp.")
+                        else:
+                            reason = (f"challenger {src} has {npr} pregame probability rows for verified {fam} contracts but none gives a usable (two-sided, spread<=10c, mid in [0.03,0.97], board<=30 min old) "
+                                      f"Kalshi quote at this horizon. Repair: capture the quote (with depth) at the same instant as the model at this horizon.")
                     cell.update(inputs_available=[], n_games=0, n_contracts=0, price_coverage=None, settlement_source=_ss(fam), market_metrics=None, model_metrics=None, incremental_gain=None,
                                 status="MISSING_DATA", reason=reason)
                     out_cells.append(cell)
@@ -471,6 +479,12 @@ def main():
                     cell.update(market_metrics=None, model_metrics=dict(train_games=res["train_games"], holdout_games=res["holdout_games"], n_train_rows=res["n_train"], n_holdout_rows=res["n_holdout"]),
                                 incremental_gain=None, status=st, reason=why)
                 out_cells.append(cell)
+    for fam, fi in fam_all.items():
+        if fi["settled_yes_no_rederived_agree"] == 0:
+            out_cells.append(dict(sport=SPORT, challenger="ANY", family=fam, horizon="ALL", inputs_available=[], n_games=0, n_contracts=0, price_coverage=None, settlement_source=_ss(fam), market_metrics=None,
+                                  model_metrics=None, incremental_gain=None, status="MISSING_DATA",
+                                  reason=f"no settled YES/NO contract verified by independent derivation (contracts observed {fi['contracts_observed']}, engine outcomes {fi['engine_outcomes']}); "
+                                         "semantics not proven in the settlement engine. Repair: prove the rule text against the exchange result, implement settlement, capture the Kalshi result."))
     # pooled cells
     for k, sub in cell_rows.items():
         if k[1].startswith("ALL_MODELLED"):

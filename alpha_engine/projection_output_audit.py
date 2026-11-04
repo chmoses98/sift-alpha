@@ -13,12 +13,14 @@ from collections import Counter
 from datetime import datetime
 
 # output field -> registry input it evidences (an input is "visible" only if its field is populated for >=50% of players AND varies)
+# kind "applied": a pre-game input STATE or an adjustment that was applied to the projection (can support consumption PASS);
+# kind "output"/"echo": the model's own output or an input value merely copied into the record (never more than PARTIAL).
 FIELD_EVIDENCE = {
-    "nba.injuries_pit": ("participation.status", lambda p: (p.get("participation") or {}).get("status")),
-    "nba.minutes": ("opportunity.mean", lambda p: (p.get("opportunity") or {}).get("mean")),
-    "nba.opp_def_pos": ("opponent_adjustment.factor", lambda p: (p.get("opponent_adjustment") or {}).get("factor")),
-    "nba.starters_pit": ("starter flag", lambda p: p.get("starter") if "starter" in p else (p.get("lineup") or {}).get("starter") if isinstance(p.get("lineup"), dict) else None),
-    "nba.stat_dist": ("thresholds", lambda p: json.dumps(p.get("thresholds"), sort_keys=True) if p.get("thresholds") else None),
+    "nba.injuries_pit": ("applied", "participation.status", lambda p: (p.get("participation") or {}).get("status")),
+    "nba.minutes": ("output", "opportunity.mean", lambda p: (p.get("opportunity") or {}).get("mean")),
+    "nba.opp_def_pos": ("applied", "opponent_adjustment.factor", lambda p: (p.get("opponent_adjustment") or {}).get("factor")),
+    "nba.starters_pit": ("applied", "starter flag", lambda p: p.get("starter") if "starter" in p else (p.get("lineup") or {}).get("starter") if isinstance(p.get("lineup"), dict) else None),
+    "nba.stat_dist": ("output", "thresholds", lambda p: json.dumps(p.get("thresholds"), sort_keys=True) if p.get("thresholds") else None),
 }
 ADJ_RX = {"participation": r"^Participation", "opponent": r"^Opponent ", "teammates_out_redistribution": r"Teammates listed out"}
 
@@ -32,10 +34,10 @@ def audit(raw: bytes, source: dict) -> dict:
     P = d["players"]
     n = len(P)
     vis = {}
-    for iid, (field, fn) in FIELD_EVIDENCE.items():
+    for iid, (kind, field, fn) in FIELD_EVIDENCE.items():
         vals = [fn(p) for p in P]
         pop = [v for v in vals if v is not None]
-        vis[iid] = {"field": field, "populated_share": round(len(pop) / n, 4) if n else 0, "distinct_values": len(set(map(str, pop))),
+        vis[iid] = {"evidence_kind": kind, "field": field, "populated_share": round(len(pop) / n, 4) if n else 0, "distinct_values": len(set(map(str, pop))),
                     "visible_in_output": bool(n and len(pop) / n >= 0.5 and len(set(map(str, pop))) > 1)}
     adj = Counter()
     for p in P:
@@ -78,7 +80,7 @@ def _leaves(o, pre=""):
 
 
 def leaf_visibility(records, mapping):
-    """mapping: input_id -> [leaf path prefixes]. visible_in_output needs >=50% of records populated (non-null/non-empty) and >1 distinct value."""
+    """mapping: input_id -> (kind, [leaf path prefixes]) with kind in applied|output|echo (see FIELD_EVIDENCE). visible_in_output needs >=50% of records populated (non-null/non-empty) and >1 distinct value."""
     n = len(records)
     stats = {}
     for r in records:
@@ -89,21 +91,23 @@ def leaf_visibility(records, mapping):
                 if not isinstance(v, bool):
                     s[1].add(str(v)[:40])
     out = {}
-    for iid, prefixes in mapping.items():
+    for iid, (kind, prefixes) in mapping.items():
         hit = {p: (round(c / n, 3), len(d)) for p, (c, d) in stats.items() if any(p.startswith(x) for x in prefixes) for _ in [0]}
         vis = [p for p, (sh, dv) in hit.items() if sh >= 0.5 and dv > 1]
-        out[iid] = {"leaf_prefixes": prefixes, "visible_in_output": bool(vis), "visible_leaves": sorted(vis)[:6], "matching_leaves": len(hit)}
+        out[iid] = {"evidence_kind": kind, "leaf_prefixes": prefixes, "visible_in_output": bool(vis), "visible_leaves": sorted(vis)[:6], "matching_leaves": len(hit)}
     return out
 
 
-CBB_MAP = {"cbb.adj_off": ["ratings.home.adj_off", "ratings.away.adj_off", "projection.home_ppp", "projection.away_ppp"],
-           "cbb.adj_def": ["ratings.home.adj_def", "ratings.away.adj_def"], "cbb.tempo": ["ratings.home.adj_tempo", "projection.possessions"],
-           "cbb.four_factors": ["ratings.home.four_factors"], "cbb.roster_minutes": ["roster.sides"], "cbb.starters": ["player_context.h.rotation_known_STARTERS"],
-           "cbb.player_usage": ["player_context.h.player_off", "player_context.h.player_def"], "cbb.venue": ["game.site"],
-           "cbb.score_resid": ["projection.total_sd", "projection.margin_sd"], "cbb.half_split": ["projection.first_half", "projection.h1"],
-           "cbb.injuries": ["roster.sides.home.injur", "roster.sides.away.injur"], "m.quote_history": ["market."]}
-NFL_MAP = {"nfl.injuries_pit": ["participation"], "nfl.depth_chart_pit": ["position"], "nfl.snaps": ["snaps"], "nfl.targets": ["targets"], "nfl.weather_pit": ["weather"],
-           "nfl.qb": ["qb"], "nfl.pace": ["pace"], "nfl.off_epa": ["off_epa"], "nfl.def_epa": ["def_epa"], "nfl.script": ["script"], "nfl.proe": ["proe"]}
+CBB_MAP = {"cbb.adj_off": ("echo", ["ratings.home.adj_off", "ratings.away.adj_off"]), "cbb.adj_def": ("echo", ["ratings.home.adj_def", "ratings.away.adj_def"]),
+           "cbb.tempo": ("echo", ["ratings.home.adj_tempo", "ratings.away.adj_tempo"]), "cbb.four_factors": ("echo", ["ratings.home.four_factors"]),
+           "cbb.roster_minutes": ("applied", ["roster.sides.home.expected_rotation", "roster.sides.away.expected_rotation", "roster.adjustment_total"]),
+           "cbb.player_usage": ("echo", ["player_context.h.player_off", "player_context.h.player_def"]), "cbb.venue": ("echo", ["game.site"]),
+           "cbb.score_resid": ("output", ["projection.total_sd", "projection.margin_sd"]), "cbb.half_split": ("output", ["projection.first_half", "projection.h1"]),
+           "cbb.starters": ("applied", ["player_context.h.rotation_known_STARTERS"]), "cbb.injuries": ("applied", ["roster.sides.home.injur", "roster.sides.away.injur"]),
+           "m.quote_history": ("applied", ["market."])}
+NFL_MAP = {"nfl.injuries_pit": ("applied", ["participation_certainty", "participation_source"]), "nfl.snaps": ("applied", ["snaps"]), "nfl.targets": ("applied", ["targets_share"]),
+           "nfl.weather_pit": ("applied", ["weather"]), "nfl.qb": ("applied", ["qb"]), "nfl.pace": ("applied", ["pace"]), "nfl.off_epa": ("applied", ["off_epa"]),
+           "nfl.def_epa": ("applied", ["def_epa"]), "nfl.script": ("applied", ["script"]), "nfl.proe": ("applied", ["proe"])}
 
 
 def _git(repo, *a, binary=False):
@@ -151,8 +155,9 @@ def nfl_audit(repo, ref="FETCH_HEAD", last_n=3):
             "limits": "Latest archived forecast files only (player/team stat distributions). No game total, quarter or half distribution is published here. Descriptive; model not re-run."}
 
 
-NHL_MAP = {"nhl.toi": ["opportunity.mean", "opportunity.p10"], "nhl.pp_role": ["opportunity.pp_mean"], "nhl.lines": ["participation.status", "lineup_source"],
-           "nhl.injuries_pit": ["participation.status"], "nhl.opp_supp": ["opponent_adjustment.factor"], "nhl.stat_dist": ["thresholds."], "nhl.goalie_start": ["goalie"]}
+NHL_MAP = {"nhl.toi": ("output", ["opportunity.mean"]), "nhl.pp_role": ("output", ["opportunity.pp_mean"]), "nhl.lines": ("applied", ["participation.status", "lineup_source"]),
+           "nhl.injuries_pit": ("applied", ["participation.status"]), "nhl.opp_supp": ("applied", ["opponent_adjustment.factor"]), "nhl.stat_dist": ("output", ["thresholds."]),
+           "nhl.goalie_start": ("applied", ["goalie"])}
 
 
 def nhl_audit(raw: bytes, source: dict) -> dict:

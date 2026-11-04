@@ -64,7 +64,7 @@ class OutputAudit(unittest.TestCase):
 
     def test_visible_but_unused_record_gets_no_consumption_pass(self):
         e = {"verification_class": "VERIFIED_COLLECTION", "collection": "PIT_ARCHIVED", "model_use": "UNKNOWN", "evidence": ["doc:x"], "code": {}}
-        vis = {"visible_in_output": True, "visible_leaves": ["a.b"]}
+        vis = {"visible_in_output": True, "evidence_kind": "applied", "visible_leaves": ["a.b"]}
         self.assertEqual(ve.input_stages(e, None, None, vis)["consumption"]["state"], "PARTIAL")
         used = dict(e, model_use="USED")
         self.assertEqual(ve.input_stages(used, None, None, vis)["consumption"]["state"], "PASS")

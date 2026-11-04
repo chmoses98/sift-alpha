@@ -63,18 +63,26 @@ WEAK_CLASSES = {"UNKNOWN", "CODE_REFERENCE_ONLY", "NO_REFERENCE_FOUND", "MISSING
 OVERRIDE_TARGETS = {"COLLECTED_UNVERIFIED_PIT", "STALE_OR_PARTIAL"}
 
 
+COLLECTION_FOR = {"COLLECTED_UNVERIFIED_PIT": {"COLLECTED_NOT_PIT_ARCHIVED"}, "STALE_OR_PARTIAL": {"PARTIAL_OR_STALE"}}
+
+
 def apply_source_verification(entry: dict, sv: dict | None) -> dict:
-    """Let MEASURED evidence from an existing archive lift an input out of a weak class. Guardrails: never to VERIFIED_COLLECTION, never
-    downgrade, requires a pinned source (repo+commit) and measurements. Returns a new entry; the original is untouched."""
-    if not sv or entry.get("verification_class") not in WEAK_CLASSES and entry.get("verification_class") != "DERIVED":
+    """Let MEASURED evidence from an existing archive lift an input out of a weak class. Guardrails: only from UNKNOWN / CODE_REFERENCE_ONLY /
+    NO_REFERENCE_FOUND / MISSING(source available), never from DERIVED or UNSUPPORTED (no reliable source), never to VERIFIED_COLLECTION or a PIT
+    archive, collection label must match the class, a pinned source (repo+commit+path) and measurements are required. Returns a new entry."""
+    if not sv:
+        return entry
+    vc = entry.get("verification_class")
+    if vc not in WEAK_CLASSES or (vc == "MISSING" and entry.get("collection") == "NO_RELIABLE_SOURCE"):
         return entry
     m = sv.get("measured") or {}
     src = m.get("source") or {}
-    if sv.get("verification_class") not in OVERRIDE_TARGETS or not (src.get("repo") and src.get("commit")):
+    tgt = sv.get("verification_class")
+    if tgt not in OVERRIDE_TARGETS or sv.get("collection") not in COLLECTION_FOR[tgt] or not sv.get("why") or not (src.get("repo") and src.get("commit") and src.get("path")):
         return entry
     e = dict(entry)
-    e.update(verification_class=sv["verification_class"], collection=sv["collection"], _source_verification={"why": sv["why"], "source": src})
-    e["evidence"] = list(entry.get("evidence", [])) + [f"measured:{src['repo']}@{src['commit'][:7]}:{src.get('path')}"]
+    e.update(verification_class=tgt, collection=sv["collection"], _source_verification={"why": sv["why"], "source": src})
+    e["evidence"] = list(entry.get("evidence", [])) + [f"measured:{src['repo']}@{src['commit'][:7]}:{src['path']}"]
     e["note"] = (entry.get("note", "") + " | MEASURED: " + sv["why"]).strip(" |")
     return e
 
@@ -132,10 +140,12 @@ def input_stages(entry: dict, lineage: dict | None = None, static: dict | None =
     st["consumption"] = (S("PARTIAL", "recorded as USED by the sport repo (repo-reported; not independently verified)") if mu == "USED" else S("PARTIAL", "model reads it partially") if mu == "USED_PARTIAL" else
                          S("PARTIAL", "research-only use") if mu == "RESEARCH_ONLY" else S("FAIL", "collected but model does not consume it") if mu == "COLLECTED_UNUSED" else
                          S("FAIL", "not collected, so not consumable") if mu == "NOT_COLLECTED" else S("UNKNOWN", "model use not established"))
-    if mu == "USED" and visible and visible.get("visible_in_output"):
+    if mu in UNUSED_MODEL_USE and visible and visible.get("visible_in_output") and visible.get("evidence_kind") == "applied":
+        st["consumption"] = {"state": "UNKNOWN", "why": f"CONTRADICTION: recorded {mu} but an applied input field is visible in the published projection; the record or the audit is wrong"}
+    elif mu == "USED" and visible and visible.get("visible_in_output") and visible.get("evidence_kind") == "applied":
         st["consumption"] = {"state": "PASS", "why": f"recorded USED and input-derived field(s) populated/varying in the PUBLISHED projection ({', '.join(visible.get('visible_leaves') or [visible.get('field', '')])})"}
     elif st["consumption"]["state"] == "UNKNOWN" and visible and visible.get("visible_in_output"):
-        st["consumption"] = {"state": "PARTIAL", "why": f"input-derived field(s) populated and varying in the PUBLISHED projection ({', '.join(visible.get('visible_leaves') or [visible.get('field', '')])}); model not re-run, so correctness/causality unproven"}
+        st["consumption"] = {"state": "PARTIAL", "why": f"{visible.get('evidence_kind', 'unclassified')}-kind field(s) populated and varying in the PUBLISHED projection (an output or echoed value is not proof the input was used) ({', '.join(visible.get('visible_leaves') or [visible.get('field', '')])}); model not re-run, so correctness/causality unproven"}
     return st
 
 
@@ -272,14 +282,14 @@ def attach_output(proj, fkey, f, outs):
         return proj
     src = d.get("source", {})
     ref = f"{src.get('repo')}@{str(src.get('commit'))[:7]}:{src.get('path') or src.get('branch')}"
-    if s == "NBA" and nat in MV_MAP["NBA"] and MV_MAP["NBA"][nat] in (d.get("by_family") or {}) or (s == "NBA" and MV_MAP["NBA"].get(nat) == "team_points"):
-        return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NBA"].get(nat)), published=True)
+    if s == "NBA" and nat in MV_MAP["NBA"] and MV_MAP["NBA"][nat] in (d.get("by_family") or {}):
+        return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NBA"].get(nat)), published=True, independently_reproduced=False)
     if s == "NHL" and nat in MV_MAP["NHL"] and MV_MAP["NHL"][nat] in (d.get("by_family") or {}):
-        return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NHL"][nat]), published=True)
+        return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NHL"][nat]), published=True, independently_reproduced=False)
     if s in OUTPUT_FAMILIES and nat in OUTPUT_FAMILIES[s]:
         asof = (d.get("generated_range") or [None, None])[1] or d.get("generated_utc")
         base = proj if proj["state"] != "NONE_FOUND" else {"state": "PUBLISHED_OUTPUT", "independently_reproduced": False, "evidence": None}
-        return dict(base, output_ref=ref, fresh_asof=asof, published=True, output_field=OUTPUT_FAMILIES[s][nat])
+        return dict(base, output_ref=ref, fresh_asof=asof, published=True, independently_reproduced=False, output_field=OUTPUT_FAMILIES[s][nat])
     return proj
 
 

@@ -21,7 +21,7 @@ MIN_TRAIN = 60
 RIDGE = 5.0
 GROUPS = {"V6_pace_plays": ["pace"], "V7_drives": ["drives"], "V8_success_rate": ["succ"], "V9_explosiveness": ["expl"], "V10_pass_rate": ["pass"],
           "V11_all_pace_efficiency": ["pace", "drives", "succ", "expl", "pass"]}
-INPUT_OF = {"V6_pace_plays": "cfb.pace", "V7_drives": "cfb.drives", "V8_success_rate": "cfb.off_ppa/def_ppa (success-rate proxy)", "V9_explosiveness": "cfb.drives (explosiveness)",
+INPUT_OF = {"V6_pace_plays": "cfb.pace", "V7_drives": "cfb.drives", "V8_success_rate": "success rate (no registry input; nearest cfb.off_ppa/cfb.def_ppa)", "V9_explosiveness": "explosive-play rate (no registry input)",
             "V10_pass_rate": "cfb.pass_rate", "V11_all_pace_efficiency": "cfb.pace+drives+success+explosive+pass_rate"}
 
 

@@ -33,7 +33,9 @@ PATHS = {
 def audit_family(fkey, repo_dir, drivers, regexes):
     repo_dir = Path(repo_dir)
     commit = subprocess.run(["git", "-C", str(repo_dir), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    files = sorted({p for g in PATHS[fkey] for p in repo_dir.glob(g) if p.is_file() and "test" not in p.name})
+    files = sorted({p for g in PATHS[fkey] for p in repo_dir.glob(g) if p.is_file() and not p.name.startswith("test_") and "tests" not in p.relative_to(repo_dir).parts})
+    if not files:
+        raise ValueError(f"pricing path for {fkey} matched zero files: refusing to report every input NOT_FOUND")
     ids = {str(p.relative_to(repo_dir)): extract(p) for p in files}
     out = {}
     for i, tier in drivers.items():

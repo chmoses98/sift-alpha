@@ -1,0 +1,52 @@
+name: Shadow-order ledger (research-only, hypothetical, no orders)
+
+# Every 30 minutes: sync new live-capture runs from nfl-edge-finder market-data (public, read-only), record point-in-time PLACED snapshots for every matched
+# tactic (BUY_NOW / WAIT / LIMIT / LIMIT_FB / PASS), then append fill evidence and SETTLED rows once each deadline has passed. Output is an append-only JSONL on the
+# `shadow-data` branch of THIS repo. Nothing here can place an order: no credentials, no client, GET-only git reads.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shadow-ledger
+  cancel-in-progress: false
+
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy
+      - name: Restore ledger + extract from shadow-data
+        run: |
+          git fetch --depth=1 origin shadow-data || true
+          mkdir -p shadow_data
+          if git rev-parse --verify origin/shadow-data >/dev/null 2>&1; then git --work-tree=shadow_data checkout origin/shadow-data -- . ; git reset -q; fi
+          ls shadow_data | head
+      - name: Blobless clone of market-data (names only until sparse checkout)
+        run: |
+          rm -rf /tmp/md && mkdir /tmp/md && cd /tmp/md && git init -q . && git remote add origin https://github.com/chmoses98/nfl-edge-finder
+          git fetch -q --depth=1 --filter=blob:none origin market-data
+      - name: Sync new capture runs
+        run: python3 research/exec_track/shadow_sync.py --clone /tmp/md --extract-dir shadow_data/extract
+      - name: Fetch nflverse results
+        run: curl -fsSL https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv -o /tmp/games.csv || true
+      - name: Build ledger + matched report
+        run: |
+          python3 research/exec_track/shadow_ledger.py --ext shadow_data/extract --ledger shadow_data/nfl_2026.jsonl --games /tmp/games.csv
+          python3 research/exec_track/shadow_report.py --ledger shadow_data/nfl_2026.jsonl --out shadow_data/summary.json
+      - name: Publish to shadow-data
+        run: |
+          git config user.name "github-actions[bot]"; git config user.email "github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/pub && mkdir /tmp/pub && cp -r shadow_data/. /tmp/pub/ && cd /tmp/pub && git init -q . && git checkout -q -b shadow-data
+          git add -A && git commit -q -m "shadow ledger $(date -u +%FT%TZ)" || exit 0
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git push -q --force origin shadow-data

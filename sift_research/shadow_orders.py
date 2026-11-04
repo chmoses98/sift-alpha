@@ -64,6 +64,26 @@ def settled(decision: dict, *, win: int, settled_at: datetime, close_bid=None, c
                 settled_at=settled_at.astimezone(timezone.utc).isoformat(), close_bid=close_bid, close_ask=close_ask)
 
 
+class Ledger:
+    """O(1) idempotent appender for bulk writers (``append`` rescans the file on every call: quadratic for thousands of rows)."""
+    def __init__(self, path):
+        self.path, self.keys = path, set()
+        if os.path.exists(path):
+            with open(path) as f:
+                for l in f:
+                    r = json.loads(l); self.keys.add((r["kind"], r["decision_id"], r.get("evidence"), r.get("observed_at")))
+        self.f = open(path, "a")
+
+    def append(self, rec):
+        k = (rec["kind"], rec["decision_id"], rec.get("evidence"), rec.get("observed_at"))
+        if k in self.keys:
+            return False
+        self.keys.add(k); self.f.write(_canon(rec) + "\n"); return True
+
+    def close(self):
+        self.f.close()
+
+
 def append(path: str, rec: dict) -> bool:
     """Append once (idempotent on decision_id+kind+evidence+observed_at). Returns True when a line was written."""
     key = (rec["kind"], rec["decision_id"], rec.get("evidence"), rec.get("observed_at"))
@@ -108,6 +128,9 @@ def evaluate(path: str, maker_scenarios=None):
         if did not in sett:
             a["unevaluable_no_settlement"] += 1; continue
         st = sett[did]; win = st["win"]; q = float(p.get("qty") or 1)
+        if win is None:                       # result not known yet: counted, never scored as a loss
+            a["outcome_pending"] = a.get("outcome_pending", 0) + 1
+            continue
         close_ask = st.get("close_ask")
         act, limit, ask = p["action"], p["limit"], p["ask"]
         need_close = act == "WAIT" or (act == "LIMIT" and p.get("fallback") == "TAKE_AT_CLOSE")

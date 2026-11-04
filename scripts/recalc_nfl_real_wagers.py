@@ -7,7 +7,7 @@ Wager rows come from the NFL actual-wager postmortem (ledger fields: fee-exclusi
 Close quotes are re-read from the canonical closes files (raw yes_bid / yes_ask / observed time), NOT taken from the
 postmortem's precomputed close mid, so the recomputation is independent of the published CLV.
 """
-import argparse, glob, gzip, json, os, sys
+import argparse, glob, gzip, json, os, re, sys
 from datetime import datetime
 from decimal import Decimal
 
@@ -19,26 +19,32 @@ def ts(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
 
 
-def load_closes(root, tickers):
+TICKER_RE = re.compile(r'"ticker"\s*:\s*"([^"]+)"')
+
+
+def load_closes(roots, tickers):
+    """Latest canonical close per wagered ticker across one or more closes roots (a ticker-set membership test per
+    line, not a substring scan per ticker)."""
     want, out = set(tickers), {}
-    for path in sorted(glob.glob(os.path.join(root, "*", "*.closes_v2.jsonl.gz"))):
-        with gzip.open(path, "rt") as fh:
-            for line in fh:
-                if not any(t in line for t in want):
-                    continue
-                r = json.loads(line)
-                if r.get("ticker") in want and r.get("close_status") in ("CLOSE_OK", "CLOSE_ONE_SIDED"):
-                    # keep the latest observation per ticker (canonical closes are one per contract; be defensive)
-                    prev = out.get(r["ticker"])
-                    if prev is None or (r.get("price_observed_at") or "") >= (prev.get("price_observed_at") or ""):
-                        out[r["ticker"]] = r
+    for root in roots:
+        for path in sorted(glob.glob(os.path.join(root, "*", "*.closes_v2.jsonl.gz"))):
+            with gzip.open(path, "rt") as fh:
+                for line in fh:
+                    m = TICKER_RE.search(line)
+                    if not m or m.group(1) not in want:
+                        continue
+                    r = json.loads(line)
+                    if r.get("close_status") in ("CLOSE_OK", "CLOSE_ONE_SIDED"):
+                        prev = out.get(r["ticker"])
+                        if prev is None or (r.get("price_observed_at") or "") >= (prev.get("price_observed_at") or ""):
+                            out[r["ticker"]] = r
     return out
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--postmortem", required=True)
-    ap.add_argument("--closes-root", required=True)
+    ap.add_argument("--closes-root", required=True, nargs="+", help="one or more closes roots (weeks may be split)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     doc = json.load(open(a.postmortem))

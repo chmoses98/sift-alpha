@@ -39,7 +39,7 @@ def utc(value):
 
 
 def git_blob_sha(raw):
-    return hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\\0" + raw).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
 
 
 def validate_pin(pin):
@@ -162,7 +162,7 @@ def main():
     result = audit_rows(load_rows(pin, retrieve(pin)), source_sha=pin["source_git_blob_sha1"])
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\\n")
+    out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

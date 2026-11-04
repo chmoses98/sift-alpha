@@ -274,6 +274,8 @@ def attach_output(proj, fkey, f, outs):
     ref = f"{src.get('repo')}@{str(src.get('commit'))[:7]}:{src.get('path') or src.get('branch')}"
     if s == "NBA" and nat in MV_MAP["NBA"] and MV_MAP["NBA"][nat] in (d.get("by_family") or {}) or (s == "NBA" and MV_MAP["NBA"].get(nat) == "team_points"):
         return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NBA"].get(nat)), published=True)
+    if s == "NHL" and nat in MV_MAP["NHL"] and MV_MAP["NHL"][nat] in (d.get("by_family") or {}):
+        return dict(proj, output_ref=ref, fresh_asof=d.get("data_asof_utc"), output_n=(d.get("by_family") or {}).get(MV_MAP["NHL"][nat]), published=True)
     if s in OUTPUT_FAMILIES and nat in OUTPUT_FAMILIES[s]:
         asof = (d.get("generated_range") or [None, None])[1] or d.get("generated_utc")
         base = proj if proj["state"] != "NONE_FOUND" else {"state": "PUBLISHED_OUTPUT", "independently_reproduced": False, "evidence": None}

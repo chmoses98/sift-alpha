@@ -149,3 +149,19 @@ def nfl_audit(repo, ref="FETCH_HEAD", last_n=3):
             "participation_certainty": dict(collections.Counter(r.get("participation") for r in rows)), "gate_status": dict(collections.Counter(r.get("gate_status") for r in rows)),
             "input_visibility": leaf_visibility(rows, NFL_MAP),
             "limits": "Latest archived forecast files only (player/team stat distributions). No game total, quarter or half distribution is published here. Descriptive; model not re-run."}
+
+
+NHL_MAP = {"nhl.toi": ["opportunity.mean", "opportunity.p10"], "nhl.pp_role": ["opportunity.pp_mean"], "nhl.lines": ["participation.status", "lineup_source"],
+           "nhl.injuries_pit": ["participation.status"], "nhl.opp_supp": ["opponent_adjustment.factor"], "nhl.stat_dist": ["thresholds."], "nhl.goalie_start": ["goalie"]}
+
+
+def nhl_audit(raw: bytes, source: dict) -> dict:
+    import collections
+    d = json.loads(raw)
+    P = d["players"]
+    return {"schema_version": "projection-output-audit-1.0", "sport": "NHL", "source": dict(source, sha256=hashlib.sha256(raw).hexdigest(), model=d.get("model")),
+            "generated_utc": d["generated_utc"], "data_asof_utc": d["data_asof_utc"], "n_players": len(P), "by_family": dict(collections.Counter(p["family"] for p in P)),
+            "readiness": dict(collections.Counter(p.get("readiness") for p in P)), "gate_status": dict(collections.Counter((p.get("gate") or {}).get("status") for p in P)),
+            "participation": {"source": dict(collections.Counter((p.get("participation") or {}).get("source") for p in P)), "status": dict(collections.Counter((p.get("participation") or {}).get("status") for p in P))},
+            "input_visibility": leaf_visibility(P, NHL_MAP),
+            "limits": "Descriptive audit of one published file (shadow validation readiness). Model not re-run; absence of a field is not proof of non-use."}

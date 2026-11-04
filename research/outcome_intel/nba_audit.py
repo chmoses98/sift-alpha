@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import incremental as I
 import nba_nhl_common as C
+import nba_shadow as SHADOW
 
 SPORT = "NBA"
 MAX_SPREAD = 0.10          # quote must be two-sided with yes_ask - yes_bid <= 10c
@@ -210,6 +211,8 @@ def main():
     ap.add_argument("--accounting", default=None, help="dir holding exchange wagers.jsonl/settlements.jsonl (kalshi-router/settle-NBA data/accounting)")
     ap.add_argument("--out", default="reports/outcome_intel/nba_audit.json")
     ap.add_argument("--repo-sha", default=None)
+    ap.add_argument("--shadow", default=None, help="checkout of branch nba-shadow-pure (player-prop forecasts vs Kalshi listings)")
+    ap.add_argument("--shadow-sha", default=None)
     a = ap.parse_args()
     t0 = time.time()
     root = a.root
@@ -333,6 +336,12 @@ def main():
             cell_rows[(fam, lab)] = sub
     for lab, _, _, _ in C.HORIZONS:  # pooled across game-level and player families (exploratory, included in Holm)
         cell_rows[("ALL_MODELLED", lab)] = [r for r in rows if r["hor"] == lab]
+    shadow_rows, shadow_info = ([], {})
+    if a.shadow:
+        shadow_rows, shadow_info = SHADOW.build(a.shadow)
+        for r in shadow_rows:
+            cell_rows.setdefault((r["fam"], r["hor"]), []).append(r)
+    shadow_keys = sorted(k for k in cell_rows if "[shadow:" in k[0])
     results = {}
     for k, sub in cell_rows.items():
         if len(sub) == 0:
@@ -419,10 +428,35 @@ def main():
             cell.update(market_metrics=None, model_metrics=None, incremental_gain=None, status=st, reason=why)
         out_cells.append(cell)
 
+    for k in shadow_keys:
+        sub, res = cell_rows[k], results.get(k)
+        cell = dict(sport=SPORT, family=k[0], horizon=k[1], challenger="PURE shadow forecast (nba-shadow-pure)", n_games=len({r["game"] for r in sub}), n_contracts=len({r["ticker"] for r in sub}), n_rows=len(sub),
+                    inputs_available=[dict(name="pure_forecast.v1 ladder P(stat>=rung|plays)", availability_time="as_of; source_max_observed_at <= as_of (checked per row)", established=True),
+                                      dict(name="Kalshi listing quote (bid/ask cents)", availability_time="board_observed_at <= as_of (checked per row), listed_by_as_of", established=True)],
+                    price_coverage=dict(median_spread_at_decision=float(np.median([r["spread"] for r in sub])), median_staleness_s=float(np.median([r["stale"] for r in sub])),
+                                        median_hours_before_start=float(np.median([r["hb"] for r in sub])), depth="not archived in the listing rows (bid/ask only)"),
+                    settlement_source="ESPN summary box stat from shadow outcomes/gate (independent of the data-archive settlement engine); DNP rows void and excluded; not the Kalshi result")
+        if res and res["status"] == "OK":
+            g = res["gain_vs_calibrated_market_logloss"]
+            st, why = C.classify(res, holm_of[k], n_tested=len(okk))
+            cell.update(market_metrics=dict(holdout_logloss_raw_market=res["logloss"]["raw_market"], holdout_logloss_calibrated_market=res["logloss"]["calibrated_market"],
+                                            holdout_brier_raw_market=res["brier"]["raw_market"], holdout_brier_calibrated_market=res["brier"]["calibrated_market"]),
+                        model_metrics=dict(holdout_alone=res["q_alone_holdout"], holdout_logloss_challenger=res["logloss"]["challenger"], holdout_games=res["holdout_games"]),
+                        incremental_gain=dict(mean=g["mean"], lo=g["lo"], hi=g["hi"], holm_p=holm_of[k], p_uncorrected=g["p"], negative_control=res["negative_control"], positive_control=res["positive_control"]),
+                        status=st, reason=why)
+        else:
+            st, why = C.classify(res, None)
+            cell.update(market_metrics=None, model_metrics=None, incremental_gain=None, status=st, reason=why)
+        out_cells.append(cell)
+
     cx = exchange_crosscheck(a.accounting, derived)
     digests, roll = C.file_digests(root, ["manifest.jsonl", "EVIDENCE_HEALTH.json", "STATUS_*.json", "predictions/*/*.gz", "settlements/*/*.gz", "contracts/*/*.gz",
                                           "boxscores/*/*.gz", "context/schedule/*/*.gz", "kalshi/markets/*/*.gz", "kalshi/markets_delta/*/*.gz",
                                           "kalshi/orderbooks/*/*.gz", "kalshi/orderbooks_delta/*/*.gz"])
+    if a.shadow:
+        d2, roll2 = C.file_digests(a.shadow, ["manifest.jsonl", "chain.jsonl", "projections/*/conditional/*/*.gz", "market/listings/*/*.gz", "outcomes/gate/*/*.gz", "captures/*/*.gz"])
+        digests.update({"nba-shadow-pure/" + k: v for k, v in d2.items()})
+        roll = C.hashlib.sha256((roll + roll2).encode()).hexdigest()
     status_counts = collections.Counter(c["status"] for c in out_cells)
     report = dict(
         schema="sift-outcome-intel-nba-audit/1", status="RESEARCH_ONLY", sport=SPORT, generated_note="deterministic given inputs; seeds fixed in incremental.py",
@@ -441,7 +475,7 @@ def main():
                           engine_vs_independent_derivation=dict(engine_yes_no=sum(1 for s in sett.values() if s["outcome"] in ("YES", "NO")), derivable_and_compared=sum(1 for tk, s in sett.items() if s["outcome"] in ("YES", "NO") and derived.get(tk) in ("YES", "NO")),
                                                                 disagreements=len(disagree), disagreement_tickers=disagree[:30], by_family={f: dict(v) for f, v in cmp.items()}),
                           kalshi_official_result=dict(in_archive=False, reason="board `result` field is empty on every captured market (resolved markets leave the board); the archive contains no Kalshi settlement values. Only exchange evidence = owner wagers on branch kalshi-router/settle-NBA (cross-check below)"),
-                          exchange_crosscheck=cx),
+                          exchange_crosscheck=cx, shadow_pure=dict(commit_sha=a.shadow_sha, **shadow_info)),
         families=fam_all, status_counts=dict(status_counts), cells=out_cells, elapsed_s=time.time() - t0)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump(report, open(a.out, "w"), indent=1, sort_keys=True, default=_jd)

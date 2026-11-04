@@ -6,10 +6,7 @@ import incremental as I
 import cbb_common as C
 import cbb_audit as CB
 import soccer_audit as SO
-try:
-    import tennis_audit as TE
-except Exception:       # tennis module optional while it is being built
-    TE = None
+import tennis_audit as TE
 
 
 def synth(n_games=90, per=10, seed=3, informative=True):
@@ -182,6 +179,68 @@ class TestControlsAndStatus(unittest.TestCase):
         for r in rows:
             first[r["game"]] = min(first.get(r["game"], r["t"]), r["t"])
         self.assertLessEqual(max(first[g] for g in tr), min(first[g] for g in te))
+
+
+class TestTennis(unittest.TestCase):
+    L = dict(pid="p1", tk="KXATPMATCH-26NOV04AAABBB-AAA", fam="MATCH_WINNER", mid_="KXATPMATCH-26NOV04AAABBB", gen="2026-11-04T10:00:00+00:00", sched="2026-11-04T12:00:00Z",
+             models={"ELO_DP_FAIR": 0.6}, mq=dict(yb=0.5, ya=0.54, ts="2026-11-04T09:59:50+00:00"), subject="A A", pa="A A", pa_id="1", pb_id="2", line=None, tour="ATP", level="X")
+
+    def settle(self, timing="STRICT_PREGAME", lower="2026-11-04T10:30:00+00:00", res="yes"):
+        return dict(prediction_id="p1", timing_class=timing, gradeable=True, exchange=dict(result=res), clv=dict(first_ball_lower_utc=lower, seconds_entry_to_first_ball=1800, truth_confidence="A"))
+
+    def build(self, L=None, s=None, T=None):
+        import collections
+        cnt = collections.Counter()
+        rows = TE.build_rows({"p1": L or self.L}, {"p1": s or self.settle()}, T or {}, cnt)
+        return rows, cnt
+
+    def test_strict_pregame_row_kept(self):
+        rows, _ = self.build()
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["mid"], 0.52)
+
+    def test_start_unknown_and_post_start_never_used(self):
+        for t in ("START_UNKNOWN", "POST_START", "AMBIGUOUS", None):
+            rows, _ = self.build(s=self.settle(timing=t))
+            self.assertEqual(rows, [], t)
+
+    def test_generated_at_after_first_ball_lower_bound_is_leak_and_dropped(self):
+        rows, cnt = self.build(s=self.settle(lower="2026-11-04T09:00:00+00:00"))
+        self.assertEqual(rows, [])
+        rows, cnt = self.build(s=self.settle(lower=None))
+        self.assertEqual(rows, [])
+
+    def test_quote_after_generation_dropped(self):
+        L = dict(self.L, mq=dict(yb=0.5, ya=0.54, ts="2026-11-04T10:00:05+00:00"))
+        self.assertEqual(self.build(L=L)[0], [])
+
+    def test_scalar_void_and_wide_quote_excluded(self):
+        self.assertEqual(self.build(s=self.settle(res="scalar"))[0], [])
+        self.assertEqual(self.build(L=dict(self.L, mq=dict(yb=0.2, ya=0.6, ts=None)))[0], [])
+
+    def test_independent_disagreement_dropped_and_agreement_kept(self):
+        T = {"p1": dict(independent=dict(status="RESOLVED", winner_id="2"))}
+        self.assertEqual(self.build(T=T)[0], [])          # exchange says yes (subject id 1 won) but independent says id 2 won
+        T = {"p1": dict(independent=dict(status="RESOLVED", winner_id="1"))}
+        self.assertEqual(len(self.build(T=T)[0]), 1)
+
+    def test_complement_side_not_double_counted(self):
+        L = dict(self.L, subject="B B")
+        self.assertEqual(self.build(L=L)[0], [])
+
+    def test_independent_total_games_and_spread_use_completed_games_only(self):
+        ind = dict(status="RESOLVED", winner_id="1", outcome_type="COMPLETED", games_w=13, games_l=9)
+        L = dict(self.L, fam="TOTAL_GAMES", line=21.5)
+        self.assertEqual(TE.independent_y(L, dict(independent=ind)), 1)
+        self.assertEqual(TE.independent_y(dict(L, line=22.5), dict(independent=ind)), 0)
+        self.assertIsNone(TE.independent_y(L, dict(independent=dict(ind, outcome_type="RETIRED"))))
+        self.assertEqual(TE.independent_y(dict(L, fam="GAME_SPREAD", line=3.5), dict(independent=ind)), 1)
+        self.assertEqual(TE.independent_y(dict(L, fam="GAME_SPREAD", line=3.5, subject="B", pa="A A", pb_id="2"), dict(independent=ind)), 0)
+
+    def test_hash_chain_function_is_order_independent_and_detects_edits(self):
+        a = TE.chash({"x": 1, "y": 2})
+        self.assertEqual(a, TE.chash({"y": 2, "x": 1}))
+        self.assertNotEqual(a, TE.chash({"x": 1, "y": 3}))
 
 
 if __name__ == "__main__":

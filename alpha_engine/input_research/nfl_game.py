@@ -1,8 +1,8 @@
-"""NFL game-level market families (total, spread, moneyline) vs the closing market, with learned input importance.
+"""NFL game-level market families (total, spread, moneyline) vs the near-close sportsbook line, with learned input importance.
 
 Kalshi families covered (research/audit/input_registry.json blueprints game_total / game_side): NFL game total, NFL point spread, NFL game winner.
-Benchmark: the nflverse closing consensus line / de-vigged closing price (a sportsbook CLOSE, not a Kalshi executable price at any horizon).
-This answers "do pregame inputs add information beyond the closing market?" It is NOT an execution, fee or Kalshi-price test.
+Benchmark: the nflverse schedule-file consensus line / de-vigged price (a near-close sportsbook line, not a Kalshi executable price at any horizon).
+This answers "do pregame inputs add information beyond the near-close sportsbook line?" It is NOT an execution, fee or Kalshi-price test.
 
 For every family and every candidate input the run produces:
   standalone  - out-of-sample R^2 gain of the input group on the RAW outcome vs a no-information baseline (importance without the market)
@@ -20,6 +20,11 @@ from . import stats as S
 FIRST_MODEL_SEASON = 2013      # snap/injury coverage starts here; ratings burn in from 2010
 TEST_FIRST = 2017
 SIGMA_FLOOR = 1.0
+
+# Inputs that are only PARTIALLY knowable before the decision: the realised starting QB (nflverse lists who actually started; usually announced by kickoff but not
+# guaranteed, and an in-game injury could leak into 'starter' definitions) and OBSERVED weather/roof state (a forecast is not archived free). They are tested
+# individually and in a labelled sensitivity model but excluded from every headline model.
+PARTIAL_PIT = frozenset({"sum_qb_epa", "diff_qb_epa", "qb_change_any", "diff_qb_change", "dome", "wind_eff", "cold"})
 
 COMMON_CONTEXT = ["dome", "wind_eff", "cold", "rest_diff", "short_week_any", "div_flag", "neutral_site", "late_season", "games_played_min"]
 
@@ -211,13 +216,14 @@ def run_continuous(df: pd.DataFrame, kind: str, n_boot: int = S.BOOT, quick: boo
     resid = d["resid_total" if kind == "total" else "resid_margin"].to_numpy(float)
     raw = d["total" if kind == "total" else "margin"].to_numpy(float)
     mkt_pred = (d["total_line"] if kind == "total" else d["spread_line"]).to_numpy(float)       # B0 point forecast of the raw outcome
-    res = study(d, ts, resid, raw, mkt_pred, groups_for(kind), INTERACTIONS[kind], n_boot, quick, prob_kind=kind)
+    res = study(d, ts, resid, raw, mkt_pred, groups_for(kind), INTERACTIONS[kind], n_boot, quick, prob_kind=kind, partial_cols=PARTIAL_PIT)
     res["kind"] = kind
     return res
 
 
 def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mkt_pred: np.ndarray, G: dict, interactions: dict, n_boot: int, quick: bool,
-          prob_kind: str | None = None, standalone_exclude_prefix=("mkt_", "ix_"), standalone_skip_groups=("market_level_structure",)) -> dict:
+          prob_kind: str | None = None, standalone_exclude_prefix=("mkt_", "ix_"), standalone_skip_groups=("market_level_structure",),
+          partial_cols: frozenset = frozenset()) -> dict:
     """Generic incremental-value study. `mkt_pred` is the benchmark point forecast of `raw`; resid = raw - mkt_pred. Used by every continuous family."""
     seasons = d["season"].to_numpy()
     kind = prob_kind
@@ -225,6 +231,10 @@ def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mk
     G = {k: [c for c in v if c in all_cols] for k, v in G.items()}
     G = {k: v for k, v in G.items() if v}
     X_all = d[all_cols].to_numpy(float)
+    # PIT discipline: the HEADLINE model uses only inputs knowable before the decision; inputs that are only partially knowable (realised starter, observed weather)
+    # are tested individually and in a clearly-labelled sensitivity model, never in the headline.
+    partial = set(partial_cols)
+    strict_idx = [i for i, c in enumerate(all_cols) if c not in partial]
     # ---- baselines on the residual target
     b1 = S.baseline_mean(resid, seasons, ts)
     # ---- walk-forward ridge for each group + all features
@@ -233,10 +243,12 @@ def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mk
     for name, cols in G.items():
         idx = [all_cols.index(c) for c in cols]
         pred[name], lams[name] = S.walk_forward_ridge(X_all[:, idx], resid, seasons, ts)
-    pred["ALL_FEATURES_RIDGE"], lams["ALL"] = S.walk_forward_ridge(X_all, resid, seasons, ts)
+    pred["ALL_FEATURES_RIDGE"], lams["ALL"] = S.walk_forward_ridge(X_all[:, strict_idx], resid, seasons, ts)       # HEADLINE: strict pregame inputs only
+    pred["ALL_INCL_PARTIAL_RIDGE"], lams["ALL_PARTIAL"] = S.walk_forward_ridge(X_all, resid, seasons, ts)         # SENSITIVITY: adds partially-knowable inputs
     test = ~np.isnan(pred["ALL_FEATURES_RIDGE"])
     keys = np.array([f"{s}-{w:02d}" for s, w in zip(seasons, d["week"])])
     boot = S.ClusterBoot(keys[test], n_boot=n_boot)
+    boot.season_boot = S.ClusterBoot(seasons[test].astype(str), n_boot=n_boot)
     base_mse = float(np.mean((resid - b1)[test] ** 2))
     # ---- group tests (confirmatory family; Holm)
     group_res = {}
@@ -249,10 +261,12 @@ def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mk
         v["holm_p"] = holm_g[k]
         v["verdict"] = S.verdict(v["gain_vs_B1"], holm_g[k])
     # ---- GBM (nonlinear/interaction capable) on all features
-    gbm_pred = S.walk_forward_gbm(X_all, resid, seasons, ts)
+    gbm_pred = S.walk_forward_gbm(X_all[:, strict_idx], resid, seasons, ts)
+    gbm_partial_pred = S.walk_forward_gbm(X_all, resid, seasons, ts)
+    gbm_sens = _gain_vs(boot, test, b1, gbm_partial_pred, resid, seasons, ts)
     gg = _gain_vs(boot, test, b1, gbm_pred, resid, seasons, ts)
     gbm_vs_ridge = _gain_vs(boot, test, pred["ALL_FEATURES_RIDGE"], gbm_pred, resid, seasons, ts)
-    gbm = {"gain_vs_B1": gg, "gain_vs_ridge": gbm_vs_ridge, "n_features": len(all_cols)}
+    gbm = {"gain_vs_B1": gg, "gain_vs_ridge": gbm_vs_ridge, "n_features": len(strict_idx), "sensitivity_incl_partial": gbm_sens}
     gbm["holm_p"] = min(1.0, gg["p"] * 2)  # two model classes in the headline comparison (ridge, GBM)
     gbm["verdict"] = S.verdict(gg, gbm["holm_p"])
     # ---- per-input incremental tests (discovery family; BH)
@@ -296,15 +310,22 @@ def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mk
     qs = S.benjamini_hochberg(sp)
     for k in standalone["groups"]:
         standalone["groups"][k]["q_bh"] = qs[k]
-    # ---- weights: ridge fit on all pre-test-end data, bootstrap by cluster; coefficient in outcome units per +1 SD
+    # ---- weights (DESCRIPTIVE, fit on all rows incl. test seasons; never used for evaluation). Strict inputs get their weight from the strict model; partially-knowable
+    # inputs from the sensitivity model that includes them. The coefficient is the effect on the benchmark RESIDUAL, conditional on the other inputs and ridge-shrunk.
     train_mask = seasons >= FIRST_MODEL_SEASON
-    wts = _weights(X_all, resid, keys, train_mask, all_cols, float(np.median(list(lams["ALL"].values()))), n_boot=200 if not quick else 40)
+    nb = 200 if not quick else 40
+    wts_all = _weights(X_all, resid, keys, train_mask, all_cols, float(np.median(list(lams["ALL_PARTIAL"].values()))), n_boot=nb)
+    strict_cols = [all_cols[i] for i in strict_idx]
+    wts_strict = _weights(X_all[:, strict_idx], resid, keys, train_mask, strict_cols, float(np.median(list(lams["ALL"].values()))), n_boot=nb)
     for c in all_cols:
-        feat_res[c]["weight"] = wts[c]
-    # ---- drop-one-group (necessity) vs all-features ridge
+        feat_res[c]["weight"] = dict(wts_strict[c] if c in wts_strict else wts_all[c], model="strict_pregame_inputs" if c in wts_strict else "includes_partially_knowable_inputs")
+    # ---- drop-one-group (necessity) vs the strict all-features ridge
     drop = {}
     for name, cols in G.items():
-        keep = [i for i, c in enumerate(all_cols) if c not in cols]
+        strict_in_group = [c for c in cols if c not in partial]
+        if not strict_in_group:
+            continue
+        keep = [i for i in strict_idx if all_cols[i] not in cols]
         if not keep:
             continue
         pd_, _ = S.walk_forward_ridge(X_all[:, keep], resid, seasons, ts)
@@ -313,17 +334,21 @@ def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mk
     hq = S.holm({k: v["p"] for k, v in drop.items()})
     for k in drop:
         drop[k]["holm_p"] = hq[k]
-    # ---- interactions (pre-specified; Holm)
+    # ---- interactions (pre-specified; Holm). Main effects = strict inputs (+ the interaction's own components if they are partially knowable)
     ix_res = {}
-    main_idx = list(range(len(all_cols)))
-    p_main, _ = S.walk_forward_ridge(X_all, resid, seasons, ts)
+    main_cache = {}
     for iname, (a, b, hyp) in interactions.items():
         if iname not in d.columns or d[iname].notna().mean() < 0.5:
             continue
-        Xi = np.column_stack([X_all, d[iname].to_numpy(float)])
+        extra = tuple(sorted(i for i, c in enumerate(all_cols) if c in (a, b) and c in partial))
+        if extra not in main_cache:
+            cols_i = sorted(set(strict_idx) | set(extra))
+            main_cache[extra] = (cols_i, S.walk_forward_ridge(X_all[:, cols_i], resid, seasons, ts)[0])
+        cols_i, p_main = main_cache[extra]
+        Xi = np.column_stack([X_all[:, cols_i], d[iname].to_numpy(float)])
         pi_, _ = S.walk_forward_ridge(Xi, resid, seasons, ts)
         g = _gain_vs(boot, test, p_main, pi_, resid, seasons, ts)
-        ix_res[iname] = {"label": label(iname), "components": [a, b], "hypothesis": hyp, "gain_vs_main_effects": g}
+        ix_res[iname] = {"label": label(iname), "components": [a, b], "hypothesis": hyp, "gain_vs_main_effects": g, "pit": "partial" if (a in partial or b in partial) else "yes"}
     hi = S.holm({k: v["gain_vs_main_effects"]["p"] for k, v in ix_res.items()}) if ix_res else {}
     for k, v in ix_res.items():
         v["holm_p"] = hi[k]
@@ -338,8 +363,9 @@ def study(d: pd.DataFrame, ts: list[int], resid: np.ndarray, raw: np.ndarray, mk
         "baselines": {"B0_market_line": {"mse": float(np.mean(resid[test] ** 2)), "mae": float(np.mean(np.abs(resid[test])))},
                       "B1_market_plus_past_mean_residual": {"mse": base_mse, "mae": float(np.mean(np.abs((resid - b1)[test])))},
                       "ALL_FEATURES_RIDGE": {"mse": float(np.mean((resid - pred["ALL_FEATURES_RIDGE"])[test] ** 2)), "mae": float(np.mean(np.abs((resid - pred["ALL_FEATURES_RIDGE"])[test])))},
+                      "ALL_INCL_PARTIAL_RIDGE": {"mse": float(np.mean((resid - pred["ALL_INCL_PARTIAL_RIDGE"])[test] ** 2)), "mae": float(np.mean(np.abs((resid - pred["ALL_INCL_PARTIAL_RIDGE"])[test])))},
                       "GBM_ALL_FEATURES": {"mse": float(np.mean((resid - gbm_pred)[test] ** 2)), "mae": float(np.mean(np.abs((resid - gbm_pred)[test])))}},
-        "groups": group_res, "gbm": gbm, "inputs": feat_res, "standalone": standalone, "drop_one_group": drop, "interactions": ix_res, "importance": imp, "probability": prob,
+        "groups": group_res, "partial_cols": sorted(partial & set(all_cols)), "gbm": gbm, "inputs": feat_res, "standalone": standalone, "drop_one_group": drop, "interactions": ix_res, "importance": imp, "probability": prob,
         "group_members": G,
     }
     # forward-only slice: the in-progress 2026 season (never used for fitting any 2026 prediction)
@@ -420,7 +446,7 @@ def _prob_scoring(d, kind, resid, ridge_pred, gbm_pred, seasons, ts, test, keys,
     for s in ts:
         tr = seasons < s
         sig[seasons == s] = max(SIGMA_FLOOR, float(np.std(resid[tr])))
-    out = {"market_price_source": "nflverse closing two-way odds, vig removed; coarse (few distinct prices), so it is close to 0.5 by construction",
+    out = {"market_price_source": "nflverse schedule-file two-way odds (near-close, timing undocumented), vig removed; coarse (few distinct prices), so it is close to 0.5 by construction",
            "n_scored_non_push": int(ok.sum())}
     boot = S.ClusterBoot(keys[ok], n_boot=n_boot)
     for name, mu in (("ridge_all", ridge_pred), ("gbm_all", gbm_pred)):
@@ -451,24 +477,29 @@ def run_moneyline(df: pd.DataFrame, n_boot: int = S.BOOT, quick: bool = False) -
     G = {k: v for k, v in G.items() if v}
     X_all = d[all_cols].to_numpy(float)
     keys = np.array([f"{s}-{w:02d}" for s, w in zip(seasons, d["week"])])
-    p_all = wf_logit(X_all, y, off, seasons, ts)
+    strict_idx = [i for i, c in enumerate(all_cols) if c not in PARTIAL_PIT]
+    p_all = wf_logit(X_all[:, strict_idx], y, off, seasons, ts)                 # HEADLINE: strict pregame inputs only
+    p_all_partial = wf_logit(X_all, y, off, seasons, ts)                        # SENSITIVITY: adds realised-QB and observed-weather inputs
     test = ~np.isnan(p_all)
     boot = S.ClusterBoot(keys[test], n_boot=n_boot)
+    boot.season_boot = S.ClusterBoot(seasons[test].astype(str), n_boot=n_boot)
     ll_mkt = S.logloss(pm, y)
     # recalibrated market (a + b*logit) is the fair competitor for "is the information in the inputs?"
     p_recal = wf_logit(np.zeros((len(y), 1)), y, off, seasons, ts)
     def gain(p):
         return S.gain_summary(boot, test, ll_mkt, S.logloss(np.clip(p, 1e-4, 1 - 1e-4), y), seasons, ts)
     res = {"kind": "moneyline", "n_games_modeled": int(len(d)), "n_test_games": int(test.sum()), "test_seasons": ts, "n_week_clusters": int(boot.m),
-           "market_price_source": "nflverse closing moneylines, vig removed (two-way de-vig)",
+           "market_price_source": "nflverse schedule-file moneylines (near-close, timing undocumented), vig removed (two-way de-vig)",
            "baselines": {"market_devig": {"logloss": float(ll_mkt[test].mean()), "brier": float(S.brier(pm, y)[test].mean()), "calibration": S.calibration_slope(pm[test], y[test])},
                          "market_recalibrated": {"logloss": float(S.logloss(p_recal, y)[test].mean())},
                          "no_information_home_rate": {"logloss": float(np.mean(S.logloss(np.full(len(y), y.mean()), y)[test]))}}}
     g_all = gain(p_all)
     gm = {"logloss_model": float(S.logloss(p_all, y)[test].mean()), "brier_model": float(S.brier(p_all, y)[test].mean()), "logloss_gain_vs_market": g_all,
           "calibration": S.calibration_slope(p_all[test], y[test]), "calibration_table": S.calibration_table(p_all[test], y[test], 8),
-          "n_features": len(all_cols)}
+          "n_features": len(strict_idx), "partial_cols": sorted(PARTIAL_PIT & set(all_cols))}
     res["all_features"] = gm
+    gps = gain(p_all_partial)
+    res["sensitivity_incl_partial"] = {"logloss_model": float(S.logloss(np.clip(p_all_partial, 1e-4, 1 - 1e-4), y)[test].mean()), "logloss_gain_vs_market": gps}
     # groups
     group_res, gp = {}, {}
     for name, cols in G.items():
@@ -500,8 +531,7 @@ def run_moneyline(df: pd.DataFrame, n_boot: int = S.BOOT, quick: bool = False) -
     # weights: final penalised logit fit
     train = seasons >= FIRST_MODEL_SEASON
     f, w = fit_logit_offset(X_all[train], y[train], off[train], 100.0)
-    mu, sd = S._prep(X_all[train])
-    res["weights_logit_per_sd"] = {c: float(w[2 + j]) for j, c in enumerate(all_cols)}
+    res["weights_logit_per_sd"] = {c: float(w[2 + j]) for j, c in enumerate(all_cols)}      # descriptive; includes partially-knowable inputs
     res["offset_slope_and_intercept"] = {"market_logit_slope": float(w[1]), "intercept": float(w[0])}
     return res
 

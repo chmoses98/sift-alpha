@@ -149,6 +149,30 @@ class InjuryFeature(unittest.TestCase):
             self.assertAlmostEqual(row["inj_total"], 1.0)
 
 
+class RefreshWorkflowIsResearchOnly(unittest.TestCase):
+    def test_workflow_is_read_only_artifact_only_and_bounded(self):
+        import yaml
+        raw = (ROOT / ".github/workflows/input-research-refresh.yml").read_text()
+        wf = yaml.safe_load(raw)
+        trig = wf.get("on") or wf.get(True)
+        self.assertEqual(sorted(trig), ["schedule", "workflow_dispatch"])                    # never on push / pull_request
+        self.assertEqual(wf["permissions"], {"contents": "read"})                            # cannot push, deploy or write anything
+        job = wf["jobs"]["refresh"]
+        self.assertLessEqual(job["timeout-minutes"], 60)
+        self.assertEqual(job["runs-on"], "ubuntu-latest")                                    # standard free runner
+        steps = json.dumps(job["steps"]).lower()
+        for bad in ("git push", "git commit", "gh pr", "gh workflow", "vercel", "deploy", "secrets.", "kalshi", "curl ", "orders"):
+            self.assertNotIn(bad, steps, bad)
+        self.assertIn("upload-artifact", steps)
+        self.assertIn("retention-days", steps)
+
+    def test_no_order_or_trading_imports_in_the_package(self):
+        for f in (ROOT / "alpha_engine/input_research").glob("*.py"):
+            src = f.read_text().lower()
+            for bad in ("import kalshi", "place_order", "create_order", "api_key", "private_key", "bearer "):
+                self.assertNotIn(bad, src, f.name)
+
+
 class CatalogIntegrity(unittest.TestCase):
     def test_every_sport_catalog_valid_and_covers_registry(self):
         self.assertEqual(C.validate_all(), {})
@@ -196,7 +220,7 @@ class PublishedArtifacts(unittest.TestCase):
                 else:
                     self.assertFalse(v["evidence_paths"], f)
 
-    def test_l2_paths_are_closing_line_benchmarks_and_say_so(self):
+    def test_l2_paths_are_near_close_line_benchmarks_and_say_so(self):
         for d in self.docs.values():
             for pid, p in d["paths"].items():
                 if p["level"] == "L2_TESTED_VS_MARKET":
@@ -243,6 +267,62 @@ class PublishedArtifacts(unittest.TestCase):
                     self.assertIn("research_path", av); self.assertGreater(av["research_path"]["mean_coverage"], 0)
                 else:
                     self.assertNotIn("research_path", av)
+
+    def test_every_family_input_and_interaction_is_represented_on_the_dashboard_data(self):
+        fam = inp = ix = 0
+        for s, d in self.docs.items():
+            cat = C.load(s)
+            fam += len(d["families"])
+            # every input the catalog defines is reachable through some blueprint or archetype shown by the dashboard
+            self.assertEqual(sorted(d["inputs"]), sorted(cat["inputs"]), s)
+            inp += len(d["inputs"])
+            ix += sum(len(a["interactions"]) for a in d["archetypes"].values()) + sum(len(b["interactions"]) for b in d["blueprints"].values())
+            reg_bps = C.registry_blueprints(s)
+            for b, rec in d["blueprints"].items():
+                self.assertTrue(rec["families"], f"{s}/{b}: blueprint with no family would be unreachable")
+                self.assertEqual(sorted(rec["families"]), sorted(reg_bps[b]))
+            for a, rec in d["archetypes"].items():
+                for f in rec["families"]:
+                    self.assertIn(a, d["families"][f]["archetypes"], f)
+        self.assertEqual((fam, inp, ix), (275, 672, 679))       # documented totals; a catalog change must update these consciously
+
+    def test_every_path_states_its_claim_boundary_and_never_implies_a_kalshi_edge(self):
+        for d in self.docs.values():
+            for pid, p in d["paths"].items():
+                self.assertTrue(p["claim_boundary"], pid)
+                self.assertIn("kalshi", p["claim_boundary"].lower(), pid)
+                blob = json.dumps(p).lower()
+                for bad in ("beats kalshi", "edge over kalshi found", "profitable", "exploit"):
+                    self.assertNotIn(bad, blob, pid)
+
+    def test_headline_models_are_strict_pregame_and_partial_inputs_are_separated(self):
+        for d in self.docs.values():
+            for pid, p in d["paths"].items():
+                r = p["result"]
+                hm = r["headline_models"]
+                best = hm.get("ridge_all") or hm.get("logit_all")
+                self.assertTrue(best["pit_strict"], pid)
+                self.assertTrue(r["partial_pit_inputs"], pid)
+                for c, rec in r["inputs"].items():
+                    self.assertEqual(rec["pit"] == "partial", c in r["partial_pit_inputs"], (pid, c))
+                if best["verdict"] == "DEMONSTRATED_INCREMENTAL":
+                    self.assertIsNotNone(best.get("ci_season_block")); self.assertGreater(best["ci_season_block"][0], 0)
+
+    def test_unreliable_weights_are_flagged(self):
+        for d in self.docs.values():
+            for p in d["paths"].values():
+                for c, rec in p["result"]["inputs"].items():
+                    w = rec.get("weight") or {}
+                    if "reliable" in w and w["reliable"]:
+                        self.assertTrue(w["ci_excludes_zero"], c)
+                        self.assertIn(rec["incremental"]["verdict"], ("DEMONSTRATED_INCREMENTAL", "SUGGESTIVE_UNCONFIRMED"), c)
+
+    def test_provenance_records_hashes_and_unpinned_warning(self):
+        prov = json.loads((OUT / "provenance.json").read_text())["provenance"]
+        self.assertTrue(prov["files_are_unpinned_latest_release_assets"])
+        self.assertGreater(len(prov["files"]), 30)
+        self.assertTrue(all(len(v["sha256"]) == 64 for v in prov["files"].values()))
+        self.assertIn("injury_report", prov["diagnostics"])
 
     def test_queue_is_ranked_and_makes_no_profit_claims(self):
         sc = [q["score"] for q in self.queue["items"]]

@@ -35,10 +35,26 @@ test("tested inputs carry uncertainty and false-discovery control", () => {
     assert.ok(Array.isArray(r.incremental.ci95) && r.incremental.q_bh >= 0 && r.incremental.q_bh <= 1 + 1e-9);
   }
 });
-test("market benchmark is labelled a closing line, never a Kalshi price, and the no-market path says so", () => {
+test("market benchmark is labelled a near-close sportsbook line, never a Kalshi price, and the no-market path says so", () => {
   for (const d of Object.values(docs)) for (const p of Object.values(d.paths)) {
     if (p.level === "L2_TESTED_VS_MARKET") assert.match(p.benchmark, /not a Kalshi price/i);
     if (p.level === "L1_TESTED_VS_BASELINE") assert.match(p.benchmark, /^NO MARKET/);
+  }
+});
+test("every family, input and interaction is reachable in the published data (275 / 672 / 679)", () => {
+  let fam = 0, inp = 0, ix = 0;
+  for (const d of Object.values(docs)) {
+    fam += Object.keys(d.families).length; inp += Object.keys(d.inputs).length;
+    ix += Object.values(d.archetypes).reduce((a, x) => a + x.interactions.length, 0) + Object.values(d.blueprints).reduce((a, x) => a + x.interactions.length, 0);
+    for (const b of Object.values(d.blueprints)) assert.ok(b.families.length > 0);
+  }
+  assert.deepEqual([fam, inp, ix], [275, 672, 679]);
+});
+test("every path states a claim boundary that mentions Kalshi, and headline models are strict-pregame", () => {
+  for (const d of Object.values(docs)) for (const p of Object.values(d.paths)) {
+    assert.match(p.claim_boundary, /kalshi/i);
+    const best = p.result.headline_models.ridge_all || p.result.headline_models.logit_all;
+    assert.equal(best.pit_strict, true);
   }
 });
 test("queue is ranked, costs $0, and promises no profit", () => {

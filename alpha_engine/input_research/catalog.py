@@ -93,6 +93,10 @@ def validate(doc: dict, sport: str, *, require_blueprint_coverage: bool = True) 
                 errs.append(f"{p}: interaction needs a hypothesis")
         if len(rec.get("interactions") or []) < 2:
             errs.append(f"{p}: needs >=2 interactions")
+    used = {i.get("id") for rec in bps.values() for i in rec.get("inputs", [])} | {i.get("id") for rec in (doc.get("archetypes") or {}).values() for i in rec.get("inputs", [])}
+    for iid in inputs:
+        if iid not in used:
+            errs.append(f"input {iid}: defined but not attached to any blueprint or archetype input list (it would be invisible on the dashboard)")
     fam_by_bp = registry_blueprints(sport)
     all_fams = {f for fs in fam_by_bp.values() for f in fs}
     for a, rec in (doc.get("archetypes") or {}).items():

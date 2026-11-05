@@ -34,15 +34,15 @@ def build(sport_docs: dict, catalogs: dict) -> dict:
             n_missing = sum(1 for i in rec["inputs"] if d["inputs"][i["id"]]["availability"]["overall"] in ("NOT_IN_REGISTRY", "NO_FREE_SOURCE_FOUND", "NO_REFERENCE_FOUND", "SOURCE_AVAILABLE_NOT_COLLECTED"))
             score = math.log1p(markets) * LEVEL_GAP[rec["level"]] * (0.3 + 0.7 * feas)
             if rec["level"] == "L0_INVENTORY_ONLY":
-                q = (f"Which of the {len(rec['inputs'])} candidate inputs for {rec['label']} carry out-of-sample predictive information, and do any beat a closing market? "
+                q = (f"Which of the {len(rec['inputs'])} candidate inputs for {rec['label']} carry out-of-sample predictive information, and do any beat a near-close market? "
                      f"{n_untested} untested, {n_missing} not yet collected or sourced.")
-                first = "Backfill the cheapest free historical closing lines + outcomes, build point-in-time features for the primary inputs, and run the walk-forward study already used for NFL."
+                first = "Backfill the cheapest free historical near-close lines + outcomes, build point-in-time features for the primary inputs, and run the walk-forward study already used for NFL."
             elif rec["level"] == "L1_TESTED_VS_BASELINE":
                 q = (f"{rec['label']}: inputs show predictive value over a no-market baseline; does any of it survive a contemporaneous market price? "
                      f"{n_untested} of {len(rec['inputs'])} candidate inputs remain untested.")
                 first = "Obtain historical prop/market lines (capture Kalshi quotes prospectively) and re-run with the market as benchmark."
             else:
-                q = (f"{rec['label']}: tested against a closing line with no demonstrated gain. Does an inefficiency exist earlier in the price path, in unmodelled inputs, or only in Kalshi prices?"
+                q = (f"{rec['label']}: tested against a near-close line with no demonstrated gain. Does an inefficiency exist earlier in the price path, in unmodelled inputs, or only in Kalshi prices?"
                      f" {n_untested} of {len(rec['inputs'])} candidate inputs untested.")
                 first = "Test open-to-close line movement and Kalshi quotes vs the sportsbook close; add the untested primary inputs (coverage scheme, time-to-throw, route-level data where free)."
             items.append({"id": f"{s}:{a}", "sport": s, "archetype": a, "label": rec["label"], "level": rec["level"], "live_markets": markets, "feasibility": round(feas, 3),

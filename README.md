@@ -45,7 +45,7 @@ The separate GitHub Actions CI workflow builds and runs unit tests on PRs. It ha
 
 ## Input research (what predicts each market)
 
-The dashboard's **Input research** section lets you pick any sport and market family and see every candidate predictive input with its rationale, data source/completeness/freshness, current-model use, learned importance/weight, evidence for or against it, performance against the relevant benchmark, remaining gaps and the ranked next questions. **RESEARCH_ONLY**: hypotheses and availability audits are not evidence; only the NFL game total/spread/winner (vs the closing line) and NFL QB passing yards (vs the QB's own history) have predictive tests so far, and nothing is above L2. See [docs/INPUT_RESEARCH.md](docs/INPUT_RESEARCH.md).
+The dashboard's **Input research** section lets you pick any sport and market family and see every candidate predictive input with its rationale, data source/completeness/freshness, current-model use, learned importance/weight, evidence for or against it, performance against the relevant benchmark, remaining gaps and the ranked next questions. **RESEARCH_ONLY**: hypotheses and availability audits are not evidence; only the NFL game total/spread/winner (vs the near-close line) and NFL QB passing yards (vs the QB's own history) have predictive tests so far, and nothing is above L2. See [docs/INPUT_RESEARCH.md](docs/INPUT_RESEARCH.md).
 
 ## Research standards
 

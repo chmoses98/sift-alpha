@@ -15,6 +15,10 @@ import pandas as pd
 from . import nfl_game as ng
 from . import stats as S
 
+# Partially-knowable inputs (see nfl_game.PARTIAL_PIT): every QB-own prior depends on the REALISED QB1 identity (the QB who threw the most in the game), and weather/roof is the
+# OBSERVED state. The strict headline excludes them; note the baseline N1 itself is the realised QB1's rate, and the sample requires >=12 dropbacks (see run() notes).
+PARTIAL_PIT = frozenset({"qb_att_prior", "qb_games_prior", "qb_epa_prior", "qb_cpoe_prior", "qb_adot_prior", "qb_sack_prior", "own_inj_qb",
+                         "dome", "wind_eff", "cold", "ix_pressure_x_qbsack", "ix_wind_x_adot", "ix_dbinj_x_adot"})
 MIN_DROPBACKS = 12
 QB_LAM = 0.5 ** (1 / 10.0)
 QB_PRIOR = 4.0   # pseudo-games
@@ -164,10 +168,14 @@ def run(qb: pd.DataFrame, n_boot: int = S.BOOT, quick: bool = False) -> dict:
     raw = d["pass_yards"].to_numpy(float)
     base = d["baseline_ypg"].to_numpy(float)
     resid = raw - base
-    res = ng.study(d, ts, resid, raw, base, QB_GROUPS, QB_INTERACTIONS, n_boot, quick, prob_kind=None, standalone_exclude_prefix=("ix_", "qb_yds"), standalone_skip_groups=())
+    res = ng.study(d, ts, resid, raw, base, QB_GROUPS, QB_INTERACTIONS, n_boot, quick, prob_kind=None, standalone_exclude_prefix=("ix_", "qb_yds"), standalone_skip_groups=(),
+                   partial_cols=PARTIAL_PIT)
     res["kind"] = "qb_passing_yards"
     res["baseline_definition"] = ("N1 = the QB's own shrunk recency-weighted passing yards per game (half-life 10 games, 4 pseudo-games toward the league mean): the "
                                   "'historical average' model. B0/B1 in this study refer to N1 / N1+past-mean-residual, NOT to a market.")
+    res["sample_note"] = ("Sample = the team's QB1 (most dropbacks) with >=12 dropbacks. QB1 identity and the participation threshold are REALISED: games where the starter left early or "
+                          "was benched are excluded or recorded under the backup, so yardage here is conditional on the QB playing most of the game. The same sample defines the baseline, "
+                          "so incremental gains are comparable, but a prop priced before kickoff also carries the early-exit risk this sample removes.")
     res["market_comparison"] = {"status": "BLOCKED", "reason": "no free historical passing-yards prop lines (sportsbook or Kalshi) are reachable; archives hold only recent Kalshi tape"}
     # predictive-interval coverage: scale sd with the prediction (yards are heteroskedastic); walk-forward
     return res

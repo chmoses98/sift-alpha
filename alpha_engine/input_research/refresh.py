@@ -69,7 +69,9 @@ def provenance(data_dir: Path) -> dict:
     for p in sorted(list(data_dir.glob("pbp/*.parquet")) + list(data_dir.glob("inj/*.csv")) + list(data_dir.glob("snaps/*.csv")) + [data_dir / "games.csv", data_dir / "players.csv"]):
         if p.exists() and p.stat().st_size > 1000:
             files[str(p.relative_to(data_dir))] = {"bytes": p.stat().st_size, "sha256": sha(p)}
-    return {"source": "github.com/nflverse/nflverse-data release assets (free, CC-BY 4.0 / ODbL as published by nflverse)", "files": files}
+    return {"source": "github.com/nflverse/nflverse-data release assets (free; licence terms are those published by nflverse and have not been independently verified here)", "files": files,
+            "files_are_unpinned_latest_release_assets": True, "note": "nflverse can revise released files (stat corrections), so a later refresh may differ; the per-file sha256 values identify exactly which bytes produced these results.",
+            "diagnostics": dict(nf.DIAGNOSTICS)}
 
 
 def previous_n_completed() -> int | None:
@@ -101,24 +103,29 @@ def run(data_dir: Path, quick: bool = False, no_download: bool = False, n_boot: 
                "completed_games_in_table": int(len(done)), "seasons": [int(gm["season"].min()), int(gm["season"].max())], "provenance_files": len(prov["files"]),
                "provenance_sha256_of_manifest": hashlib.sha256(json.dumps(prov, sort_keys=True).encode()).hexdigest()}
     nfl_labels = {**ng.LABELS}
-    partial = {"qb_epa_h", "qb_epa_a", "sum_qb_epa", "diff_qb_epa", "qb_change_any", "diff_qb_change", "wind_eff", "cold", "dome", "ix_qbinj_x_epa", "ix_wind_x_expl"}
-    src = "nflverse play_by_play + games(closing lines, weather, rest, QB ids) + injuries + snap_counts + players (free)"
-    mkt = "nflverse closing consensus line / de-vigged closing price (a sportsbook CLOSE; not a Kalshi price; no spread, fees or depth)"
+    src = "nflverse play_by_play + games(lines, weather, rest, QB ids) + injuries + snap_counts + players (free; github.com/nflverse/nflverse-data release assets)"
+    mkt = ("nflverse schedule-file consensus line / de-vigged price. Documented only as a near-close sportsbook line (exact timestamp undocumented, so not a point-in-time price at any horizon). "
+           "It is not a Kalshi price; no spread, fees or depth")
+    boundary_mkt = ("This tests whether pregame inputs add information beyond a near-close sportsbook line. It does NOT show, and nothing here implies, an edge over Kalshi prices: "
+                    "no Kalshi price, spread, fee, depth or fill is involved, and the line's exact timing is unknown.")
+    boundary_qb = ("The benchmark is the QB's own historical rate, NOT a market. A demonstrated gain means these inputs predict yardage better than a naive history average; "
+                   "it says nothing about whether any passing-yards price (Kalshi or otherwise) is wrong. Game-script inputs come from near-close game lines.")
     paths = {
-        "nfl_total_vs_close": {"sport": "NFL", "archetype": "game_total", "evidenced_families": ["NFL/TOTAL"], "level": "L2_TESTED_VS_MARKET", "title": "NFL game total vs the closing total",
-                               "benchmark": mkt, "data_source": src, "scope_note": "Game total only. Team totals, halves, quarters, BTTS-style markets inherit the inputs but were NOT tested.",
-                               "result": P.compact_continuous(res["total"], ng.FEATURE_META if hasattr(ng, "FEATURE_META") else {}, nfl_labels, ng.links_for,
-                                                              {"B0": "closing total line", "B1": "closing total + past mean residual"}, partial)},
-        "nfl_spread_vs_close": {"sport": "NFL", "archetype": "game_moneyline_spread", "evidenced_families": ["NFL/SPREAD"], "level": "L2_TESTED_VS_MARKET", "title": "NFL point spread vs the closing spread",
-                                "benchmark": mkt, "data_source": src, "scope_note": "Spread (home margin) only. Win-margin buckets were NOT tested.",
-                                "result": P.compact_continuous(res["spread"], {}, nfl_labels, ng.links_for, {"B0": "closing spread", "B1": "closing spread + past mean residual"}, partial)},
-        "nfl_moneyline_vs_close": {"sport": "NFL", "archetype": "game_moneyline_spread", "evidenced_families": ["NFL/GAME_WINNER"], "level": "L2_TESTED_VS_MARKET", "title": "NFL game winner vs de-vigged closing moneyline",
-                                   "benchmark": mkt, "data_source": src, "scope_note": "Home-win probability; scored by log loss/Brier against the de-vigged close (and a recalibrated close, the fairer competitor).",
-                                   "result": P.compact_moneyline(res["moneyline"], nfl_labels, ng.links_for, partial)},
+        "nfl_total_vs_close": {"sport": "NFL", "archetype": "game_total", "evidenced_families": ["NFL/TOTAL"], "level": "L2_TESTED_VS_MARKET", "title": "NFL game total vs the near-close sportsbook total",
+                               "benchmark": mkt, "claim_boundary": boundary_mkt, "data_source": src, "scope_note": "Game total only. Team totals, halves, quarters, BTTS-style markets inherit the inputs but were NOT tested.",
+                               "result": P.compact_continuous(res["total"], {}, nfl_labels, ng.links_for, {"B0": "near-close total line", "B1": "near-close total + past mean residual"}, ng.PARTIAL_PIT)},
+        "nfl_spread_vs_close": {"sport": "NFL", "archetype": "game_moneyline_spread", "evidenced_families": ["NFL/SPREAD"], "level": "L2_TESTED_VS_MARKET", "title": "NFL point spread vs the near-close sportsbook spread",
+                                "benchmark": mkt, "claim_boundary": boundary_mkt, "data_source": src, "scope_note": "Spread (home margin) only. Win-margin buckets were NOT tested.",
+                                "result": P.compact_continuous(res["spread"], {}, nfl_labels, ng.links_for, {"B0": "near-close spread", "B1": "near-close spread + past mean residual"}, ng.PARTIAL_PIT)},
+        "nfl_moneyline_vs_close": {"sport": "NFL", "archetype": "game_moneyline_spread", "evidenced_families": ["NFL/GAME_WINNER"], "level": "L2_TESTED_VS_MARKET", "title": "NFL game winner vs the de-vigged near-close moneyline",
+                                   "benchmark": mkt, "claim_boundary": boundary_mkt, "data_source": src,
+                                   "scope_note": "Home-win probability; scored by log loss/Brier against the de-vigged line (and a recalibrated line, the fairer competitor).",
+                                   "result": P.compact_moneyline(res["moneyline"], nfl_labels, ng.links_for, ng.PARTIAL_PIT)},
         "nfl_qb_passing_yards_vs_history": {"sport": "NFL", "archetype": "qb_passing_yards", "evidenced_families": ["NFL/PLAYER_STAT"], "level": "L1_TESTED_VS_BASELINE", "title": "NFL QB passing yards vs the QB's own historical rate",
                                             "benchmark": "NO MARKET: the benchmark is the QB's own shrunk recency-weighted passing yards per game. Historical prop lines are unavailable free, so this is a research lead only.",
-                                            "data_source": src, "scope_note": "QB1 passing yards only (>=12 dropbacks). Rushing/receiving/TD props inherit inputs but were NOT tested. Coverage-shell, time-to-throw and route data were NOT available free and are untested.",
-                                            "result": P.compact_continuous(qres, {}, qp.QB_LABELS, lambda c: qp.FEATURE_CATALOG.get(c, []), {"B0": "QB historical rate (N1)", "B1": "N1 + past mean residual"}, {"qb_epa_prior", "qb_cpoe_prior", "qb_adot_prior", "qb_sack_prior", "qb_att_prior", "qb_games_prior", "wind_eff", "cold", "dome"})},
+                                            "claim_boundary": boundary_qb, "data_source": src, "sample_note": qres.get("sample_note"),
+                                            "scope_note": "QB1 passing yards only (>=12 dropbacks). Rushing/receiving/TD props inherit inputs but were NOT tested. Coverage-shell, time-to-throw and route data were NOT available free and are untested.",
+                                            "result": P.compact_continuous(qres, {}, qp.QB_LABELS, lambda c: qp.FEATURE_CATALOG.get(c, []), {"B0": "QB historical rate (N1)", "B1": "N1 + past mean residual"}, qp.PARTIAL_PIT)},
     }
     built = P.build_all(paths, vintage)
     docs = built["docs"]

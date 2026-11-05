@@ -10,7 +10,7 @@ const nice = s => String(s ?? "").toLowerCase().replaceAll("_", " ");
 const f = (x, d = 3) => x == null || Number.isNaN(x) ? "–" : Math.abs(x) >= 100 ? x.toFixed(1) : Number(x).toPrecision(d);
 const pct = x => x == null ? "–" : (100 * x).toFixed(0) + "%";
 const ci = a => a ? `[${f(a[0], 2)}, ${f(a[1], 2)}]` : "";
-const LV = {L0_INVENTORY_ONLY: "L0 inventory only", L1_TESTED_VS_BASELINE: "L1 tested vs baseline", L2_TESTED_VS_MARKET: "L2 tested vs closing market", L3_TESTED_VS_KALSHI: "L3 tested vs Kalshi price", L4_PROSPECTIVELY_CONFIRMED: "L4 prospectively confirmed"};
+const LV = {L0_INVENTORY_ONLY: "L0 inventory only", L1_TESTED_VS_BASELINE: "L1 tested vs baseline", L2_TESTED_VS_MARKET: "L2 tested vs near-close sportsbook line", L3_TESTED_VS_KALSHI: "L3 tested vs Kalshi price", L4_PROSPECTIVELY_CONFIRMED: "L4 prospectively confirmed"};
 const Chip = ({kind, children, title}) => <span className={"ir-chip ir-" + kind} title={title}>{children}</span>;
 const VerdictChip = ({v}) => <Chip kind={v || "UNTESTED"} title="Verdict ladder: demonstrated needs Holm-adjusted CI above zero, both chronological halves and every leave-one-season-out above zero">{nice(v || "UNTESTED")}</Chip>;
 
@@ -78,6 +78,7 @@ export function InputResearch() {
         {paths.map(p => <PathCard key={p.id} p={p}/>)}
         {level === "L0_INVENTORY_ONLY" && archPaths.length > 0 && <p className="ir-fine ir-warn">Related tested paths for this archetype ({archPaths.map(p => p.title).join("; ")}) cover other families; their results are NOT transferred to {fam}.</p>}
         <h4>Candidate inputs ({inputs.length}) — rationale, availability, model use and evidence</h4>
+        <p className="ir-fine"><b>How to read this:</b> every input is a <b>hypothesis</b> unless it carries a verdict. <i>Untested</i> = no predictive test exists. A verdict only ever refers to the benchmark named on the path card (a near-close sportsbook line or a QB's own history), <b>never to a Kalshi price</b>. {inputs.filter(i => i.tested).length} of {inputs.length} inputs here have been tested; {inputs.filter(i => i.evidence.some(e => e.verdict === "DEMONSTRATED_INCREMENTAL")).length} show a demonstrated incremental effect against that benchmark; 0 beat a Kalshi price (not tested).</p>
         <div className="ir-filter" role="group" aria-label="Filter inputs">{[["all", "All"], ["tested", "Tested"], ["untested", "Untested"], ["missing", "Missing / unsourced"], ["used", "Used by current model"]].map(([k, l]) =>
           <button key={k} className={filter === k ? "on" : ""} onClick={() => setFilter(k)}>{l}</button>)}</div>
         <div className="ir-scroll"><table className="ir-table">
@@ -88,7 +89,7 @@ export function InputResearch() {
               <td><Chip kind={i.availability.overall}>{nice(i.availability.overall)}</Chip>{i.availability.research_path && <small> {pct(i.availability.research_path.mean_coverage)} complete, latest game {String(i.availability.research_path.latest_game).slice(0, 10)}</small>}</td>
               <td><small>{i.availability.model_use}</small></td>
               <td><small>{i.availability.pregame_knowable}</small></td>
-              <td>{i.evidence && i.evidence.length ? i.evidence.map(e => <div key={e.path + e.feature}><VerdictChip v={e.verdict}/> <small>{e.feature}: q={f(e.q_bh, 2)}, weight/SD {f(e.weight_per_sd, 2)} {e.weight_ci95 ? ci(e.weight_ci95) : ""}</small></div>) : <VerdictChip v={null}/>}</td>
+              <td>{i.evidence && i.evidence.length ? i.evidence.map(e => <div key={e.path + e.feature}><VerdictChip v={e.verdict}/> <small>{e.feature}{e.pit === "partial" ? " [partial pregame]" : ""}: q={f(e.q_bh, 2)}, {e.weight_reliable ? `weight/SD ${f(e.weight_per_sd, 2)} ${ci(e.weight_ci95)}` : "weight not reliable (no demonstrated effect)"}</small></div>) : <VerdictChip v={null}/>}</td>
             </tr>
             {open === i.id && <tr className="ir-open"><td colSpan={5}>
               {i.mechanism && <p><b>Mechanism.</b> {i.mechanism}</p>}{i.rationale && <p><b>Rationale.</b> {i.rationale}</p>}{i.measurement && <p><b>How to measure.</b> {i.measurement}</p>}
@@ -99,6 +100,10 @@ export function InputResearch() {
               {i.evidence && i.evidence.map(e => <p className="ir-fine" key={e.path + e.feature}><b>{e.path}:{e.feature}</b> — PIT {e.pit}, coverage {pct(e.coverage)}, nominal p {f(e.p, 2)}, BH q {f(e.q_bh, 2)}, effect {f(e.gain, 2)} (% of baseline error, or log-loss for moneyline).</p>)}
             </td></tr>}
           </React.Fragment>)}</tbody></table></div>
+        {bp && <details className="ir-fine"><summary><b>Parent blueprint "{rec.blueprint}"</b>: {bp.inputs.length} candidate inputs and {bp.interactions.length} interactions hypothesised for the whole class of markets (hypotheses only)</summary>
+          <p>{bp.mechanism}</p>
+          <ul>{bp.inputs.map(i => <li key={i.id}><b>{defs[i.id]?.label || i.id}</b> ({i.role || "–"}): {i.why}</li>)}</ul>
+          <ul>{bp.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul></details>}
         {arch && <><h4>Interactions hypothesised ({arch.interactions.length})</h4><ul className="ir-fine">{arch.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul></>}
         <h4>Gaps and what Alpha should research next</h4>
         <ul className="ir-fine">
@@ -119,7 +124,10 @@ function PathCard({p}) {
   const base = r.baselines;
   return <div className="ir-path">
     <h4>{p.title} <Chip kind={p.level}>{LV[p.level]}</Chip></h4>
+    <p className="ir-fine ir-warn"><b>Claim boundary:</b> {p.claim_boundary}</p>
     <p className="ir-fine"><b>Benchmark:</b> {p.benchmark}</p>
+    {p.sample_note && <p className="ir-fine"><b>Sample note:</b> {p.sample_note}</p>}
+    <p className="ir-fine"><b>Pregame discipline:</b> the headline model uses only inputs knowable before the decision. {(r.partial_pit_inputs || []).length > 0 ? `Partially-knowable inputs (${r.partial_pit_inputs.join(", ")}) — the realised starter and observed weather/roof state — are tested separately and excluded from the headline.` : ""} {(hm.sensitivity_incl_partial_inputs && hm.sensitivity_incl_partial_inputs.ridge) ? `Sensitivity incl. partial inputs: MSE gain ${f(hm.sensitivity_incl_partial_inputs.ridge.mse_gain_vs_baseline, 3)} ${ci(hm.sensitivity_incl_partial_inputs.ridge.ci95)} — not a pregame claim.` : ""} {hm.sensitivity_incl_partial_inputs && hm.sensitivity_incl_partial_inputs.logloss_gain_vs_market != null ? `Sensitivity incl. partial inputs: log-loss gain ${f(hm.sensitivity_incl_partial_inputs.logloss_gain_vs_market, 2)} ${ci(hm.sensitivity_incl_partial_inputs.ci95)} — not a pregame claim.` : ""}</p>
     <p className="ir-fine"><b>Scope:</b> {p.scope_note}</p>
     <p className="ir-fine"><b>Validation:</b> expanding-window by season (train on earlier seasons only, penalty chosen on the last training season); {r.n_test_rows.toLocaleString()} out-of-sample rows, seasons {r.test_seasons[0]}–{r.test_seasons[r.test_seasons.length - 1]}, {r.n_week_clusters} week clusters (cluster bootstrap); Holm control over groups/interactions, Benjamini–Hochberg over single inputs.</p>
     <div className="ir-cards">
@@ -141,7 +149,7 @@ function PathCard({p}) {
     <details className="ir-fine"><summary>Input groups: standalone importance, incremental gain, necessity, and tested interactions</summary>
       <div className="ir-scroll"><table className="ir-table"><thead><tr><th>Group</th><th>Standalone R² (no market)</th><th>Incremental vs benchmark</th><th>Verdict</th><th>Seasons +</th></tr></thead>
         <tbody>{Object.entries(r.groups).map(([g, v]) => <tr key={g}><td>{nice(g)}</td><td>{v.standalone_r2 == null ? "–" : pct(v.standalone_r2)}</td>
-          <td>{f(v.pct_of_baseline_mse ?? v.logloss_gain_vs_recalibrated_market, 2)} {ci(v.ci95)}</td><td><VerdictChip v={v.verdict}/></td><td>{v.seasons_positive}/{v.seasons_total}</td></tr>)}</tbody></table></div>
+          <td>{f(v.pct_of_baseline_mse ?? v.logloss_gain_vs_recalibrated_market, 2)} {ci(v.ci95)}{v.contains_partial_pit_inputs ? " (includes partial-pregame inputs)" : ""}</td><td><VerdictChip v={v.verdict}/></td><td>{v.seasons_positive}/{v.seasons_total}</td></tr>)}</tbody></table></div>
       {r.interactions && Object.keys(r.interactions).length > 0 && <ul>{Object.entries(r.interactions).map(([k, v]) => <li key={k}><b>{v.label}</b>: gain {f(v.mse_gain_vs_main_effects, 2)} {ci(v.ci95)}, Holm p {f(v.holm_p, 2)} <VerdictChip v={v.verdict}/> — {v.hypothesis}</li>)}</ul>}
     </details>
   </div>;

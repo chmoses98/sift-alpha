@@ -9,7 +9,7 @@ Nothing here promotes a finding: every evidence record carries its own verdict, 
 Evidence levels (strict ladder; a family sits at the highest level actually achieved):
   L0_INVENTORY_ONLY       hypotheses + availability audit only; no predictive test has been run
   L1_TESTED_VS_BASELINE   walk-forward test vs a no-market baseline (a research lead, not an edge)
-  L2_TESTED_VS_MARKET     walk-forward test vs a contemporaneous closing market line/price (sportsbook close or Kalshi)
+  L2_TESTED_VS_MARKET     walk-forward test vs a contemporaneous near-close market line/price (sportsbook line or Kalshi)
   L3_TESTED_VS_KALSHI     as L2 against timestamped Kalshi executable prices incl. spread/fees/depth        (achieved nowhere yet)
   L4_PROSPECTIVELY_CONFIRMED  pre-registered, forward, out-of-sample, survives multiple-comparison control   (achieved nowhere yet)
 """
@@ -119,18 +119,26 @@ def compact_continuous(res: dict, feature_meta: dict, labels: dict, links_fn, be
     for c, v in res["inputs"].items():
         inc = v["gain_vs_B1"]
         w = v.get("weight", {})
+        reliable = bool(w.get("ci_excludes_zero")) and v["verdict"] in ("DEMONSTRATED_INCREMENTAL", "SUGGESTIVE_UNCONFIRMED")
         inputs[c] = {"label": labels.get(c, c), "group": group_of.get(c), "catalog_ids": links_fn(c), "pit": "partial" if c in pit_partial else "yes",
                      "coverage": v["coverage"], "coverage_test": v["coverage_test"],
                      "incremental": {"mse_gain_vs_baseline": inc["mean"], "pct_of_baseline_mse": v["pct_of_base_mse"], "ci95": inc["ci_0.05"], "p": inc["p"], "q_bh": v["q_bh"], "holm_p": v["holm_p"],
                                      "seasons_positive": inc["seasons_positive"], "seasons_total": inc["seasons_total"], "verdict": v["verdict"]},
                      "corr_with_residual": v["corr_with_market_residual"], "sign_consistency": v["sign_consistency"], "season_corrs": v["season_corrs"],
-                     "weight": {"per_sd": w.get("per_sd"), "ci95": w.get("ci95"), "per_unit": w.get("per_unit"), "ci_excludes_zero": w.get("ci_excludes_zero"), "unit": w.get("unit")},
+                     "weight": {"per_sd": w.get("per_sd"), "ci95": w.get("ci95"), "per_unit": w.get("per_unit"), "ci_excludes_zero": w.get("ci_excludes_zero"), "unit": w.get("unit"),
+                                "model": w.get("model"), "reliable": reliable,
+                                "caveat": ("Descriptive ridge coefficient on the benchmark residual, conditional on the other inputs and fit on all history (including test seasons)."
+                                           + ("" if reliable else " NOT a demonstrated effect: the incremental test did not clear the bar, so treat the sign and size as noise."))},
                      "permutation_importance": imp.get(c, {}).get("perm_mse_increase_mean"), "permutation_seasons_positive": imp.get(c, {}).get("seasons_positive"),
                      "partial_dependence": imp.get(c, {}).get("pdp")}
     groups = {}
+    partial_set = set(res.get("partial_cols", []))
     for g, v in res["groups"].items():
+        if g in ("ALL_FEATURES_RIDGE", "ALL_INCL_PARTIAL_RIDGE"):
+            continue
         gg = v["gain_vs_B1"]
-        entry = {"members": res["group_members"].get(g, []), "mse_gain_vs_baseline": gg["mean"], "pct_of_baseline_mse": v["pct_of_base_mse"], "ci95": gg["ci_0.05"], "holm_p": v["holm_p"],
+        entry = {"contains_partial_pit_inputs": any(c in partial_set for c in res["group_members"].get(g, [])), "ci_season_block": gg.get("ci_season_block"),
+                 "members": res["group_members"].get(g, []), "mse_gain_vs_baseline": gg["mean"], "pct_of_baseline_mse": v["pct_of_base_mse"], "ci95": gg["ci_0.05"], "holm_p": v["holm_p"],
                  "halves": gg["halves"], "min_leave_one_season_out": min(gg["leave_one_season_out"].values()) if gg["leave_one_season_out"] else None,
                  "seasons_positive": gg["seasons_positive"], "seasons_total": gg["seasons_total"], "verdict": v["verdict"]}
         st = res["standalone"]["groups"].get(g)
@@ -140,17 +148,22 @@ def compact_continuous(res: dict, feature_meta: dict, labels: dict, links_fn, be
         if dr:
             entry["necessity_mse_loss_if_removed"] = dr["mse_loss_if_removed"]; entry["necessity_ci95"] = dr["ci95"]; entry["necessity_holm_p"] = dr["holm_p"]
         groups[g] = entry
-    ix = {k: {"label": v["label"], "components": v["components"], "hypothesis": v["hypothesis"], "mse_gain_vs_main_effects": v["gain_vs_main_effects"]["mean"],
+    ix = {k: {"label": v["label"], "components": v["components"], "hypothesis": v["hypothesis"], "mse_gain_vs_main_effects": v["gain_vs_main_effects"]["mean"], "pit": v.get("pit", "yes"),
               "ci95": v["gain_vs_main_effects"]["ci_0.05"], "holm_p": v["holm_p"], "verdict": v["verdict"]} for k, v in res["interactions"].items()}
     out = {"kind": res["kind"], "n_games_modeled": res["n_games_modeled"], "n_test_rows": res["n_test_games"], "test_seasons": res["test_seasons"], "n_week_clusters": res["n_week_clusters"],
-           "benchmark_names": benchmark_names, "baselines": res["baselines"], "headline_models": {"ridge_all": res["groups"]["ALL_FEATURES_RIDGE"] and groups.get("ALL_FEATURES_RIDGE"), "gbm_all": {
+           "benchmark_names": benchmark_names, "baselines": res["baselines"], "headline_models": {"gbm_all": {
                "mse_gain_vs_baseline": res["gbm"]["gain_vs_B1"]["mean"], "ci95": res["gbm"]["gain_vs_B1"]["ci_0.05"], "gain_vs_ridge": res["gbm"]["gain_vs_ridge"]["mean"],
                "gain_vs_ridge_ci95": res["gbm"]["gain_vs_ridge"]["ci_0.05"], "verdict": res["gbm"]["verdict"], "halves": res["gbm"]["gain_vs_B1"]["halves"]}},
-           "standalone": {k: v for k, v in res["standalone"].items() if k != "groups"}, "groups": {k: v for k, v in groups.items() if k != "ALL_FEATURES_RIDGE"},
+           "standalone": {k: v for k, v in res["standalone"].items() if k != "groups"}, "groups": groups, "partial_pit_inputs": sorted(partial_set),
            "interactions": ix, "inputs": inputs}
     if "ALL_FEATURES_RIDGE" in res["groups"]:
         a = res["groups"]["ALL_FEATURES_RIDGE"]
-        out["headline_models"]["ridge_all"] = {"mse_gain_vs_baseline": a["gain_vs_B1"]["mean"], "pct_of_baseline_mse": a["pct_of_base_mse"], "ci95": a["gain_vs_B1"]["ci_0.05"], "holm_p": a["holm_p"],
+        sens = res["groups"].get("ALL_INCL_PARTIAL_RIDGE")
+        out["headline_models"]["sensitivity_incl_partial_inputs"] = ({"ridge": {"mse_gain_vs_baseline": sens["gain_vs_B1"]["mean"], "pct_of_baseline_mse": sens["pct_of_base_mse"], "ci95": sens["gain_vs_B1"]["ci_0.05"],
+                                                                              "holm_p": sens["holm_p"], "verdict": sens["verdict"]},
+                                                                     "gbm": {"mse_gain_vs_baseline": res["gbm"]["sensitivity_incl_partial"]["mean"], "ci95": res["gbm"]["sensitivity_incl_partial"]["ci_0.05"]},
+                                                                     "note": "Adds the realised starting QB and/or observed weather. NOT a pregame claim; shown only to size what partially-knowable inputs would add."} if sens else None)
+        out["headline_models"]["ridge_all"] = {"pit_strict": True, "ci_season_block": a["gain_vs_B1"].get("ci_season_block"), "mse_gain_vs_baseline": a["gain_vs_B1"]["mean"], "pct_of_baseline_mse": a["pct_of_base_mse"], "ci95": a["gain_vs_B1"]["ci_0.05"], "holm_p": a["holm_p"],
                                               "halves": a["gain_vs_B1"]["halves"], "per_season": a["gain_vs_B1"]["per_season"], "min_leave_one_season_out": min(a["gain_vs_B1"]["leave_one_season_out"].values()),
                                               "verdict": a["verdict"]}
     if res.get("probability"):
@@ -179,7 +192,10 @@ def compact_moneyline(res: dict, labels: dict, links_fn, pit_partial: set) -> di
     a = res["all_features"]
     return {"kind": "moneyline", "n_games_modeled": res["n_games_modeled"], "n_test_rows": res["n_test_games"], "test_seasons": res["test_seasons"], "n_week_clusters": res["n_week_clusters"],
             "market_price_source": res["market_price_source"], "baselines": res["baselines"],
-            "headline_models": {"logit_all": {"logloss_model": a["logloss_model"], "brier_model": a["brier_model"], "logloss_gain_vs_market": a["logloss_gain_vs_market"]["mean"],
+            "partial_pit_inputs": res["all_features"].get("partial_cols", []),
+            "sensitivity_incl_partial_inputs": {"logloss_gain_vs_market": res["sensitivity_incl_partial"]["logloss_gain_vs_market"]["mean"], "ci95": res["sensitivity_incl_partial"]["logloss_gain_vs_market"]["ci_0.05"],
+                                                "note": "Adds the realised starting QB and observed weather. NOT a pregame claim."},
+            "headline_models": {"logit_all": {"pit_strict": True, "ci_season_block": a["logloss_gain_vs_market"].get("ci_season_block"), "logloss_model": a["logloss_model"], "brier_model": a["brier_model"], "logloss_gain_vs_market": a["logloss_gain_vs_market"]["mean"],
                                               "ci95": a["logloss_gain_vs_market"]["ci_0.05"], "halves": a["logloss_gain_vs_market"]["halves"], "calibration": a["calibration"],
                                               "calibration_table": a["calibration_table"], "per_season": a["logloss_gain_vs_market"]["per_season"],
                                               "verdict": "WORSE_THAN_BASELINE" if a["logloss_gain_vs_market"]["ci_0.05"][1] < 0 else ("SUGGESTIVE_UNCONFIRMED" if a["logloss_gain_vs_market"]["ci_0.05"][0] > 0 else "NOT_DEMONSTRATED")}},
@@ -244,7 +260,7 @@ def build_sport(sport: str, paths: dict, ver: dict, vintage: dict) -> dict:
                     w = rec.get("weight") or {}
                     ev.append({"path": pid, "feature": f, "label": rec["label"], "verdict": inc["verdict"], "q_bh": inc["q_bh"], "p": inc["p"],
                                "gain": inc.get("pct_of_baseline_mse", inc.get("logloss_gain_vs_recalibrated_market")), "weight_per_sd": w.get("per_sd", w.get("logit_per_sd")),
-                               "weight_ci95": w.get("ci95"), "pit": rec["pit"], "coverage": rec["coverage"]})
+                               "weight_ci95": w.get("ci95"), "weight_reliable": bool(w.get("reliable")), "weight_model": w.get("model"), "pit": rec["pit"], "coverage": rec["coverage"]})
         return {"id": iid, "role": role, "why": why, "evidence": ev, "tested": bool(ev)}
 
     def input_def(iid: str) -> dict:
@@ -298,7 +314,7 @@ def build_index(sport_docs: dict, ver: dict, vintage: dict) -> dict:
         sports[s] = {"families": len(d["families"]), "markets_now": sum(f["markets_now"] or 0 for f in d["families"].values()), "levels": lv, "catalog": d["catalog_stats"],
                      "archetype_input_availability": avail, "paths": sorted(d["paths"]), "archetypes": len(d["archetypes"])}
     return {"schema_version": "input-research-1.0", "status": "RESEARCH_ONLY", "generated_utc": vintage["generated_utc"], "vintage": vintage, "levels": LEVELS, "sports": sports,
-            "notice": "Hypotheses and availability audits are not evidence. Only families at L1+ have any predictive test; L2 compares against a closing market; nothing is at L3/L4. "
+            "notice": "Hypotheses and availability audits are not evidence. Only families at L1+ have any predictive test; L2 compares against a near-close sportsbook line; nothing is at L3/L4. "
                       "A tested input is not a bet, and no evidence here includes fees, spreads or executable depth."}
 
 

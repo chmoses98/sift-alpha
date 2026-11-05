@@ -1,4 +1,4 @@
-"""Point-in-time NFL game feature table from free nflverse data (play-by-play, games/closing lines, injuries, snap counts, players).
+"""Point-in-time NFL game feature table from free nflverse data (play-by-play, games/lines, injuries, snap counts, players).
 
 Every feature for game G is computed from information available BEFORE G kicked off: team ratings are opponent-adjusted exponentially weighted
 means over games strictly before G (with season-boundary regression and a shrinkage prior); injuries are the final Friday-style report rows
@@ -195,7 +195,21 @@ POS_GROUPS = {"QB": "qb", "T": "ol", "G": "ol", "C": "ol", "OL": "ol", "OT": "ol
 STATUS_W = {"Out": 1.0, "Doubtful": 0.85, "Questionable": 0.25}
 
 
-def injury_features(inj_dir: Path, snap_dir: Path, players: pd.DataFrame) -> pd.DataFrame:
+DIAGNOSTICS: dict = {}
+
+
+def kickoff_table(games: pd.DataFrame) -> pd.DataFrame:
+    """(season, week, team) -> kickoff as naive UTC. nflverse gametime is US Eastern."""
+    g = games.copy()
+    t = g["gametime"].fillna("13:00")
+    ko = pd.to_datetime(g["gameday"] + " " + t, errors="coerce").dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC").dt.tz_localize(None)
+    g["ko"] = ko
+    a = g[["season", "week", "home_team", "ko"]].rename(columns={"home_team": "team"})
+    b = g[["season", "week", "away_team", "ko"]].rename(columns={"away_team": "team"})
+    return pd.concat([a, b]).dropna(subset=["ko"]).drop_duplicates(["season", "week", "team"])
+
+
+def injury_features(inj_dir: Path, snap_dir: Path, players: pd.DataFrame, kickoffs: pd.DataFrame | None = None) -> pd.DataFrame:
     """Snap-share-weighted starters unavailable per team-week: sum over Out/Doubtful(/Questionable*0.25) players of their prior-4-game snap share."""
     idmap = players.dropna(subset=["gsis_id", "pfr_id"]).drop_duplicates("pfr_id").set_index("pfr_id")["gsis_id"]
     snaps = []
@@ -219,7 +233,18 @@ def injury_features(inj_dir: Path, snap_dir: Path, players: pd.DataFrame) -> pd.
         if len(i.columns) > 3:
             rows.append(i)
     inj = pd.concat(rows, ignore_index=True)
-    inj = inj[inj["game_type"].isin(["REG", "POST"]) & inj["report_status"].isin(STATUS_W)].copy()
+    inj = inj[inj["game_type"].isin(["REG", "POST"])].copy()
+    # point-in-time filter: a report row stamped AFTER the game's kickoff cannot be a pregame input. Rows with no timestamp cannot be verified and are counted, not dropped.
+    inj["dm"] = pd.to_datetime(inj["date_modified"], utc=True, errors="coerce").dt.tz_localize(None) if "date_modified" in inj else pd.NaT
+    diag = {"report_rows": int(len(inj)), "rows_without_timestamp": int(inj["dm"].isna().sum())}
+    if kickoffs is not None:
+        inj["season"] = pd.to_numeric(inj["season"], errors="coerce"); inj["week"] = pd.to_numeric(inj["week"], errors="coerce")
+        inj = inj.merge(kickoffs, on=["season", "week", "team"], how="left")
+        late = inj["dm"].notna() & inj["ko"].notna() & (inj["dm"] > inj["ko"])
+        diag["rows_modified_after_kickoff_dropped"] = int(late.sum())
+        inj = inj[~late]
+    DIAGNOSTICS["injury_report"] = diag
+    inj = inj[inj["report_status"].isin(STATUS_W)].copy()
     inj["w"] = inj["report_status"].map(STATUS_W)
     inj["grp"] = inj["position"].map(POS_GROUPS)
     inj = inj.dropna(subset=["grp"]).copy()
@@ -256,7 +281,7 @@ def build_game_table(data_dir: Path, first_season: int = 2010, last_season: int 
     rat = rolling_ratings(games, tg)
     gm = games.merge(rat, on="game_id", how="left")
     players = pd.read_csv(data_dir / "players.csv", low_memory=False)
-    inj = injury_features(data_dir / "inj", data_dir / "snaps", players)
+    inj = injury_features(data_dir / "inj", data_dir / "snaps", players, kickoff_table(games))
     for tag, team in (("h", "home_team"), ("a", "away_team")):
         x = inj.rename(columns={c: f"{tag}_{c}" for c in inj.columns if c.startswith("inj_")})
         x = x.rename(columns={"team": team})

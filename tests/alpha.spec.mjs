@@ -44,11 +44,13 @@ test("mobile and desktop never require sideways scrolling", async ({ page }) => 
 test("browse CFB, CBB and NCAA baseball without pretending unsupported models exist", async ({ page }) => {
   await page.getByRole("button", { name: "Browse sports" }).click();
   await expect(page.getByRole("heading", { name: "Any sport can start with a question." })).toBeVisible();
-  await expect(page.getByRole("button", { name: /College Football \(FBS\)/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /College Basketball \(Men\)/ })).toBeVisible();
-  await page.getByRole("button", { name: /NCAA Baseball/ }).click();
+  // scoped to the sport-coverage panel: the research library below also lists matching studies, which made these locators ambiguous (strict-mode violation, also failing on main)
+  const coverage = page.locator(".sport-coverage");
+  await expect(coverage.getByRole("button", { name: /College Football \(FBS\)/ })).toBeVisible();
+  await expect(coverage.getByRole("button", { name: /College Basketball \(Men\)/ })).toBeVisible();
+  await coverage.getByRole("button", { name: /NCAA Baseball/ }).click();
   await expect(page.getByRole("heading", { name: /Build the NCAA baseball research foundation/ })).toBeVisible();
-  await expect(page.getByText("Discovery needed", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".detail-state", { hasText: "Discovery needed" })).toBeVisible();   // the first text match used to be a hidden <option> in the state filter
   await expect(page.getByText(/No dedicated NCAA baseball research repo/)).toBeVisible();
   await expect(page.getByRole("link", { name: /Kalshi 2026 NCAA baseball game contract/ })).toHaveAttribute("href", /kalshi.com/);
 });

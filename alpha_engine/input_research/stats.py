@@ -6,7 +6,7 @@ Design rules (they are what keep a "finding" honest):
     no-information baseline otherwise. A gain only counts against the strictest baseline available.
   * Uncertainty is cluster-bootstrapped over calendar weeks (games in a week share weather, officiating drift, injuries news, market regime).
   * Every family of tests gets multiple-comparison control (Holm for the confirmatory gate, Benjamini-Hochberg q-values for discovery lists).
-  * Verdict ladder (never skips a rung): DEMONSTRATED needs Holm-adjusted CI > 0, both chronological halves > 0 and every leave-one-season-out > 0.
+  * Verdict ladder (never skips a rung): DEMONSTRATED needs Holm-adjusted p < 0.05, both chronological halves > 0, every leave-one-season-out > 0 and a season-block bootstrap 95% CI > 0.
 """
 from __future__ import annotations
 
@@ -156,6 +156,9 @@ def gain_summary(boot: ClusterBoot, test: np.ndarray, base_err: np.ndarray, mode
     loso = {int(s): float(d[ts != s].mean()) for s in test_seasons if (ts == s).any()}
     per_season = {int(s): float(d[ts == s].mean()) for s in test_seasons if (ts == s).any()}
     res = boot.summarize(d, alphas)
+    sb = getattr(boot, "season_boot", None)
+    if sb is not None:      # extra-conservative check: resample whole SEASONS (few clusters, but it respects serial dependence of rolling ratings)
+        res["ci_season_block"] = sb.summarize(d, (0.05,))["ci_0.05"]
     res.update({"halves": [float(d[:h].mean()), float(d[h:].mean())], "leave_one_season_out": loso, "per_season": per_season,
                 "seasons_positive": int(sum(v > 0 for v in per_season.values())), "seasons_total": len(per_season)})
     return res
@@ -164,7 +167,8 @@ def gain_summary(boot: ClusterBoot, test: np.ndarray, base_err: np.ndarray, mode
 def verdict(gain: dict, holm_p: float | None = None, alpha: float = 0.05) -> str:
     ci_lo = gain["ci_0.05"][0]
     ci_hi = gain["ci_0.05"][1]
-    if holm_p is not None and holm_p < alpha and min(gain["halves"]) > 0 and min(gain["leave_one_season_out"].values()) > 0:
+    sblock_ok = gain.get("ci_season_block") is None or gain["ci_season_block"][0] > 0
+    if holm_p is not None and holm_p < alpha and min(gain["halves"]) > 0 and min(gain["leave_one_season_out"].values()) > 0 and sblock_ok:
         return "DEMONSTRATED_INCREMENTAL"
     if ci_lo > 0:
         return "SUGGESTIVE_UNCONFIRMED"      # nominal 95% only; survives no multiple-comparison control

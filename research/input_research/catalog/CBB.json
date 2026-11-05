@@ -1,0 +1,3261 @@
+{
+ "sport": "CBB",
+ "inputs": {
+  "m.quote_history": {
+   "label": "Kalshi bid/ask/last time series (pre-game through close)",
+   "category": "market_structure",
+   "mechanism": "The market's own price path aggregates news (injuries, lineups, sharp flow) and defines the executable price at each decision time.",
+   "rationale": "College basketball markets are far thinner and more numerous than NBA markets, so last-trade prints are often stale and midpoints with staleness flags are safer. The path also shows when lines react to lineup news, which in CBB is disclosed late and unevenly. Any feature must be joined point-in-time against the quote vintage, never against the close.",
+   "measurement": "Store every snapshot with exchange and retrieval timestamps; features: mid, spread, time since last trade, move since open, move in the final 2 hours; as-of join of model features (<= quote time).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.quote_history"
+   ]
+  },
+  "m.orderbook_depth": {
+   "label": "Order-book depth and spread",
+   "category": "market_structure",
+   "mechanism": "Depth and spread determine how much can be filled at the quoted price and the round-trip cost.",
+   "rationale": "Mid-major and alternate-spread rungs are frequently wide and shallow, so apparent model edges there are often untradable; depth collapse before tip can precede lineup news. Edge needs to be measured net of half-spread and fees at realistic size.",
+   "measurement": "Per rung: best bid/ask, size at best, cumulative size within 2c/5c, spread in cents and as fraction of price, hourly time-weighted averages before tip.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.orderbook_depth"
+   ]
+  },
+  "m.volume_oi": {
+   "label": "Volume and open interest",
+   "category": "market_structure",
+   "mechanism": "Traded volume and open interest proxy for how much informed participation has priced a market.",
+   "rationale": "High-profile games (power-conference, ranked teams) attract more informed flow than low-major games, so identical model edges deserve different discounts. Futures volume is cumulative over months, so use deltas.",
+   "measurement": "Cumulative and per-hour volume, open interest, trade-print count; rank of rung within event; ratio of volume to open interest; differences around news times.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.volume_oi"
+   ]
+  },
+  "m.ladder_structure": {
+   "label": "Cross-rung consistency of the threshold ladder (monotonicity, implied distribution)",
+   "category": "market_structure",
+   "mechanism": "A strike ladder is a set of tail probabilities of one underlying quantity; internal consistency reveals mispriced rungs and the market's implied distribution.",
+   "rationale": "Spread, total and player-prop ladders must be monotone, and the differences between adjacent rungs give the implied pmf; for CBB the residual sd (~10-11 points) and key-number structure are weaker than in football but ladders still expose stale or thin quotes. Rungs of the same game are heavily correlated, so edges across rungs are one exposure.",
+   "measurement": "Extract all rungs for the same event/stat, enforce monotonicity, difference to the implied pmf, fit location and scale, flag rungs off curve by more than spread+fee, compute rung correlation for exposure netting.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.ladder_structure"
+   ]
+  },
+  "m.settlement_truth": {
+   "label": "Settled result, settlement value and timestamp",
+   "category": "other",
+   "mechanism": "The realized outcome and settlement time are the labels against which the whole system is scored.",
+   "rationale": "Needed for calibration but never a pregame feature. Subtle for CBB: box-score sources (ESPN, NCAA live stats) can be late or contain errors for smaller programs, so labels must come from the contract settlement and be reconciled with the named source.",
+   "measurement": "Pull settled value, result and settlement time per market; reconcile with the source named in rules; flag disagreements and delayed settlements.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)"
+   ],
+   "registry_ids": [
+    "m.settlement_truth"
+   ]
+  },
+  "m.rules_text": {
+   "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+   "category": "market_structure",
+   "mechanism": "Contract wording defines the event: whether overtime counts, how DNP or postponement resolves, push handling and the stat source.",
+   "rationale": "In CBB, period markets refer to halves (two 20-minute halves) and OT inclusion differs by market; player props may void or settle No if the player does not play; neutral-site, rescheduled and cancelled games (weather, travel) happen more often than in the NBA. The target must be matched to the wording per market.",
+   "measurement": "Snapshot rules text per market with hash; parse flags: ot_included, dnp_rule, postponement_rule, tie_rule, source_of_truth, strike inclusivity.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.rules_text"
+   ]
+  },
+  "m.external_lines": {
+   "label": "Sportsbook / exchange reference prices with timestamps",
+   "category": "market_structure",
+   "mechanism": "Sportsbook prices are an independent, liquid estimate of the same distribution and embed injury and sharp-money information.",
+   "rationale": "For major CBB games sportsbook lines are an excellent prior; for small-conference games and player props they are sparser and later. The informative quantity is the de-vigged difference between Kalshi and the books, with staleness and who moved first.",
+   "measurement": "De-vig lines, convert to implied mean/probability, track open-to-now movement and cross-book dispersion; Kalshi minus consensus per rung with staleness flag.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "The Odds API (free tier, limited credits; sportsbook lines)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (odds block, when present)"
+   ],
+   "registry_ids": [
+    "m.external_lines"
+   ]
+  },
+  "m.fees": {
+   "label": "Fee schedule and maker/taker rules in force",
+   "category": "market_structure",
+   "mechanism": "Fees convert a probability edge into expected net return and vary with price.",
+   "rationale": "Fees peak near 50c, so the minimum edge depends on rung; long-dated futures also carry capital cost. The schedule changes and must be versioned.",
+   "measurement": "Versioned fee formula; net edge = model p - price - fee(price); breakeven edge by price bucket; capital cost for futures horizon.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi fee schedule document (kalshi.com, free) and API fee fields"
+   ],
+   "registry_ids": [
+    "m.fees"
+   ]
+  },
+  "m.lifecycle": {
+   "label": "Open/close/halt/postponement lifecycle events",
+   "category": "market_structure",
+   "mechanism": "Open, close, halt and postponement events define when information can be traded on and when a market is void.",
+   "rationale": "CBB schedules change frequently (postponements, neutral-site moves, tournament brackets), and a market may close before lineup information is public. The true last tradable time per market is needed for point-in-time discipline.",
+   "measurement": "Record open/close/expiration times and status transitions; flag postponed/rescheduled/cancelled events; minutes between last public availability news and close.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)"
+   ],
+   "registry_ids": [
+    "m.lifecycle"
+   ]
+  },
+  "m.strike_hit_rates": {
+   "label": "Historical realized frequency by strike/rung per family (from settlements)",
+   "category": "distribution",
+   "mechanism": "Realized hit rates by rung and price bucket reveal systematic miscalibration independent of any fundamentals model.",
+   "rationale": "With thousands of CBB markets per week the aggregate hit-rate table can be estimated precisely, but rungs within a game are correlated so effective sample size is the number of games. Condition on price bucket and line vintage.",
+   "measurement": "From settlements: realized frequency vs mean price by price bucket, by strike distance from the book mean, family and season; bootstrap by game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.strike_hit_rates"
+   ]
+  },
+  "m.trade_tape": {
+   "label": "Executed trades (price, size, taker side, time) for slippage and flow",
+   "category": "market_structure",
+   "mechanism": "The tape shows realized execution prices, aggressor side and size, which give slippage estimates and informed-flow signals.",
+   "rationale": "In thin CBB markets a single print may be retail; signed volume imbalances and repeated sweeps are more informative than one print. The tape also sets realistic fill assumptions.",
+   "measurement": "Per trade: price, size, taker side, timestamp; signed volume imbalance in trailing windows, VWAP vs mid, price impact, time to next print.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)"
+   ],
+   "registry_ids": [
+    "m.trade_tape"
+   ]
+  },
+  "cbb.market_calibration_bias": {
+   "label": "Price-bucket miscalibration and popularity bias in CBB families",
+   "category": "market_structure",
+   "mechanism": "Retail flow and favorite-longshot patterns can leave systematic reliability gaps by price level, side and team brand.",
+   "rationale": "A reliability curve per family tells how far to shade model probabilities; brand-name teams (blue bloods) plausibly attract disproportionate over/yes money, but this is a hypothesis to test by comparing realized vs de-vigged-book expectation by team popularity. Subtle: separate calibration at rung level from game-level correlation.",
+   "measurement": "Reliability curves (realized vs implied, 5c buckets) per family x side, using de-vigged book lines as reference; interact with team popularity (national TV, historical fan base) and conference tier; game-clustered intervals.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)",
+    "The Odds API (free tier, limited credits; sportsbook lines)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.box_score_source_risk": {
+   "label": "Stat-provider reliability and settlement lag for CBB box scores",
+   "category": "market_structure",
+   "mechanism": "College box-score providers differ in speed and error rate, and corrections or incomplete stat entry can change a settled player stat.",
+   "rationale": "Smaller venues can have missing or delayed stat feeds, scorer errors on assists/rebounds, and ambiguous player-name matching, which makes thin player-prop rungs riskier. Knowable pregame only as a base rate by venue/conference and as the rules-named source.",
+   "measurement": "Compare ESPN, NCAA and Sports-Reference box scores for the same games to estimate disagreement rates by conference and stat; read rules_text for source and timing.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.implied_team_totals": {
+   "label": "Market-implied team points from spread and total",
+   "category": "pace_volume",
+   "mechanism": "Spread and total jointly imply each team's expected points and thus possessions and efficiency for every player in the game.",
+   "rationale": "Implied team total = (total +/- spread)/2; it moves with news before box-score features update, and summarizes the book's view of pace and scoring for this matchup.",
+   "measurement": "implied_home = (T - S)/2, implied_away = (T + S)/2 with S home spread; deviation from each team's rating-implied points; move since open.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "The Odds API (free tier, limited credits; sportsbook lines)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (odds block when present)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.adj_off": {
+   "label": "Adjusted offensive efficiency (opponent/venue-adjusted)",
+   "category": "team_strength",
+   "mechanism": "Points per 100 possessions adjusted for opponent defense and venue is the core estimate of a team's scoring ability.",
+   "rationale": "Raw efficiency is distorted by schedule: a team playing weak opponents inflates numbers. Opponent adjustment via iterative/ridge methods is standard, but early-season ratings carry high uncertainty because few games connect the 360+ teams. Subtle: rating should be shrunk toward a preseason prior and weighted by recency and by minutes of the current roster.",
+   "measurement": "Ridge or iterative adjustment of per-game offensive efficiency on opponent, home/away/neutral and a recency decay; garbage-time filtering when play-by-play is available; shrink to preseason prior with weight rising with games played.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Haslametrics (haslametrics.com, free ratings)",
+    "Massey Ratings (masseyratings.com, free ratings and comparison tables)"
+   ],
+   "registry_ids": [
+    "cbb.adj_off"
+   ]
+  },
+  "cbb.adj_def": {
+   "label": "Adjusted defensive efficiency",
+   "category": "team_strength",
+   "mechanism": "Points allowed per 100 possessions adjusted for opponent offense and venue estimates defensive suppression.",
+   "rationale": "Defensive efficiency is noisier than offense over short windows because opponent 3P% on open looks is mostly luck; it should be partially shrunk toward shot-quality-based expectation. Rim protection and perimeter defense differ in persistence.",
+   "measurement": "Same adjustment as offense; blend observed with expected defense from opponent shot quality; shrink early-season values; include recency and availability adjustments.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Haslametrics (haslametrics.com, free ratings)",
+    "Massey Ratings (masseyratings.com, free ratings and comparison tables)"
+   ],
+   "registry_ids": [
+    "cbb.adj_def"
+   ]
+  },
+  "cbb.ratings": {
+   "label": "Power ratings (Torvik/KenPom-style) + market-implied",
+   "category": "team_strength",
+   "mechanism": "A single opponent-adjusted team rating, optionally blended with market-implied strength, summarizes team quality for any game and for season simulation.",
+   "rationale": "Free ratings (Barttorvik, Massey, Haslametrics, ESPN BPI) share structure but differ in recency, margin caps and garbage handling; averaging reduces idiosyncratic error. Market-implied ratings back out the teams' strengths from closing lines and often dominate in-sample rating-only models. Subtle: KenPom is paid and not a free source; use Barttorvik as the free analog.",
+   "measurement": "Ensemble of free ratings (z-scored) plus ratings inferred from de-vigged closing lines (Bradley-Terry style fit on spreads); output mean and standard error per team; separate preseason, current and availability-adjusted versions.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Haslametrics (haslametrics.com, free ratings)",
+    "Massey Ratings (masseyratings.com, free ratings and comparison tables)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (BPI where present)"
+   ],
+   "registry_ids": [
+    "cbb.ratings"
+   ]
+  },
+  "cbb.preseason_prior": {
+   "label": "Preseason prior (returning production, recruiting, portal, coach)",
+   "category": "team_strength",
+   "mechanism": "Preseason expectations from returning minutes/production, incoming transfers, recruits and coaching continuity anchor ratings when current-season data is thin.",
+   "rationale": "The transfer portal makes roster turnover large and volatile, so last year's rating is a weak prior without a roster-based adjustment. The prior's weight should decay with games played and matter most in November and for early-season futures. Subtle: transfers' prior-team production must be re-scaled to the new team's role and level.",
+   "measurement": "Prior = regression on last-year rating, returning minutes share, transfer production (scaled by level), recruiting rank, coach tenure; shrinkage weight = prior_games/(prior_games + games_played).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Transfer-portal trackers (On3/247Sports public pages; free, no API)",
+    "247Sports/On3 recruiting rankings (free public pages)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.rating_uncertainty": {
+   "label": "Rating uncertainty and schedule connectivity",
+   "category": "distribution",
+   "mechanism": "The standard error of a team's rating depends on games played, opponent connectivity and roster stability, and determines how far to trust the number.",
+   "rationale": "Early-season ratings for teams that have played few, weak or non-connecting opponents have large errors, and a market line is more informative than the model there. Ignoring uncertainty overstates edges and makes extreme ratings look credible. Subtle: conference-heavy schedules limit cross-conference links, so conference-level strength estimates are themselves uncertain.",
+   "measurement": "Bayesian or bootstrap ratings producing posterior sd per team; features: games played, effective opponent link count, sd, roster-change magnitude; downweight model edge by posterior sd.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.in_season_improvement": {
+   "label": "In-season improvement trajectory (young rosters, rotation settling)",
+   "category": "team_strength",
+   "mechanism": "Teams with many freshmen/transfers and changing lineups improve (or degrade) during the season, so average-to-date understates current strength.",
+   "rationale": "Seasonal ratings treat all games equally; weighting recent performance and lineup continuity helps for young teams. Subtle: recency weighting overreacts to small samples and schedule noise; the effect is stronger in conference play and for postseason futures.",
+   "measurement": "Rolling ratings with exponentially decayed weights per team; trend estimate (slope of residual vs line over last 8-10 games); interaction with experience/minutes continuity and lineup stability.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.lineup_adj_rating": {
+   "label": "Availability-adjusted team rating for tonight's active set",
+   "category": "team_strength",
+   "mechanism": "Team strength given who is actually available changes spreads, totals and every prop in the game.",
+   "rationale": "A star guard missing in a game can swing a team several points, and with thin benches in CBB the swing is large; the market reprices quickly, so an independent player-impact estimate is needed to avoid simply copying the price. Subtle: pregame availability in CBB is poorly disclosed, so the model must carry a probability mixture.",
+   "measurement": "Team rating = baseline - sum over absent players of (impact per minute x expected minutes), where impact from BPM/player-rating with shrinkage; scenario mixture with availability probability.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player table (BPM, minutes)",
+    "EvanMiya (evanmiya.com, free partial player/team ratings; no API)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_impact": {
+   "label": "Player impact value (BPM/EvanMiya/RAPM-style) with shrinkage",
+   "category": "team_strength",
+   "mechanism": "A regularized player impact value converts absences and role changes into team rating changes and anchors player-level projections.",
+   "rationale": "Box-score-based impact (BPM) and adjusted plus-minus approaches estimate value; CBB lineups have small samples, so shrinkage to a box-score prior is essential. Level of competition and role change after transfer matter.",
+   "measurement": "Blend BPM/box-score prior with regularized on/off estimates; shrink by minutes; adjust for competition level and role.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player ratings",
+    "EvanMiya (evanmiya.com, free partial player/team ratings; no API)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit) (advanced stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.four_factors": {
+   "label": "Four factors (eFG, TO, ORB, FT rate)",
+   "category": "team_strength",
+   "mechanism": "Shooting, turnovers, offensive rebounding and free-throw rate decompose efficiency into the channels that drive both ratings and matchup interactions.",
+   "rationale": "Four factors reveal how a team wins (e.g. turnover forcing vs shot making), and their persistence differs: turnover and rebound rates are more stable than opponent shooting. Matchup interaction (one team's offensive rebounding vs the other's defensive rebounding) is more informative than aggregate rating alone.",
+   "measurement": "Offense and defense four factors adjusted for opponent and venue; stability-weighted blend (shrink eFG defense heavily); matchup interactions computed as team A offense vs team B defense relative to league.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": [
+    "cbb.four_factors"
+   ]
+  },
+  "cbb.shot_zones": {
+   "label": "Shot quality and rim/mid/3 mix",
+   "category": "matchup",
+   "mechanism": "The mix of rim, mid-range and three-point attempts and defense allowed by zone determine expected efficiency and variance.",
+   "rationale": "Three-point-heavy teams have greater game-to-game variance; rim-heavy teams benefit from FT draws. Public shot-location data for CBB is limited, so it is derived from play-by-play shot locations where available. Subtle: coverage differs by conference and venue.",
+   "measurement": "From ESPN/NCAA play-by-play shot coordinates (where available), frequency and FG% by zone for offense and defense; shrink FG% by zone; compute expected points per attempt and variance.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) (shot-type splits)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": [
+    "cbb.shot_zones"
+   ]
+  },
+  "cbb.tempo": {
+   "label": "Adjusted tempo / possessions",
+   "category": "pace_volume",
+   "mechanism": "Possessions per game scale totals, team totals and every counting stat; tempo is a negotiated outcome between two teams.",
+   "rationale": "Adjusted tempo is a stable team characteristic, but the game's pace is not simply the average; the team that benefits from a slow pace (usually the underdog) often exerts more control, and the late-game clock/foul behavior alters realized possessions. Subtle: possessions in CBB have a 30-second shot clock and halves of 20 minutes, so pace varies sharply by style.",
+   "measurement": "Adjusted possessions per 40 minutes via opponent-adjusted regression; expected game pace = league + (A - league) + (B - league) with a tempo-control adjustment for the team that wants to slow; filter garbage time.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": [
+    "cbb.tempo"
+   ]
+  },
+  "cbb.pace_mismatch": {
+   "label": "Tempo mismatch and who controls pace (possession-count variance)",
+   "category": "distribution",
+   "mechanism": "Fewer possessions raise outcome variance and help underdogs; the team preferring slower play often imposes pace, altering both totals and the cover probability.",
+   "rationale": "Underdogs have greater win probability in lower-possession games because per-possession edges accumulate less; coaches also use tempo as a strategy. Expected possessions are therefore not just a total input but a spread-variance input. Subtle: the relationship is modest and confounded with team quality and shot variance.",
+   "measurement": "Estimate residual sd of margin as function of expected possessions and rating gap; define tempo-control index (variance in pace across opponents); test cover probability for underdogs by expected possessions bucket.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.defense_style": {
+   "label": "Defensive style (press, zone, pack-line, man) and turnover pressure",
+   "category": "matchup",
+   "mechanism": "Defensive scheme changes opponent shot mix, turnover rate, free-throw rate and pace, creating matchup effects not captured by aggregate ratings.",
+   "rationale": "Pressing and zone teams create turnovers and variance; pack-line defenses limit rim attempts but concede threes; zone-heavy defenses allow offensive rebounds. Opponents' ball-handling quality and shooting profile determine whether the style is effective. Subtle: scheme usage varies by game state and opponent, so season averages blur it.",
+   "measurement": "Share of possessions in zone/press from tracking-like tags where available (else proxy via opponent turnover %, 3PA allowed rate, steals); matchup term = opponent turnover rate under pressure vs opponent baseline.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) (team style indicators)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.size_rebounding": {
+   "label": "Size, rebounding and rim-protection matchup",
+   "category": "matchup",
+   "mechanism": "Height, offensive/defensive rebounding rates and rim protection determine second-chance points, interior scoring and block counts.",
+   "rationale": "Teams with large rebounding or size edges produce extra possessions; mismatch matters more than the aggregate rating, and affects player rebound and block props. Height data is imperfect for public sources. Subtle: lineup size varies by minutes.",
+   "measurement": "ORB%/DRB% (adjusted), average and effective height where available, block rate, rim FG% allowed; matchup differential vs opponent; player-level overlays for bigs.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.repeat_matchup": {
+   "label": "Repeat matchups, scouting and conference familiarity",
+   "category": "matchup",
+   "mechanism": "In conference play teams meet twice (and again in tournaments); familiarity and strategic adjustments may alter the second meeting relative to rating expectation.",
+   "rationale": "Second meetings can have a regression to the opponent-adjusted rating after an outlier first result and strategy adjustments, but evidence of systematic effects is a hypothesis to test. It matters for conference tournament games and bubble motivation.",
+   "measurement": "Features: margin residual vs line in the first meeting, days since, venue swap, whether first game was blowout; regress second-meeting residual on first-meeting residual.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) game logs",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.venue": {
+   "label": "Home court, neutral site, altitude",
+   "category": "environment",
+   "mechanism": "Home court advantage (crowd, travel, referee familiarity) shifts expected margin and varies by arena and tier.",
+   "rationale": "CBB home advantage is typically larger than the NBA's (about 3-4 points on average) and varies strongly with arena atmosphere and level; it must be shrunk by arena sample size. High-altitude arenas (e.g. Mountain West) affect visitor fatigue. Neutral and semi-neutral sites need explicit labels.",
+   "measurement": "League-wide HCA per season by regression, arena-specific deviation with hierarchical shrinkage, altitude flag, neutral/semi-home site coding.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (venue fields)"
+   ],
+   "registry_ids": [
+    "cbb.venue"
+   ]
+  },
+  "cbb.home_court_team": {
+   "label": "Team-specific home advantage (student section, arena size, attendance)",
+   "category": "environment",
+   "mechanism": "Some programs have atypically large home advantages through crowd, arena design and officiating pressure, which the average home value hides.",
+   "rationale": "Team-level HCA estimates are noisy (about 15-20 home games a year), so only hierarchical shrinkage makes them usable. The effect is plausibly larger for mid-major/power-conference programs with distinct environments, and varies with ranked/rivalry games.",
+   "measurement": "Team-by-season home minus neutral performance residuals with partial pooling across seasons; include attendance/capacity and rivalry indicator.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (attendance)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.neutral_site": {
+   "label": "Neutral/tournament-site effects and travel distance",
+   "category": "environment",
+   "mechanism": "Neutral sites remove most home advantage but proximity (semi-home), travel distance and venue familiarity still shift performance.",
+   "rationale": "Many early-season events and tournaments are neutral or quasi-home; the NCAA Tournament pods often favor nearby teams. Markets may apply a home-court adjustment that does not fit semi-home situations. Subtle: classification of 'neutral' by data providers is inconsistent.",
+   "measurement": "Site coding (true home, semi-home, neutral, away); distance traveled by each team; fans' proximity proxy; model HCA proportional to proximity.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": [
+    "cbb.neutral_site"
+   ]
+  },
+  "cbb.rest_travel": {
+   "label": "Rest, travel, schedule density",
+   "category": "schedule_context",
+   "mechanism": "Short rest and heavy travel modestly reduce performance, especially in multi-game tournament formats and for thin rotations.",
+   "rationale": "CBB has fewer games than the NBA and less rest variation, but fatigue effects show in early-season tournaments (multiple games in 3 days), conference tournaments and travel-heavy conferences. Subtle: effect sizes are small and may be partly in the market line.",
+   "measurement": "Days since last game, games in last 7 days, distance traveled, time-zone changes; interact with rotation depth and starters' minutes.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) schedule",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": [
+    "cbb.rest_travel"
+   ]
+  },
+  "cbb.schedule_spot": {
+   "label": "Schedule spot: lookahead, letdown, rivalry, exam breaks, buy games",
+   "category": "schedule_context",
+   "mechanism": "Situational context (a big game next, a recent emotional win, exam periods, guarantee games) affects effort and rotation.",
+   "rationale": "Buy games vs heavy favorites increase blowout probability and bench minutes; letdown/lookahead spots may reduce margins. These are weak, noisy effects that can be absorbed by the line, so they matter mainly for variance and minutes. Subtle: easy to overfit with multiple-testing.",
+   "measurement": "Flags: next opponent rank, previous game result/margin, days between, holiday/exam window, guarantee-game indicator (power vs low-major at home), rivalry indicator.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.conf_tourney_fatigue": {
+   "label": "Conference tournament fatigue and format effects",
+   "category": "schedule_context",
+   "mechanism": "Multi-game conference tournaments compress rest and stress depth, shifting performance from the regular-season baseline.",
+   "rationale": "Teams playing on consecutive days with short rotations have lower late-game efficiency; double-bye seeds rest. The matchup within the tournament also shifts incentives (bubble teams vs auto-bid hunters). Subtle: single-game variance dominates, so effects are small relative to noise.",
+   "measurement": "Games in last 3-4 days, minutes load of starters in prior games, bye status, tournament round, neutral venue; interact with depth and age.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.motivation": {
+   "label": "Conference/tournament stakes, rivalry",
+   "category": "motivation",
+   "mechanism": "Stakes (NCAA bubble, conference seeding, senior night, locked seeds) affect effort and rotation decisions.",
+   "rationale": "Teams with nothing to play for may rest starters or experiment; bubble teams play at full intensity. These effects are partially captured by market lines but hard to quantify. Subtle: motivation measures overlap with rating differences and can be double counted.",
+   "measurement": "Leverage index from standings and resume simulation (probability change in bid/seed from winning), senior night flag, rivalry indicator, locked-seed indicator.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Warren Nolan (warrennolan.com, free: NET, quadrant records, strength of schedule)",
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": [
+    "cbb.motivation"
+   ]
+  },
+  "cbb.ot_model": {
+   "label": "Overtime probability and extra-period scoring",
+   "category": "distribution",
+   "mechanism": "Regulation ties lead to 5-minute overtimes that add roughly 8-10 points to totals and affect OT-inclusive settlement.",
+   "rationale": "CBB overtime frequency is a few percent of games; late fouling by the trailing team shifts the distribution of margins. OT matters for totals, spreads and player props when included in settlement and not at all when excluded. Subtle: more fouls late means more free throws, so P(tie at end of regulation) is not independent of FT%.",
+   "measurement": "Empirical OT frequency by closing spread and total bucket; expected OT points per team; match to rules_text inclusion.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.score_resid": {
+   "label": "Score residual distribution (key numbers, halves)",
+   "category": "distribution",
+   "mechanism": "The distribution of actual margin/total minus the closing line gives the sd, skew and tail mass for turning a point edge into a probability.",
+   "rationale": "College basketball margins around the spread have sd of about 10-11 points (larger for large spreads and mismatched tiers), totals sd about 14-16; blowouts are more frequent than in the NBA due to talent disparity. Subtle: residual sd must be conditioned on spread size, tier and expected possessions.",
+   "measurement": "Empirical residual by spread bucket, total bucket, conference tier and tempo bucket; fit scale/skew; half-level residuals for first-half markets.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) game logs",
+    "The Odds API (free tier, limited credits; sportsbook lines)"
+   ],
+   "registry_ids": [
+    "cbb.score_resid"
+   ]
+  },
+  "cbb.blowout_garbage": {
+   "label": "Blowout / garbage-time probability and bench-clearing behavior",
+   "category": "distribution",
+   "mechanism": "Large mismatches produce lopsided margins; starters sit and bench lineups play, truncating minutes of stars and altering totals and covers.",
+   "rationale": "CBB has many large spreads (power vs low-major), so blowout minutes loss is a first-order effect for player props and a modifier for totals and covers. Coach-level behavior (when starters are pulled) varies, and the final free-throw margin affects cover results.",
+   "measurement": "P(|margin| > 15/20/25) by spread; coach-specific starter-pull thresholds from historical minutes by margin; expected starter minute reduction.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.half_foul_bonus": {
+   "label": "Half structure and bonus dynamics (team fouls, end-of-half possessions)",
+   "category": "game_state",
+   "mechanism": "Because college games have two 20-minute halves with team-foul bonuses resetting each half, free throw volume and pace surge late in each half.",
+   "rationale": "Foul totals accumulate until the bonus and double-bonus thresholds (verify current rule), so late-half possessions have elevated FT volume; teams manage fouls to avoid giving the bonus. This shapes half totals, margins and FT-dependent props. Subtle: rule details have changed; the exact threshold should be taken from the current rulebook.",
+   "measurement": "Distribution of team fouls at half; share of FTA in the final 5 minutes of each half; FT% of ball handlers; rule version flag.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) play-by-play",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.late_game_foul_script": {
+   "label": "Late-game fouling script and free-throw conversion",
+   "category": "game_state",
+   "mechanism": "The trailing team's intentional fouls and the leader's FT% decide late scoring and can flip covers and totals.",
+   "rationale": "A late-game margin of 6-8 can be reduced or restored by FT shooting; ball handlers' FT% on the leading team and fouling willingness matter for spread and total outcomes. This is correlated with pregame variables via team FT% and style. Subtle: the effect is a tail-risk factor for markets on exact margins and totals.",
+   "measurement": "Late-game FTA by score state; FT% of top three ball handlers; frequency of intentional fouls by trailing coach; cover-flip frequency vs spread.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.free_throw": {
+   "label": "Free-throw rate and FT% (late-game and foul-game effects)",
+   "category": "variance_luck",
+   "mechanism": "Free-throw rate drives efficient scoring and FT% determines conversion in late-game fouling; both vary by team and player.",
+   "rationale": "FT rate is a persistent team trait; FT% is persistent at the player level but noisy over short windows, so shrinkage is needed. Late-game bad FT shooters are targeted by fouls. Subtle: team FT% depends on who is on the floor late in games.",
+   "measurement": "FTA/FGA and FT% per team (opponent-adjusted for FT allowed), player-level FT% with Beta shrinkage; weight by late-game minutes share.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": [
+    "cbb.free_throw"
+   ]
+  },
+  "cbb.three_pt_dist": {
+   "label": "3PA rate and 3P% variance (single-game volatility) by team",
+   "category": "distribution",
+   "mechanism": "Three-point reliance raises single-game variance in margin and totals because 3P% fluctuates much more than 2P%.",
+   "rationale": "Teams with high 3PA rate have fatter-tailed outcomes, increasing underdog upset and over/under variance. This affects margin sd and the value of the underdog and extreme-total rungs. Subtle: variance is itself a rating with sampling noise.",
+   "measurement": "3PA/FGA for offense and defense, per-game 3P% standard deviation, expected game-level variance from shot mix; feed to residual-scale model.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": [
+    "cbb.three_pt_dist"
+   ]
+  },
+  "cbb.three_pt_luck": {
+   "label": "Team 3P% luck vs shot quality (own and opponent)",
+   "category": "variance_luck",
+   "mechanism": "Realized team three-point percentage, especially opponent 3P% allowed, regresses toward a talent/shot-quality expectation.",
+   "rationale": "A defense that has opponents shooting poorly from three is often lucky, and ratings built on it overstate defense; likewise hot offensive streaks. Regressing these produces more stable ratings and totals. Subtle: some teams do consistently allow worse shots, so the shrink factor must be estimated, not set to zero.",
+   "measurement": "Expected 3P% from shooter skill and shot openness (or from league mean for defense with partial weight), luck = actual - expected over trailing games, regression coefficient estimated out-of-sample.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) (opponent 3P% splits)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.half_split": {
+   "label": "First/second-half scoring split",
+   "category": "distribution",
+   "mechanism": "Teams differ in how much of their scoring occurs in each half because of starters' minutes, tempo and halftime adjustments, and the second half depends on game state.",
+   "rationale": "First-half markets need a first-half-specific expectation: first-half share of a game total is around 47-49% in many leagues but varies by team, and second halves include more fouls and garbage time. Subtle: game total markets are better priced than half totals, so inconsistency across derivatives is a source of edge.",
+   "measurement": "Team-level first-half points scored/allowed (opponent-adjusted) and first-half share of game points; first-half possessions; residual of half total vs implied share.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) (half splits if present)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": [
+    "cbb.half_split"
+   ]
+  },
+  "cbb.first_half_minutes": {
+   "label": "First-half starters' minutes and early foul-trouble risk",
+   "category": "player_role",
+   "mechanism": "Starters play most of the first half unless foul trouble forces substitution, so first-half outcomes depend on starters' identity and early-foul risk.",
+   "rationale": "Coaches differ in how early they bench players with two first-half fouls; when a key player sits early the first-half margin moves. Opening lineups are known near tip, and starter availability is the key uncertainty. Subtle: foul trouble is partially predictable from player foul rate and opponent drawing.",
+   "measurement": "First-half minutes distribution by starter; P(2+ fouls before the 8-minute mark) from foul rates; coach rule for benching; starter confirmation time.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.fouls_officials": {
+   "label": "Fouls/free throws and officials crew",
+   "category": "officiating",
+   "mechanism": "Team foul rates, free-throw rates and the officiating crew's whistle tendencies influence free throws, pace, foul trouble and totals.",
+   "rationale": "Conference officiating differs in physicality and foul-calling, and crews differ; but assignments are not reliably public pregame in many cases. Team foul rates and FT rate are the stable component. Subtle: crew effects can be confounded with the teams they officiated.",
+   "measurement": "Team fouls and FTA per 100 possessions for/against, conference whistle index from league-wide FTA per game; crew effects (when available) via mixed-effects model.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": [
+    "cbb.fouls_officials"
+   ]
+  },
+  "cbb.officials_crew": {
+   "label": "Referee crew assignment and tendency (pregame)",
+   "category": "officiating",
+   "mechanism": "A specific crew's historical foul calling can shift free throws, pace and foul trouble, mainly for totals and FT-dependent players.",
+   "rationale": "Pregame crew information is inconsistent and often not published until close to tip, so the practical value depends on a reliable early assignment feed; historical crew effects are noisy and confounded with teams.",
+   "measurement": "Crew chief and members per game when available; mixed-effects estimate of crew effect on total fouls/FTA/total points with shrinkage.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NONE_FOUND"
+   ],
+   "registry_ids": []
+  },
+  "cbb.injuries": {
+   "label": "Availability / injury / suspension information",
+   "category": "availability",
+   "mechanism": "Who is available determines team strength and every player prop; CBB disclosure is sparse and inconsistent compared with the NBA.",
+   "rationale": "Many programs do not publish formal injury reports, so information arrives via beat reporters, social media, conference-specific availability disclosures and pregame warmups; markets often reprice before official sources exist. Suspensions and eligibility matter (NCAA eligibility rulings, transfers). Subtle: the absence of news is itself weakly informative, and a player listed as 'out' by team social media may not appear in free feeds.",
+   "measurement": "Archive all availability sources with timestamps (ESPN injury/status fields, conference reports where public, beat-reporter posts); status label, time of last change; probability model for unknown status.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (injury/status fields where present)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Conference/team official sites and social posts (free, manual)"
+   ],
+   "registry_ids": [
+    "cbb.injuries"
+   ]
+  },
+  "cbb.status_disclosure": {
+   "label": "Disclosure quality and play probability for uncertain statuses",
+   "category": "availability",
+   "mechanism": "The reliability of a team's reporting and the base rate at which 'questionable/game-time decision' players actually play determine expected minutes.",
+   "rationale": "Because disclosure is uneven, the label's calibration depends on team and conference, and many absences are known only at warmups. A calibrated probability turns noisy labels into scenario weights across spreads, totals and props. Subtle: decision times may fall after Kalshi close.",
+   "measurement": "Historical frequency: played vs status by team/conference/injury type; time between news and tip; classification of sources by reliability.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.starters": {
+   "label": "Starter/rotation status",
+   "category": "availability",
+   "mechanism": "The starting lineup and rotation identify intended minutes and roles; changes signal injuries or tactical shifts.",
+   "rationale": "Starting five is confirmed near tip (and partially in advance by projections), and bench players' minutes shift with matchups. Because rotations are short in CBB (7-8 players), one missing starter changes minutes for many. Subtle: starting a senior-night player or experimental lineups creates noise.",
+   "measurement": "Archive confirmed starters with timestamps; starter frequency per player over last 10 games; lineup-change flags; expected rotation size.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": [
+    "cbb.starters"
+   ]
+  },
+  "cbb.roster_minutes": {
+   "label": "Roster, minutes distribution, transfer portal changes",
+   "category": "player_role",
+   "mechanism": "Minutes share and returning/incoming roster composition define who contributes and how much depth exists.",
+   "rationale": "High roster turnover from the transfer portal means player roles are new; minutes distribution determines vulnerability to injury (thin benches) and affects variance. Subtle: early-season minutes are unstable, and eligibility waivers or late additions can change roles.",
+   "measurement": "Minutes share by player, rotation size (players over 10% minutes), transfer flags and prior-team role, experience-weighted continuity score, minutes concentration (Herfindahl).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Transfer-portal trackers (On3/247Sports public pages; free, no API)"
+   ],
+   "registry_ids": [
+    "cbb.roster_minutes"
+   ]
+  },
+  "cbb.lineups": {
+   "label": "Lineups, stints, on-floor efficiency",
+   "category": "matchup",
+   "mechanism": "Lineup-level efficiency and stint patterns show how team quality changes with who is on the court.",
+   "rationale": "On/off for specific players is noisy but informative for key absences; lineup data availability is limited in free sources, relying on play-by-play reconstruction. Subtle: sample sizes are small.",
+   "measurement": "Reconstruct stints from play-by-play; compute on/off net rating and adjusted plus-minus with shrinkage; analyze with/without splits for key players.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) play-by-play",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) (limited on/off where present)"
+   ],
+   "registry_ids": [
+    "cbb.lineups"
+   ]
+  },
+  "cbb.player_usage": {
+   "label": "Player usage, shooting, rebound/assist rates",
+   "category": "player_role",
+   "mechanism": "Usage, shot rates, rebounding and assist rates summarize a player's role and per-minute production.",
+   "rationale": "Per-minute rates are the base for prop projections; they are stable with sufficient minutes but change with role shifts, injuries, and level of competition. Subtle: early-season samples are small and rates must be shrunk toward role-based priors, with extra caution for transfers.",
+   "measurement": "Per-40 rates and usage with exponential recency; shrink with role-based prior; adjust for opponent level; split by home/away or conference vs nonconference when sample allows.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player tables",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": [
+    "cbb.player_usage"
+   ]
+  },
+  "cbb.player_minutes": {
+   "label": "Projected minutes (role, blowout risk, foul trouble, tempo)",
+   "category": "player_role",
+   "mechanism": "Minutes determine every counting stat; in CBB they are shaped by foul trouble, blowouts, tempo and depth.",
+   "rationale": "Starters play 28-36 minutes, with big variance from fouls and mismatches; blowouts cut stars' minutes dramatically, and thin benches mean foul trouble forces minutes to lesser players. Realized minutes are not known pregame; only a distribution. Subtle: using season-average minutes ignores teammate availability and matchup.",
+   "measurement": "Quantile/mixture model of minutes on recent minutes, starter flag, spread, expected tempo, player foul rate, teammate availability; output the distribution with blowout and foul-trouble branches.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_foul": {
+   "label": "Player foul rate and foul-trouble minute risk",
+   "category": "player_role",
+   "mechanism": "Players with high foul rates are benched or foul out, truncating minutes and counting stats, especially bigs.",
+   "rationale": "Foul trouble creates left-tail outcomes for props; the risk depends on baseline fouls per 40, opponent foul-drawing, and officiating. Coaches differ in how early they bench players. Subtle: first-half foul trouble affects first-half markets differently from full-game markets.",
+   "measurement": "PF per 40, P(2+ first-half fouls) and P(foul-out) from game logs; opponent foul-drawing rate; coach benching rule.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": [
+    "cbb.player_foul"
+   ]
+  },
+  "cbb.player_role_position": {
+   "label": "Player role/position (ball handler, wing, stretch big, rim runner)",
+   "category": "player_role",
+   "mechanism": "Role determines which statistics a player produces and which opponent weaknesses matter, beyond listed position.",
+   "rationale": "Listed positions are inconsistent in CBB; role derived from usage, assist rate, rebounding rate and shot mix is a better predictor of prop behavior and teammate substitution. Subtle: roles shift with injuries and in-season changes.",
+   "measurement": "Cluster players by per-40 profile (assist rate, usage, 3PA rate, rebound rate, block rate); update with last-10-game profile.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player tables",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.teammate_absence_shift": {
+   "label": "With/without teammate splits: usage, minutes and stat redistribution",
+   "category": "player_role",
+   "mechanism": "When key teammates are absent, shots, ball handling and rebounds redistribute in a structured way with shorter rotations amplifying effects.",
+   "rationale": "CBB benches are short, so one injury concentrates minutes and usage on a few players; the redistribution depends on role: a missing guard raises backup guard assists and turnovers, a missing big raises other bigs' rebounds. Sample sizes of with/without games are tiny, requiring hierarchical shrinkage.",
+   "measurement": "Per-player stat per 40 with/without teammate X (games missed), hierarchical shrinkage to role-based redistribution; evaluate multi-absence cases using role-level priors.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_shooting_regression": {
+   "label": "Player shooting luck vs expectation (3P%, FG%, FT%)",
+   "category": "variance_luck",
+   "mechanism": "Hot or cold shooting stretches regress to a shot-quality- and talent-based expectation, so recent form overstates next-game efficiency.",
+   "rationale": "With only about 30 games per season, sample sizes are small and recency chasing is costly; shrink toward career and role-based priors, with stronger shrinkage early in the season and for transfers entering a new role. Subtle: real improvements (freshman development, injury recovery) exist.",
+   "measurement": "Beta-binomial shrinkage with prior mean = career/role expectation and prior strength tuned per stat; compare recent vs shrunk; include shot openness proxies when available.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_three_volume": {
+   "label": "Player 3PA rate, catch-and-shoot share and opponent 3PA allowed",
+   "category": "player_role",
+   "mechanism": "Threes made = attempts x make probability; attempts depend on role, minutes, tempo and opponent scheme.",
+   "rationale": "Attempt volume per 40 is far more stable than 3P%; opponent three-point-defense profile (zone concedes threes) and pace affect attempts, and make probability must be shrunk heavily. Subtle: attempts are overdispersed relative to binomial.",
+   "measurement": "3PA per 40 (EWMA), share of FGA from three, 3P% shrunk; opponent 3PA allowed rate relative to league; negative-binomial attempts model.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player tables",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.rebound_pool": {
+   "label": "Rebound pool: expected missed shots and offensive-rebound structure",
+   "category": "pace_volume",
+   "mechanism": "Total rebounds are determined by both teams' missed shots (tempo and shooting efficiency) and the offensive rebounding style, which together set the pool that players split.",
+   "rationale": "College games with fast tempo and poor shooting produce more rebounds; zone defenses and crash-the-glass offenses change who gets them; the pool is shared among bigs and wings depending on the lineup. Subtle: player rebound share changes with absence of other bigs.",
+   "measurement": "Pool = both teams' missed FGA + missed last FTs, from tempo and shooting expectation; share of pool by player using on-floor rebound rate; opponent ORB crash rate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.assist_creation": {
+   "label": "Assist creation: assist rate, ball-handling role and teammate shot-making",
+   "category": "player_role",
+   "mechanism": "Assists depend on ball-handler role and teammates' conversion of passes; with limited tracking data, assist rate and teammate eFG proxy the opportunity and conversion.",
+   "rationale": "Without potential-assist tracking in free CBB data, assist production must be modeled from assist rate, usage and teammate shooting quality; official-scorer credit also varies across venues. Subtle: lead guards' assists collapse when a main finisher is absent.",
+   "measurement": "Assist rate per 40, teammate eFG on assisted attempts, share of team assisted FGM; adjustment for absences and opponent turnover/switch profile.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player tables",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play) play-by-play assist links"
+   ],
+   "registry_ids": []
+  },
+  "cbb.opp_stat_allowed": {
+   "label": "Opponent stat allowed by role (points, rebounds, assists, threes)",
+   "category": "matchup",
+   "mechanism": "The opponent's defense concedes different amounts of production to specific roles depending on scheme and personnel.",
+   "rationale": "Opponent-allowed stats by role are noisy and strongly affected by schedule; they matter mainly when defensive style is extreme (zone, press, big rim protector). Subtle: needs opponent adjustment (allowed relative to what opposing players usually produce) and heavy shrinkage.",
+   "measurement": "Ratio of stat allowed to role-group relative to opposing players' season norms (ratio-of-ratios), shrunk by sample size; defensive style indicators; recency decay.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "stats.ncaa.org (free official box scores and team stats)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.stat_dist": {
+   "label": "Per-stat count distributions for CBB player props",
+   "category": "distribution",
+   "mechanism": "Player stat counts are overdispersed relative to Poisson because minutes, role and game state vary, and the distribution shape determines tail probabilities.",
+   "rationale": "Over/under at a threshold needs the full distribution: minutes scenarios and attempt dispersion; with fewer games per player than the NBA, parameter uncertainty is large and requires hierarchical modeling. Subtle: fitting only a mean plus normal sd mis-prices rung tails.",
+   "measurement": "Negative-binomial/mixture models per player-stat with role-level priors; check dispersion and rung calibration; incorporate parameter uncertainty by partial pooling.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.recruit_exp": {
+   "label": "Experience, recruiting and returning minutes",
+   "category": "team_strength",
+   "mechanism": "Class composition and experience shape consistency, turnover rates and late-season improvement.",
+   "rationale": "Experienced rosters are steadier and often better in tournament-style single games; freshman-heavy teams have higher variance and larger improvement trajectories. Subtle: experience is correlated with rating, so partial effects are small.",
+   "measurement": "Minutes-weighted class/experience, returning minutes share, recruit ratings of rotation players, experience interaction with rating uncertainty.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "247Sports/On3 recruiting rankings (free public pages)"
+   ],
+   "registry_ids": [
+    "cbb.recruit_exp"
+   ]
+  },
+  "cbb.news": {
+   "label": "Coaching, award, ranking-poll news",
+   "category": "other",
+   "mechanism": "Coaching changes, player eligibility/transfer news, polls and award announcements change team strength and settle off-court markets.",
+   "rationale": "Polls and award announcements follow rule-based timing and voter behavior; coaching moves alter roster and expectations; news flow drives markets in rankings and awards. Subtle: timestamps and source reliability matter.",
+   "measurement": "Time-stamped feed from ESPN, NCAA, AP poll releases; derived features: ranking changes, coach changes, eligibility rulings.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (news)",
+    "AP Top 25 poll (apnews.com, free)",
+    "NCAA.com news (free)"
+   ],
+   "registry_ids": [
+    "cbb.news"
+   ]
+  },
+  "cbb.bracket_sim": {
+   "label": "Tournament/bracket/seed/conference simulation",
+   "category": "team_strength",
+   "mechanism": "A simulation of conference play, conference tournaments and the NCAA bracket using team ratings with uncertainty yields probabilities for titles, seeds, advancement and conference outcomes.",
+   "rationale": "Single-elimination brackets compound game-level uncertainty, so title and advancement odds are very sensitive to rating differences and to the bracket path; conference title markets depend on remaining schedule, tiebreakers and the tournament format. Subtle: ratings must include uncertainty and injury scenarios, and bracket structure (regions, pods, seeding rules) must be modeled correctly after Selection Sunday.",
+   "measurement": "Monte Carlo: sample team strengths from posterior, simulate remaining regular season with home advantage, conference tiebreakers, conference tournament brackets and the 68-team NCAA field; model seed list construction or use bracket consensus; output pmf for advancement and seeds.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) projections and tournament odds",
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)",
+    "NCAA NET rankings and team sheets (ncaa.com, free)",
+    "Warren Nolan (warrennolan.com, free: NET, quadrant records, strength of schedule)"
+   ],
+   "registry_ids": [
+    "cbb.bracket_sim"
+   ]
+  },
+  "cbb.resume_metrics": {
+   "label": "Selection-committee resume metrics (NET, quadrant record, WAB, SOR)",
+   "category": "team_strength",
+   "mechanism": "The committee selects and seeds teams using NET and resume metrics (quadrant wins and losses, strength of record, wins above bubble), so these predict bids and seeds beyond raw team strength.",
+   "rationale": "A team's chances to make the field and its seed line depend on a resume built from quality wins and bad losses, not only on predictive ratings; the committee historically also uses predictive metrics. Subtle: quadrant definitions depend on opponent NET and location, so records change as opponents move; the committee's weighting is not fully explicit.",
+   "measurement": "NET rank, Quad 1-4 records, WAB (Barttorvik), SOS/SOR, last-10 record; project final values by simulating the remaining schedule; compare with consensus bracketology.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA NET rankings and team sheets (ncaa.com, free)",
+    "Warren Nolan (warrennolan.com, free: NET, quadrant records, strength of schedule)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) (WAB)",
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.committee_seed_model": {
+   "label": "Committee seed-line model and bracketology consensus",
+   "category": "team_strength",
+   "mechanism": "Seed lines are determined by committee ranking of the field; consensus bracketologists' projections and historical committee behavior predict final seeds.",
+   "rationale": "Seed markets are discrete outcomes near boundaries; the final seed depends on late results, conference tournament outcomes and committee quirks (e.g. treatment of conference champions, bracket balance). Subtle: consensus projections move with results and mix signals, so a model of the committee's ranking from resume metrics and ratings helps.",
+   "measurement": "Ordinal model of seed on resume metrics and ratings trained on past brackets; blend with Bracket Matrix consensus average seed and its dispersion; simulate remaining results.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)",
+    "NCAA NET rankings and team sheets (ncaa.com, free)",
+    "Warren Nolan (warrennolan.com, free: NET, quadrant records, strength of schedule)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.conference_standings_sim": {
+   "label": "Conference standings, tiebreakers and conference-tournament seeding rules",
+   "category": "schedule_context",
+   "mechanism": "Conference champion and tournament-seed outcomes depend on remaining games, head-to-head and tiebreaker rules and the conference's tournament format.",
+   "rationale": "Tiebreakers (head-to-head, record vs top teams, coin toss) differ by conference and can decide a title or a double bye; many conferences have odd scheduling that leaves unbalanced remaining games. Subtle: details of each conference's rulebook must be encoded and updated yearly.",
+   "measurement": "Simulate remaining conference games from ratings with HCA; apply conference-specific tiebreaker algorithm; compute pmf of seed and title; include conference tournament bracket.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) standings",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.auto_bid_structure": {
+   "label": "Automatic-bid structure and one-bid conference dynamics",
+   "category": "schedule_context",
+   "mechanism": "Many conferences send one team (the tournament winner); at-large bids depend on resume, so the conference tournament's winner distribution matters for a conference's bid count and for bubble teams.",
+   "rationale": "Auto-bid leagues have a high-variance single-elimination tournament determining the NCAA team; teams in one-bid leagues cannot rely on their regular-season rating. Bid-thief outcomes shift the bubble. Subtle: modeling requires the conference tournament bracket and bid-stealing probabilities.",
+   "measurement": "For each conference: tournament format and seeding; probability a non-top-seed wins; effect on at-large bubble by simulation of resume metrics.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Warren Nolan (warrennolan.com, free: NET, quadrant records, strength of schedule)",
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.conf_strength": {
+   "label": "Conference strength and cross-conference calibration",
+   "category": "team_strength",
+   "mechanism": "Cross-conference games anchor ratings across conferences; conference-level strength shapes bids, seeds and the relative value of in-conference ratings.",
+   "rationale": "Ratings within a conference are well-identified but conference-to-conference offsets rest on a limited set of non-conference games, so conference strength has uncertainty that propagates to futures. Subtle: the bubble is sensitive to this uncertainty.",
+   "measurement": "Hierarchical rating model with conference random effect; offset uncertainty from non-conference game counts; compare to market-implied conference strength.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
+    "Massey Ratings (masseyratings.com, free ratings and comparison tables)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.title_path": {
+   "label": "Bracket path, region strength and matchup-specific adjustments",
+   "category": "team_strength",
+   "mechanism": "A team's title odds depend on its seed, region, likely opponents and style matchups along the path.",
+   "rationale": "Equal-rated teams in different regions have different title odds; style mismatches (tempo, three-point reliance) matter in single games. Pregame information changes at Selection Sunday and with injuries before tipoff. Subtle: pre-bracket futures embed assumptions on seed/region that resolve at once.",
+   "measurement": "After bracket release: path-specific game-by-game win probabilities from ratings and matchup adjustments; before bracket: expected seed distribution and region assignment uncertainty.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "NCAA NET rankings and team sheets (ncaa.com, free)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.single_game_variance": {
+   "label": "Single-game upset variance by team style (tempo, 3PT reliance, depth)",
+   "category": "distribution",
+   "mechanism": "Upset probability in a single-elimination game depends on both rating difference and variance drivers: low possessions, high three-point reliance and short rotations.",
+   "rationale": "Variance drivers modify the win probability for given mean margin; underdogs with slow tempo and high 3PA rate have inflated upset probability. Subtle: tests of this effect must separate it from rating differences and are noisy.",
+   "measurement": "Estimate game-margin sd per team-pair from possessions and 3PA rates; compute win probability from mean margin and sd; calibrate on past tournaments.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.seed_upset_priors": {
+   "label": "Historical seed-matchup upset base rates vs rating-implied",
+   "category": "distribution",
+   "mechanism": "Historical advancement rates by seed and round provide a base-rate prior for tournament markets and calibrate rating-based models.",
+   "rationale": "Seed-based base rates give a long-run baseline, but ratings differ within a seed; the difference between rating-implied and seed-implied probability exposes market biases in futures (e.g. over-valued seeds). Subtle: sample sizes by pair are small and regimes change (expanded field, NIL/portal era).",
+   "measurement": "Advancement rates by seed and round over many tournaments (smoothed), compared with rating-implied probabilities; mixing weights fit by cross-validation.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference CBB NCAA tournament history (free)",
+    "Bracket Matrix (bracketmatrix.com, free bracketology consensus)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.star_injury_risk": {
+   "label": "Postseason availability risk for key players",
+   "category": "availability",
+   "mechanism": "A key-player injury before or during the tournament changes team strength dramatically; futures prices must reflect the probability of such events.",
+   "rationale": "A star's absence moves title odds sharply, and late-season injuries cluster; disclosure is limited, so pre-tournament availability is uncertain until the final days. Subtle: injury risk is rare but heavy-tailed, so mixture modeling is needed.",
+   "measurement": "Hazard of missing postseason games from past data (age/minutes load/injury history), scenarios with impact values; update with news; weight by minutes concentration.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
+    "Official team sites (free, manual)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.sos_remaining": {
+   "label": "Remaining schedule strength, location and rest",
+   "category": "schedule_context",
+   "mechanism": "The strength and location of remaining opponents drive expected conference wins and seed outcomes.",
+   "rationale": "Unbalanced conference schedules leave equal-rated teams with different remaining paths; road-heavy stretches lower expectation. Subtle: strength must use current availability-adjusted ratings.",
+   "measurement": "Sum of per-game win probabilities from ratings with HCA for remaining games; difference vs league-average schedule; account for rest and travel.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) schedule",
+    "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
+    "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.popularity_bias": {
+   "label": "Team brand/popularity effect on Kalshi price vs fundamentals",
+   "category": "market_structure",
+   "mechanism": "Teams with large fan bases may attract disproportionate buying in futures and game markets, pushing prices away from model value.",
+   "rationale": "Blue-blood programs and ranked teams are plausible recipients of retail flow; the bias appears as a gap between Kalshi and de-vigged book prices correlated with team popularity. This is a hypothesis; the effect would be strongest in thin futures and alternate lines. Subtle: confounded with real quality and with line timing.",
+   "measurement": "Regress (Kalshi price - de-vigged book price) on team popularity proxies (historical title count, TV appearances, social following, rank) with game/team fixed effects; evaluate by price bucket.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market-data API (trade-api/v2: markets, orderbook, trades, candlesticks; free read, own-capture needed for history)",
+    "The Odds API (free tier, limited credits; sportsbook lines)",
+    "AP poll history (free)"
+   ],
+   "registry_ids": []
+  }
+ },
+ "blueprints": {
+  "game_side": {
+   "mechanism": "Margin follows opponent-adjusted efficiency and tempo, shifted by home court, neutral-site and travel effects and, importantly, by who plays. CBB ratings are noisier than NBA ratings (fewer games, roster churn), so uncertainty and market-implied information matter, and variance depends on tempo and three-point reliance. Disclosure of availability is sparse, so edge lies in scenario mixtures and rating uncertainty.",
+   "target": "Team wins outright / covers a spread over the full game (OT per rules text)",
+   "inputs": [
+    {
+     "id": "cbb.ratings",
+     "why": "Ensemble power rating plus market-implied strength.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_off",
+     "why": "Opponent-adjusted offense for matchup construction.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "Opponent-adjusted defense, shot-luck adjusted.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.rating_uncertainty",
+     "why": "Early-season and connectivity uncertainty determine how far to trust the number.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.lineup_adj_rating",
+     "why": "Availability-adjusted strength given who plays.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Availability information with timestamps.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.venue",
+     "why": "Home court baseline and arena-level shrunk effects.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.neutral_site",
+     "why": "Semi-home and neutral site coding.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.pace_mismatch",
+     "why": "Possession-count variance affects cover probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.score_resid",
+     "why": "Residual sd by spread, tier and tempo.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_luck",
+     "why": "Regress luck-driven ratings for Team wins outright / covers a spread over the full game.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.rest_travel",
+     "why": "Short rest and travel for Team wins outright / covers a spread over the full game.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.schedule_spot",
+     "why": "Lookahead, letdown and guarantee-game contexts.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.motivation",
+     "why": "Stakes in conference play and seeding.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.repeat_matchup",
+     "why": "Second-meeting adjustments for Team wins outright / covers a spread over the full game.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and move timing show what the market has already absorbed.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Wording defines the settled event (OT, ties, DNP, postponement).",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are an independent estimate; the disagreement is the signal.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge.",
+     "role": "context"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.market_calibration_bias",
+     "why": "Reliability gaps by price bucket and popularity set how to shade model probabilities.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.lineups",
+     "why": "Lineup on/off estimates quantify how much a specific absence or lineup change shifts team efficiency.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_impact",
+     "why": "Player impact values convert a specific absence into a point-spread adjustment.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Roster churn and minutes concentration determine how robust the rating is and how thin the bench is.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Postponement, neutral-site moves and close times define the true last tradable information time.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.rating_uncertainty",
+      "m.external_lines"
+     ],
+     "hypothesis": "When rating uncertainty is high (early season, thin connectivity) the market line should receive more weight than the model; edges should be scaled by posterior sd."
+    },
+    {
+     "inputs": [
+      "cbb.injuries",
+      "cbb.lineup_adj_rating"
+     ],
+     "hypothesis": "Because thin benches amplify absences, the rating drop from a missing starter is larger than for deeper rosters; combine with disclosure probability."
+    },
+    {
+     "inputs": [
+      "cbb.pace_mismatch",
+      "cbb.three_pt_dist"
+     ],
+     "hypothesis": "Slow tempo with high three-point reliance maximizes margin variance, helping underdog cover and win probabilities."
+    },
+    {
+     "inputs": [
+      "cbb.venue",
+      "cbb.neutral_site"
+     ],
+     "hypothesis": "A semi-home site should receive a fractional home-court adjustment tied to travel distance, not a binary neutral label."
+    }
+   ]
+  },
+  "game_total": {
+   "mechanism": "Points = possessions x efficiency for each team; possessions come from both teams' tempo with a control effect, efficiency from opponent-adjusted offense/defense with shooting-luck regression and free-throw volume. Late-half and late-game fouling and OT add tail mass, and availability of key scorers or ball handlers alters pace and efficiency.",
+   "target": "Combined or single-team points over a half-point strike (OT per rules text)",
+   "inputs": [
+    {
+     "id": "cbb.tempo",
+     "why": "Expected possessions with tempo-control adjustment.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_off",
+     "why": "Own offense relative to the opponent.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "Opponent defense for Combined or single-team points over a half-point strike.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.four_factors",
+     "why": "Shooting, turnover, rebound and FT drivers for matchup.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_luck",
+     "why": "Regress hot/cold shooting for Combined or single-team points over a half-point strike.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_dist",
+     "why": "Three-point reliance raises total variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.free_throw",
+     "why": "FT rate and FT% for late-game scoring.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.fouls_officials",
+     "why": "Whistle tendency and conference foul rates.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Availability of scorers/ball handlers.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.venue",
+     "why": "Home environment and altitude influence efficiency.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.ot_model",
+     "why": "OT adds points when included for Combined or single-team points over a half-point strike.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.score_resid",
+     "why": "Total residual distribution for Combined or single-team points over a half-point strike.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.implied_team_totals",
+     "why": "Splits the total into team expectations.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and move timing show what the market has already absorbed.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Wording defines the settled event (OT, ties, DNP, postponement).",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are an independent estimate; the disagreement is the signal.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge.",
+     "role": "context"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.tempo",
+      "cbb.adj_def"
+     ],
+     "hypothesis": "Slow, strong-defense teams reduce totals more than additive because the slower team controls tempo and the defense limits transition."
+    },
+    {
+     "inputs": [
+      "cbb.three_pt_luck",
+      "cbb.adj_off"
+     ],
+     "hypothesis": "Offensive ratings inflated by hot three-point shooting overstate total; correction is largest for teams relying on threes."
+    },
+    {
+     "inputs": [
+      "cbb.fouls_officials",
+      "cbb.free_throw"
+     ],
+     "hypothesis": "Whistle-heavy contexts raise totals more for teams that convert FTs and for games that stay close late."
+    },
+    {
+     "inputs": [
+      "cbb.injuries",
+      "cbb.tempo"
+     ],
+     "hypothesis": "A missing lead guard can slow tempo and reduce transition scoring, lowering the total more than offensive rating alone implies."
+    }
+   ]
+  },
+  "period": {
+   "mechanism": "First-half outcomes are driven by starters and tempo in the first 20 minutes, with foul-trouble and early rotation effects; they are less affected by blowout garbage time but still sensitive to half-specific scoring shares and bonus dynamics. Half lines are derived from game lines, creating cross-market inconsistencies to exploit.",
+   "target": "First-half winner, margin, total or team total (halves; OT excluded unless stated)",
+   "inputs": [
+    {
+     "id": "cbb.half_split",
+     "why": "Team-level first-half share and first-half efficiency.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "First-half possessions for First-half winner, margin, total or team total.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.starters",
+     "why": "Starters' identity dominates the first half.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.first_half_minutes",
+     "why": "Early foul-trouble risk for starters.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.adj_off",
+     "why": "Offense in first-half lineups.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "Defense in first-half lineups.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.half_foul_bonus",
+     "why": "Bonus dynamics shape late-half scoring.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Absent starters alter first-half performance.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.score_resid",
+     "why": "First-half margin/total residual distribution.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and move timing show what the market has already absorbed.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Wording defines the settled event (OT, ties, DNP, postponement).",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are an independent estimate; the disagreement is the signal.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.half_split",
+      "cbb.tempo"
+     ],
+     "hypothesis": "First-half total = first-half possessions x first-half efficiency; fast-starting teams have above-average share."
+    },
+    {
+     "inputs": [
+      "cbb.starters",
+      "cbb.first_half_minutes"
+     ],
+     "hypothesis": "Starters' early foul trouble is the main first-half-specific risk and affects the first-half margin disproportionately."
+    },
+    {
+     "inputs": [
+      "m.ladder_structure",
+      "cbb.half_split"
+     ],
+     "hypothesis": "Half total, half spread and game lines must be consistent; incoherence indicates mispricing."
+    }
+   ]
+  },
+  "player_other": {
+   "mechanism": "Count = minutes x per-minute rate with variation from foul trouble, blowouts, tempo and teammate availability, with distribution shape from overdispersion; thin disclosure and small samples (about 30 games/season) make parameter uncertainty central.",
+   "target": "Player single-game stat (points, rebounds, assists, threes) over a threshold (DNP rule in rules text)",
+   "inputs": [
+    {
+     "id": "cbb.player_minutes",
+     "why": "Minutes distribution is the largest variance contributor.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_usage",
+     "why": "Usage and per-minute rates with shrinkage.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Own and teammates' availability.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.starters",
+     "why": "Confirmed lineup near tip for Player single-game stat.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.teammate_absence_shift",
+     "why": "Redistribution when teammates are out.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "Possessions scale counts for Player single-game stat.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.blowout_garbage",
+     "why": "Blowouts cut starters' minutes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_foul",
+     "why": "Foul trouble truncates minutes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.opp_stat_allowed",
+     "why": "Opponent defense by role for Player single-game stat.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.stat_dist",
+     "why": "Overdispersed count shape with parameter uncertainty.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_shooting_regression",
+     "why": "Regress hot/cold shooting for Player single-game stat.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and move timing show what the market has already absorbed.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Wording defines the settled event (OT, ties, DNP, postponement).",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are an independent estimate; the disagreement is the signal.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Liquidity differs widely across player-prop rungs.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Minutes concentration and rotation size show how absences redistribute playing time.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.player_minutes",
+      "cbb.blowout_garbage"
+     ],
+     "hypothesis": "Stars on heavy favorites face reduced minutes, depressing high-rung overs; the effect is larger in CBB than the NBA because of mismatch frequency."
+    },
+    {
+     "inputs": [
+      "cbb.teammate_absence_shift",
+      "cbb.player_usage"
+     ],
+     "hypothesis": "Short rotations make redistribution large; role-based priors prevent overfitting small with/without samples."
+    },
+    {
+     "inputs": [
+      "cbb.stat_dist",
+      "cbb.player_shooting_regression"
+     ],
+     "hypothesis": "Small-sample hot streaks inflate averages; shrinkage plus hierarchical dispersion should improve calibration across rungs."
+    }
+   ]
+  },
+  "season_outcome": {
+   "mechanism": "Outcomes come from simulation of the remaining season and a single-elimination bracket with rating uncertainty, injury risk and rule details: conference tiebreakers, auto-bids, committee seeding and path. Single-game variance compounds, so small rating errors matter, and markets embed brand effects.",
+   "target": "Season futures: national champion, conference champion, seed line, tournament advancement and related team outcomes",
+   "inputs": [
+    {
+     "id": "cbb.ratings",
+     "why": "Ensemble ratings with uncertainty.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.bracket_sim",
+     "why": "Simulation of conference play, tournaments and bracket.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.resume_metrics",
+     "why": "Committee metrics drive bids and seeds.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.committee_seed_model",
+     "why": "Seed-line model and consensus.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.conference_standings_sim",
+     "why": "Standings and tiebreakers for Season futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.auto_bid_structure",
+     "why": "Auto-bid and bid-steal dynamics.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.title_path",
+     "why": "Region path and matchups for Season futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.single_game_variance",
+     "why": "Upset variance by style for Season futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.seed_upset_priors",
+     "why": "Historical base rates for Season futures.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.star_injury_risk",
+     "why": "Postseason availability risk for Season futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.news",
+     "why": "Coaching, polls and eligibility news.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and move timing show what the market has already absorbed.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Wording defines the settled event (OT, ties, DNP, postponement).",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are an independent estimate; the disagreement is the signal.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.player_impact",
+     "why": "Impact values project strength after injuries and for roster-turnover teams.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Returning minutes and transfer integration inform strength uncertainty.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.ratings",
+      "cbb.single_game_variance"
+     ],
+     "hypothesis": "Title probability is convex in rating and depends on single-game variance; high-variance teams have inflated upset and also lower title odds."
+    },
+    {
+     "inputs": [
+      "cbb.resume_metrics",
+      "cbb.auto_bid_structure"
+     ],
+     "hypothesis": "Bubble probabilities depend on bid-thief risk from conference tournaments; handle jointly."
+    },
+    {
+     "inputs": [
+      "cbb.title_path",
+      "cbb.bracket_sim"
+     ],
+     "hypothesis": "Futures before Selection Sunday must integrate over seed and region uncertainty; after, over a fixed bracket."
+    },
+    {
+     "inputs": [
+      "cbb.star_injury_risk",
+      "cbb.lineup_adj_rating"
+     ],
+     "hypothesis": "A single star injury can shift title odds by large factors; scenario mixtures matter more than point estimates."
+    }
+   ]
+  }
+ },
+ "archetypes": {
+  "game_moneyline_spread": {
+   "blueprint": "game_side",
+   "label": "CBB game winner and point-spread markets",
+   "families": [
+    "CBB/GAME_WINNER",
+    "CBB/SPREAD"
+   ],
+   "target": "Team wins outright or covers a stated spread over the full game (OT per rules text)",
+   "mechanism": "Margin = tempo-scaled efficiency difference plus home/neutral effect, with rating uncertainty that is large early in the season and for new rosters, and variance driven by tempo and three-point reliance. Availability disclosure is sparse, so lineup information is a mixture. Sharp lines are efficient for major games but small-conference and alternate spreads are thin; edges concentrate in rating uncertainty, availability mixtures, and stale rungs.",
+   "inputs": [
+    {
+     "id": "cbb.ratings",
+     "why": "Ensemble of free ratings plus market-implied strength.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_off",
+     "why": "Offense for matchup for CBB game winner and point-spread markets.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "Defense, regressed for opponent shooting luck.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.rating_uncertainty",
+     "why": "Posterior sd of the rating gap scales trust in the model versus the line.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.preseason_prior",
+     "why": "Prior dominates early-season ratings after transfer-heavy turnover.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.in_season_improvement",
+     "why": "Young teams improve; recency-weighted strength.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.lineup_adj_rating",
+     "why": "Strength given the available players.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Availability news vintage for CBB game winner and point-spread markets.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.status_disclosure",
+     "why": "Calibrated play probability for uncertain statuses.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.starters",
+     "why": "Confirmed starters near tip for CBB game winner and point-spread markets.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.venue",
+     "why": "Home court baseline for CBB game winner and point-spread markets.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.home_court_team",
+     "why": "Team-specific home advantage with shrinkage.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.neutral_site",
+     "why": "Semi-home and neutral-site effects.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.rest_travel",
+     "why": "Rest and travel for CBB game winner and point-spread markets.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.motivation",
+     "why": "Stakes and seeding for CBB game winner and point-spread markets.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.pace_mismatch",
+     "why": "Underdog variance from low possession counts.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_dist",
+     "why": "Three-point reliance increases variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.score_resid",
+     "why": "Margin distribution by spread/tier.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.size_rebounding",
+     "why": "Size/rebounding mismatches for CBB game winner and point-spread markets.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.defense_style",
+     "why": "Press/zone matchup effects for CBB game winner and point-spread markets.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.market_calibration_bias",
+     "why": "Reliability and popularity bias by price bucket set how far to shade probabilities.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Liquidity rank of the game scales the discount applied to model edges.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Taker-side prints before moves are a candidate informed-flow signal.",
+     "role": "context"
+    },
+    {
+     "id": "m.settlement_truth",
+     "why": "Settled values and timing are the labels and must match the named source.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.lineups",
+     "why": "Lineup on/off estimates validate availability-adjusted ratings for specific absences.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_impact",
+     "why": "Player impact values translate an absence into a spread adjustment.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Roster churn and bench depth moderate how large an absence effect is.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Market close versus last lineup news defines the tradable information set.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.rating_uncertainty",
+      "m.external_lines"
+     ],
+     "hypothesis": "Early in the season and for teams with few connecting games the book line carries more information than the model; scale edges by posterior sd."
+    },
+    {
+     "inputs": [
+      "cbb.injuries",
+      "cbb.lineup_adj_rating"
+     ],
+     "hypothesis": "Thin benches amplify the effect of a missing starter; combine with a disclosure-quality probability instead of reading labels."
+    },
+    {
+     "inputs": [
+      "cbb.pace_mismatch",
+      "cbb.three_pt_dist"
+     ],
+     "hypothesis": "Low possessions with heavy three-point reliance maximize margin variance and favor the underdog on the spread."
+    },
+    {
+     "inputs": [
+      "cbb.venue",
+      "cbb.neutral_site"
+     ],
+     "hypothesis": "Semi-home sites need fractional home advantage by proximity."
+    },
+    {
+     "inputs": [
+      "cbb.preseason_prior",
+      "cbb.in_season_improvement"
+     ],
+     "hypothesis": "Early-season ratings should blend prior and trend with weights set by roster churn."
+    }
+   ]
+  },
+  "game_total": {
+   "blueprint": "game_total",
+   "label": "CBB full-game total points",
+   "families": [
+    "CBB/TOTAL"
+   ],
+   "target": "Combined points over a half-point strike (OT per rules text)",
+   "mechanism": "Total = expected possessions x combined efficiency. Tempo is negotiated and the slower side often controls it; efficiency depends on opponent-adjusted offense/defense with luck regression on three-point shooting; FT rate and late-game fouling add points; thin disclosure of injuries shifts pace and efficiency. Sharp totals are good, so edges come from availability mixtures, shooting-luck regression and rung-level mispricing.",
+   "inputs": [
+    {
+     "id": "cbb.tempo",
+     "why": "Expected possessions for CBB full-game total points.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.pace_mismatch",
+     "why": "Who controls pace for CBB full-game total points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.adj_off",
+     "why": "Offense vs opponent for CBB full-game total points.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "Defense vs opponent for CBB full-game total points.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.four_factors",
+     "why": "Matchup of shooting, turnovers, rebounding and FT.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_luck",
+     "why": "Regress recent shooting luck for CBB full-game total points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_dist",
+     "why": "Three-point reliance effects on tails.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.free_throw",
+     "why": "FT rate and conversion for CBB full-game total points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.fouls_officials",
+     "why": "Whistle tendencies by conference.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.officials_crew",
+     "why": "Crew effect if known pregame for CBB full-game total points.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.late_game_foul_script",
+     "why": "Late foul scenarios shift totals in close games.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Availability of scorers and ball handlers.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.venue",
+     "why": "Altitude and arena effects on tempo/efficiency.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.rest_travel",
+     "why": "Fatigue for CBB full-game total points.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.ot_model",
+     "why": "OT contribution if included for CBB full-game total points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.score_resid",
+     "why": "Total residual distribution by tempo/tier.",
+     "role": "primary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.market_calibration_bias",
+     "why": "Reliability and popularity bias by price bucket set how far to shade probabilities.",
+     "role": "context"
+    },
+    {
+     "id": "m.settlement_truth",
+     "why": "Settled values and timing are the labels and must match the named source.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.lineups",
+     "why": "Lineup efficiency and pace splits show how a missing guard changes tempo and scoring.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.player_impact",
+     "why": "Impact values quantify how much a missing scorer shifts efficiency.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.tempo",
+      "cbb.adj_def"
+     ],
+     "hypothesis": "Strong-defense, slow teams cut totals non-additively because tempo control and half-court defense compound."
+    },
+    {
+     "inputs": [
+      "cbb.three_pt_luck",
+      "cbb.adj_off"
+     ],
+     "hypothesis": "Offenses boosted by recent hot three-point shooting are overrated for totals; regress by 3PA share."
+    },
+    {
+     "inputs": [
+      "cbb.fouls_officials",
+      "cbb.free_throw"
+     ],
+     "hypothesis": "Whistle-heavy games lengthen games and add FT points when teams are good FT shooters."
+    },
+    {
+     "inputs": [
+      "cbb.injuries",
+      "cbb.tempo"
+     ],
+     "hypothesis": "A missing primary ball handler slows tempo and lowers transition scoring, interacting with the efficiency loss."
+    },
+    {
+     "inputs": [
+      "cbb.late_game_foul_script",
+      "cbb.score_resid"
+     ],
+     "hypothesis": "Close-game late fouling raises totals; the effect is concentrated in games with small spreads."
+    }
+   ]
+  },
+  "team_total": {
+   "blueprint": "game_total",
+   "label": "CBB team total points",
+   "families": [
+    "CBB/TEAM_TOTAL"
+   ],
+   "target": "One named team's points over a half-point strike (OT per rules text)",
+   "mechanism": "Team points = own possessions x own efficiency against the opponent's defense, correlated with margin: favorites' bench minutes in blowouts and underdogs' late free throws shape the team distribution. Team total, game total and spread markets must be coherent; mismatches signal edges. Availability of the team's scorers and the opponent's rim protection move the team total directly.",
+   "inputs": [
+    {
+     "id": "cbb.adj_off",
+     "why": "Own offense vs the opponent for CBB team total points.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "Opponent defense for CBB team total points.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "Own possessions for CBB team total points.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.implied_team_totals",
+     "why": "Consistency check with total and spread.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.four_factors",
+     "why": "Shot, turnover, rebound, FT matchups.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.shot_zones",
+     "why": "Shot mix vs opponent defense for CBB team total points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.defense_style",
+     "why": "Zone/press effect on scoring and turnovers.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_luck",
+     "why": "Regress own and opponent 3P% luck.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Own scorers and opponent defenders.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.blowout_garbage",
+     "why": "Favorite's bench minutes reduce team total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.free_throw",
+     "why": "Late-game FT scoring for CBB team total points.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.blowout_garbage",
+      "cbb.implied_team_totals"
+     ],
+     "hypothesis": "Favorite team total is shaded down and underdog up by blowout/late-foul dynamics compared with a linear split."
+    },
+    {
+     "inputs": [
+      "cbb.adj_off",
+      "cbb.defense_style"
+     ],
+     "hypothesis": "Offensive efficiency against zone/press differs from average defense; style matchups alter team points."
+    },
+    {
+     "inputs": [
+      "cbb.injuries",
+      "cbb.tempo"
+     ],
+     "hypothesis": "Own ball-handler absence changes both pace and efficiency of the team."
+    }
+   ]
+  },
+  "first_half": {
+   "blueprint": "period",
+   "label": "CBB first-half winner, spread and total",
+   "families": [
+    "CBB/HALF"
+   ],
+   "target": "First-half winner, margin or total over a strike (halves; OT excluded unless stated)",
+   "mechanism": "First-half scoring is driven by starters and tempo, the first-half share of game scoring (team-specific), early foul trouble, and half-end bonus dynamics. Game-level markets are better priced than half-level derivatives, so inconsistencies between half and game lines are a source of edge; ties in half winners matter.",
+   "inputs": [
+    {
+     "id": "cbb.half_split",
+     "why": "Team first-half share and efficiency.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "First-half possessions for CBB first-half winner, spread and total.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.starters",
+     "why": "Opening lineup identity for CBB first-half winner, spread and total.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.first_half_minutes",
+     "why": "Early foul-trouble and starter minutes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.adj_off",
+     "why": "First-half offense for CBB first-half winner, spread and total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.adj_def",
+     "why": "First-half defense for CBB first-half winner, spread and total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.half_foul_bonus",
+     "why": "Late-half bonus dynamics for CBB first-half winner, spread and total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_foul",
+     "why": "Early foul risk of key players.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Absent starters for CBB first-half winner, spread and total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.score_resid",
+     "why": "Half-level residual distribution.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Rotation habits determine how starters are used in the first half.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.half_split",
+      "cbb.tempo"
+     ],
+     "hypothesis": "First-half totals depend on first-half pace, which differs from game pace and is team-specific."
+    },
+    {
+     "inputs": [
+      "cbb.starters",
+      "cbb.first_half_minutes"
+     ],
+     "hypothesis": "A starter's early fouls create the biggest first-half-specific variance."
+    },
+    {
+     "inputs": [
+      "m.ladder_structure",
+      "cbb.half_split"
+     ],
+     "hypothesis": "Half total, half spread and game lines must be coherent; inconsistent half prices are the main edge."
+    },
+    {
+     "inputs": [
+      "cbb.half_foul_bonus",
+      "cbb.free_throw"
+     ],
+     "hypothesis": "Late-half bonus FT scoring increases first-half totals for teams with good FT shooters."
+    }
+   ]
+  },
+  "player_props": {
+   "blueprint": "player_other",
+   "label": "CBB player props (generic: points, rebounds, assists, threes)",
+   "families": [
+    "CBB/PLAYER_PROP"
+   ],
+   "target": "A player's single-game stat over a threshold (DNP rule in rules text)",
+   "mechanism": "Count = minutes x per-minute rate with overdispersion from foul trouble, blowouts, tempo and teammate availability. CBB features short rotations, roster churn and small samples (about 30 games), so parameter uncertainty and shrinkage are central; disclosure of availability is sparse, and box-score sources can be late or erroneous for smaller programs.",
+   "inputs": [
+    {
+     "id": "cbb.player_minutes",
+     "why": "Minutes distribution for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_usage",
+     "why": "Per-minute rates and usage for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Own and teammates' availability.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.status_disclosure",
+     "why": "Play probability for uncertain statuses.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.starters",
+     "why": "Confirmed starters for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.teammate_absence_shift",
+     "why": "Redistribution when teammates are out.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "Possessions for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.blowout_garbage",
+     "why": "Blowout minutes loss for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_foul",
+     "why": "Foul trouble for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_role_position",
+     "why": "Role determines the relevant opponent adjustment.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.opp_stat_allowed",
+     "why": "Opponent defense by role for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.stat_dist",
+     "why": "Distribution shape and parameter uncertainty.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_shooting_regression",
+     "why": "Regress hot/cold shooting for CBB player props (generic: points, rebounds, assists, threes).",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.box_score_source_risk",
+     "why": "Provider lag/errors for smaller venues.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
+     "role": "context"
+    },
+    {
+     "id": "m.strike_hit_rates",
+     "why": "Realized frequency by rung and price bucket calibrates the model.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Liquidity rank of the game scales the discount applied to model edges.",
+     "role": "context"
+    },
+    {
+     "id": "m.settlement_truth",
+     "why": "Settled values and timing are the labels and must match the named source.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.market_calibration_bias",
+     "why": "Reliability and popularity bias by price bucket set how far to shade probabilities.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Rotation size and minutes concentration determine redistribution after absences.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Props close before late scratches; the tradable information set ends at close.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.player_minutes",
+      "cbb.blowout_garbage"
+     ],
+     "hypothesis": "Stars on heavy favorites lose minutes in blowouts, depressing high-rung overs."
+    },
+    {
+     "inputs": [
+      "cbb.teammate_absence_shift",
+      "cbb.player_usage"
+     ],
+     "hypothesis": "Short rotations make absences redistribute heavily; role-level priors prevent overfitting."
+    },
+    {
+     "inputs": [
+      "cbb.stat_dist",
+      "cbb.player_shooting_regression"
+     ],
+     "hypothesis": "Small-sample hot streaks inflate averages; hierarchical shrinkage improves calibration."
+    },
+    {
+     "inputs": [
+      "cbb.box_score_source_risk",
+      "m.rules_text"
+     ],
+     "hypothesis": "Stat-provider and DNP rules combine to determine whether a marginal outcome settles on a questionable record."
+    }
+   ]
+  },
+  "player_points": {
+   "blueprint": "player_other",
+   "label": "CBB player points over/under",
+   "families": [
+    "CBB/PLAYER_PROP"
+   ],
+   "target": "Player points over a half-point strike",
+   "mechanism": "Points = minutes x shot attempts per minute x points per attempt + FT. Attempts depend on usage and role (stable but changing with teammates), efficiency on shot quality, opponent defense style and shooting regression; minutes on foul trouble and blowouts. Teammate absences concentrate shots on remaining scorers in short rotations; tempo scales attempts.",
+   "inputs": [
+    {
+     "id": "cbb.player_usage",
+     "why": "Usage and shot rate for CBB player points over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_minutes",
+     "why": "Minutes distribution for CBB player points over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.teammate_absence_shift",
+     "why": "Shot redistribution for CBB player points over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_shooting_regression",
+     "why": "Shrink FG/3P/FT for CBB player points over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.free_throw",
+     "why": "FT rate and FT% for CBB player points over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.opp_stat_allowed",
+     "why": "Opponent points allowed to role.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.defense_style",
+     "why": "Zone/press changes shot quality.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "Attempts scale with possessions.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.blowout_garbage",
+     "why": "Minutes cut in blowouts for CBB player points over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_foul",
+     "why": "Foul trouble for CBB player points over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Own and teammates' status for CBB player points over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.strike_hit_rates",
+     "why": "Realized frequency by rung and price bucket calibrates the model.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.player_usage",
+      "cbb.teammate_absence_shift"
+     ],
+     "hypothesis": "Absence of the primary scorer raises usage but lowers efficiency; effect depends on whether the replacement is a same-role scorer."
+    },
+    {
+     "inputs": [
+      "cbb.defense_style",
+      "cbb.player_usage"
+     ],
+     "hypothesis": "Zone defense lowers drive-based scoring and raises three-point attempts, changing scoring distribution by role."
+    },
+    {
+     "inputs": [
+      "cbb.blowout_garbage",
+      "cbb.player_minutes"
+     ],
+     "hypothesis": "High rungs are sensitive to the probability of a lopsided game; mixture model is required."
+    },
+    {
+     "inputs": [
+      "cbb.tempo",
+      "cbb.free_throw"
+     ],
+     "hypothesis": "Fast tempo increases attempts but late fouls matter more in tight games for FT points."
+    }
+   ]
+  },
+  "player_rebounds_assists": {
+   "blueprint": "player_other",
+   "label": "CBB player rebounds and assists over/under",
+   "families": [
+    "CBB/PLAYER_PROP"
+   ],
+   "target": "Player rebounds or assists over a strike",
+   "mechanism": "Rebounds = minutes x chances x conversion with the pool set by tempo and shooting, share set by lineup size and role; assists = minutes x creation x teammate conversion, with limited free tracking data requiring assist-rate and teammate-shooting proxies. Short rotations and teammate absences move both; blowouts cut minutes; opponents' size and style matter.",
+   "inputs": [
+    {
+     "id": "cbb.rebound_pool",
+     "why": "Missed-shot supply and share for CBB player rebounds and assists over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.size_rebounding",
+     "why": "Size/rebounding matchup for CBB player rebounds and assists over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.assist_creation",
+     "why": "Assist rate and teammate conversion.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_minutes",
+     "why": "Minutes distribution for CBB player rebounds and assists over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_usage",
+     "why": "Role and rates for CBB player rebounds and assists over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.teammate_absence_shift",
+     "why": "Boards/assists redistribute for CBB player rebounds and assists over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.defense_style",
+     "why": "Press/zone effect on turnovers and assists.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.opp_stat_allowed",
+     "why": "Opponent allowed by role for CBB player rebounds and assists over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "Possessions for CBB player rebounds and assists over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.blowout_garbage",
+     "why": "Minutes loss for CBB player rebounds and assists over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Availability for CBB player rebounds and assists over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.stat_dist",
+     "why": "Count shape for CBB player rebounds and assists over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.rebound_pool",
+      "cbb.player_minutes"
+     ],
+     "hypothesis": "Rebounds scale with the pool times minutes share; fast, poorly shooting games lift everyone."
+    },
+    {
+     "inputs": [
+      "cbb.assist_creation",
+      "cbb.teammate_absence_shift"
+     ],
+     "hypothesis": "A missing finisher lowers assists via conversion; a missing creator raises the remaining guard's assists."
+    },
+    {
+     "inputs": [
+      "cbb.size_rebounding",
+      "cbb.defense_style"
+     ],
+     "hypothesis": "Zone defenses leak offensive rebounds to opponents, boosting rebounding opportunities for the crashing team's bigs."
+    },
+    {
+     "inputs": [
+      "cbb.blowout_garbage",
+      "cbb.stat_dist"
+     ],
+     "hypothesis": "Blowout probability widens the left tail; use a minutes mixture to calibrate rung probabilities."
+    }
+   ]
+  },
+  "player_threes": {
+   "blueprint": "player_other",
+   "label": "CBB player threes made over/under",
+   "families": [
+    "CBB/PLAYER_PROP"
+   ],
+   "target": "Player three-pointers made over a strike",
+   "mechanism": "Threes made = attempts x make probability, where attempts follow role, minutes, tempo and opponent scheme (zone concedes threes), and make probability must be shrunk hard to talent. Single-game outcomes are luck-dominated; value lies in volume, minutes and availability rather than in 3P% trends.",
+   "inputs": [
+    {
+     "id": "cbb.player_three_volume",
+     "why": "Attempt volume per 40 for CBB player threes made over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_shooting_regression",
+     "why": "Shrink 3P% to talent for CBB player threes made over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_minutes",
+     "why": "Minutes distribution for CBB player threes made over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.teammate_absence_shift",
+     "why": "Open looks change when creators are out.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.defense_style",
+     "why": "Zone concedes threes; pressure limits them.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.opp_stat_allowed",
+     "why": "Opponent 3PA allowed for CBB player threes made over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.tempo",
+     "why": "Possessions for CBB player threes made over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.blowout_garbage",
+     "why": "Minutes loss for CBB player threes made over/under.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_luck",
+     "why": "Team-level regression for CBB player threes made over/under.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.injuries",
+     "why": "Availability for CBB player threes made over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.stat_dist",
+     "why": "Overdispersed attempts for CBB player threes made over/under.",
+     "role": "primary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.player_three_volume",
+      "cbb.player_minutes"
+     ],
+     "hypothesis": "Attempts per minute times minutes sets attempts; minute risk matters more than make rate drift."
+    },
+    {
+     "inputs": [
+      "cbb.defense_style",
+      "cbb.player_three_volume"
+     ],
+     "hypothesis": "Zone-heavy opponents concede threes, raising attempts for spot-up shooters."
+    },
+    {
+     "inputs": [
+      "cbb.player_shooting_regression",
+      "cbb.stat_dist"
+     ],
+     "hypothesis": "Shrinkage should depend on attempts to date; early-season hot shooters are overpriced."
+    }
+   ]
+  },
+  "futures_champion": {
+   "blueprint": "season_outcome",
+   "label": "CBB national championship futures",
+   "families": [
+    "CBB/FUTURES_CHAMPION"
+   ],
+   "target": "Team wins the NCAA Tournament (or related national-title outcome)",
+   "mechanism": "Title probability = product of advancement probabilities through a 6-round single-elimination bracket, with team strength uncertain and single-game variance high. Before Selection Sunday it integrates over seed and region uncertainty; afterward it follows the actual path. Star injury risk and path matchups dominate the tails; markets include brand bias and long-shot bias.",
+   "inputs": [
+    {
+     "id": "cbb.ratings",
+     "why": "Ensemble rating with uncertainty.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.bracket_sim",
+     "why": "Simulation of full bracket for CBB national championship futures.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.lineup_adj_rating",
+     "why": "Availability-adjusted strength.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.title_path",
+     "why": "Path and region strength for CBB national championship futures.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.single_game_variance",
+     "why": "Upset variance by style for CBB national championship futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.seed_upset_priors",
+     "why": "Base rates for CBB national championship futures.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.star_injury_risk",
+     "why": "Postseason availability risk for CBB national championship futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.in_season_improvement",
+     "why": "Late-season trajectory for CBB national championship futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.recruit_exp",
+     "why": "Experience and consistency for CBB national championship futures.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.popularity_bias",
+     "why": "Brand-driven price bias for CBB national championship futures.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
+     "role": "context"
+    },
+    {
+     "id": "m.strike_hit_rates",
+     "why": "Realized frequency by rung and price bucket calibrates the model.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fee schedule converts probability edge to net edge.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.player_impact",
+     "why": "Impact values project strength with the full rotation for the tournament.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Depth and minutes concentration bear on injury vulnerability in a single-elimination run.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.ratings",
+      "cbb.single_game_variance"
+     ],
+     "hypothesis": "Title odds are convex in rating and sensitive to single-game variance; high-variance teams are mispriced when ratings alone are used."
+    },
+    {
+     "inputs": [
+      "cbb.title_path",
+      "cbb.bracket_sim"
+     ],
+     "hypothesis": "Pre-bracket futures integrate over seed/region assignment, which resolves at Selection Sunday."
+    },
+    {
+     "inputs": [
+      "cbb.star_injury_risk",
+      "cbb.lineup_adj_rating"
+     ],
+     "hypothesis": "A single star injury changes title odds by large factors; mixture models matter."
+    },
+    {
+     "inputs": [
+      "cbb.popularity_bias",
+      "m.external_lines"
+     ],
+     "hypothesis": "Brand teams may be overpriced vs the book consensus; test the gap by popularity."
+    }
+   ]
+  },
+  "futures_conference": {
+   "blueprint": "season_outcome",
+   "label": "CBB conference champion / conference tournament futures",
+   "families": [
+    "CBB/FUTURES_CONFERENCE"
+   ],
+   "target": "Team wins the regular-season conference title or the conference tournament",
+   "mechanism": "Regular-season title depends on remaining conference games, tiebreakers and ratings; tournament title depends on seeding, bracket path, byes and single-game variance. Conference-specific rules and double-bye structure matter; fatigue in multi-day tournaments and bubble motivation shape performance.",
+   "inputs": [
+    {
+     "id": "cbb.ratings",
+     "why": "Team strength within the conference.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.conference_standings_sim",
+     "why": "Standings with conference tiebreakers.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.sos_remaining",
+     "why": "Remaining schedule for CBB conference champion / conference tournament futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.bracket_sim",
+     "why": "Conference-tournament bracket simulation.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.conf_tourney_fatigue",
+     "why": "Multi-day tournament effects for CBB conference champion / conference tournament futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.venue",
+     "why": "Home court and tournament venue.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.lineup_adj_rating",
+     "why": "Availability for CBB conference champion / conference tournament futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.auto_bid_structure",
+     "why": "Auto-bid incentives for CBB conference champion / conference tournament futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.motivation",
+     "why": "Stakes for seed/bubble for CBB conference champion / conference tournament futures.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.single_game_variance",
+     "why": "Single-game variance for CBB conference champion / conference tournament futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.conference_standings_sim",
+      "cbb.sos_remaining"
+     ],
+     "hypothesis": "Equal-rated teams differ in title odds by remaining schedule and tiebreaker exposure."
+    },
+    {
+     "inputs": [
+      "cbb.conf_tourney_fatigue",
+      "cbb.single_game_variance"
+     ],
+     "hypothesis": "Multi-day tournaments compress rest and raise variance; deep, experienced rotations are favored."
+    },
+    {
+     "inputs": [
+      "cbb.auto_bid_structure",
+      "cbb.motivation"
+     ],
+     "hypothesis": "Teams needing the auto-bid play with higher intensity than comfortable at-large teams."
+    }
+   ]
+  },
+  "futures_seed_other": {
+   "blueprint": "season_outcome",
+   "label": "CBB seed line, tournament advancement and other team futures",
+   "families": [
+    "CBB/FUTURES_SEED",
+    "CBB/FUTURES_OTHER"
+   ],
+   "target": "Team's NCAA seed line, making the field, round reached or other team outcomes",
+   "mechanism": "Seed and bid outcomes are determined by committee evaluation of resumes (NET, quadrant records, WAB) and predictive metrics, with late results and conference tournaments shifting boundaries; advancement outcomes follow the bracket simulation. Discrete seed boundaries and bid-thief dynamics produce nonlinear probabilities; the consensus of bracketologists is a strong prior.",
+   "inputs": [
+    {
+     "id": "cbb.resume_metrics",
+     "why": "NET, quadrants, WAB and SOR for CBB seed line, tournament advancement and other team futures.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.committee_seed_model",
+     "why": "Ordinal seed model and consensus.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.ratings",
+     "why": "Predictive strength used in seeding and advancement.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.bracket_sim",
+     "why": "Advancement simulation for CBB seed line, tournament advancement and other team futures.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.conference_standings_sim",
+     "why": "Conference results affecting resume.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.auto_bid_structure",
+     "why": "Bid-thief risk for CBB seed line, tournament advancement and other team futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.conf_strength",
+     "why": "Conference offsets affect bubble.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.sos_remaining",
+     "why": "Remaining schedule strength for CBB seed line, tournament advancement and other team futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.title_path",
+     "why": "Path after seeding for CBB seed line, tournament advancement and other team futures.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.seed_upset_priors",
+     "why": "Historical advancement rates by seed.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.news",
+     "why": "Selection/committee communications.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Price path and the timing of moves show what is already priced after lineup or injury news.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "OT, DNP, postponement and push wording defines the settled event.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook prices are the benchmark prior; the model targets deviations and shape.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cbb.resume_metrics",
+      "cbb.committee_seed_model"
+     ],
+     "hypothesis": "Seed outcomes near boundaries depend on late quality wins and committee preferences; model the committee's ranking rather than ratings alone."
+    },
+    {
+     "inputs": [
+      "cbb.auto_bid_structure",
+      "cbb.resume_metrics"
+     ],
+     "hypothesis": "Bid-thief probability reduces at-large slots; bubble odds depend jointly on conference tournaments and resume."
+    },
+    {
+     "inputs": [
+      "cbb.seed_upset_priors",
+      "cbb.ratings"
+     ],
+     "hypothesis": "Advancement probabilities mix rating-implied and seed-implied base rates; weight by sample size."
+    },
+    {
+     "inputs": [
+      "cbb.conf_strength",
+      "cbb.sos_remaining"
+     ],
+     "hypothesis": "Conference strength offsets are uncertain and propagate into SOS and bubble odds."
+    }
+   ]
+  }
+ }
+}

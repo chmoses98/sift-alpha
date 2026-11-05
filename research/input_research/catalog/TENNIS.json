@@ -1,0 +1,3387 @@
+{
+ "sport": "TENNIS",
+ "inputs": {
+  "ten.surface_rating": {
+   "label": "Surface-adjusted player rating (Elo/serve-return)",
+   "category": "team_strength",
+   "mechanism": "A latent player strength on the match's surface summarises opponent-adjusted results; surface speed and bounce make skills non-transferable across hard, clay and grass.",
+   "rationale": "Match outcome is the cleanest function of relative strength on the actual surface; overall Elo blends surfaces and mis-prices specialists, while pure surface Elo is noisy because there are few matches on grass. Subtle: a blend (surface Elo weighted with overall Elo by sample size) usually beats either, and rating freshness after injury or layoff matters.",
+   "measurement": "Fit overall Elo and surface-specific Elo (K higher for new players, lower with tour experience, bo5 weight), blend with weight w(n_surface) = n/(n+k) (k ~ 30-50 matches); use tour-level plus Challenger/ITF results for lower-ranked players; time-decay for layoffs; use only matches before the decision date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)",
+    "tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)"
+   ],
+   "registry_ids": [
+    "ten.surface_rating"
+   ]
+  },
+  "ten.serve_return": {
+   "label": "Serve/return point-win probabilities by surface",
+   "category": "team_strength",
+   "mechanism": "Points won on serve and return are the primitive inputs of tennis: the serve-return pair determines hold and break probabilities and every derived market (sets, games, totals).",
+   "rationale": "Match probability is a deterministic function of serve-point and return-point win probabilities (Markov hierarchy), so these capture style more precisely than a scalar rating, particularly for totals and set-score markets. Subtle: raw averages mix opponents of different quality; the pair must be opponent-adjusted and surface-specific.",
+   "measurement": "Per player and surface: spw = points won on serve / serve points, rpw = points won on return / return points from match stats; adjusted via ridge on logit with opponent effects (spw_ij = mu_surface + serve_i - return_j); shrink with n/(n+k) (k ~ 1000 service points); recency half-life ~ 12 months.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.serve_return"
+   ]
+  },
+  "ten.h2h_style": {
+   "label": "Head-to-head and style matchup",
+   "category": "matchup",
+   "mechanism": "Particular styles (lefty serve, big server vs weak returner, heavy topspin vs flat hitters) create matchup residuals beyond overall rating.",
+   "rationale": "Head-to-head records capture matchup residuals but are tiny samples and mostly reflect rating gaps; stylistic features (handedness, serve profile, return aggressiveness) are better. Subtle: raw H2H overstated by selection (they meet often because both are high-ranked, on specific surfaces) and should be shrunk very heavily.",
+   "measurement": "Residual of observed result over rating-implied probability, aggregated over H2H meetings with shrinkage n/(n+10); alternative: style-pair regression using handedness, serve speed, rally length profile.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)",
+    "Ultimate Tennis Statistics (ultimatetennisstatistics.com)"
+   ],
+   "registry_ids": [
+    "ten.h2h_style"
+   ]
+  },
+  "ten.form": {
+   "label": "Recent form and match-load",
+   "category": "team_strength",
+   "mechanism": "Recent results reveal updating information about fitness, confidence and equipment/coaching changes not yet fully in the rating.",
+   "rationale": "Form beyond rating is weak (ratings already update), but form dips can signal hidden injury, and wins in prior rounds signal match sharpness. Subtle: easy draws inflate 'form'; the adjusted measure should compare results to rating expectation (surprise) not raw wins.",
+   "measurement": "Rolling mean of (actual result minus rating-implied win prob) over last 10 matches (weights decay), tour-level only, plus count of matches in last 30 days.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)",
+    "tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)"
+   ],
+   "registry_ids": [
+    "ten.form"
+   ]
+  },
+  "ten.fitness": {
+   "label": "Fitness/injury/withdrawal and in-match retirement risk",
+   "category": "availability",
+   "mechanism": "Physical condition (injury, illness, fatigue) lowers performance and raises the probability of retirement or walkover.",
+   "rationale": "Injury news is discontinuous and often leaks late (practice absence, medical timeouts, withdrawals the day of the match). The market partially prices it but the settlement consequences (void, retirement rules) matter as much as performance. Subtle: unobservable injuries dominate; recent retirements and layoffs are the best observable proxies.",
+   "measurement": "Features: retirement/walkover in last 12 months, days since last match, previous-round match length, medical-timeout flags from live score feeds; calibrate retirement hazard from historical rates (see ten.retirement_base_rate).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)",
+    "Tennis Abstract / ATP retirement and walkover fields in Sackmann CSVs (score column 'RET', 'W/O')"
+   ],
+   "registry_ids": [
+    "ten.fitness"
+   ]
+  },
+  "ten.fatigue": {
+   "label": "Fatigue (match length, back-to-back days, travel)",
+   "category": "schedule_context",
+   "mechanism": "Accumulated court time and short recovery reduce movement and serve quality and raise injury hazard, particularly in best-of-five events.",
+   "rationale": "Previous-round match duration, sets played and days of rest are known pregame; effects are modest and heterogeneous by age and fitness. Subtle: weak competition lowers fatigue; extreme duration (five-setters, night finishes) has the strongest effect; effect interacts with format and heat.",
+   "measurement": "Minutes and sets played over last 7 and 14 days, days since last match, late-finishing flag, travel zone change; regress rating-residual on these with player-level shrinkage.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.fatigue"
+   ]
+  },
+  "ten.format": {
+   "label": "Match format (best-of-3/5, tiebreak, ad scoring)",
+   "category": "distribution",
+   "mechanism": "Best-of-five amplifies the favourite's edge (more points played so skill variance averages out) and changes fatigue dynamics; tiebreak and final-set rules change game counts.",
+   "rationale": "A fixed per-point edge translates to a larger match-win probability in bo5 than bo3, and total games/sets markets differ by format; final-set tiebreak rules (advantage set vs tiebreak at 6-6 / 12-12 / 10-point) change length distributions. Subtle: format differs by tournament and round and by tour (WTA is bo3 almost everywhere), so a lookup table of rules by event-year is required.",
+   "measurement": "Lookup of events by year: sets to win, final-set rule, tiebreak points, no-ad; feed into the Markov match model; check interaction with fatigue and format-specific ratings.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ITF and Grand Slam official rulebooks (public PDFs; format, tiebreak and retirement rules)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": [
+    "ten.format"
+   ]
+  },
+  "ten.hold_break": {
+   "label": "Hold/break probabilities and game-level Markov model",
+   "category": "distribution",
+   "mechanism": "Hold and break probabilities, derived from point-win probabilities via the game-level Markov chain, drive set scores, game counts and totals.",
+   "rationale": "Service hold ~ nonlinear amplification of serve-point probability, so small differences in point probabilities create large hold differences; this is the main engine of games, sets and spreads. Subtle: points are not exactly iid (pressure, serve alternation), and uncertainty in spw should be propagated into the match distribution.",
+   "measurement": "Compute p_hold = f(spw_i vs rpw_j adjusted) via closed-form game formula; p_break = 1 - p_hold of opponent; set/match probabilities by dynamic programming; propagate uncertainty by sampling spw from posterior.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.hold_break"
+   ]
+  },
+  "ten.set_dist": {
+   "label": "Set/score distribution and correlations",
+   "category": "distribution",
+   "mechanism": "The joint distribution of set scores follows from hold/break probabilities with within-match dependence (form fluctuations, momentum), affecting exact-set, total games and set spreads.",
+   "rationale": "Independence across sets underestimates the frequency of lopsided matches (3-0 sweeps) and decisive sets; between-set correlation arises from day-level form and player-specific variance. Subtle: dependence parameters are hard to estimate; ignoring them mis-prices tail scores.",
+   "measurement": "Fit a Markov model with a latent match-form shock to spw (random effect) and calibrate on historical distribution of set scores and match lengths by tour and surface.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)"
+   ],
+   "registry_ids": [
+    "ten.set_dist"
+   ]
+  },
+  "ten.aces_df": {
+   "label": "Aces/double-fault rates, serve speed, court speed",
+   "category": "pace_volume",
+   "mechanism": "Aces and double faults are driven by serve speed and placement, the opponent's return, court speed and conditions, and by the number of service games played.",
+   "rationale": "Aces per service game is a stable player trait; the expected count is that rate times service games (depends on match length) with opponent return adjustment and surface/ball/altitude factors. Subtle: count depends on how the settlement source counts, on retirements/shortened matches, and on first-serve percentage variance.",
+   "measurement": "Ace rate = aces per service point, opponent-adjusted via a negative-binomial/Poisson GLM with server and returner effects and surface; expected service points from match-length model; overdispersion parameter estimated by player.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)"
+   ],
+   "registry_ids": [
+    "ten.aces_df"
+   ]
+  },
+  "ten.court_cond": {
+   "label": "Court speed, altitude, balls, indoor/outdoor, weather",
+   "category": "environment",
+   "mechanism": "Court pace, bounce, ball type, altitude, temperature and wind change serve effectiveness and rally length, shifting hold rates and totals.",
+   "rationale": "Faster/high-altitude conditions raise hold rates and aces (more tiebreaks and shorter matches), slow/heavy conditions raise breaks and match length. These are knowable at event level and can be estimated from the event's historical hold%/ace rates. Subtle: effect varies by tournament-year (new ball or surface), by day/night, and interacts with player style.",
+   "measurement": "Event-year hold%/ace/tiebreak rate relative to surface mean (shrunk), Open-Meteo forecast at start (temp, wind, humidity), altitude from venue; roof/indoor flags.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ITF Court Pace Rating publications (itftennis.com technical pages)",
+    "Open-Meteo forecast and historical archive APIs",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": [
+    "ten.court_cond"
+   ]
+  },
+  "ten.draw": {
+   "label": "Draw/bracket structure and round-by-round simulation",
+   "category": "team_strength",
+   "mechanism": "A tournament win requires surviving a specific path of opponents; the bracket, seeds and potential matchups determine round-by-round probabilities.",
+   "rationale": "Outright probabilities depend on the actual draw (who can meet when) and match-level probabilities from ratings; probability of facing a top seed in the early rounds matters. Subtle: draws are random (conditional on seeding) before release; withdrawals and lucky losers change the bracket; the correlation among players in the same half is built into the simulation.",
+   "measurement": "Monte Carlo of bracket using match-level win probabilities (surface rating, fatigue), incorporating seeding rules, byes, and withdrawals; compute per-round survival probabilities.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": [
+    "ten.draw"
+   ]
+  },
+  "ten.schedule": {
+   "label": "Start times, order of play, delays",
+   "category": "schedule_context",
+   "mechanism": "Start time (day/night, order on court) and delays alter conditions (heat, wind, balls), recovery time and settlement timing.",
+   "rationale": "The order of play is released the evening before; the not-before times shift; night sessions are cooler and play slower, while rain delays can force next-day continuation. Subtle: a suspended match can be settled differently from a completed one, and long delays change fatigue and conditions.",
+   "measurement": "Fetch order of play with timestamps; compute estimated start time and day/night flag; rain probability from forecast; time since the prior match on court for rest estimation.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/tennis/<tour>/scoreboard)"
+   ],
+   "registry_ids": [
+    "ten.schedule"
+   ]
+  },
+  "ten.motivation": {
+   "label": "Tournament stakes, ranking points, tanking risk",
+   "category": "motivation",
+   "mechanism": "Stakes (points to defend, season-end race, mandatory events, home event) change effort and the willingness to play through injury.",
+   "rationale": "Players at lower-tier events after a major, at the end of a long season, or with qualification secured may exhibit lower effort or retire earlier; players defending large points have extra pressure. Subtle: observable only through incentives and history, with weak effects; prize-money structure (first-round losers' payout) alters retirement incentives.",
+   "measurement": "Points to defend, ranking distance to qualification cutoffs, event tier, calendar position, previous match count; model as a small random effect on rating residuals; examine retirement/withdrawal base rates by incentive.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.motivation"
+   ]
+  },
+  "ten.market_odds": {
+   "label": "Closing bookmaker odds",
+   "category": "market_structure",
+   "mechanism": "Sharp closing odds aggregate ratings, injury information and sharp money, so they are the benchmark any tennis model must clear.",
+   "rationale": "Closing odds for match winner (and, where available, handicap/total games) are the best single prior; the useful signal is the gap between Kalshi and de-vigged sharp price and its movement. Subtle: free historical files only provide a single close; retirement/walkover matches are inconsistently handled; favourite-longshot bias in two-way markets is smaller than in soccer 3-way.",
+   "measurement": "De-vig (proportional/power) Pinnacle/average closing odds; compare to Kalshi quote at the same timestamp; track open-to-close movement where available.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)",
+    "Tennis Explorer (tennisexplorer.com results and odds history)"
+   ],
+   "registry_ids": [
+    "ten.market_odds"
+   ]
+  },
+  "ten.in_play": {
+   "label": "Point-level/in-play state",
+   "category": "game_state",
+   "mechanism": "Live score and point-level state (set score, game score, who serves) update match-win and game probabilities via the Markov model, with momentum/pressure effects.",
+   "rationale": "In-play prices should be Markov-model-consistent with the pregame serve/return probabilities updated by observed points. Subtle: not available pregame; feed latency and settlement-source differences matter; the main use pregame is calibrating how the model should evolve.",
+   "measurement": "State = (sets, games, points, server); compute win probability by dynamic programming with posterior-updated spw; evaluate calibration of in-play price vs model over historical point-by-point data.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/tennis/<tour>/scoreboard)"
+   ],
+   "registry_ids": [
+    "ten.in_play"
+   ]
+  },
+  "ten.rankings": {
+   "label": "ATP/WTA rankings and race points",
+   "category": "team_strength",
+   "mechanism": "Rankings summarise 52-week performance and determine seeding and draw difficulty; the race adds season-to-date stakes.",
+   "rationale": "Ranking is a weaker predictor than Elo but is public and drives draws and incentives; differences between rank and Elo flag players whose ranking lags recent form (injury returns). Subtle: protected rankings and ranking cutoffs create participation incentives.",
+   "measurement": "Rank, ranking points, points-to-defend, race position; log-rank differential as a secondary feature; compare to Elo-implied rank.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": [
+    "ten.rankings"
+   ]
+  },
+  "ten.news": {
+   "label": "Coaching, retirement, participation news",
+   "category": "availability",
+   "mechanism": "Coach changes, retirement announcements, injuries and participation decisions change performance and availability.",
+   "rationale": "Retirement/career-end announcements are discrete events decided by players; markets on retirement or participation depend on age, injury history and stated plans. Subtle: statements are strategic and timestamp-sensitive; much of it is unstructured text.",
+   "measurement": "Timestamped news items parsed into events (coach change, injury, withdrawal, retirement statement); base rates by age and injury; conversion probability of statements to action.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Official player and tournament social/press releases (public)"
+   ],
+   "registry_ids": [
+    "ten.news"
+   ]
+  },
+  "ten.tiebreak": {
+   "label": "Tiebreak win rate and hold-under-pressure",
+   "category": "distribution",
+   "mechanism": "Tiebreak outcomes are close to coin flips tilted by serve strength; the probability a set reaches 6-6 depends on both players' hold probabilities.",
+   "rationale": "Tiebreak win rate has only a weak persistent component beyond serve dominance; naive tiebreak records are overfitted. The occurrence of tiebreaks (in both total-games and tiebreak-occurs markets) is determined by hold probabilities and format. Subtle: sample sizes are tiny; use shrinkage to serve-implied probability.",
+   "measurement": "P(tiebreak win) from point model with spw and rpw plus shrunk player-specific residual (k ~ 40 tiebreaks); P(6-6) from Markov chain over games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.tiebreak"
+   ]
+  },
+  "ten.break_points": {
+   "label": "Break points created/converted/saved",
+   "category": "team_strength",
+   "mechanism": "Break-point creation reflects return quality; conversion/saved rates mix skill and luck and mostly regress to serve/return levels.",
+   "rationale": "Break-point conversion above expectation is a classic variance factor: players with high conversion in a sample are likely to regress. Creation rate (opportunities per return game) is more persistent. Subtle: conversion depends on opponents' second-serve quality; shrink conversion to the level implied by rpw.",
+   "measurement": "Break points created per return game (adjusted); conversion minus rpw-implied expectation, shrunk by n/(n+k), k ~ 150 break points.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.break_points"
+   ]
+  },
+  "ten.decider_record": {
+   "label": "Deciding-set record, first-set-winner conversion",
+   "category": "distribution",
+   "mechanism": "Performance in deciding sets and conversion after winning a set reflect fitness, nerves and rating, and affect set-score distributions.",
+   "rationale": "Records of winning deciders are partly fitness and partly luck; the structural effect is the strong conditional probability of winning the match after taking the first set (and the added mass at 2-0 and 3-0). Subtle: samples are small; shrink heavily to the rating-implied rate.",
+   "measurement": "Rate of decider wins minus rating-implied probability, shrunk by n/(n+30); conditional match-win rate given set-1 win relative to expectation.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": [
+    "ten.decider_record"
+   ]
+  },
+  "ten.round_context": {
+   "label": "Round, seeding and bracket-path difficulty",
+   "category": "team_strength",
+   "mechanism": "Round and seeding shape expected opponent strength, rest and the stakes of each match.",
+   "rationale": "Early rounds have many mismatches and heavier favourites; later rounds have more rating parity and accumulated fatigue. Subtle: seeds' expected opponents depend on the draw; first-round losers' incentives influence retirements.",
+   "measurement": "Round index, seed difference, number of rounds already played, expected opponent Elo for subsequent rounds; use in simulation and as covariates.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": [
+    "ten.round_context"
+   ]
+  },
+  "ten.first_serve": {
+   "label": "1st-serve in%, 1st/2nd-serve points won by surface",
+   "category": "pace_volume",
+   "mechanism": "First-serve percentage and the points won on first vs second serve determine service-point win probability; first-serve in% fluctuates day to day.",
+   "rationale": "The decomposition spw = in% x p(win|1st) + (1-in%) x p(win|2nd) gives a mechanism to model conditions (wind, fatigue) that change in%; in-match variation in first-serve percentage creates match-level variance in hold rates (relevant for totals and aces). Subtle: in% depends on risk-taking and opponent; low in% for big servers is not necessarily bad.",
+   "measurement": "Per player and surface: 1st-in%, p(win|1st), p(win|2nd); within-player match-to-match SD of in% (variance component); opponent-adjust return of first/second serve; feed into ace and double-fault models.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)"
+   ],
+   "registry_ids": [
+    "ten.first_serve"
+   ]
+  },
+  "ten.opp_adjusted_serve_return": {
+   "label": "Opponent-adjusted serve and return components",
+   "category": "team_strength",
+   "mechanism": "Raw serve-point-won rates are confounded by opponent return quality; a joint regression separates a server's ability from the average returner it faced.",
+   "rationale": "A player who feasted on weak returners looks like an elite server. The Barnett-Clarke style adjustment (spw_ij = f_i + g_j + surface effects) corrects for this and makes serve/return ratings comparable across draws. Subtle: sample sizes for opponents are small; hierarchical shrinkage and time-varying skills are important, and surface effects differ for serve and return.",
+   "measurement": "Fit logistic regression of point-won-on-serve with server effect, returner effect, surface, indoor/altitude fixed effects and a decay weight; ridge penalty; report adjusted spw/rpw and uncertainty; test out-of-sample match log-loss vs Elo.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": []
+  },
+  "ten.surface_similarity": {
+   "label": "Cross-surface skill transfer and sample pooling",
+   "category": "team_strength",
+   "mechanism": "Surface skills correlate imperfectly (hard vs clay vs grass); pooling matches across similar surfaces gives usable estimates when surface-specific samples are small.",
+   "rationale": "Grass has few matches per player; clay and hard transfer partially, with indoor hard faster than outdoor. A similarity matrix lets the model borrow strength with the right weights. Subtle: transfer weights are player-specific for specialists; speed (court pace) is more informative than the label 'hard'.",
+   "measurement": "Estimate the correlation of surface-specific residual skills across players (factor model) and use partial pooling weights by court-pace index; include speed-continuous covariate instead of categorical surface.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": []
+  },
+  "ten.rating_uncertainty": {
+   "label": "Rating uncertainty (returning, young, low-sample players)",
+   "category": "distribution",
+   "mechanism": "Players with few recent matches (return from injury, juniors/qualifiers) have wide posterior uncertainty about true strength, which affects pricing, especially in futures and spreads.",
+   "rationale": "Uncertain ratings imply fatter tails in match outcomes and larger model-market disagreement that is likely noise. Subtle: layoffs reduce certainty and also shift strength in unknown direction; use Glicko-style rating deviation.",
+   "measurement": "Glicko-2 rating deviation or Bayesian posterior variance with growth as a function of days since last match; propagate through match probability by sampling.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": []
+  },
+  "ten.venue_speed_history": {
+   "label": "Event-specific court speed history",
+   "category": "environment",
+   "mechanism": "Each venue-year has a persistent court pace and ball combination that changes hold, ace and tiebreak rates versus the nominal surface.",
+   "rationale": "Events labelled 'hard' differ greatly (Cincinnati vs Indian Wells; Madrid altitude clay vs Roland Garros); the event-level hold% and ace rate is a more precise parameter than the surface label. Subtle: year-to-year changes in surface or ball require updating; estimate with shrinkage on historical event-year effects.",
+   "measurement": "Event-year means of hold%, ace%, tiebreak% and mean total games vs tour-surface averages, shrunk toward the previous-year event effect and the surface mean; use as a continuous speed covariate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "ITF Court Pace Rating publications (itftennis.com technical pages)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": []
+  },
+  "ten.ball_type_pressure": {
+   "label": "Ball brand and condition effects",
+   "category": "environment",
+   "mechanism": "Ball type (brand, pressure/fluff) changes speed and bounce, interacting with altitude and serve style.",
+   "rationale": "Players have articulated preferences for particular balls, and ball changes (e.g., a tournament switching supplier) affect hold rates; effects are small and confounded with court. Subtle: hard to isolate and data sparse; useful mainly as part of venue-year speed.",
+   "measurement": "Event-year ball flag; estimate effect on hold%/aces in a mixed model with venue effects; check persistence.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+    "Tournament and ball-supplier public announcements (e.g., official ball per event)"
+   ],
+   "registry_ids": []
+  },
+  "ten.altitude": {
+   "label": "Altitude and air density",
+   "category": "environment",
+   "mechanism": "Thinner air at altitude raises ball speed and reduces spin, boosting serve dominance and shortening points.",
+   "rationale": "High-altitude events (e.g., Madrid, Bogota, Quito) show elevated hold rates and aces; the effect interacts with ball type and with the player's ability to adjust to spin loss. Subtle: altitude is fixed per venue but air density changes with temperature and humidity on the day.",
+   "measurement": "Venue altitude and day-of air density (from forecast); regress hold%/aces on altitude across events; include as interaction with serve strength.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Open-Meteo forecast and historical archive APIs",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.heat_humidity": {
+   "label": "Heat, humidity and extreme conditions",
+   "category": "environment",
+   "mechanism": "Heat and humidity speed up the court/ball in some conditions and accelerate fatigue, increasing retirement and cramping risk and benefiting fitter players.",
+   "rationale": "Extreme heat policies and mid-match breaks are rule-governed; matches in heat are physically harder, favour fitter and younger players, especially in best-of-five. Subtle: the same temperature has different effect indoors/outdoors; effect is stronger for second-week matches and long rallies.",
+   "measurement": "Wet-bulb or heat-index forecast at match time; player age and recent-match-length interactions; historical retirement rate vs heat index.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Open-Meteo forecast and historical archive APIs",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.wind_indoor": {
+   "label": "Wind and indoor/roof state",
+   "category": "environment",
+   "mechanism": "Wind disrupts toss and serve and favours low-risk baseline players; indoor/roof closed removes wind and changes air.",
+   "rationale": "Windy outdoor matches have lower first-serve percentages and more breaks, increasing variance and total games; roof status can change mid-event. Subtle: forecasts for wind direction are imprecise; roof-closed decisions are dynamic.",
+   "measurement": "Forecast wind speed/gust at start; roof flag; regress first-serve% and hold% on wind; interact with server's toss/second-serve reliability.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Open-Meteo forecast and historical archive APIs",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.serve_profile_physical": {
+   "label": "Serve speed, height and serve profile",
+   "category": "player_role",
+   "mechanism": "Height and serve speed, placement and first-serve effectiveness generate aces and hold rates and drive the serve advantage.",
+   "rationale": "Big servers have high hold rates that are less dependent on opponent return, producing many tiebreaks and aces; they are relatively more valuable on fast courts. Subtle: serve speed alone is weakly predictive; placement and second-serve quality matter.",
+   "measurement": "Mean first/second-serve speed, ace% per service point, unreturned serve%; adjust by surface and event speed; shrink with n/(n+k).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)"
+   ],
+   "registry_ids": []
+  },
+  "ten.second_serve_vulnerability": {
+   "label": "Second-serve and return vulnerability",
+   "category": "matchup",
+   "mechanism": "Second-serve points-won rates determine breaks; aggressive returners exploit weak second serves, creating pair-specific break probabilities.",
+   "rationale": "The break probability depends mainly on server's second-serve strength and returner's second-serve return; two players with similar overall ratings differ widely here. Subtle: second-serve points are fewer and noisy; condition on surface.",
+   "measurement": "Second-serve points won, opponent-adjusted; returner's points won vs second serves; pair product relative to tour mean.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)"
+   ],
+   "registry_ids": []
+  },
+  "ten.return_style_rally": {
+   "label": "Rally-length and return style profile",
+   "category": "matchup",
+   "mechanism": "Shot-by-shot profile (rally length distribution, net approaches, slice, return position) determines points on slow vs fast courts and in particular matchups.",
+   "rationale": "Baseliners benefit on slower courts; serve-and-volley and slice players benefit on grass and low bounce; rally-length distribution differences between players create stylistic edges beyond rating. Subtle: data from the Match Charting Project covers only a subset of matches and players.",
+   "measurement": "Share of points by rally length bin (0-4, 5-8, 9+), net points won, slice share; compute style distance and regress match residual on style-by-surface interactions.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.handedness": {
+   "label": "Handedness and left-hander matchup",
+   "category": "matchup",
+   "mechanism": "Left-handers' serve patterns and spin directions are less commonly faced, shifting performance against right-handers' backhands and in deuce/ad court patterns.",
+   "rationale": "Lefty-vs-righty matchup effects are modest but persistent, and tend to benefit the lefty a little versus average; matter at the margin with strong baseline matchups. Subtle: confounded by player quality; effect is small relative to rating.",
+   "measurement": "Handedness indicator and lefty vs rating residual in the training sample; interact with surface and ranking gap.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Ultimate Tennis Statistics (ultimatetennisstatistics.com)"
+   ],
+   "registry_ids": []
+  },
+  "ten.break_point_luck": {
+   "label": "Break-point conversion/save luck regression",
+   "category": "variance_luck",
+   "mechanism": "Conversion and save rates at break points fluctuate heavily and regress to the point-win rates; extrapolating them overrates lucky players.",
+   "rationale": "Seemingly clutch players in a sample are usually statistical noise; correcting recent form for break-point luck prevents over-adjusting. In match-level play the effect shows up as variance in outcomes relative to point-win-probability. Subtle: the persistent component is small but not zero (some servers do consistently save more).",
+   "measurement": "Break-points saved minus expected from spw; conversion minus expected from rpw; shrink by n/(n+k) toward 0 with k estimated from split-half reliability.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)"
+   ],
+   "registry_ids": []
+  },
+  "ten.first_serve_in_variance": {
+   "label": "First-serve percentage variance within and across matches",
+   "category": "variance_luck",
+   "mechanism": "A player's first-serve-in rate varies day to day; matches where it drops yield many more second serves, breaks and longer sets.",
+   "rationale": "This variance creates over-dispersed hold/break outcomes versus an iid-point model, important for totals, spreads and aces; wind, fatigue and nerves are drivers. Subtle: first-serve variance itself is player-specific and cannot be seen in single-match averages.",
+   "measurement": "Match-level SD of 1st-in% per player from historical match stats; include as random effect in spw; evaluate effect on dispersion of games per set.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)"
+   ],
+   "registry_ids": []
+  },
+  "ten.workload_minutes": {
+   "label": "Recent minutes, sets and five-set exposure",
+   "category": "schedule_context",
+   "mechanism": "Cumulative on-court minutes and sets in the past days drive fatigue and injury risk.",
+   "rationale": "The total minutes in the last 7 days and long matches (5 sets, 3+ hours) predict slower movement and withdrawal; it particularly affects older players and bo5. Subtle: confounded by player quality (deep runs); use rating-residual regression.",
+   "measurement": "Minutes in last 3, 7, 14 days; count of sets above 2 per match; late-finishing flag; regress performance residual with player-level random slope.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.travel_timezone": {
+   "label": "Travel and time-zone shift",
+   "category": "schedule_context",
+   "mechanism": "Long-haul travel and jet lag following the previous event reduce performance for several days.",
+   "rationale": "The effect is observable at the first rounds of tournaments after intercontinental moves (Australia, US, Asia swings). Subtle: elite players adapt via early arrival; small effect, confounded with seeding and form.",
+   "measurement": "Great-circle distance and signed time-zone shift between consecutive tournaments; days since arrival if known; regress early-round residual.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.qualifying_path_fatigue": {
+   "label": "Qualifier/lucky-loser path and prior matches",
+   "category": "schedule_context",
+   "mechanism": "Qualifiers have played extra matches but also have match rhythm; lucky losers enter late; both change fatigue and rating certainty.",
+   "rationale": "A qualifier's extra matches add fatigue but also form signal; lucky losers have low motivation/short notice. Subtle: effect is small and mostly retirements/walkovers; ratings often underestimate qualifiers (higher motivation).",
+   "measurement": "Number of qualifying rounds played, minutes, days since last match; flag lucky loser/replacement; include in retirement/walkover hazard.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.age_career_stage": {
+   "label": "Age, career stage and decline/rise",
+   "category": "player_role",
+   "mechanism": "Age changes recovery capacity, fitness over five sets, and expected rating trajectory, so older and younger players differ at the same Elo.",
+   "rationale": "Older players decline in physical metrics and tournament depth; younger players rise faster than Elo adapts. For futures and retirement markets age is a major driver. Subtle: age trajectories vary; use a prior-adjusted age curve.",
+   "measurement": "Age (years), career matches; estimated expected rating drift from historical age curves; interact with fatigue and best-of-five.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": []
+  },
+  "ten.injury_comeback": {
+   "label": "Return-from-layoff and injury history",
+   "category": "availability",
+   "mechanism": "Long absences cause rustiness and unknown fitness; recent injuries raise re-injury and retirement risk.",
+   "rationale": "Players returning after a layoff are mispriced because their rating is stale (high uncertainty); first matches back have elevated retirement probability. Subtle: protected-ranking entries make the layoff visible; indefinite injury types are not public.",
+   "measurement": "Days since last match, matches played since return, prior-injury indicators (retirements/withdrawals), protected ranking flag; use as input to rating deviation and retirement hazard.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+   ],
+   "registry_ids": []
+  },
+  "ten.retirement_base_rate": {
+   "label": "Retirement and walkover base rates",
+   "category": "availability",
+   "mechanism": "A small but material share of matches end by retirement or walkover; its frequency varies by player, round, age, surface, heat and tournament tier.",
+   "rationale": "Retirement is the dominant settlement-risk in tennis: contracts may void or settle differently when a player retires, and the probability of retirement is correlated with the favoured player's injury, weather and match state. Subtle: retirement is more likely when the retiring player is trailing; match-winner markets may settle to the opponent, while games/sets/aces markets may be voided or settle on partial totals, so base rates must be linked to the settlement wording.",
+   "measurement": "From Sackmann score field ('RET', 'W/O', 'DEF'): rate by player (shrunk), round, tier, surface, heat, age; hazard model with covariates (recent injuries, minutes, heat); separate pre-match walkover vs in-match retirement.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)"
+   ],
+   "registry_ids": []
+  },
+  "ten.in_match_medical_signals": {
+   "label": "In-match medical timeouts and injury signals",
+   "category": "game_state",
+   "mechanism": "Medical timeouts, visible movement problems and abrupt serve-speed drops signal elevated retirement probability and lower win probability.",
+   "rationale": "For in-play markets these signals shift both the winner's probability and the chance the match ends early; a pregame model can only use history of such events. Subtle: signals are noisy and fast-moving; official feeds may lag; settlement rules matter.",
+   "measurement": "Medical timeout flag, change in serve speed, point-level decline; condition retirement hazard on state; evaluate with historical in-play data where available.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/tennis/<tour>/scoreboard)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.withdrawal_signals": {
+   "label": "Pre-match withdrawal signals (practice, press, order of play)",
+   "category": "availability",
+   "mechanism": "Skipped practice sessions, late order-of-play changes and press statements precede withdrawals and walkovers.",
+   "rationale": "A walkover typically occurs hours before the match; market and Kalshi prices might lag the news; walkovers void or settle by rule depending on wording. Subtle: signals are weak, and false alarms are common.",
+   "measurement": "Timestamped signals (practice absence, schedule change); calibrated by historical conversion to withdrawal; per-player base rate.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Official tournament practice schedules and press conference listings (public)"
+   ],
+   "registry_ids": []
+  },
+  "ten.prize_money_incentive": {
+   "label": "Prize money and points incentives for playing through injury",
+   "category": "motivation",
+   "mechanism": "Prize money for first-round losers and ranking points shape whether injured players start and retire; high payouts for merely appearing increase the chance injured players start and retire.",
+   "rationale": "Retirements in early Grand Slam rounds are more frequent partly because players collect first-round money or ranking points; this changes the base rates of retirements by round and tier. Subtle: needs payout tables by event/round.",
+   "measurement": "Round-by-round prize money/points table; interact with retirement base rates and ranking; flag Slam/Masters first round.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.retirement_settlement_rules": {
+   "label": "Retirement/walkover/suspension settlement wording",
+   "category": "market_structure",
+   "mechanism": "Settlement rules define what happens to match-winner, set, game, total-games and ace markets if a player retires, is defaulted, or play is suspended, and whether partial results count.",
+   "rationale": "Because tennis has frequent partial-completion events, the same model probability corresponds to different expected values under different wording (void vs settle on result vs count games played). Subtle: wording can differ across markets of the same match and may change; the effective probability of YES must include void/refund pathways.",
+   "measurement": "Parse rules text into flags (settle_on_retirement_winner, void_if_not_completed, min_sets/games, count_partial_games); compute expected value with P(complete) and P(retire by state) from retirement hazard.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi market rules_primary text per tennis market (public API)"
+   ],
+   "registry_ids": [
+    "m.rules_text"
+   ]
+  },
+  "ten.home_crowd": {
+   "label": "Home crowd/nationality advantage",
+   "category": "environment",
+   "mechanism": "Home-country support and familiarity with conditions provide small advantage and pressure effects, particularly in Slams and Davis Cup-type events.",
+   "rationale": "Home players show some over-performance in front of supportive crowds, but also pressure; at team events the effect is bigger. Subtle: confounded by conditions (local surfaces) and by seeding.",
+   "measurement": "Nationality-equals-host indicator, event tier; regress rating residual with player random effects.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.final_set_rule": {
+   "label": "Final-set rule and tiebreak format",
+   "category": "distribution",
+   "mechanism": "Whether the final set uses a tiebreak (and at which score) determines the maximum length and tail of total-games distribution.",
+   "rationale": "Tournaments differ: advantage final sets, 7-point tiebreak at 6-6, 10-point tiebreak at 12-12 or 6-6, match tiebreaks replacing third sets in doubles. Total-games and exact set-score markets for decider sets need the right truncation. Subtle: rules changed in recent seasons and by event.",
+   "measurement": "Lookup table (event, year, tour, round) of final-set rule; truncate the Markov game distribution; verify against historical total games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ITF and Grand Slam official rulebooks (public PDFs; format, tiebreak and retirement rules)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.within_match_dependence": {
+   "label": "Within-match dependence and momentum",
+   "category": "distribution",
+   "mechanism": "Point outcomes are not iid: serve alternation, pressure points and day-level form create correlation across points and sets.",
+   "rationale": "An iid-point Markov model understates variance in set and match outcomes; accounting for latent form shocks improves calibration for lopsided sets and straight-set sweeps. Subtle: true momentum effects are small; most dependence is latent form variation.",
+   "measurement": "Estimate overdispersion by comparing observed games-per-set variance to the iid model; fit random match-form effect for spw; calibrate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.lopsided_set_rate": {
+   "label": "Bagel/breadstick and lopsided-set propensity",
+   "category": "distribution",
+   "mechanism": "Large rating or serve-return gaps produce 6-0/6-1 sets more often than a simple Markov chain with fixed hold probabilities suggests, particularly in the WTA.",
+   "rationale": "Exact set-score and set-spread markets depend on lopsided scores; tails depend on hold probability heterogeneity, tour (breaks are more common in WTA), and match-form shocks. Subtle: low-rank players' variance is large and rating uncertainty matters.",
+   "measurement": "Empirical frequency of set scores by rating gap bin and tour; fit mixture/Markov model with random form shock; shrink to model prediction.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)"
+   ],
+   "registry_ids": []
+  },
+  "ten.tour_gender_effect": {
+   "label": "Tour/gender and level differences",
+   "category": "distribution",
+   "mechanism": "WTA and ATP have different hold rates, break frequencies and format (bo3 vs bo5), changing set distributions and totals.",
+   "rationale": "Break rates are higher in the WTA, so total games, tiebreak frequencies and exact-set distributions differ; ratings must be tour-specific. Subtle: Challenger/ITF levels have their own characteristics.",
+   "measurement": "Tour and level indicators in all hold/break/set models; separate intercepts and dispersion parameters by tour.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)"
+   ],
+   "registry_ids": []
+  },
+  "ten.ace_opp_adjusted": {
+   "label": "Opponent-adjusted ace and double-fault rates",
+   "category": "pace_volume",
+   "mechanism": "Aces depend on server ability and returner ability; a returner who rarely allows aces suppresses expected ace count.",
+   "rationale": "Raw ace averages come from varied opponents and surfaces; an ace GLM with server and returner effects, surface and speed covariates yields cleaner means for ace props. Subtle: overdispersion is large; settlement uses a specific stats source.",
+   "measurement": "Poisson/negative-binomial GLM of aces per service game with server and returner effects, surface and event-speed offsets; shrink; double faults analogous with pressure covariates.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)"
+   ],
+   "registry_ids": []
+  },
+  "ten.match_length_expectation": {
+   "label": "Expected number of service games/points",
+   "category": "pace_volume",
+   "mechanism": "Aces, double faults and total games are proportional to the number of service games and points played, which depends on closeness and format.",
+   "rationale": "A mismatch ends sooner (fewer service games); a close match produces more points and more aces. The count of opportunities, not just the rate, thus drives counts. Subtle: correlated with the winner's identity (favourite wins more quickly).",
+   "measurement": "Simulate match from Markov model to get distribution of service games and service points per player; combine with rate model; account for retirement truncation.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)"
+   ],
+   "registry_ids": []
+  },
+  "ten.double_fault_pressure": {
+   "label": "Double-fault rate under pressure",
+   "category": "variance_luck",
+   "mechanism": "Double faults rise with risk-taking on second serve, wind and pressure; they are highly overdispersed within a match.",
+   "rationale": "Double-fault markets depend on the second-serve strategy and conditions; counts regress heavily toward player means. Subtle: counts are small, so variance dominates.",
+   "measurement": "DF per service point by player with shrinkage; include wind, break-point and trailing-state effects; negative-binomial dispersion.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)",
+    "Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)"
+   ],
+   "registry_ids": []
+  },
+  "ten.ace_settlement_source": {
+   "label": "Stats source and counting rules for ace/double-fault settlement",
+   "category": "market_structure",
+   "mechanism": "Aces and double faults settle on a specified statistics feed; differences in counting (service lets, challenge-reversed calls, retirements) can change the result.",
+   "rationale": "Edge cases (reviewed calls, un-reported aces, discrepancies between ATP/WTA and tournament feeds) create settlement noise unrelated to player ability. Subtle: for retirements or suspended matches the count at stopping time may or may not count.",
+   "measurement": "Record the named source of record, compare sources historically for disagreement rates, and incorporate as extra variance and void probability.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi market rules text naming the source of record (e.g., official tournament stats)",
+    "Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)"
+   ],
+   "registry_ids": [
+    "m.rules_text"
+   ]
+  },
+  "ten.path_difficulty_sim": {
+   "label": "Draw path difficulty simulation for futures",
+   "category": "team_strength",
+   "mechanism": "A player's title chance is the product of match-by-match win probabilities along a draw-dependent path, so equal-rated players with different draws have different probabilities.",
+   "rationale": "Probabilities for outright and stage-reached markets can be computed by Monte Carlo of the draw with opponent-specific win probabilities; most value is in correctly handling correlated opponents (shared half) and fatigue accumulation. Subtle: before the draw is published, probabilities average over draw randomness.",
+   "measurement": "Simulate bracket 20k times with opponent-specific win probabilities (surface rating with uncertainty, fatigue update), record each player's round-reached frequency; handle withdrawals and replacement entries.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.bracket_correlation": {
+   "label": "Correlation of outcomes within a draw",
+   "category": "distribution",
+   "mechanism": "Players in the same part of the bracket compete for the same slots: one player's win reduces others' chances, creating negative dependence for joint/co-winner and nationality markets.",
+   "rationale": "Combination and nationality-count markets cannot be priced by multiplying marginals; the draw structure and upset correlation (e.g., a rating shock) must be simulated jointly. Subtle: shared uncertainty about conditions increases positive correlation among top seeds' early losses.",
+   "measurement": "Use joint simulation outputs; compute covariance matrices of 'reached round r' indicators; check consistency with marginals.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.pre_draw_field": {
+   "label": "Entry list, withdrawals and field strength before draw",
+   "category": "availability",
+   "mechanism": "Which top players enter or withdraw before the draw determines field strength, seeding and the title probability of each entrant.",
+   "rationale": "Withdrawal of a top seed shifts title probabilities across the field; late withdrawals after the draw create lucky losers and bye changes. Subtle: mandatory events versus optional events change participation probability.",
+   "measurement": "Entry-list status, commitment history, recent injuries; probability of participation by player and event tier; recompute outright probabilities by simulation with random field.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.nationality_field_strength": {
+   "label": "Nationality field composition and strength",
+   "category": "team_strength",
+   "mechanism": "Nationality markets aggregate individual outcomes across all entrants from one country, so they depend on the number and strength of entrants and their draw positions.",
+   "rationale": "The probability that a national's player wins or reaches a stage is the union over players, with dependence by bracket position; depth beats a single star in count markets. Subtle: head-to-head meetings of same-nation players reduce the count.",
+   "measurement": "Per-nation roster of entrants with simulation outputs; compute P(at least one), expected count; adjust for intra-nation matchups.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.team_event_structure": {
+   "label": "Team-event rubber structure and lineup selection",
+   "category": "matchup",
+   "mechanism": "Team competitions (Davis Cup, United Cup, Laver Cup) are decided by multiple rubbers with singles/doubles, captain decisions and varied formats.",
+   "rationale": "Team outcomes require lineup probabilities, surface choice by the host, rubber format (best-of-three, deciding doubles) and fatigue; individual ratings do not transfer one-for-one because of captain choices and home advantage. Subtle: nominations are announced shortly before ties; format changes across editions.",
+   "measurement": "Probability of each lineup from nominations and captain history; rubber win probabilities from individual models; simulate tie outcomes; adjust for home/surface.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "ITF and Grand Slam official rulebooks (public PDFs; format, tiebreak and retirement rules)"
+   ],
+   "registry_ids": []
+  },
+  "ten.points_defense_rolling": {
+   "label": "Rolling ranking points, points to defend and race state",
+   "category": "team_strength",
+   "mechanism": "Season ranking and qualification outcomes depend on points already earned, points dropping off from the previous year and the calendar of remaining events.",
+   "rationale": "Season-ranking and qualification markets are determined by the 52-week rolling points mechanics (ranking) or season race points; a player's expected change is predicted by results and by the points they defend. Subtle: mandatory events, zero-pointers and injured players distort simple projections.",
+   "measurement": "Points timeline from official rankings and last year's results; expected points per event from the draw simulation; simulate remaining season rankings with participation probabilities.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.joint_event_correlation": {
+   "label": "Joint outcomes across co-listed tennis events",
+   "category": "distribution",
+   "mechanism": "Combo markets require the joint probability of several tournament outcomes, which share participation, form and injury risk across events.",
+   "rationale": "Multiplying independent outcome probabilities misprices combos: a top player's injury affects all events they enter and also removes chance for rivals; mutually exclusive structures (same player cannot win both if events are simultaneous) must be handled. Subtle: dependence is mostly through participation and health.",
+   "measurement": "Joint simulation across events with a shared player-health state; compute joint probabilities and compare with product of marginals.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+   ],
+   "registry_ids": []
+  },
+  "ten.tiebreak_reach_probability": {
+   "label": "Probability a set reaches 6-6",
+   "category": "distribution",
+   "mechanism": "A tiebreak happens only when both players hold serve through 6-6, so its probability depends on both hold probabilities and their match-form variance.",
+   "rationale": "Tiebreak-occurs markets are essentially functions of the product of two hold probabilities and the Markov chain probability of reaching 6-6; pairs of big servers on fast courts are strongly favoured, while return-oriented matchups on clay rarely reach 6-6. Subtle: probability is sensitive to small errors in hold, and the match-level number of sets matters for 'at least one'.",
+   "measurement": "Compute P(6-6 in a set) from the game-level Markov chain with adjusted hold; combine across expected sets (including bo5) with within-match dependence; calibrate by event.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Jeff Sackmann tennis_slam_pointbypoint (github.com/JeffSackmann/tennis_slam_pointbypoint; Grand Slam point-by-point)"
+   ],
+   "registry_ids": []
+  },
+  "ten.server_game_state": {
+   "label": "Server identity and game-level state for in-play games",
+   "category": "game_state",
+   "mechanism": "Within a game, the server is a strong favourite and the score state (break point, deuce) changes win probabilities sharply.",
+   "rationale": "In-play game-winner prices depend on who serves, the point score and the server's current spw; the only pregame knowledge is the model of how spw evolves. Subtle: data feed delays and the first-server selection affect which player serves odd/even games.",
+   "measurement": "Closed-form game win probability by score and spw; update spw with posterior in-match; include first-server advantage per set.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/tennis/<tour>/scoreboard)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.score_feed_latency": {
+   "label": "Score-feed latency and settlement source timing",
+   "category": "market_structure",
+   "mechanism": "Live prices depend on the freshness of the score feed; stale scores create stale quotes and adverse selection.",
+   "rationale": "In point-level markets the observed lag between the courtside score and public feeds is large relative to price changes; trading on stale information is the dominant risk or edge. Subtle: this is infrastructure rather than prediction.",
+   "measurement": "Measure delay between event time (if available) and feed timestamp; track price lag after score changes.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/tennis/<tour>/scoreboard)",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.market_margin_bias": {
+   "label": "De-vig method and favourite-longshot bias in tennis lines",
+   "category": "market_structure",
+   "mechanism": "Closing-line margin and favourite-longshot bias distort implied probabilities; the right de-vig method changes the baseline probabilities for heavy favourites.",
+   "rationale": "In two-way markets the longshot side tends to be overpriced; when comparing Kalshi prices to book odds the correction matters for lopsided matches. Subtle: bias differs by tour and round and must be estimated on out-of-sample data.",
+   "measurement": "Calibration of closing implied probabilities vs outcomes by probability bucket on tennis-data.co.uk history; fit power/Shin; use to correct comparison.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)",
+    "Tennis Explorer (tennisexplorer.com results and odds history)"
+   ],
+   "registry_ids": []
+  },
+  "ten.suspension_postponement_risk": {
+   "label": "Rain suspension and postponement risk",
+   "category": "environment",
+   "mechanism": "Rain or curfew can suspend, postpone or move a match to another day or court, with fatigue and settlement consequences.",
+   "rationale": "Suspended matches may resume the next day with altered conditions and rest, and markets may close or settle differently; roofed courts change risk. Subtle: forecast precipitation uncertainty is high.",
+   "measurement": "Probability of rain at start and during match window; roof/indoor flag; historical rain-delay rate by venue; map rules_text on suspension.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Open-Meteo forecast and historical archive APIs",
+    "ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+   ],
+   "registry_ids": []
+  },
+  "ten.surface_calendar": {
+   "label": "Surface-season transition effects",
+   "category": "schedule_context",
+   "mechanism": "The switch between surfaces (hard to clay to grass) in the calendar creates adaptation lags that are surface-specific and player-specific.",
+   "rationale": "Players in the first events of a new surface season are less sharp, and ratings built on previous-surface results over-credit specialists; the effect is largest for the clay-to-grass change with only a few events. Subtle: knowledge of players' adaptation history is partial.",
+   "measurement": "Number of matches played on the current surface in the last 60 days; days since surface switch; interaction with surface similarity.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+    "Wikipedia tournament pages (draws, seedings, surfaces, format rules)"
+   ],
+   "registry_ids": []
+  },
+  "m.quote_history": {
+   "label": "Kalshi bid/ask/last time series",
+   "category": "market_structure",
+   "mechanism": "Prices aggregate dispersed information; the path of the quote (and its drift toward kickoff) reveals when informed flow arrives and how stale an early quote is.",
+   "rationale": "A resting Kalshi quote hours before first serve is partly stale: team news, injury and line moves at sharp books arrive in bursts, and Kalshi liquidity is thin so quotes can lag. The quote path also defines the realistic entry price (not a mid that was never tradable). Subtle: last-trade can be far from the executable bid/ask, and closing-quote efficiency is a benchmark rather than a given.",
+   "measurement": "Snapshot bid/ask/mid/last at fixed horizons (T-24h, T-6h, T-1h, T-10m, close); compute spread, time since last trade, and signed drift vs the sharp-book de-vigged price at the same timestamp. Never use post-start quotes for pregame features.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+   ],
+   "registry_ids": [
+    "m.quote_history"
+   ]
+  },
+  "m.orderbook_depth": {
+   "label": "Order-book depth and spread",
+   "category": "market_structure",
+   "mechanism": "Executable size at each price level, not the mid, determines how much edge can be captured and what slippage costs.",
+   "rationale": "A model edge of two cents is worthless if depth at the touch is a handful of contracts; wide spreads on long-shot rungs mean the quoted probability is mostly spread. Depth also signals whether a market maker is active (tight, refreshed quotes) or the book is abandoned (stale quotes that will be picked off when news lands).",
+   "measurement": "Record top-5 level price/size per side, cumulative depth within 1/2/5 cents of mid, spread in cents and as fraction of price; compute expected fill price for a target size.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+   ],
+   "registry_ids": [
+    "m.orderbook_depth"
+   ]
+  },
+  "m.volume_oi": {
+   "label": "Volume and open interest",
+   "category": "market_structure",
+   "mechanism": "Traded volume and open interest proxy how much information and capital has been committed, hence how trustworthy the price is.",
+   "rationale": "High-volume rungs are usually closer to sharp consensus; thin rungs deviate and can be mispriced but are also costly to trade. Volume spikes near the news window reveal when informed trading happens. Subtle: volume is cumulative by market and cannot be compared across markets with different contract caps without normalising.",
+   "measurement": "Per market: cumulative volume, OI, volume in the last hour before close, volume rank within the family; log-scale features and ratios to family median.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+   ],
+   "registry_ids": [
+    "m.volume_oi"
+   ]
+  },
+  "m.ladder_structure": {
+   "label": "Cross-rung consistency of the threshold ladder",
+   "category": "market_structure",
+   "mechanism": "Games/sets/spread ladders must be monotone and mutually consistent with the match-winner market; kinks expose mispriced rungs and the implied game-differential distribution.",
+   "rationale": "Each rung is priced separately by different participants, so the implied pmf (differences between adjacent cumulative prices) can go negative or be implausibly lumpy. Fitting a smooth parametric distribution across rungs and trading the residual is a market-structure edge that does not depend on a view about the teams. Subtle: push rules and integer vs half-point lines change which rung differences are legitimate.",
+   "measurement": "Collect all rungs of an event at one timestamp; check monotonicity of cumulative prices; fit a constrained distribution (game-differential from a hold/break Markov model) by least squares on mid prices and record per-rung residuals and implied pmf.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+   ],
+   "registry_ids": [
+    "m.ladder_structure"
+   ]
+  },
+  "m.settlement_truth": {
+   "label": "Settled result, value and timestamp",
+   "category": "market_structure",
+   "mechanism": "Settlement is the realised label; the exact settled value and timestamp (not the box-score) is what pays.",
+   "rationale": "Labels must be taken from Kalshi's recorded settlement, not re-derived from a stats site: edge cases (extra time, abandoned matches, retirements, source corrections after the fact) can make the settled value differ from the intuitive result. It is never a pregame feature but is the ground truth for backtests and for measuring how often wording edge cases occur.",
+   "measurement": "Join each market to its settled result/value and settlement time; flag markets whose settled value disagrees with an independently computed result as wording/void cases.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks); settled market fields (result, settlement_value, settlement_ts)"
+   ],
+   "registry_ids": [
+    "m.settlement_truth"
+   ]
+  },
+  "m.rules_text": {
+   "label": "Versioned rules_primary / settlement wording",
+   "category": "market_structure",
+   "mechanism": "Wording fixes the event: retirement/walkover handling, minimum completion for set/game/ace markets, rain suspension carry-over, source of record and tie rules.",
+   "rationale": "Retirement and walkover handling is the dominant settlement risk in tennis: some markets void or refund when a player retires before completion, others settle on the final state; ace/game totals may need a minimum number of games played. Mis-reading these rules turns a model edge into a loss. Subtle: wording differs by market type and can change across seasons, so it must be parsed per market and versioned.",
+   "measurement": "Store rules text with a version hash at each fetch; parse into flags (regulation_only, includes_ET, includes_pens, void_if_abandoned, void_if_retired, min_games_required, source_of_record) and use them as hard filters/feature switches.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks); market rules_primary / rules_secondary fields"
+   ],
+   "registry_ids": [
+    "m.rules_text"
+   ]
+  },
+  "m.external_lines": {
+   "label": "Sportsbook/exchange reference prices",
+   "category": "market_structure",
+   "mechanism": "Sharp external prices are an information-rich prior; a Kalshi price that disagrees with the de-vigged sharp close either carries a stale quote or genuine information.",
+   "rationale": "The sharp closing line is the best-known single predictor in most sports markets, so any model must clear it, and its de-vigging method matters (proportional vs Shin vs power) especially for 3-way markets and long-shots. Subtle: timestamps must be matched; using a closing price against an earlier Kalshi quote overstates edge (look-ahead), and free historical files only give open/close snapshots.",
+   "measurement": "De-vig each external quote (Shin for 3-way/long-shot-heavy sets, power for two-way), timestamp-match to the Kalshi quote, compute the Kalshi minus sharp probability difference and its sign persistence.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "tennis-data.co.uk odds spreadsheets (Pinnacle/Bet365/Max/Avg closing odds)",
+    "Betfair Exchange historical data (data.betfair.com basic plan)"
+   ],
+   "registry_ids": [
+    "m.external_lines"
+   ]
+  },
+  "m.fees": {
+   "label": "Fee schedule and maker/taker rules",
+   "category": "market_structure",
+   "mechanism": "Fees reduce realised edge nonlinearly in price (larger relative drag near 50c and for small expected edges), so the net-of-fee probability threshold differs by rung.",
+   "rationale": "A model edge below the fee-plus-spread hurdle is not tradable; the hurdle depends on price level and on maker vs taker. Fee rules change over time so a historical backtest must apply the schedule in force on the trade date. It does not predict the outcome but determines which model edges are monetisable.",
+   "measurement": "Implement fee(price, size, role, date) from the schedule; compute net edge = model_p minus price minus fee/contract minus half-spread; evaluate decisions on net edge.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi fee schedule PDF / help center (kalshi.com/fee-schedule)"
+   ],
+   "registry_ids": [
+    "m.fees"
+   ]
+  },
+  "m.lifecycle": {
+   "label": "Open/close/halt/postponement lifecycle events",
+   "category": "market_structure",
+   "mechanism": "The lifecycle (open, close before start, halts, postponement, early settlement) controls when information can still be traded on and which markets get voided or re-opened.",
+   "rationale": "Tennis start times are only estimates (order of play, rain), so a market can sit open for hours or close on a different court time than the model assumed; suspensions and walkovers create halts and voids.",
+   "measurement": "Log status transitions with timestamps; compute minutes between last tradable quote and event start; flag postponements, delays >30 min, halts and re-opens.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks); market status/open_time/close_time/expiration fields"
+   ],
+   "registry_ids": [
+    "m.lifecycle"
+   ]
+  },
+  "m.strike_hit_rates": {
+   "label": "Historical realized frequency by strike/rung",
+   "category": "market_structure",
+   "mechanism": "Calibration by rung exposes systematic mispricing at specific strikes (e.g. favourite-longshot bias, popular round numbers) independent of any team model.",
+   "rationale": "Ladders attract round-number and narrative bias: some rungs settle YES more often than priced, others less. The frequency table is a prior and a calibration check for the model, not a causal input; it needs enough settled history per family/strike and a shrinkage rule to avoid chasing noise.",
+   "measurement": "For each family and strike bucket: realised YES rate minus average de-vigged pre-close price, with Wilson intervals; shrink toward zero by n/(n+k).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks) settled history (result by strike per family)"
+   ],
+   "registry_ids": [
+    "m.strike_hit_rates"
+   ]
+  },
+  "m.trade_tape": {
+   "label": "Executed trades (price, size, taker side, time)",
+   "category": "market_structure",
+   "mechanism": "Trade prints with taker side show where aggressive flow went, how fast the price moves after trades (impact) and what fills were realistically achievable.",
+   "rationale": "Order-flow imbalance before the news window can foreshadow lineup/injury information; trade size distribution separates informed from retail flow; post-trade price reversion measures adverse selection. Subtle: public tape lacks participant identity, so flow signals are noisy and must be validated out of sample.",
+   "measurement": "Compute signed volume imbalance (taker side), VWAP vs mid, price impact over the next 1/5/30 minutes, trade count and size quantiles per market per hour.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks) /markets/trades endpoint"
+   ],
+   "registry_ids": [
+    "m.trade_tape"
+   ]
+  }
+ },
+ "blueprints": {
+  "game_side": {
+   "mechanism": "Tennis side markets (match winner, set/game spread, exact set score, in-play game winner) are determined by a hierarchical point process: serve and return point-win probabilities by surface give hold/break probabilities, which give game, set and match outcomes. The skill gap enters through opponent-adjusted serve/return ratings; format (best-of-3 vs 5) amplifies the favourite; fitness, fatigue and conditions modify point probabilities; and retirement/walkover rules decide what happens when the match does not finish. Sharp closing odds already encode most public information, so incremental value is in late fitness news, retirement-aware settlement and cross-market consistency.",
+   "target": "Winner or score outcome of a tennis match (or set/game) as settled by the contract wording, including retirement handling.",
+   "inputs": [
+    {
+     "id": "ten.surface_rating",
+     "why": "Surface-blended Elo is the base strength gap on the actual surface.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Opponent-adjusted serve/return components feed the hold-break model.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.hold_break",
+     "why": "Markov hold/break engine translates point probabilities to games and sets.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Best-of-three vs five changes how point edge converts to win probability.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Injury/illness status lowers performance and sets retirement risk.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Previous-match minutes and rest affect the current match.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.court_cond",
+     "why": "Court speed, altitude, heat and wind shift hold probabilities.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.h2h_style",
+     "why": "Style matchup residuals beyond ratings.",
+     "role": "context"
+    },
+    {
+     "id": "ten.rating_uncertainty",
+     "why": "Uncertain ratings (returners, juniors) need wider posteriors.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Retirement hazard affects the probability of a completed match.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.market_odds",
+     "why": "Sharp closing odds are the benchmark prior.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Wording defines settlement if play stops early.",
+     "role": "primary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote path shows how stale a Kalshi price is relative to late news.",
+     "role": "context"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Raw surface-specific serve and return point-win components.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Rating-surprise form flags hidden injury or sharpness.",
+     "role": "context"
+    },
+    {
+     "id": "ten.break_points",
+     "why": "Break-point luck regression before extrapolating form.",
+     "role": "context"
+    },
+    {
+     "id": "ten.break_point_luck",
+     "why": "Conversion/save luck should be shrunk.",
+     "role": "context"
+    },
+    {
+     "id": "ten.second_serve_vulnerability",
+     "why": "Second-serve weakness creates breaks vs aggressive returners.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.return_style_rally",
+     "why": "Rally-length profile by surface speed.",
+     "role": "context"
+    },
+    {
+     "id": "ten.handedness",
+     "why": "Left-hander matchup residual - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.surface_similarity",
+     "why": "Pooling across surfaces when samples are thin.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Stakes and tanking risk late in season.",
+     "role": "context"
+    },
+    {
+     "id": "ten.schedule",
+     "why": "Start time and delays change conditions and rest.",
+     "role": "context"
+    },
+    {
+     "id": "ten.travel_timezone",
+     "why": "Jet lag for first rounds after long travel.",
+     "role": "context"
+    },
+    {
+     "id": "ten.suspension_postponement_risk",
+     "why": "Rain suspension affects rest and settlement.",
+     "role": "context"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth decides executable edge.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fee drag sets net-edge hurdle.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.surface_rating",
+      "ten.format"
+     ],
+     "hypothesis": "A modest per-point edge becomes a larger match-win probability in best-of-five; interaction is nonlinear (set-level amplification)."
+    },
+    {
+     "inputs": [
+      "ten.fatigue",
+      "ten.format"
+     ],
+     "hypothesis": "Fatigue costs are larger in best-of-five and in late rounds, so the weighting of the fatigue term should scale with expected match length."
+    },
+    {
+     "inputs": [
+      "ten.opp_adjusted_serve_return",
+      "ten.venue_speed_history"
+     ],
+     "hypothesis": "Serve dominance matters more on fast courts: the serve-return edge should be scaled by event-specific hold-rate environment."
+    },
+    {
+     "inputs": [
+      "ten.fitness",
+      "ten.retirement_settlement_rules"
+     ],
+     "hypothesis": "Probability of retirement matters only through the settlement wording: the same injury risk shifts YES value differently in void vs settle-on-winner rules."
+    },
+    {
+     "inputs": [
+      "ten.surface_similarity",
+      "ten.rating_uncertainty"
+     ],
+     "hypothesis": "Pooling across surfaces helps most where uncertainty is high, such as grass for hard-court specialists."
+    }
+   ]
+  },
+  "period": {
+   "mechanism": "Set-level markets (set winner, any set winner, set spread) are a sub-window of the match: the first set is where serve/return point probabilities have the clearest direct effect, while later sets depend on fatigue, adjustments and the match state. The mechanism is the same Markov process truncated at set boundaries with extra variance from within-match form shocks, so set-1 win probabilities are closer to 50% than the match-win probability for a favourite.",
+   "target": "Winner or margin of an individual set (or any set by a player) per contract wording.",
+   "inputs": [
+    {
+     "id": "ten.hold_break",
+     "why": "Hold/break probabilities set the set-win probability.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Opponent-adjusted point components for the pair.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Base strength gap on surface - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Latent form shocks fatten set-level tails.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.first_serve_in_variance",
+     "why": "Day-level first-serve variance adds set variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak_reach_probability",
+     "why": "Tiebreak share of sets modifies set outcomes.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.decider_record",
+     "why": "Set-1 winner conversion and decider records.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Later-set fade for tired players.",
+     "role": "context"
+    },
+    {
+     "id": "ten.server_game_state",
+     "why": "First server in set gives marginal advantage.",
+     "role": "context"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Whether partial sets and retirements count.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.market_odds",
+     "why": "Sharp match odds anchor set probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Raw serve/return rates for set modelling.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.break_points",
+     "why": "Break-point conversion regression.",
+     "role": "context"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak record shrunk to serve-implied rates.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.within_match_dependence",
+      "ten.hold_break"
+     ],
+     "hypothesis": "Between-set correlation from latent form raises the probability of lopsided sweeps relative to an independent-set model."
+    },
+    {
+     "inputs": [
+      "ten.first_serve_in_variance",
+      "ten.court_cond"
+     ],
+     "hypothesis": "Wind and heat raise first-serve variance, which widens set-level outcomes more than match-level ones."
+    },
+    {
+     "inputs": [
+      "ten.surface_rating",
+      "ten.fatigue"
+     ],
+     "hypothesis": "Fatigue shifts later-set win probability more than first-set, so set-index specific adjustments are needed."
+    }
+   ]
+  },
+  "off_field": {
+   "mechanism": "Participation, retirement-from-tour and novelty tennis markets depend on players' decisions, health and scheduling, not on point-by-point performance. The mechanism is hazard of withdrawal/retirement driven by age, injury history, calendar incentives and announcements, with settlement tied to official tournament records. Few structured predictors exist; the catalog lists base rates, signals and wording issues.",
+   "target": "Whether a player participates in an event/retires/announces within a window, per contract wording.",
+   "inputs": [
+    {
+     "id": "ten.news",
+     "why": "Announcements and statements about plans.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.withdrawal_signals",
+     "why": "Practice, order-of-play and press signals.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.injury_comeback",
+     "why": "Layoff and injury history - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.age_career_stage",
+     "why": "Age and career stage drive retirement hazard.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Entry-list status and mandatory-event rules.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.prize_money_incentive",
+     "why": "Incentives to start despite injury.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Historical retirement and walkover rates.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Wording defines what counts as participation.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Defines official source and timing.",
+     "role": "primary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Timing of price reaction to news.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Calendar incentives - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.schedule",
+     "why": "Order of play signals - the channel through which it moves the market price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.age_career_stage",
+      "ten.injury_comeback"
+     ],
+     "hypothesis": "Older players with recent injuries have disproportionately higher withdrawal and retirement-announcement hazard, a non-additive effect."
+    },
+    {
+     "inputs": [
+      "ten.news",
+      "ten.withdrawal_signals"
+     ],
+     "hypothesis": "A stated plan combined with practice behaviour gives a stronger signal than either alone because statements are strategic."
+    },
+    {
+     "inputs": [
+      "ten.pre_draw_field",
+      "ten.prize_money_incentive"
+     ],
+     "hypothesis": "Mandatory events and first-round payouts raise the probability a marginally fit player at least enters."
+    }
+   ]
+  },
+  "combo": {
+   "mechanism": "Combo tournament-winner markets pay on the joint outcome of several events or entities (e.g. two titles). The mechanism is dependence through shared participation, health and form and through mutual exclusion in common brackets, so the joint is not the product of marginals. The model is a joint simulation with a shared player state and the draws of each event.",
+   "target": "Joint outcome of two or more tournament-winner events as defined in the contract.",
+   "inputs": [
+    {
+     "id": "ten.joint_event_correlation",
+     "why": "Joint structure across events.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Per-event path simulation - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.bracket_correlation",
+     "why": "Within-event dependence - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Entry and participation - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Surface-specific strength for each event.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Shared injury state across events.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.workload_minutes",
+     "why": "Accumulated load across consecutive events.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Definition of the combo and void conditions.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Marginal prices for each leg - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Consistency among legs - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent form across events - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Event priority for top players.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.joint_event_correlation",
+      "ten.fitness"
+     ],
+     "hypothesis": "A shared health state links participation and performance across events; injuries make joint probabilities differ from the product."
+    },
+    {
+     "inputs": [
+      "ten.path_difficulty_sim",
+      "ten.bracket_correlation"
+     ],
+     "hypothesis": "Same-half rivals reduce each other's probability, so the combination across entities needs joint simulation."
+    },
+    {
+     "inputs": [
+      "ten.workload_minutes",
+      "ten.surface_rating"
+     ],
+     "hypothesis": "Consecutive events on the same surface family transfer fitness and form; cross-surface events do not."
+    }
+   ]
+  },
+  "game_total": {
+   "mechanism": "Total games and total sets markets follow from the distribution of the match: closeness (rating gap), hold probabilities (tiebreak frequency), format (bo3/bo5, final-set rule) and match-form dependence. Longer matches occur when players are evenly matched and when both hold serve well (tiebreaks), shorter when one dominates. The distribution is lumpy (discrete game counts, tiebreak jump to 13 games) so rungs have structure that must be priced as a ladder.",
+   "target": "Total number of games or sets in the match relative to a strike per contract wording including retirement rules.",
+   "inputs": [
+    {
+     "id": "ten.hold_break",
+     "why": "Hold probabilities determine games per set and tiebreak frequency.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Pair-specific serve/return components.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Rating gap controls likelihood of straight sets.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Sets to win and final-set rule cap length.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.final_set_rule",
+     "why": "Final-set tiebreak/advantage affects the tail.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak_reach_probability",
+     "why": "Tiebreaks add discrete game counts.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.lopsided_set_rate",
+     "why": "Lopsided sets lower totals - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Form dependence changes straight-set probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Event-level hold environment - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Retirement truncates totals - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Whether partial matches count.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Games ladder must be monotone and match-winner consistent.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Raw serve/return components for games per set.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak win rate shrunk, affects 13-game sets.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.schedule",
+     "why": "Conditions by session time - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.suspension_postponement_risk",
+     "why": "Suspensions and rule on partial totals.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Liquidity per rung - the channel through which it moves the market price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.hold_break",
+      "ten.tiebreak_reach_probability"
+     ],
+     "hypothesis": "Two strong holders raise both game counts and tiebreak probability; the effect is superadditive in the upper tail."
+    },
+    {
+     "inputs": [
+      "ten.surface_rating",
+      "ten.format"
+     ],
+     "hypothesis": "Rating gap shortens matches more in best-of-five where a sweep is the natural outcome for a heavy favourite."
+    },
+    {
+     "inputs": [
+      "ten.retirement_base_rate",
+      "m.ladder_structure"
+     ],
+     "hypothesis": "Retirement truncates totals, mostly lowering them, so rung residuals correlate with settlement rule differences."
+    },
+    {
+     "inputs": [
+      "ten.within_match_dependence",
+      "ten.lopsided_set_rate"
+     ],
+     "hypothesis": "Latent form shocks drive both lopsided sets and long matches; modelled jointly."
+    }
+   ]
+  },
+  "season_outcome": {
+   "mechanism": "Tennis futures (tournament winner, round reached, nationality, team competition, qualification) are outcomes of a knockout or season process. The mechanism is a sequence of match-level probabilities along a draw-dependent path, correlated through shared bracket and participation, with fatigue accumulation, seeding and withdrawal changes. Before the draw, probabilities average over draw randomness; after, path difficulty dominates. Match-level inputs and settlement/wording both matter, with retirement and walkover rules affecting advancement.",
+   "target": "Which player/nation/team wins or reaches a stage of a tournament or season qualification.",
+   "inputs": [
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Draw-conditional Monte Carlo of the path.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Match-level strength on the event surface.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Event-specific conditions - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.draw",
+     "why": "Bracket and seeding structure.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Entry and withdrawals - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.bracket_correlation",
+     "why": "Dependence across entities - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Accumulated load along the path.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Injury state across rounds - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.rating_uncertainty",
+     "why": "Uncertain ratings flatten futures.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.round_context",
+     "why": "Round and seed effects - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.points_defense_rolling",
+     "why": "Season-level incentives - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Retirement/walkover advancement rules and wording.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent rating-surprise form - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Incentives and tanking - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.team_event_structure",
+     "why": "Team-event rubber structure - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.travel_timezone",
+     "why": "Travel for week-one rounds - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.qualifying_path_fatigue",
+     "why": "Qualifier extra matches - the channel through which it moves the market price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.path_difficulty_sim",
+      "ten.fatigue"
+     ],
+     "hypothesis": "Long matches in early rounds reduce later-round win probability; path-dependence requires simulation, not static products."
+    },
+    {
+     "inputs": [
+      "ten.rating_uncertainty",
+      "ten.path_difficulty_sim"
+     ],
+     "hypothesis": "Rating uncertainty flattens title probabilities for favourites relative to point-estimate sims."
+    },
+    {
+     "inputs": [
+      "ten.pre_draw_field",
+      "ten.draw"
+     ],
+     "hypothesis": "Withdrawals alter seeding and bracket slots, shifting both the withdrawing player's and rivals' probabilities."
+    }
+   ]
+  },
+  "season_stat": {
+   "mechanism": "Season-level tennis markets (number of majors, season-end ranking) are sums/aggregates over the calendar: ranking points accumulate and drop off on a rolling window, and majors are rare events dominated by a few players. The mechanism is a calendar simulation of event outcomes with participation and injury risk and points mechanics. The outcome distribution is highly concentrated and sensitive to injury and to the ranking-points rules.",
+   "target": "Season-end ranking/points, or number of majors won, as defined by contract.",
+   "inputs": [
+    {
+     "id": "ten.points_defense_rolling",
+     "why": "Ranking mechanics and race - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Event-level outcomes feed points.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Strength per surface for the calendar.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.rankings",
+     "why": "Current ranking and seed - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.age_career_stage",
+     "why": "Trajectory and longevity - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.injury_comeback",
+     "why": "Injury history/layoff - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Participation in events - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_calendar",
+     "why": "Calendar surface sequence - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Ranking snapshot date and tie rules.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent rating-surprise form - the channel through which it moves the market price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Season-end fatigue/tanking - the channel through which it moves the market price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.points_defense_rolling",
+      "ten.path_difficulty_sim"
+     ],
+     "hypothesis": "Ranking changes depend on points dropping off as well as earned; expected change is a difference of two quantities."
+    },
+    {
+     "inputs": [
+      "ten.age_career_stage",
+      "ten.injury_comeback"
+     ],
+     "hypothesis": "Age and injury history jointly determine season participation probability."
+    },
+    {
+     "inputs": [
+      "ten.surface_calendar",
+      "ten.surface_rating"
+     ],
+     "hypothesis": "Surface-specialist players gain more points in their surface swing, so calendar order matters."
+    }
+   ]
+  },
+  "player_other": {
+   "mechanism": "Player-prop markets (aces, double faults, other counts) settle on a count over the match. The mechanism is rate times opportunities: ace rate per service point (server, returner, surface, conditions) multiplied by expected service points (match length, which depends on closeness and format), with overdispersion from within-match variance in first-serve rate. Settlement counting rules and retirement handling matter.",
+   "target": "A player count (aces, double faults) in the match relative to a strike.",
+   "inputs": [
+    {
+     "id": "ten.ace_opp_adjusted",
+     "why": "Server-returner adjusted rates.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.match_length_expectation",
+     "why": "Expected number of service points.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.first_serve",
+     "why": "First-serve percentage and speed.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.first_serve_in_variance",
+     "why": "Day-to-day variance of in% - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.serve_profile_physical",
+     "why": "Serve speed/height profile - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Event-level ace environment - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.altitude",
+     "why": "Air density increases ace rates.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.wind_indoor",
+     "why": "Wind affects serve - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.double_fault_pressure",
+     "why": "Pressure-related double faults.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.ace_settlement_source",
+     "why": "Stats source and counting rules.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Truncated matches reduce counts.",
+     "role": "context"
+    },
+    {
+     "id": "ten.aces_df",
+     "why": "Raw ace/double-fault rates and speed.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Serve component of point-win model.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.ball_type_pressure",
+     "why": "Ball condition changes serve speed and bounce.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.ace_opp_adjusted",
+      "ten.match_length_expectation"
+     ],
+     "hypothesis": "Expected aces are rate x opportunities; closeness (long matches) and high rates produce a convex tail in the count."
+    },
+    {
+     "inputs": [
+      "ten.altitude",
+      "ten.serve_profile_physical"
+     ],
+     "hypothesis": "Altitude amplifies the ace advantage of big servers more than of others."
+    },
+    {
+     "inputs": [
+      "ten.first_serve_in_variance",
+      "ten.wind_indoor"
+     ],
+     "hypothesis": "Wind increases variance in first-serve in% and thus the overdispersion of ace and double-fault counts."
+    }
+   ]
+  },
+  "game_event": {
+   "mechanism": "Single-event markets inside a match (tiebreak occurs, a player wins every set) are rare-event probabilities derived from the hold-break and set distribution. Tiebreak occurrence needs both players to hold serve until 6-6 in some set; a sweep is a product of conditional set-win probabilities with dependence. Both are sensitive to small errors in hold probability and to within-match form dependence.",
+   "target": "Whether a specified in-match event occurs (any tiebreak, a sweep) under contract wording.",
+   "inputs": [
+    {
+     "id": "ten.tiebreak_reach_probability",
+     "why": "Probability of reaching 6-6 - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.hold_break",
+     "why": "Hold probabilities - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Pair-specific point probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.serve_profile_physical",
+     "why": "Big servers raise tiebreaks - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Fast events have more tiebreaks.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.final_set_rule",
+     "why": "Whether a decider can end in a tiebreak.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Number of possible sets - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Dependence across sets - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Rating gap for sweeps - the channel through which it moves the market price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.decider_record",
+     "why": "Conversion after winning first set.",
+     "role": "context"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Partial matches settle how - the channel through which it moves the market price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak win and occurrence history.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.break_points",
+     "why": "Break-point luck - the channel through which it moves the market price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.tiebreak_reach_probability",
+      "ten.venue_speed_history"
+     ],
+     "hypothesis": "Tiebreak probability depends strongly on event-level hold environment; same players have very different probabilities on clay vs fast indoor."
+    },
+    {
+     "inputs": [
+      "ten.within_match_dependence",
+      "ten.surface_rating"
+     ],
+     "hypothesis": "A sweep requires consecutive set wins; form dependence increases sweeps for heavy favourites over an independent-set model."
+    },
+    {
+     "inputs": [
+      "ten.format",
+      "ten.final_set_rule"
+     ],
+     "hypothesis": "Decisive sets are separate cases for tiebreak occurrence depending on whether the rule uses a tiebreak."
+    }
+   ]
+  }
+ },
+ "archetypes": {
+  "match_winner": {
+   "blueprint": "game_side",
+   "label": "Match winner",
+   "families": [
+    "TENNIS/MATCH_WINNER"
+   ],
+   "target": "Winner of the match, with retirement/walkover per contract wording.",
+   "mechanism": "Match-win probability is a function of the serve/return point-win edge on the actual surface, amplified by the number of sets, adjusted for fitness, fatigue and conditions, and tied to settlement rules for retirements. Elo by surface gives a robust base; opponent-adjusted serve/return gives pair-specific hold/break; the market's sharp close is the benchmark.",
+   "inputs": [
+    {
+     "id": "ten.surface_rating",
+     "why": "Surface-blended Elo is the base gap.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Pair-specific point probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.hold_break",
+     "why": "Markov conversion from points to match.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Best-of-three vs five - the channel through which it moves the Match winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Injury and illness status - the channel through which it moves the Match winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Minutes and rest - the channel through which it moves the Match winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.court_cond",
+     "why": "Conditions - the channel through which it moves the Match winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.h2h_style",
+     "why": "Matchup residual - the channel through which it moves the Match winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.rating_uncertainty",
+     "why": "Uncertainty for returners/juniors.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Retirement handling - the channel through which it moves the Match winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.market_odds",
+     "why": "Sharp close benchmark - the channel through which it moves the Match winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.market_margin_bias",
+     "why": "De-vig correction - the channel through which it moves the Match winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Raw serve/return rates - the channel through which it moves the Match winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Rating-surprise form - the channel through which it moves the Match winner price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.second_serve_vulnerability",
+     "why": "Break creation vs weak second serve.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_similarity",
+     "why": "Borrow strength across surfaces.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.handedness",
+     "why": "Lefty matchup - the channel through which it moves the Match winner price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.travel_timezone",
+     "why": "Jet lag - the channel through which it moves the Match winner price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.suspension_postponement_risk",
+     "why": "Delays and carry-over - the channel through which it moves the Match winner price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.surface_rating",
+      "ten.format"
+     ],
+     "hypothesis": "Edge amplification in best-of-five means the same rating gap yields larger win probability."
+    },
+    {
+     "inputs": [
+      "ten.fitness",
+      "ten.retirement_settlement_rules"
+     ],
+     "hypothesis": "Match-winner wording typically settles on the progression winner; injury risk changes both performance and the retirement path."
+    },
+    {
+     "inputs": [
+      "ten.opp_adjusted_serve_return",
+      "ten.venue_speed_history"
+     ],
+     "hypothesis": "Serve dominance gets more weight on fast event conditions."
+    },
+    {
+     "inputs": [
+      "ten.rating_uncertainty",
+      "ten.market_margin_bias"
+     ],
+     "hypothesis": "Heavy favourites against uncertain-rated opponents are where de-vig bias and rating noise interact most."
+    }
+   ]
+  },
+  "set_and_game_spreads": {
+   "blueprint": "game_side",
+   "label": "Set and game spreads",
+   "families": [
+    "TENNIS/GAME_SPREAD",
+    "TENNIS/SET_SPREAD"
+   ],
+   "target": "Game or set differential of a player relative to a handicap line.",
+   "mechanism": "Spreads depend on the distribution of the game (or set) differential, not just the win probability: it needs the hold/break probabilities of both players, the match format and the lopsidedness distribution. Push rules and half-point lines matter. Ladders of spread lines must be consistent with the match-winner market and with each other.",
+   "inputs": [
+    {
+     "id": "ten.hold_break",
+     "why": "Hold/break probabilities - the channel through which it moves the Set and game spreads price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Pair-specific rates - the channel through which it moves the Set and game spreads price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Rating gap - the channel through which it moves the Set and game spreads price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.lopsided_set_rate",
+     "why": "Tail of the differential - the channel through which it moves the Set and game spreads price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Dependence across sets - the channel through which it moves the Set and game spreads price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Set count and final-set rule - the channel through which it moves the Set and game spreads price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tour_gender_effect",
+     "why": "Break frequency by tour - the channel through which it moves the Set and game spreads price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Retirement truncates and biases.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Partial match handling - the channel through which it moves the Set and game spreads price.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Spread ladder consistency - the channel through which it moves the Set and game spreads price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.second_serve_vulnerability",
+     "why": "Break-rate driver for game margins.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_similarity",
+     "why": "Pooling for thin samples - the channel through which it moves the Set and game spreads price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Fatigue widens game margins late.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.hold_break",
+      "ten.lopsided_set_rate"
+     ],
+     "hypothesis": "Game-differential tails come from lopsided sets, whose frequency exceeds iid predictions."
+    },
+    {
+     "inputs": [
+      "ten.retirement_base_rate",
+      "ten.retirement_settlement_rules"
+     ],
+     "hypothesis": "A retiring favourite leads in games but loses the match; settlement rules determine whether the spread counts."
+    },
+    {
+     "inputs": [
+      "ten.tour_gender_effect",
+      "ten.hold_break"
+     ],
+     "hypothesis": "Higher WTA break rates make spreads less sensitive to hold probability and more to return."
+    }
+   ]
+  },
+  "set_winner_and_any_set": {
+   "blueprint": "period",
+   "label": "Set winner and any-set markets",
+   "families": [
+    "TENNIS/SET_WINNER",
+    "TENNIS/ANY_SET_WINNER"
+   ],
+   "target": "Winner of a named set or whether a player wins at least one set.",
+   "mechanism": "Set-level win probabilities come from the same hold/break model with more variance than match-level; first-set probabilities are closer to even than match probabilities. Any-set markets are the complement of a straight-set sweep by the opponent and depend on between-set dependence.",
+   "inputs": [
+    {
+     "id": "ten.hold_break",
+     "why": "Set win from hold/break - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Pair-specific rates - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Between-set correlation - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.first_serve_in_variance",
+     "why": "Day variation - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak_reach_probability",
+     "why": "Tiebreak share - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.decider_record",
+     "why": "Set-1 winner conversion - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Later-set fade - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Partial sets - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.market_odds",
+     "why": "Match odds anchor - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.break_points",
+     "why": "Break-point luck regression - the channel through which it moves the Set winner and any-set markets price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak win shrunk to serve-implied.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.within_match_dependence",
+      "ten.hold_break"
+     ],
+     "hypothesis": "A heavy favourite's straight-set probability exceeds the independent-set product because of latent form."
+    },
+    {
+     "inputs": [
+      "ten.first_serve_in_variance",
+      "ten.hold_break"
+     ],
+     "hypothesis": "First-serve variance shifts probability of at least one set for underdogs."
+    },
+    {
+     "inputs": [
+      "ten.fatigue",
+      "ten.decider_record"
+     ],
+     "hypothesis": "Fatigue decides decider conversion for older players."
+    }
+   ]
+  },
+  "total_games_and_sets": {
+   "blueprint": "game_total",
+   "label": "Total games and total sets",
+   "families": [
+    "TENNIS/TOTAL_GAMES",
+    "TENNIS/TOTAL_SETS"
+   ],
+   "target": "Total games or sets in the match relative to a strike.",
+   "mechanism": "Totals derive from the full match distribution: the rating gap (closeness) controls whether it goes the distance, hold probabilities control games per set and tiebreaks, format caps length, and retirement truncates totals. The rung ladder must be consistent with the match-winner and set-spread markets.",
+   "inputs": [
+    {
+     "id": "ten.hold_break",
+     "why": "Hold probabilities - the channel through which it moves the Total games and total sets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Closeness - the channel through which it moves the Total games and total sets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Set structure - the channel through which it moves the Total games and total sets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.final_set_rule",
+     "why": "Tail of totals - the channel through which it moves the Total games and total sets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak_reach_probability",
+     "why": "Tiebreak adds games - the channel through which it moves the Total games and total sets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.lopsided_set_rate",
+     "why": "Short sets - the channel through which it moves the Total games and total sets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Event hold environment - the channel through which it moves the Total games and total sets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Truncation - the channel through which it moves the Total games and total sets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Partial handling - the channel through which it moves the Total games and total sets price.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung monotonicity - the channel through which it moves the Total games and total sets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Raw components for games per set.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak outcomes - the channel through which it moves the Total games and total sets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.schedule",
+     "why": "Session conditions - the channel through which it moves the Total games and total sets price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.hold_break",
+      "ten.tiebreak_reach_probability"
+     ],
+     "hypothesis": "Two strong holders raise totals via both long sets and tiebreaks."
+    },
+    {
+     "inputs": [
+      "ten.surface_rating",
+      "ten.format"
+     ],
+     "hypothesis": "Heavy favourites in bo5 produce short sweeps; evenly matched pairs go long."
+    },
+    {
+     "inputs": [
+      "ten.retirement_base_rate",
+      "m.ladder_structure"
+     ],
+     "hypothesis": "Retirement truncation concentrates in low rungs."
+    }
+   ]
+  },
+  "exact_set_score": {
+   "blueprint": "game_side",
+   "label": "Exact set score and match score",
+   "families": [
+    "TENNIS/EXACT_SET_SCORE"
+   ],
+   "target": "Exact final set score (2-0, 2-1, 3-0, 3-1, 3-2) or exact match set pattern.",
+   "mechanism": "Exact set score requires the joint distribution of set outcomes per player; probability mass depends on win probability, between-set dependence and format. Dependence between sets increases 2-0/3-0 sweeps and deciders; the main mispricing risk is in the relative probability of 2-0 vs 2-1 for evenly matched pairs.",
+   "inputs": [
+    {
+     "id": "ten.set_dist",
+     "why": "Joint set distribution - the channel through which it moves the Exact set score and match score price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Win probability - the channel through which it moves the Exact set score and match score price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Dependence between sets - the channel through which it moves the Exact set score and match score price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.hold_break",
+     "why": "Per-set probabilities - the channel through which it moves the Exact set score and match score price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.decider_record",
+     "why": "Decider conversion - the channel through which it moves the Exact set score and match score price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Possible scorelines - the channel through which it moves the Exact set score and match score price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Later-set effects - the channel through which it moves the Exact set score and match score price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Incomplete matches settle how.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Consistency with match winner.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Components for set win probabilities.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak outcomes in sets - the channel through which it moves the Exact set score and match score price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.within_match_dependence",
+      "ten.set_dist"
+     ],
+     "hypothesis": "Dependence increases the sweep share and decider share simultaneously relative to independence."
+    },
+    {
+     "inputs": [
+      "ten.fatigue",
+      "ten.decider_record"
+     ],
+     "hypothesis": "Tired players are less likely to convert a decider, lowering 3-2 wins for them."
+    },
+    {
+     "inputs": [
+      "ten.surface_rating",
+      "ten.format"
+     ],
+     "hypothesis": "Format changes the mapping of the same rating gap to scorelines."
+    }
+   ]
+  },
+  "set_sweep_and_tiebreak_events": {
+   "blueprint": "game_event",
+   "label": "Set sweep and tiebreak-occurs events",
+   "families": [
+    "TENNIS/SET_SWEEP",
+    "TENNIS/TIEBREAK_OCCURS"
+   ],
+   "target": "Whether a player wins all sets, or whether any tiebreak occurs.",
+   "mechanism": "These rare-event markets derive from the hold-break distribution: a tiebreak needs holds through 6-6; a sweep needs consecutive set wins with dependence. Event-level speed and big-server pairs drive tiebreak probability; heavy favourites and bo5 drive sweeps.",
+   "inputs": [
+    {
+     "id": "ten.tiebreak_reach_probability",
+     "why": "Reaching 6-6 - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.hold_break",
+     "why": "Holds - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.serve_profile_physical",
+     "why": "Big servers - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Hold environment - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.format",
+     "why": "Set count - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.final_set_rule",
+     "why": "Decider tiebreak - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.within_match_dependence",
+     "why": "Dependence - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Gap for sweeps - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Partial matches - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.tiebreak",
+     "why": "Tiebreak history shrunk - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Serve components - the channel through which it moves the Set sweep and tiebreak-occurs events price.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.tiebreak_reach_probability",
+      "ten.venue_speed_history"
+     ],
+     "hypothesis": "Event-level speed changes tiebreak probability for the same pair."
+    },
+    {
+     "inputs": [
+      "ten.within_match_dependence",
+      "ten.surface_rating"
+     ],
+     "hypothesis": "Sweep probability is higher with positive between-set correlation."
+    },
+    {
+     "inputs": [
+      "ten.format",
+      "ten.final_set_rule"
+     ],
+     "hypothesis": "Decider rule changes tiebreak possibility in the fifth set."
+    }
+   ]
+  },
+  "game_winner_inplay": {
+   "blueprint": "game_side",
+   "label": "In-play game winner",
+   "families": [
+    "TENNIS/GAME_WINNER_INPLAY"
+   ],
+   "target": "Winner of the current game given live score.",
+   "mechanism": "In-play game markets are dominated by server identity and the point score; the server wins most games. The probability follows closed-form formulas from spw updated with in-match information, while feed latency and break-point luck determine the realised edge.",
+   "inputs": [
+    {
+     "id": "ten.server_game_state",
+     "why": "Server identity and score - the channel through which it moves the In-play game winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.in_play",
+     "why": "Live state - the channel through which it moves the In-play game winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.opp_adjusted_serve_return",
+     "why": "Pre-match spw prior - the channel through which it moves the In-play game winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.first_serve_in_variance",
+     "why": "In-match shifts in in% - the channel through which it moves the In-play game winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.break_point_luck",
+     "why": "Break-point regression - the channel through which it moves the In-play game winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.score_feed_latency",
+     "why": "Feed lag risk - the channel through which it moves the In-play game winner price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.in_match_medical_signals",
+     "why": "Medical signals - the channel through which it moves the In-play game winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.wind_indoor",
+     "why": "Wind effects - the channel through which it moves the In-play game winner price.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Flow and slippage - the channel through which it moves the In-play game winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.serve_return",
+     "why": "Prior spw - the channel through which it moves the In-play game winner price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.break_points",
+     "why": "Break-point state - the channel through which it moves the In-play game winner price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.server_game_state",
+      "ten.opp_adjusted_serve_return"
+     ],
+     "hypothesis": "Game win probability is nonlinear in spw, so small spw errors matter at deuce."
+    },
+    {
+     "inputs": [
+      "ten.score_feed_latency",
+      "m.trade_tape"
+     ],
+     "hypothesis": "Latency edge appears as post-score price drift in the tape."
+    },
+    {
+     "inputs": [
+      "ten.in_match_medical_signals",
+      "ten.in_play"
+     ],
+     "hypothesis": "Medical signals reduce a player's spw and raise retirement probability."
+    }
+   ]
+  },
+  "player_aces_and_double_faults": {
+   "blueprint": "player_other",
+   "label": "Player aces and double faults",
+   "families": [
+    "TENNIS/PLAYER_ACES"
+   ],
+   "target": "Aces or double faults by a player in the match relative to a strike.",
+   "mechanism": "Counts equal rates times opportunities: ace rate per service point (server ability, returner ability, surface, altitude, wind) times expected service points (closeness and format), with overdispersion from day-level first-serve variation. The official stats source and retirement rules define what counts.",
+   "inputs": [
+    {
+     "id": "ten.ace_opp_adjusted",
+     "why": "Server-returner adjusted ace rate.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.match_length_expectation",
+     "why": "Number of service points - the channel through which it moves the Player aces and double faults price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.first_serve",
+     "why": "In% and first-serve points - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.first_serve_in_variance",
+     "why": "Day variance - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.serve_profile_physical",
+     "why": "Speed and height - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Event ace environment - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.altitude",
+     "why": "Air density - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.wind_indoor",
+     "why": "Wind - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.double_fault_pressure",
+     "why": "DF pressure - the channel through which it moves the Player aces and double faults price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.ace_settlement_source",
+     "why": "Counting rules - the channel through which it moves the Player aces and double faults price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.aces_df",
+     "why": "Raw ace/DF rate and speed - the channel through which it moves the Player aces and double faults price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.ball_type_pressure",
+     "why": "Ball effects on serve - the channel through which it moves the Player aces and double faults price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.return_style_rally",
+     "why": "Return style suppresses aces - the channel through which it moves the Player aces and double faults price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.ace_opp_adjusted",
+      "ten.match_length_expectation"
+     ],
+     "hypothesis": "Counts scale with both rate and length, so favourites in short matches get fewer expected aces."
+    },
+    {
+     "inputs": [
+      "ten.altitude",
+      "ten.serve_profile_physical"
+     ],
+     "hypothesis": "Altitude amplifies big servers' ace rate."
+    },
+    {
+     "inputs": [
+      "ten.first_serve_in_variance",
+      "ten.wind_indoor"
+     ],
+     "hypothesis": "Wind raises count variance through in%."
+    }
+   ]
+  },
+  "tournament_winner_futures": {
+   "blueprint": "season_outcome",
+   "label": "Tournament winner and round-reached futures",
+   "families": [
+    "TENNIS/TOURNAMENT_WINNER",
+    "TENNIS/ROUND_ADVANCE",
+    "TENNIS/ROUND_OF_ELIMINATION"
+   ],
+   "target": "Winner, round reached, or round of elimination in a tournament.",
+   "mechanism": "Futures are a path product of match-win probabilities across a specific bracket, with fatigue accumulation, seeding, withdrawals and correlation within halves. Before the draw, probabilities average over draw randomness. Rating uncertainty flattens favourites, and retirement/walkover rules affect advancement.",
+   "inputs": [
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Bracket Monte Carlo - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.draw",
+     "why": "Bracket structure - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Match-level strength - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.venue_speed_history",
+     "why": "Event conditions - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Withdrawals - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.bracket_correlation",
+     "why": "Dependence - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fatigue",
+     "why": "Accumulated load - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Injury over rounds - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.rating_uncertainty",
+     "why": "Flattening - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.round_context",
+     "why": "Round effects - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Advancement wording - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent form - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Incentives - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.schedule",
+     "why": "Order of play - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.travel_timezone",
+     "why": "Travel - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.qualifying_path_fatigue",
+     "why": "Qualifier load - the channel through which it moves the Tournament winner and round-reached futures price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.path_difficulty_sim",
+      "ten.fatigue"
+     ],
+     "hypothesis": "Early long matches reduce later rounds; path dependence."
+    },
+    {
+     "inputs": [
+      "ten.rating_uncertainty",
+      "ten.path_difficulty_sim"
+     ],
+     "hypothesis": "Uncertainty flattens favourites."
+    },
+    {
+     "inputs": [
+      "ten.pre_draw_field",
+      "ten.draw"
+     ],
+     "hypothesis": "Withdrawals reshuffle bracket slots."
+    }
+   ]
+  },
+  "nationality_and_team_futures": {
+   "blueprint": "season_outcome",
+   "label": "Nationality and team-competition futures",
+   "families": [
+    "TENNIS/NATIONALITY_WINNER",
+    "TENNIS/NATIONALITY_STAGE_COUNT",
+    "TENNIS/TEAM_ADVANCE",
+    "TENNIS/TEAM_COMPETITION_WINNER"
+   ],
+   "target": "Whether any player from a nation wins / the count reaching a stage / team advancement or title.",
+   "mechanism": "Nationality markets aggregate individual outcomes over a roster with bracket dependence. Team competitions add rubber structure, lineup selection, surface choice by the host and doubles decisions; individual ratings must be transformed by captain decisions and home effects.",
+   "inputs": [
+    {
+     "id": "ten.nationality_field_strength",
+     "why": "Roster composition - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Per-player simulation - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.bracket_correlation",
+     "why": "Intra-nation matchups - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.team_event_structure",
+     "why": "Rubbers and lineup - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Surface for host choice - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.home_crowd",
+     "why": "Home effects - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Entries - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Roster health - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Counting definition - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent form - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Event priority - the channel through which it moves the Nationality and team-competition futures price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.nationality_field_strength",
+      "ten.bracket_correlation"
+     ],
+     "hypothesis": "Compatriots meeting each other reduces the count."
+    },
+    {
+     "inputs": [
+      "ten.team_event_structure",
+      "ten.home_crowd"
+     ],
+     "hypothesis": "Home ties choose surface and crowd, raising home team rubber probabilities."
+    },
+    {
+     "inputs": [
+      "ten.pre_draw_field",
+      "ten.nationality_field_strength"
+     ],
+     "hypothesis": "Withdrawals shrink the roster."
+    }
+   ]
+  },
+  "season_ranking_and_majors": {
+   "blueprint": "season_stat",
+   "label": "Season ranking, majors and qualification",
+   "families": [
+    "TENNIS/SEASON_MAJORS",
+    "TENNIS/SEASON_RANKING",
+    "TENNIS/SEASON_QUALIFICATION"
+   ],
+   "target": "Season-end ranking, number of majors, or qualification for a season finals.",
+   "mechanism": "These are aggregates over the remaining calendar with rolling ranking points, participation and injury risk. Concentration in a few players makes outcomes sensitive to health; points mechanics (drop-offs) determine expected changes.",
+   "inputs": [
+    {
+     "id": "ten.points_defense_rolling",
+     "why": "Ranking mechanics - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Event outcomes - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Surface strengths - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.rankings",
+     "why": "Current standing - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.age_career_stage",
+     "why": "Trajectory - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.injury_comeback",
+     "why": "Layoff - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Participation - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_calendar",
+     "why": "Calendar - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Snapshot date and rules - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent form - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Season-end incentives - the channel through which it moves the Season ranking, majors and qualification price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.points_defense_rolling",
+      "ten.path_difficulty_sim"
+     ],
+     "hypothesis": "Expected change = points earned minus dropped."
+    },
+    {
+     "inputs": [
+      "ten.age_career_stage",
+      "ten.injury_comeback"
+     ],
+     "hypothesis": "Age and injury drive participation."
+    },
+    {
+     "inputs": [
+      "ten.surface_calendar",
+      "ten.surface_rating"
+     ],
+     "hypothesis": "Calendar order matters."
+    }
+   ]
+  },
+  "combo_tournament_winners": {
+   "blueprint": "combo",
+   "label": "Combination tournament-winner markets",
+   "families": [
+    "TENNIS/COMBO_TOURNAMENT_WINNERS"
+   ],
+   "target": "Joint outcome of several tournament winners.",
+   "mechanism": "Combos require the joint probability across events that share participation and health state and may be mutually exclusive; the joint is not the product of marginals. A joint simulation with a shared player health state and per-event draw gives consistent prices.",
+   "inputs": [
+    {
+     "id": "ten.joint_event_correlation",
+     "why": "Joint structure - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.path_difficulty_sim",
+     "why": "Per-event path - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.bracket_correlation",
+     "why": "Within-event dependence - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Participation - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.surface_rating",
+     "why": "Surface per leg - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Shared health - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.workload_minutes",
+     "why": "Load - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Combo definition and void - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Marginals - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.form",
+     "why": "Recent form - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Priority - the channel through which it moves the Combination tournament-winner markets price.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.joint_event_correlation",
+      "ten.fitness"
+     ],
+     "hypothesis": "Shared injury makes joint differ from product."
+    },
+    {
+     "inputs": [
+      "ten.path_difficulty_sim",
+      "ten.bracket_correlation"
+     ],
+     "hypothesis": "Same-half rivals reduce each other's chance."
+    },
+    {
+     "inputs": [
+      "ten.workload_minutes",
+      "ten.surface_rating"
+     ],
+     "hypothesis": "Same-surface consecutive events carry form."
+    }
+   ]
+  },
+  "retirement_walkover_participation": {
+   "blueprint": "off_field",
+   "label": "Retirement, walkover and participation",
+   "families": [
+    "TENNIS/PLAYER_PARTICIPATION",
+    "TENNIS/CAREER_OR_NOVELTY"
+   ],
+   "target": "Whether a player participates, withdraws, retires or announces a decision within a window.",
+   "mechanism": "Participation, withdrawal and retirement events are hazard processes driven by health, age, incentives and announcements; they are also the primary settlement risk across tennis markets because they determine void/partial results. Base rates by round, tier, heat and injury history are the structured information; statements and practice signals add timing.",
+   "inputs": [
+    {
+     "id": "ten.retirement_base_rate",
+     "why": "Historical rates - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.withdrawal_signals",
+     "why": "Pre-match signals - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.injury_comeback",
+     "why": "Layoff and injury history - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.age_career_stage",
+     "why": "Age - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.heat_humidity",
+     "why": "Heat raises in-match retirements.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.prize_money_incentive",
+     "why": "Incentives - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.news",
+     "why": "Announcements - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.pre_draw_field",
+     "why": "Entry status - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.retirement_settlement_rules",
+     "why": "Wording - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Official source and timing - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "primary"
+    },
+    {
+     "id": "ten.fitness",
+     "why": "Fitness and illness status - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "secondary"
+    },
+    {
+     "id": "ten.motivation",
+     "why": "Calendar incentives - the channel through which it moves the Retirement, walkover and participation price.",
+     "role": "context"
+    },
+    {
+     "id": "ten.suspension_postponement_risk",
+     "why": "Suspension affects participation.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "ten.heat_humidity",
+      "ten.age_career_stage"
+     ],
+     "hypothesis": "Heat raises retirement hazard more for older players."
+    },
+    {
+     "inputs": [
+      "ten.prize_money_incentive",
+      "ten.injury_comeback"
+     ],
+     "hypothesis": "Injured players start for first-round pay and retire more often."
+    },
+    {
+     "inputs": [
+      "ten.withdrawal_signals",
+      "ten.news"
+     ],
+     "hypothesis": "Signals plus statements timestamp withdrawals."
+    }
+   ]
+  }
+ }
+}

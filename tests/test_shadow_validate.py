@@ -27,6 +27,16 @@ class ValidateShadow(unittest.TestCase):
         c, e = V.validate(write([rec(), rec(placed_min_before_ko=1400, recorded_lag_s=86400)]))
         self.assertEqual(e, []); self.assertEqual((c["prospective"], c["retrospective"]), (1, 1))
 
+    def test_tactic_rows_are_not_independent_decisions_or_games(self):
+        rows = [rec(action="BUY_NOW"), rec(action="WAIT"), rec(action="PASS")]
+        for r in rows: r["decision_id"] = SO.decision_id(r)
+        rows.append(rec(placed_min_before_ko=1400, ticker="KXNFLGAME-26NOV08CCCDDD-CCC", game_id="g2"))
+        c, e = V.validate(write(rows))
+        self.assertEqual(e, [])
+        self.assertEqual(c["prospective"], 4)
+        self.assertEqual(c["prospective_unique_decisions"], 2)
+        self.assertEqual(c["prospective_independent_games"], 2)
+
     def test_missing_or_empty_ledger_is_failure_not_success(self):
         self.assertIn("LEDGER_MISSING_OR_EMPTY", V.validate("/nonexistent")[1])
         self.assertIn("LEDGER_MISSING_OR_EMPTY", V.validate(write([]))[1])

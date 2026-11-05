@@ -25,10 +25,12 @@ export function CollectorsStatus() {
       {!s ? <p className="ex-fine">Not yet fetched at build time, or the ledger has not published valid output.</p> : <>
         <p className="ex-fine"><span className={"ex-badge " + (s.valid ? "ex-real" : "ex-hyp")}>{s.valid ? "VALID OUTPUT" : "INVALID OUTPUT"}</span> health generated {s.generated_at}.</p>
         <table className="ex-table ex-compact"><tbody>
-          <tr><th scope="row">Decisions recorded (prospective / archive replay)</th><td><b>{n(s.counts.prospective)}</b> / {n(s.counts.retrospective)}</td></tr>
+          <tr><th scope="row">Hypothetical strategy rows (prospective / archive replay) — NOT independent: ~9 tactics share each snapshot</th><td><b>{n(s.counts.prospective)}</b> / {n(s.counts.retrospective)}</td></tr>
+          <tr><th scope="row">Unique contract-time decisions (prospective / archive replay)</th><td><b>{n(s.counts.prospective_unique_decisions)}</b> / {n(s.counts.retrospective_unique_decisions)}</td></tr>
+          <tr><th scope="row">Independent games (prospective / archive replay)</th><td><b>{n(s.counts.prospective_independent_games)}</b> / {n(s.counts.retrospective_independent_games)}</td></tr>
           <tr><th scope="row">Contracts · games</th><td>{n(s.counts.contracts)} · {n(s.counts.games)}</td></tr>
           <tr><th scope="row">Tape-bound observations · settled</th><td>{n(s.counts.observed)} · {n(s.counts.settled)}</td></tr>
           <tr><th scope="row">Newest ingested capture run is how old</th><td>{s.capture_age_minutes == null ? "—" : n(Math.round(s.capture_age_minutes)) + " min"}{s.capture_stale ? " (STALE)" : ""}</td></tr></tbody></table>
-        <p className="ex-fine">Rows rebuilt from the archive are labelled RETROSPECTIVE_REPLAY and never count as prospective evidence.</p></>}</div>
+        <p className="ex-fine">Rows rebuilt from the archive are labelled RETROSPECTIVE_REPLAY and never count as prospective evidence. Strategy rows are repetitions of the same snapshot: use unique decisions and independent games as N, not row counts. Entry-capture matches are actual-order matches, not verified recommendation links.</p></>}</div>
   </section>;
 }

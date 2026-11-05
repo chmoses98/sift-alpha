@@ -254,6 +254,12 @@ class NbaStarterEvidence(unittest.TestCase):
         self.assertEqual(len(o["generated_from"]["commit"]), 40)
         self.assertTrue(any("project.py was NOT run" in c for c in o["caveats"]))
         self.assertGreater(d["archive"]["rows_captured_within_150min_before_tip"], 0)
+        live = d["live_pretip_capture"]
+        cov = live["coverage_by_minutes_to_tip"]
+        self.assertEqual(cov["0-20"]["confirmed"], cov["0-20"]["team_observations"])           # flags appear only inside ~20 minutes of tip
+        self.assertEqual(sum(v["confirmed"] for k, v in cov.items() if k != "0-20"), 0)
+        self.assertEqual(sum(v["team_observations"] for v in cov.values()), live["team_observations"])
+        self.assertLess(live["first_confirmed_minutes_to_tip"], 20)
         for k in ("feature_availability", "verified_consumption", "projection_validity", "predictive_improvement", "market_advantage"):
             self.assertIn(k, d["separation"])
         self.assertIn("none established", d["separation"]["market_advantage"])

@@ -16,7 +16,7 @@ t0 = utcnow(); log = []
 
 def slate():
     games = []
-    for d in range(2):
+    for d in range(-1, 2):      # ESPN scoreboard dates are US-Eastern: after 00:00Z the evening slate sits under YESTERDAY's UTC date (this lost 7 of 9 games on 2026-11-04)
         try:
             gs, _ = fetch_espn_scoreboard(utcnow() + timedelta(days=d), ttl_s=0)
             games += [g.model_dump(mode="json") for g in gs]

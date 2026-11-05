@@ -83,8 +83,14 @@ def outcome_yes(m):
 
 
 def load_candles(series, ticker, root=BACKFILL):
-    p = os.path.join(root, "candles", series, ticker + ".json")
-    return json.load(open(p)) if os.path.exists(p) else None
+    """Legacy candle file first (immutable archive); else ``candles_v2`` written by the tape-recovery collector (nfl-edge-finder #246) for contracts that
+    never had one (game totals, team totals, halves, quarters, props).  Same shape: {"h60": [...], "m1": [...]}."""
+    for sub in ("candles", "candles_v2"):
+        p = os.path.join(root, sub, series, ticker + ".json")
+        if os.path.exists(p):
+            d = json.load(open(p))
+            return d if (d.get("h60") or d.get("m1")) else None
+    return None
 
 
 def load_trades(series, ticker, root=BACKFILL):

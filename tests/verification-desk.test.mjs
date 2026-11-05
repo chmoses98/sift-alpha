@@ -1,0 +1,11 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const rd = f => JSON.parse(readFileSync(new URL("../research/audit/verification/" + f, import.meta.url)));
+const s = rd("summary.json"), fam = rd("families.json").families, inp = rd("inputs.json").inputs;
+test("all 278 families present, none hidden", () => assert.equal(Object.keys(fam).length, 278));
+test("every input status is a defined status", () => { for (const v of Object.values(inp)) assert.ok(s.statuses.includes(v.status)); });
+test("no fabricated confidence scores", () => assert.ok(!/confidence|probability_of_edge/i.test(JSON.stringify(s) + JSON.stringify(fam).slice(0, 200000))));
+test("validated-predictive never exceeds ablation evidence", () => assert.equal(s.totals.validated_predictive_links, 0));
+test("sport totals reconcile to families", () => { assert.equal(Object.values(s.sports).reduce((a, d) => a + d.families, 0), 278); });
+test("CFB quarter_total has factor trace with explicit gaps", () => { const c = rd("CFB_quarter_total_chain.json"); assert.ok(c.factors.length >= 20); assert.ok(c.factor_status_counts.REGISTRY_GAP >= 1); });

@@ -31,6 +31,7 @@ def validate(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
         return None, ["LEDGER_MISSING_OR_EMPTY"]
     errs, placed, c = [], {}, collections.Counter()
+    uniq, gms = {}, {}
     rows = []
     for i, l in enumerate(open(path), 1):
         if not l.strip():
@@ -58,7 +59,10 @@ def validate(path):
             errs.append(f"PLACED_{r['decision_id'][:8]}:{'+'.join(bad)}")
             continue
         placed[r["decision_id"]] = r
-        c["prospective" if want else "retrospective"] += 1
+        grp = "prospective" if want else "retrospective"
+        c[grp] += 1  # tactic rows: 9 strategies share each (contract, time) snapshot, so NOT independent
+        uniq.setdefault(grp, set()).add((r["ticker"], r["placed_at"], r["kickoff"]))
+        gms.setdefault(grp, set()).add(r.get("game_id") or r["kickoff"])
     for r in rows:
         k = r.get("kind")
         if k == "OBSERVED":
@@ -77,6 +81,9 @@ def validate(path):
     c["games"] = len({d["game_id"] for d in placed.values()})
     if c["placed"] == 0:
         errs.append("NO_PLACED_ROWS")
+    for g in ("prospective", "retrospective"):
+        c[g + "_unique_decisions"] = len(uniq.get(g, ()))
+        c[g + "_independent_games"] = len(gms.get(g, ()))
     return dict(c), errs
 
 

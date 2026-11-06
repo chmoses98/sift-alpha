@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
+from . import marketfree as MF
 from . import qb_passing as qp
 from sift_exec.fees import order_fee
 
@@ -76,10 +77,13 @@ def fetch_candles(tickers: list[str], start_ts: int, end_ts: int) -> dict[str, l
 
 
 # ---------------------------------------------------------------- model
-def _feat_cols():
-    cols = []
-    for g in qp.QB_GROUPS.values():
-        cols += [c for c in g if c not in qp.PARTIAL_PIT]
+def _feat_cols(groups=None):
+    """Strict-pregame, MARKET-FREE input columns (no line, price or derived feature; see marketfree.py)."""
+    if groups is None:
+        from . import search_nfl_qb as SQ
+        groups = SQ.GROUPS_CACHE["groups"]
+    cols = [c for g in groups.values() for c in g]
+    MF.assert_market_free(cols)
     return cols
 
 
@@ -254,8 +258,9 @@ def run(data_dir: Path, cache_dir: Path, refresh: bool = False):
     markets = json.loads(mf.read_text()) if mf.exists() and not refresh else fetch_markets()
     mf.write_text(json.dumps(markets))
     gm = nf.market_columns(nf.add_matchup_features(nf.build_game_table(data_dir)))
-    pbp = nf.load_pbp(data_dir / "pbp", range(2010, int(gm.season.max()) + 1))
-    qb = qp.build_qb_table(gm, pbp)
+    from . import search_nfl_qb as SQ
+    qb, groups = SQ.build_table(data_dir)
+    SQ.GROUPS_CACHE["groups"] = groups
     games = pd.read_csv(data_dir / "games.csv")
     players = pd.read_csv(data_dir / "players.csv")
     candles = json.loads(cf.read_text()) if cf.exists() and not refresh else {}
@@ -270,8 +275,9 @@ def run(data_dir: Path, cache_dir: Path, refresh: bool = False):
             candles.update(fetch_candles(list(chunk), int(lo - 3 * 86400), int(hi)))
         cf.write_text(json.dumps(candles))
     df, qbi = build_contracts(markets, games, players, qb, candles)
-    cols = _feat_cols()
+    cols = _feat_cols(groups)
     predict, p_over, diag, weights = fit_models(qb, cols)
+    groups_used = groups
     hist_p = history_only(qb)
     q26 = qb[qb.season == 2026].set_index(["game_id", "qb_id"])
     mu = np.full(len(df), np.nan); sd = np.full(len(df), np.nan)
@@ -286,7 +292,21 @@ def run(data_dir: Path, cache_dir: Path, refresh: bool = False):
     r2 = rows[ok].reset_index(drop=True)
     df.loc[ok, "p_history"] = hist_p(r2, fl[ok])
     df["actual_yards"] = rows["pass_yards"].to_numpy()
-    return df, diag, weights, qb, cols, candles
+    df["p_ridge"] = df["p_model"]
+    # PRIMARY independent model = the market-free nested search (search_nfl_qb): OOS predictions for 2019-2025, selected-config forward predictions for 2026.
+    sp = pd.read_csv(OUT_DIR / "search_nfl_qb_passing_v1_predictions.csv")
+    sp["mu"] = sp.baseline_ypg + sp.resid_pred
+    oos = sp[(sp.season <= TRAIN_LAST) & sp.resid_pred.notna() & sp.pass_yards.notna()]
+    A = np.vstack([np.ones(len(oos)), oos.mu]).T
+    coef = np.linalg.lstsq(A, np.abs(oos.pass_yards - oos.mu).to_numpy() * math.sqrt(math.pi / 2), rcond=None)[0]
+    sdf = lambda m: np.maximum(coef[0] + coef[1] * m, 25.0)
+    zs = np.sort(((oos.pass_yards - oos.mu) / sdf(oos.mu)).to_numpy())
+    fwd = sp[sp.season == 2026].set_index(["game_id", "qb_id"]).mu
+    mu_s = pd.Series(list(zip(df.game_id, df.qb_id))).map(lambda k: fwd.get(k, np.nan)).to_numpy(float)
+    df["mu_search"] = mu_s
+    df["p_model"] = np.where(~np.isnan(mu_s), 1.0 - np.searchsorted(zs, (fl - mu_s) / sdf(mu_s), side="right") / (len(zs) + 1.0), np.nan)
+    diag["primary_model"] = "market-free nested search (search_nfl_qb)"; diag["search_oos_n"] = int(len(oos)); diag["search_sd_fit"] = [float(coef[0]), float(coef[1])]
+    return df, diag, weights, qb, cols, candles, groups_used
 
 
 def summarize(df, diag, weights, cols):
@@ -318,8 +338,8 @@ def summarize(df, diag, weights, cols):
         h = {"waterfall": wf}
         t = two.to_numpy()
         if t.sum() > 30:
-            ll = {"model": logloss(e.p_model.to_numpy()[t], y[t]), "history_only": logloss(e.p_history.to_numpy()[t], y[t]), "market_mid": logloss(mid.to_numpy()[t], y[t])}
-            br = {"model": (e.p_model.to_numpy()[t] - y[t]) ** 2, "history_only": (e.p_history.to_numpy()[t] - y[t]) ** 2, "market_mid": (mid.to_numpy()[t] - y[t]) ** 2}
+            ll = {"model": logloss(e.p_model.to_numpy()[t], y[t]), "fixed_ridge_secondary": logloss(e.p_ridge.to_numpy()[t], y[t]), "history_only": logloss(e.p_history.to_numpy()[t], y[t]), "market_mid": logloss(mid.to_numpy()[t], y[t])}
+            br = {"model": (e.p_model.to_numpy()[t] - y[t]) ** 2, "fixed_ridge_secondary": (e.p_ridge.to_numpy()[t] - y[t]) ** 2, "history_only": (e.p_history.to_numpy()[t] - y[t]) ** 2, "market_mid": (mid.to_numpy()[t] - y[t]) ** 2}
             gg = e.game_id.to_numpy()[t]
             h["two_sided_n"] = int(t.sum())
             h["logloss"] = {k: boot_mean(v, gg)[:3] for k, v in ll.items()}
@@ -424,7 +444,7 @@ def drift_test(df, move_min=0.05):
     return out
 
 
-def ablate(df, qb, cols, hn="primary_T-60m"):
+def ablate(df, qb, cols, groups, hn="primary_T-60m"):
     """Descriptive group-drop ablation on the eligible contracts: refit WITHOUT each input group (training <=2025 only), log-loss change on the same contracts.
     Exploratory: 12 groups -> not multiplicity-controlled, small independent sample (games), no promotion."""
     e = df[(df.stage == "ok") & df.has_model_row & df.p_model.notna() & (df[f"ask_{hn}"] < 1) & (df[f"bid_{hn}"] > 0)].reset_index(drop=True)
@@ -432,9 +452,13 @@ def ablate(df, qb, cols, hn="primary_T-60m"):
     rows = q26.reindex(list(zip(e.game_id, e.qb_id))).reset_index(drop=True)
     y = (e.result == "yes").to_numpy(float)
     fl = e.floor.astype(float).to_numpy()
-    base = logloss(e.p_model.to_numpy(), y)
+    # ablation refits the FIXED ridge (not the full search) without each group and compares with the fixed ridge on the same contracts
+    e = e[e.p_ridge.notna()].reset_index(drop=True)
+    rows = q26.reindex(list(zip(e.game_id, e.qb_id))).reset_index(drop=True)
+    y = (e.result == "yes").to_numpy(float); fl = e.floor.astype(float).to_numpy()
+    base = logloss(e.p_ridge.to_numpy(), y)
     out = []
-    for gname, gcols in qp.QB_GROUPS.items():
+    for gname, gcols in groups.items():
         gc = [c for c in gcols if c in cols]
         if not gc:
             continue
@@ -451,13 +475,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True); ap.add_argument("--cache-dir", required=True); ap.add_argument("--refresh", action="store_true")
     a = ap.parse_args()
-    df, diag, weights, qb, cols, _ = run(Path(a.data_dir), Path(a.cache_dir), a.refresh)
+    df, diag, weights, qb, cols, _, groups = run(Path(a.data_dir), Path(a.cache_dir), a.refresh)
     res = summarize(df, diag, weights, cols)
-    res["group_ablation_primary_T-60m_exploratory"] = ablate(df, qb, cols)
+    res["group_ablation_primary_T-60m_exploratory"] = ablate(df, qb, cols, groups)
     res["structure_test_primary_T-60m"] = structure_test(df)
     res["drift_test_T-24h_to_T-3h_entry_T-60m"] = drift_test(df)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    keep = ["ticker", "game_id", "week", "player", "floor", "result", "kickoff", "stage", "has_model_row", "mu", "sd", "p_model", "p_history", "actual_yards"] + [f"{p}_{h}" for h in HORIZONS_MIN for p in ("ask", "bid", "vol")]
+    keep = ["ticker", "game_id", "week", "player", "floor", "result", "kickoff", "stage", "has_model_row", "mu", "sd", "p_model", "p_ridge", "p_history", "actual_yards"] + [f"{p}_{h}" for h in HORIZONS_MIN for p in ("ask", "bid", "vol")]
     res["data_vintage"] = {"markets_listed_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "latest_completed_game": str(qb[qb.pass_yards.notna()].gameday.max())}
     (OUT_DIR / "nfl_passyds_kalshi_v1.json").write_text(json.dumps(res, indent=1, default=float))
     df[df.stage == "ok"][keep].round(4).to_csv(OUT_DIR / "nfl_passyds_kalshi_v1_contracts.csv", index=False)

@@ -1,7 +1,7 @@
 import React, {useEffect, useMemo, useState} from "react";
 import index from "../research/audit/input_research/index.json";
 import queue from "../research/audit/input_research/queue.json";
-import {MarketUniverse, KalshiExperiment, GameWinnerExperiment} from "./research-experiments.jsx";
+import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult} from "./research-experiments.jsx";
 import "./input-research.css";
 
 // Everything is rendered from research/audit/input_research/*.json (alpha_engine.input_research). Nothing is hand-typed.
@@ -55,6 +55,7 @@ export function InputResearch() {
     <div className="eyebrow">INPUT RESEARCH / WHAT PREDICTS EACH MARKET</div>
     <h2>Which inputs predict the market, how much, and does the combination beat the price?</h2>
     <p className="ir-fine"><b>RESEARCH ONLY.</b> {index.notice} Data vintage: latest completed game {index.vintage.latest_completed_game}; generated {index.generated_utc}. Evidence levels: {Object.values(LV).join(" › ")}.</p>
+    <FoundationAudit/>
     <MarketUniverse/>
     <div className="ir-sports" role="tablist" aria-label="Sport">
       {sports.map(s => {
@@ -78,7 +79,7 @@ export function InputResearch() {
         {(arch || bp) && <p className="ir-mech"><b>Mechanism.</b> {arch ? arch.mechanism : bp.mechanism}</p>}
         {(arch || bp) && <p className="ir-fine"><b>Settles on:</b> {arch ? arch.target : bp.target}. {level === "L0_INVENTORY_ONLY" ? "No predictive test has been run for this family: the list below is a hypothesis inventory with an availability audit." : ""}</p>}
         {paths.map(p => <PathCard key={p.id} p={p}/>)}
-        {fam === "NFL/PLAYER_STAT" && archName === "qb_passing_yards" && <KalshiExperiment/>}
+        {fam === "NFL/PLAYER_STAT" && archName === "qb_passing_yards" && <><KalshiExperiment/><SearchResult/></>}
         {fam === "NFL/GAME_WINNER" && <GameWinnerExperiment/>}
         {level === "L0_INVENTORY_ONLY" && archPaths.length > 0 && <p className="ir-fine ir-warn">Related tested paths for this archetype ({archPaths.map(p => p.title).join("; ")}) cover other families; their results are NOT transferred to {fam}.</p>}
         <h4>Candidate inputs ({inputs.length}) — rationale, availability, model use and evidence</h4>

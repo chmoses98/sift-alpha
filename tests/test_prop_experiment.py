@@ -81,7 +81,8 @@ class Model(unittest.TestCase):
     def test_model_never_trains_on_2026_or_uses_prices(self):
         rng = np.random.default_rng(0)
         n = 4000
-        cols = PE._feat_cols()
+        cols = [f"f{i}" for i in range(12)]
+        cols = PE._feat_cols({"g": cols})
         d = pd.DataFrame(rng.normal(size=(n, len(cols))), columns=cols)
         d["season"] = np.repeat(np.arange(2013, 2027), n // 14 + 1)[:n]
         d["baseline_ypg"] = 240 + 10 * rng.normal(size=n)
@@ -196,3 +197,22 @@ class TeamSplit(unittest.TestCase):
         self.assertEqual(PE.split_teams("LARSF", valid), ("LA", "SF"))
         self.assertEqual(PE.split_teams("LVLAC", valid), ("LV", "LAC"))
         self.assertIsNone(PE.split_teams("XXYY", valid))
+
+
+class MarketFreeGuard(unittest.TestCase):
+    def test_primary_model_inputs_contain_no_market_columns(self):
+        from alpha_engine.input_research import marketfree as MF
+        s = json.loads((ROOT / "research/audit/input_research/experiments/search_nfl_qb_passing_v1.json").read_text())
+        self.assertTrue(s["market_free"])
+        cols = [c for g in s["groups"].values() for c in g]
+        MF.assert_market_free(cols)
+        for bad in ("spread_team", "total_line", "implied_team_total", "abs_spread", "mkt_total_level", "home_moneyline", "kalshi_ask"):
+            with self.assertRaises(ValueError):
+                MF.assert_market_free(["team_epa_pass", bad])
+
+    def test_search_gain_beats_its_own_permutation_null(self):
+        s = json.loads((ROOT / "research/audit/input_research/experiments/search_nfl_qb_passing_v1.json").read_text())
+        null = max(x["pct_gain"] for x in s["permutation_null"])
+        self.assertGreater(s["nested_gain"]["pct_gain"], null + 0.5)
+        self.assertLessEqual(len(s["nested_gain"]["seasons"]), 7)
+        self.assertEqual(s["nested_gain"]["seasons"][0], 2019)   # first outer season needs >= 3 train + 3 inner seasons; nothing earlier is scored

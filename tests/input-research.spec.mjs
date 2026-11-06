@@ -105,3 +105,14 @@ test("NFL game-winner family shows the Kalshi-vs-book experiment without an edge
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test("foundation audit states the market-free policy and the readiness table; search result is shown for QB passing yards", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Input foundation audit/)).toBeVisible();
+  await expect(ir.getByText(/primary prediction models may not use sportsbook lines/i)).toBeVisible();
+  await expect(ir.locator("table").first().locator("tbody tr")).toHaveCount(8);
+  await page.locator(".ir-pick select").first().selectOption("NFL/PLAYER_STAT");
+  await expect(ir.getByText(/Systematic input search/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});

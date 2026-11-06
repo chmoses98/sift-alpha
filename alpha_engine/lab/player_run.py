@@ -166,6 +166,9 @@ def contract_probs(kalshi: Path, data: Path, work: Path, out: Path) -> tuple[pd.
     u = resolve(u, nm)
     diag = {"contracts": int(len(u)), "unresolved_player": int(u["pid"].isna().sum())}
     u = u.dropna(subset=["pid"]).copy()
+    miss = ~u["game_id"].isin(date.index)
+    diag["no_game_in_table"] = int(miss.sum()); diag["no_game_ids"] = sorted(u.loc[miss, "game_id"].unique().tolist())
+    u = u[~miss].copy()
     u["date"] = u["game_id"].map(date); u["season"] = 2025; u["week"] = u["game_id"].map(wk).astype(int)
     u["home"] = (u["team"] == u["home"]).astype(float)
     res = []

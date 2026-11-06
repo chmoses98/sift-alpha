@@ -134,3 +134,26 @@ class MarketLayer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_loop_gaps_and_priorities():
+    import pandas as pd
+    from alpha_engine.lab import loop
+    gt = pd.DataFrame({"season": [2020, 2020, 2021, 2021], "x": [1.0, 1.0, None, None]})
+    cases = loop.detect_gaps(gt, {"no_game_ids": ["g1"], "no_game_in_table": 3, "contracts": 10, "unresolved_player": 2}, {"rows_without_timestamp": 5}, ["x", "absent"])
+    ids = [c["id"] for c in cases]
+    assert ids[0] == "nfl:game_table_missing_postseason_2025" and "nfl:input_gap:x" in ids and "nfl:input_gap:absent" not in ids
+    from alpha_engine.repair_queue import choose_next
+    assert choose_next([{"id": i} for i in ids], {})["next_id"] == ids[0]
+    rep = {"predictive": {"a": {"games": 100, "logloss_gain": {"mean": -0.05, "ci": [-0.08, -0.02]}}, "b": {"games": 100, "logloss_gain": {"mean": 0.0, "ci": [-0.02, 0.02]}}}}
+    assert loop.next_experiments(rep)[0]["family"] == "b"
+
+
+def test_exceed_platt_recovers_calibration():
+    import numpy as np
+    from alpha_engine.lab import exceed
+    rng = np.random.default_rng(0)
+    p = rng.uniform(0.05, 0.95, 20000)
+    o = (rng.uniform(size=p.size) < exceed.apply((0.0, 0.5), p)).astype(float)   # truth is a flattened version of p
+    a, b = exceed.fit(p, o)
+    assert abs(b - 0.5) < 0.1

@@ -41,7 +41,7 @@ def load_contracts(horizon_files, season="2025") -> pd.DataFrame:
                 if not s or s.get("bid") is None or s.get("ask") is None or s.get("book_empty"):
                     continue
                 rows.append(dict(game_id=r["game_id"], week=int(r["week"]), family=fam, ticker=r["ticker"], team=K2N.get(r.get("team"), r.get("team")), player=r.get("player_name"),
-                                 floor=r.get("floor_strike"), threshold=r.get("threshold"), outcome=1.0 if r["result"] == "yes" else 0.0, horizon=h,
+                                 floor=(r.get("floor_strike") if r.get("floor_strike") is not None else (float(r["threshold"]) - 0.5 if r.get("threshold") is not None else None)), threshold=r.get("threshold"), outcome=1.0 if r["result"] == "yes" else 0.0, horizon=h,
                                  bid=float(s["bid"]), ask=float(s["ask"]), age=float(s.get("age_min") or 0.0), home=r.get("home_team"), away=r.get("away_team")))
     d = pd.DataFrame(rows)
     return d

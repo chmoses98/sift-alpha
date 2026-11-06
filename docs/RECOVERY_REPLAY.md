@@ -30,13 +30,13 @@ Absolute net EV, cents per contract held to settlement, [95% CI]:
 Smaller families (team total 4 games, 1H spread/total/winner 6-7 games, rushing/receiving yards 15-16 games) have the same sign but too few games to test.
 
 - **Limit orders beat waiting** in every family and fee scenario, but the margin depends on assumptions: if only queue-independent fills count, moneyline falls to +0.89 / +0.63 / **-0.04** (M0 / M25 / M100) and spread to +1.00 / +0.75 / +0.11.
-- **Early taker entry is not better than waiting** except at 90 minutes (about 0); at 7 days it costs 1.3 cents on moneyline.
-- Half spread is 0.5-0.6 cents on moneyline and spread, 1.7-3.2 cents on halves and player props; the taker fee is about 1.2-1.5 cents at the ask.
+- **Early taker entry vs waiting:** not better for moneyline, spread, total or the halves (moneyline costs 1.3 cents more at 7 days and is level at 90 minutes). The three player-prop families are the exception in the point estimates (early entry 0.5-1.9 cents cheaper at 6h-72h), but that rests on 15-16 games with no tested interval, so it is unproven.
+- Half spread: about 0.6 cents on moneyline, 0.9-1.2 on spread/total/team total, 1.7-3.2 on halves and player props; the taker fee is about 1.2-1.5 cents at the ask.
 - **Absolute net EV is negative at the point estimate for every tactic in every family**; for total and passing yards the limit-fallback interval excludes zero on the negative side.
 
 ## Out-of-sample gate
 Moneyline (selected 24h / at the bid / fallback): holdout +0.41 [-1.38, +2.32], 96 games, p = 0.65, corrected p = 1.0 -> NOT_POSITIVE_AFTER_FEES. Spread: -0.09 [-0.77, +0.25], 21 games -> NOT_POSITIVE_AFTER_FEES. Every other family is INSUFFICIENT (1H, team total and props have all, or nearly all, their archived games in the holdout weeks; total has only 6 holdout games).
-43 of 1,856 fallback cells show an uncorrected positive interval (1H totals/spreads, 3-7 games, front-of-queue): that is what thousands of tests on a handful of games produce, and none is counted.
+43 of the 5,568 cell-by-fee-scenario fallback tests show an uncorrected positive interval (all 1H totals/spreads, 3-7 games, front-of-queue): that is what thousands of tests on a handful of games produce, and none is counted.
 
 ## Fee evidence
 Taker 0.07 is confirmed (643 of 646 real fees). Maker: KXNFLGAME SCHEDULE_ATTESTED (0.0175); KXNFLSPREAD and KXNFLTOTAL are maker-fee series with **no listed multiplier -> UNVERIFIED**; the taker-only series (team total, halves, quarters, props) are EXCHANGE_FEE_TYPE with maker 0. No maker fill has ever been observed, so every maker number is a scenario.
@@ -45,4 +45,4 @@ Taker 0.07 is confirmed (643 of 646 real fees). Maker: KXNFLGAME SCHEDULE_ATTEST
 Population = every valid contract-side (no selection signal): this isolates execution cost and says nothing about model edge. Queue ahead is a scenario in 2025 (FRONT is optimistic). 1H, team-total and prop contracts exist for few archived games, so family-level tests are limited by the source, not only by recovery. 2,956 preseason markets have no kickoff anchor and are excluded.
 
 ## Next highest-value target
-Not more moneyline. Spread, total and the player-prop yardage families have thousands of settled contracts with pre-start quotes (backlog about 5,400 / 4,300 / 3,000+ each) but only tens recovered: season-spanning sampling (now the collector default) gives each a discovery, validation and holdout sample. Pair that with the prospective shadow ledger, which is the only source of a real displayed queue.
+Not more moneyline. Spread, total and the player-prop yardage families have thousands of settled contracts with pre-start quotes still unrecovered (backlog estimates in the coverage report) but only tens recovered each: season-spanning sampling (now the collector default) gives each a discovery, validation and holdout sample. Pair that with the prospective shadow ledger, which is the only source of a real displayed queue.

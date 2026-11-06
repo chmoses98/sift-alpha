@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { measureOverflow } from "./overflow-helper.mjs";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -36,8 +37,8 @@ test("new question, checklist and note survive reload", async ({ page }) => {
 });
 
 test("mobile and desktop never require sideways scrolling", async ({ page }) => {
-  const sizes = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, view: window.innerWidth }));
-  expect(sizes.scroll).toBeLessThanOrEqual(sizes.view);
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
   await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
 });
 

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { measureOverflow } from "./overflow-helper.mjs";
 
 const reg = JSON.parse(readFileSync(new URL("../research/audit/input_registry.json", import.meta.url))).sports;
 const SPORTS = ["NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "SOCCER", "TENNIS"];
@@ -74,6 +75,6 @@ test("parent blueprint hypotheses (inputs and interactions) are reachable", asyn
 
 test("the research section never forces sideways page scrolling", async ({ page }) => {
   await page.locator(".ir-pick select").first().selectOption("NFL/PLAYER_STAT");
-  const sizes = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, view: window.innerWidth }));
-  expect(sizes.scroll).toBeLessThanOrEqual(sizes.view);
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });

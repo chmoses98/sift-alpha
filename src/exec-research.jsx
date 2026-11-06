@@ -52,13 +52,23 @@ function Shadow() {
 }
 
 function Health() {
-  const c = d.data_completeness, n = c.nfl_backfill_before || {};
+  const c = d.data_completeness, n = c.nfl_backfill_before || {}, r = c.tape_recovery, v = d.replay_validity;
+  const nm = x => (x === null || x === undefined) ? "not measured" : int(x);
   return <div className="ex-card"><h3>Data completeness and collector health</h3>
     <table className="ex-table ex-compact"><tbody>
       <tr><th scope="row">NFL contracts archived / settled</th><td>{int(n.unique_contracts)} / {int(n.settled)}</td></tr>
       <tr><th scope="row">Contracts with a two-sided pre-start quote at ≥1 horizon</th><td>{int(n.horizon_rows_with_any_two_sided_prestart_quote)} of {int(n.horizon_rows)} horizon rows</td></tr>
-      <tr><th scope="row">Trade tapes truncated at 10,000 prints</th><td>{int(c.tape_cap.capped_tapes)} of {int(c.tape_cap.tapes)}</td></tr>
-      <tr><th scope="row">Recovered tape (after repair)</th><td>{int(n.recovered_complete)} complete — {c.collector_repair}</td></tr></tbody></table></div>;
+      {r ? <>
+      <tr><th scope="row">Legacy tapes capped at exactly 10,000 prints ({r.legacy_basis})</th><td>{nm(r.legacy_capped_exact)}</td></tr>
+      <tr><th scope="row">…recovered / verified / still capped</th><td>{nm(r.legacy_capped_recovered)} / {nm(r.legacy_capped_recovered_verified)} / {nm(r.legacy_capped_remaining)}</td></tr>
+      <tr><th scope="row">Recovered tapes with prints / candle-verified / prints</th><td>{nm(r.recovered_nonempty)} / {nm(r.recovered_candle_verified)} / {nm(r.recovered_prints)}</td></tr>
+      <tr><th scope="row">Empty in both API tiers / empty (historical tier only)</th><td>{nm(r.empty_both_tiers)} / {nm(r.empty_historical_only)}</td></tr>
+      <tr><th scope="row">Excluded: no kickoff anchor (e.g. preseason)</th><td>{nm(r.no_kickoff_anchor_excluded)}</td></tr></> : <tr><th scope="row">Trade tapes truncated at 10,000 prints</th><td>{nm(c.tape_cap && c.tape_cap.capped_tapes)} of {nm(c.tape_cap && c.tape_cap.tapes)}</td></tr>}
+    </tbody></table>
+    {r && r.by_family && r.by_family.length > 0 && <table className="ex-table ex-compact"><thead><tr><th>Family</th><th>Attempted</th><th>With prints</th><th>Verified</th><th>Backlog (est.)</th></tr></thead>
+      <tbody>{r.by_family.map(f => <tr key={f.family}><th scope="row">{f.family}</th><td>{nm(f.recovered_attempted)}</td><td>{nm(f.recovered_nonempty)}</td><td>{nm(f.candle_verified)}</td><td>{nm(f.backlog_estimate)}</td></tr>)}</tbody></table>}
+    {r && <p className="ex-fine">{r.note}</p>}
+    {v && <p className="ex-fine"><b>{v.label}</b> — {nm(v.newly_evaluable)} of {nm(v.decisions)} decisions became evaluable on the recovered tape; absolute net EV: <b>{v.absolute_net_ev}</b>. {v.separation}.</p>}</div>;
 }
 
 function Outcome() {

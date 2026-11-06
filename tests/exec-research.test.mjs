@@ -29,3 +29,23 @@ test("aggregates only: no tickers, ids, stakes or personal P&L", () => {
   for (const bad of ["order_id", "\"stake", "\"pnl\"", "\"roi\"", "client_order"]) assert.ok(!text.includes(bad), bad);
   assert.ok(!/KX[A-Z0-9]+-\d{2}[A-Z]{3}/.test(text));
 });
+
+test("tape recovery completeness never shows unmeasured legacy coverage as zero", () => {
+  const r = d.data_completeness.tape_recovery;
+  if (!r) return;
+  if (r.legacy_basis !== "exact_lines_manifest") {
+    for (const k of ["legacy_capped_exact", "legacy_capped_recovered", "legacy_capped_recovered_verified", "legacy_capped_remaining"]) assert.equal(r[k], null, k);
+  } else {
+    assert.equal(typeof r.legacy_capped_exact, "number");
+    assert.equal(r.legacy_capped_exact, r.legacy_capped_recovered + r.legacy_capped_remaining);
+  }
+  assert.match(r.note, /not proof of a complete traded history/);
+});
+test("replay validity is labelled retrospective, separate from the prospective ledger, and claims nothing it cannot", () => {
+  const v = d.replay_validity;
+  if (!v) return;
+  assert.equal(v.label, "RETROSPECTIVE_BACKFILL_REPLAY");
+  assert.match(v.separation, /never merged into the prospective shadow ledger/);
+  if (v.families_with_positive_absolute_net_ev.length === 0) assert.match(v.absolute_net_ev, /NOT DEMONSTRATED/);
+  assert.ok(v.evaluable_after >= v.evaluable_before, "recovery cannot reduce evaluable decisions");
+});

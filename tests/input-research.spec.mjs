@@ -78,3 +78,21 @@ test("the research section never forces sideways page scrolling", async ({ page 
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test("market-universe audit is shown with its series-level caveat and unsupported sports", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Market universe audit/)).toBeVisible();
+  await expect(ir.getByText(/Series-level only/)).toBeVisible();
+  await expect(ir.getByText(/unsupported/i).first()).toBeVisible();
+});
+
+test("Kalshi passing-yards experiment is shown with its limits and no edge claim", async ({ page }) => {
+  await page.locator(".ir-pick select").first().selectOption("NFL/PLAYER_STAT");
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Experiment NFL-PASSYDS-1/)).toBeVisible();
+  await expect(ir.getByText(/NOT promoted/)).toBeVisible();
+  await expect(ir.getByText(/no demonstrated edge/i)).toBeVisible();
+  await expect(ir.getByText(/hypothetical/i).first()).toBeVisible();
+  const text = await ir.innerText();
+  expect(text).not.toMatch(/profitable strategy|guaranteed|proven edge/i);
+});

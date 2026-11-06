@@ -96,3 +96,12 @@ test("Kalshi passing-yards experiment is shown with its limits and no edge claim
   const text = await ir.innerText();
   expect(text).not.toMatch(/profitable strategy|guaranteed|proven edge/i);
 });
+
+test("NFL game-winner family shows the Kalshi-vs-book experiment without an edge claim", async ({ page }) => {
+  await page.locator(".ir-pick select").first().selectOption("NFL/GAME_WINNER");
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Experiment NFL-GAME-1/)).toBeVisible();
+  await expect(ir.getByText(/No mispricing relative to the book is demonstrated/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});

@@ -162,6 +162,23 @@ if __name__ == "__main__":
     unittest.main()
 
 
+GEXP = json.loads((ROOT / "research/audit/input_research/experiments/nfl_game_kalshi_v1.json").read_text())
+
+
+class PublishedGameExperiment(unittest.TestCase):
+    def test_waterfall_and_labels(self):
+        self.assertEqual(GEXP["status"], "RESEARCH_ONLY"); self.assertIn("HYPOTHETICAL", GEXP["label"])
+        self.assertEqual(sum(GEXP["stage_counts"].values()), GEXP["contracts_listed"])
+        for h in GEXP["horizons"].values():
+            w = h["waterfall"]
+            self.assertEqual(w["two_sided_quote_at_horizon"] + w["no_usable_quote"], w["settled_with_book_line"])
+
+    def test_no_promotion_without_review(self):
+        d = GEXP["horizons"]["primary_T-60m"]["decisions"]
+        if d["qualifying_n"] >= 30:
+            self.assertLessEqual(d["ci95"][0], 0, "positive interval at the primary horizon: human review required before any change to the dashboard")
+
+
 class TeamSplit(unittest.TestCase):
     def test_two_and_three_letter_codes(self):
         valid = {"GB", "TB", "JAX", "BAL", "KC", "NE", "LA", "NO", "SF", "LV", "LAC"}

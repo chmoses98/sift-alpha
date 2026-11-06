@@ -53,10 +53,10 @@ def _get(path: str, tries: int = 8):
     raise RuntimeError("rate limited: " + path)
 
 
-def fetch_markets() -> list[dict]:
+def fetch_markets(series: str = SERIES) -> list[dict]:
     rows, cur = [], None
     while True:
-        d = _get(f"/markets?series_ticker={SERIES}&limit=1000" + (f"&cursor={cur}" if cur else ""))
+        d = _get(f"/markets?series_ticker={series}&limit=1000" + (f"&cursor={cur}" if cur else ""))
         rows += d["markets"]
         cur = d.get("cursor")
         if not cur or not d["markets"]:

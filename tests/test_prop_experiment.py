@@ -122,6 +122,18 @@ class PublishedExperiment(unittest.TestCase):
             d = h["decisions"]
             self.assertLessEqual(d["ci95"][0], 0, f"{k}: positive lower bound — review as a candidate, do not promote automatically")
 
+    def test_structure_test_gates_and_degenerate_cells(self):
+        st = EXP["structure_test_primary_T-60m"]
+        self.assertEqual(len(st["cells"]), 16)
+        self.assertEqual(st["cells_passing_all_gates"], 0, "a passing cell must be reviewed by a human before anything is promoted")
+        for c in st["cells"]:
+            if not c["enough_sample"]:
+                self.assertLess(c["n"], st["min_cell"][0] + 1 if c["games"] >= st["min_cell"][1] else 10**9)
+            self.assertGreaterEqual(c["holm_p"], c["p_one_sided"])
+        # the all-win 0.9+ YES cell has a near-zero-width bootstrap interval; the exact test must still say it is not significant
+        top = [c for c in st["cells"] if c["mid_bin"].startswith("(0.9") and c["side"] == "YES"][0]
+        self.assertGreater(top["p_one_sided"], 0.05)
+
     def test_contract_csv_matches_summary(self):
         df = pd.read_csv(ROOT / "research/audit/input_research/experiments/nfl_passyds_kalshi_v1_contracts.csv")
         w = EXP["horizons"]["primary_T-60m"]["waterfall"]

@@ -35,6 +35,7 @@ SERIES = "KXNFLPASSYDS"
 EDGE_MIN = 0.05
 HORIZONS_MIN = {"primary_T-60m": 60, "secondary_T-3h": 180, "secondary_T-24h": 1440}
 TRAIN_LAST, WF_FIRST = 2025, 2017
+MIN_CELL_N, MIN_CELL_GAMES = 30, 10
 KALSHI_TO_NFLVERSE = {"JAC": "JAX", "LAR": "LA", "WSH": "WAS"}
 ALPHAS = [1, 10, 30, 100, 300, 1000, 3000, 10000]
 OUT_DIR = Path(__file__).resolve().parents[2] / "research/audit/input_research/experiments"
@@ -353,6 +354,41 @@ def summarize(df, diag, weights, cols):
     return out
 
 
+def structure_test(df, hn="primary_T-60m"):
+    """Model-free test of a structural price bias (favourite-longshot) on EVERY two-sided quoted contract: no QB1 eligibility filter, so no realised-participation
+    bias. Pre-specified cells: price bins of the YES mid x side bought (taker, fee included), held to settlement. 16 cells -> Holm-adjusted one-sided p (H0: net EV = 0,
+    simulated exactly). A cell counts only if Holm p < 0.05 AND the game-clustered bootstrap CI is above 0 AND it has >= MIN_CELL_N contracts from >= MIN_CELL_GAMES games."""
+    d = df[(df.stage == "ok") & (df[f"ask_{hn}"] < 1) & (df[f"bid_{hn}"] > 0) & (df[f"ask_{hn}"] > 0)].copy()
+    d["mid"] = (d[f"ask_{hn}"] + d[f"bid_{hn}"]) / 2
+    d["bin"] = pd.cut(d.mid, [0, .1, .2, .35, .5, .65, .8, .9, 1]).astype(str)
+    yes = (d.result == "yes").to_numpy()
+    cells = []
+    for b, g in d.groupby("bin"):
+        for side in ("YES", "NO"):
+            price = g[f"ask_{hn}"] if side == "YES" else 1 - g[f"bid_{hn}"]
+            won = (g.result == "yes") if side == "YES" else (g.result == "no")
+            fee = price.map(lambda x: fee_c(x) if 0 < x < 1 else 0)
+            pnl = won.astype(float) - price - fee
+            m, lo, hi, k = boot_mean(pnl, g.game_id)
+            # H0: net EV = 0, i.e. each contract wins with probability price+fee. Exact by simulation, so an all-win cell cannot get a zero-variance p-value.
+            be = np.clip((price + fee).to_numpy(float), 0, 1)
+            sims = (np.random.default_rng(11).random((20000, len(be))) < be).astype(float) - be
+            p1 = float((sims.mean(1) >= float((won.astype(float) - be).mean()) - 1e-12).mean())
+            enough = len(g) >= MIN_CELL_N and k >= MIN_CELL_GAMES
+            cells.append({"mid_bin": b, "side": side, "n": int(len(g)), "games": k, "mean_net_cents": round(m * 100, 2), "ci95": [round(lo * 100, 2), round(hi * 100, 2)], "p_one_sided": p1, "enough_sample": bool(enough)})
+    order = sorted(range(len(cells)), key=lambda i: cells[i]["p_one_sided"])
+    m_ = len(cells)   # Holm over all 16 pre-specified cells, including the under-sampled ones
+    run = 0.0
+    for r, i in enumerate(order):
+        run = max(run, min(1.0, cells[i]["p_one_sided"] * (m_ - r)))
+        cells[i]["holm_p"] = round(run, 4)
+        cells[i]["p_one_sided"] = round(cells[i]["p_one_sided"], 4)
+    cal = d.groupby("bin").agg(n=("mid", "size"), mid=("mid", "mean")).join(d.assign(y=yes).groupby("bin").y.mean().rename("actual")).round(4).reset_index()
+    return {"n_contracts": int(len(d)), "games": int(d.game_id.nunique()), "cells": cells, "calibration": cal.to_dict("records"),
+            "min_cell": [MIN_CELL_N, MIN_CELL_GAMES],
+            "cells_passing_all_gates": int(sum(c["holm_p"] < 0.05 and c["ci95"][0] > 0 and c["enough_sample"] for c in cells))}
+
+
 def ablate(df, qb, cols, hn="primary_T-60m"):
     """Descriptive group-drop ablation on the eligible contracts: refit WITHOUT each input group (training <=2025 only), log-loss change on the same contracts.
     Exploratory: 12 groups -> not multiplicity-controlled, small independent sample (games), no promotion."""
@@ -383,6 +419,7 @@ def main():
     df, diag, weights, qb, cols, _ = run(Path(a.data_dir), Path(a.cache_dir), a.refresh)
     res = summarize(df, diag, weights, cols)
     res["group_ablation_primary_T-60m_exploratory"] = ablate(df, qb, cols)
+    res["structure_test_primary_T-60m"] = structure_test(df)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     keep = ["ticker", "game_id", "week", "player", "floor", "result", "kickoff", "stage", "has_model_row", "mu", "sd", "p_model", "p_history", "actual_yards"] + [f"{p}_{h}" for h in HORIZONS_MIN for p in ("ask", "bid", "vol")]
     res["data_vintage"] = {"markets_listed_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "latest_completed_game": str(qb[qb.pass_yards.notna()].gameday.max())}

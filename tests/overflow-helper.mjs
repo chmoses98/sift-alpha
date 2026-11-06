@@ -21,6 +21,7 @@ export async function measureOverflow(page) {
       const ir = document.querySelector("section.ir");
       if (ir) { const prev = ir.style.display; ir.style.display = "none"; blocks.push(`WITHOUT input-research section -> ${de.scrollWidth}`); ir.style.display = prev; }
     }
-    return { scroll, view: vw, body: document.body.scrollWidth, offenders: offenders.slice(0, 10), responsibleBlocks: blocks };
+    const detail = [...document.querySelectorAll(".intelligence-filters, .intelligence-filters *")].map((el) => { const r = el.getBoundingClientRect(); return `${label(el)} l=${Math.round(r.left)} r=${Math.round(r.right)} sw=${el.scrollWidth} cw=${el.clientWidth} ox=${getComputedStyle(el).overflowX}`; });
+    return { scroll, view: vw, intelligenceFilters: scroll > vw ? detail : [], body: document.body.scrollWidth, offenders: offenders.slice(0, 10), responsibleBlocks: blocks };
   });
 }

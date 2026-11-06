@@ -199,8 +199,24 @@ def fee_grades(series, fees_dir, schedule_path):
     if not fees_dir or not os.path.isdir(fees_dir):
         return {s: dict(maker_evidence="UNVERIFIED", note="no fee archive supplied to this replay") for s in series}
     arch, _ = FE.load_fee_archive(fees_dir)
-    sched = json.load(open(schedule_path)).get("series", {}) if schedule_path and os.path.exists(schedule_path) else {}
+    sched = {}
+    if schedule_path and os.path.exists(schedule_path):
+        sched = json.load(open(schedule_path))["schedules"][-1].get("series", {})       # the LATEST committed window (same as fee_evidence.py)
     return {s: {k: v for k, v in FE.series_fee(s, arch, sched).__dict__.items()} for s in series}
+
+
+def pinned_inputs(a, cohort):
+    """Aggregate-only pin: ONE digest over every cohort tape (ticker:series:sha256:anchor:status:prints), never the tickers themselves.  The full per-tape list goes only
+    to ``--private-manifest`` (not published) so a run can still be reproduced exactly."""
+    meta = D.v2_meta(a.backfill)
+    per = {t: dict(series=s, sha256=sha(os.path.join(a.backfill, "trades_v2", s, t + ".jsonl")), anchor_ts=meta[t]["anchor_ts"], anchor_kind=meta[t]["anchor_kind"],
+                   status=meta[t]["status"], prints=meta[t]["total_prints_on_disk"]) for s, t in sorted(cohort)}
+    lines = "\n".join(f"{t}:{v['series']}:{v['sha256']}:{v['anchor_ts']}:{v['status']}:{v['prints']}" for t, v in sorted(per.items()))
+    if getattr(a, "private_manifest", None):
+        json.dump(per, open(a.private_manifest, "w"), indent=1, sort_keys=True)
+    return dict(alpha_sha=a.alpha_sha, edge_finder_sha=a.edge_sha, games_csv_sha256=sha(a.games), tape_meta_sha256=sha(os.path.join(a.backfill, "tape_meta.jsonl")),
+                cohort_tapes=len(per), cohort_digest_sha256=hashlib.sha256(lines.encode()).hexdigest(), cohort_prints=sum(v["prints"] for v in per.values()),
+                statuses=dict(Counter(v["status"] for v in per.values())), anchor_kinds=dict(Counter(v["anchor_kind"] for v in per.values())))
 
 
 def main(argv=None):
@@ -208,6 +224,7 @@ def main(argv=None):
     ap.add_argument("--backfill", default=N.BACKFILL); ap.add_argument("--games", default=N.GAMES_CSV)
     ap.add_argument("--out", default="reports/exec_track/recovery_replay.json")
     ap.add_argument("--fees-dir"); ap.add_argument("--fee-schedule")
+    ap.add_argument("--private-manifest", help="write the full per-tape pin list here (NOT for publication: contains tickers)")
     ap.add_argument("--alpha-sha", default=""); ap.add_argument("--edge-sha", default="")
     ap.add_argument("--population", action="store_true", help="also report, for the whole legacy moneyline/spread population, how many decisions the legacy tape could evaluate")
     a = ap.parse_args(argv)
@@ -218,18 +235,14 @@ def main(argv=None):
     rows_a, aud_a = ST.build_rows(after_t)
     fams = sorted({r["family"] for r in rows_a})
     rep = dict(version="sift-exec-recovery-replay/1", status="RESEARCH_ONLY", label=LABEL, fills="SIMULATED_FROM_TAPE (never an execution)",
-               pinned=dict(alpha_sha=a.alpha_sha, edge_finder_sha=a.edge_sha, games_csv_sha256=sha(a.games),
-                           tape_meta_sha256=sha(os.path.join(a.backfill, "tape_meta.jsonl")),
-                           cohort_tapes={t: dict(series=s, sha256=sha(os.path.join(a.backfill, "trades_v2", s, t + ".jsonl")),
-                                                 anchor_ts=D.v2_meta(a.backfill)[t]["anchor_ts"], anchor_kind=D.v2_meta(a.backfill)[t]["anchor_kind"],
-                                                 status=D.v2_meta(a.backfill)[t]["status"], prints=D.v2_meta(a.backfill)[t]["total_prints_on_disk"]) for s, t in sorted(cohort)}),
+               pinned=pinned_inputs(a, cohort),
                design=dict(qty=ST.QTY, horizons_min=ST.HORIZONS, rules=ST.RULES, queues={k: list(v) for k, v in ST.QUEUES.items()}, splits=ST.SPLITS,
                            maker_fee_scenarios=FE.SCENARIOS, taker_coef=FE.TAKER_COEF, n_boot=N_BOOT, cluster="game",
                            min_orders=MIN_ORDERS, min_games=MIN_GAMES, queue_depth="the 2025 backfill has NO displayed book sizes: queue is a scenario (FRONT/Q500/Q5000/THROUGH_ONLY), not an observation"),
                cohort=dict(tapes=len(cohort), ticks_before=len(before_t), ticks_after=len(after_t), games=len({t.game["game_id"] for t in after_t}), families=fams,
                            by_family={f: dict(tickers=len({r["ticker"] for r in rows_a if r["family"] == f}), games=len({r["game"] for r in rows_a if r["family"] == f}),
                                               orders=sum(1 for r in rows_a if r["family"] == f)) for f in fams},
-                           not_joined=sorted(t for _, t in cohort if t not in {x.ticker for x in after_t})),
+                           not_joined=sum(1 for _, t in cohort if t not in {x.ticker for x in after_t})),
                audit_before={"|".join(k): v for k, v in sorted(aud_b.items())}, audit_after={"|".join(k): v for k, v in sorted(aud_a.items())})
     rep["comparison"] = compare(rows_b, rows_a)
     rep["comparison_by_family"] = {f: compare([r for r in rows_b if r["family"] == f], [r for r in rows_a if r["family"] == f]) for f in fams}

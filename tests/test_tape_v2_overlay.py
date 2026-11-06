@@ -86,7 +86,42 @@ class V2Overlay(unittest.TestCase):
 
     def test_source_counts(self):
         a = D.Tick("A", "S", {}, 1); b = D.Tick("B", "S", {}, 1, tape_source=D.SRC_V2, v2_status="COMPLETE"); c = D.Tick("C", "S", {}, 1, tape_source=D.SRC_V2, v2_status="INCOMPLETE_RESUMABLE")
-        self.assertEqual(D.tape_source_counts([a, b, c]), {D.SRC_LEGACY: 1, D.SRC_V2: 2, "truncated": 1})
+        self.assertEqual(D.tape_source_counts([a, b, c]), {D.SRC_LEGACY: 1, D.SRC_V2: 2, D.SRC_NONE: 0, "truncated": 1})
+
+
+class TapeModes(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        D._META.clear()
+
+    def test_missing_legacy_file_is_unknown_history_not_complete_and_empty(self):
+        src = D.read_tape(self.d, "KXNFLTOTAL", "TK")
+        t = D.Tick("TK", "KXNFLTOTAL", {}, 1, tape_source=src[5]); t.raw_lines = src[4]
+        self.assertEqual((src[5], len(src[0]), t.capped), (D.SRC_NONE, 0, True))
+
+    def test_empty_legacy_file_is_a_real_empty_tape(self):
+        write(f"{self.d}/trades/S/TK.jsonl", [])
+        src = D.read_tape(self.d, "S", "TK")
+        t = D.Tick("TK", "S", {}, 1, tape_source=src[5]); t.raw_lines = src[4]
+        self.assertEqual((src[5], t.capped), (D.SRC_LEGACY, False))
+
+    def test_legacy_mode_ignores_an_audited_recovered_tape(self):
+        write(f"{self.d}/trades/S/TK.jsonl", [pr(i, ANCHOR - 1 - i) for i in range(10_000)])
+        write(f"{self.d}/trades_v2/S/TK.jsonl", [pr(i, ANCHOR - 1 - i) for i in range(30_000)])
+        meta(self.d)
+        self.assertEqual(D.read_tape(self.d, "S", "TK", "legacy")[5:5 + 1], (D.SRC_LEGACY,))
+        self.assertEqual(len(D.read_tape(self.d, "S", "TK", "legacy")[0]), 10_000)
+        self.assertEqual(len(D.read_tape(self.d, "S", "TK", "auto")[0]), 30_000)
+
+    def test_candles_v2_fallback_for_contracts_without_a_legacy_candle_file(self):
+        from sift_research import nfl25 as N
+        os.makedirs(f"{self.d}/candles_v2/KXNFLTOTAL")
+        json.dump({"h60": [{"end_period_ts": 1}], "m1": []}, open(f"{self.d}/candles_v2/KXNFLTOTAL/A.json", "w"))
+        json.dump({"h60": None, "m1": None}, open(f"{self.d}/candles_v2/KXNFLTOTAL/B.json", "w"))
+        self.assertEqual(N.load_candles("KXNFLTOTAL", "A", self.d)["h60"][0]["end_period_ts"], 1)
+        self.assertIsNone(N.load_candles("KXNFLTOTAL", "B", self.d))
+        os.makedirs(f"{self.d}/candles/KXNFLTOTAL"); json.dump({"h60": [{"end_period_ts": 9}], "m1": []}, open(f"{self.d}/candles/KXNFLTOTAL/A.json", "w"))
+        self.assertEqual(N.load_candles("KXNFLTOTAL", "A", self.d)["h60"][0]["end_period_ts"], 9)       # legacy wins
 
 
 if __name__ == "__main__":

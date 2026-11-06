@@ -16,9 +16,44 @@ def g(d, *ks):
     return d
 
 
+def tape_recovery(cov):
+    """Aggregate recovery completeness.  Legacy counts are exact ONLY when the coverage report says so (manifest); otherwise they are null = NOT MEASURED, never 0."""
+    t = (cov or {}).get("totals") or {}
+    exact = bool(t.get("legacy_measured")) and t.get("legacy_capped_exact") is not None
+    fam = []
+    for s, e in sorted(((cov or {}).get("series") or {}).items(), key=lambda kv: -kv[1].get("settled", 0)):
+        r = e.get("recovered_tape") or {}
+        if not (r.get("attempted") or e.get("recovery_backlog_estimate")):
+            continue
+        fam.append(dict(family=s, contracts=e.get("unique_contracts"), settled=e.get("settled"), recovered_attempted=r.get("attempted"), recovered_nonempty=r.get("with_prints"),
+                        candle_verified=r.get("candle_verified"), capped_legacy_recovered=r.get("capped_legacy_recovered") if exact else None,
+                        empty_both_tiers=r.get("empty_both_tiers"), prints=r.get("prints"), backlog_estimate=e.get("recovery_backlog_estimate")))
+    return dict(legacy_basis=("exact_lines_manifest" if exact else "NOT_MEASURED"), legacy_capped_exact=t.get("legacy_capped_exact") if exact else None,
+                legacy_capped_recovered=t.get("legacy_capped_recovered") if exact else None, legacy_capped_recovered_verified=t.get("legacy_capped_recovered_verified") if exact else None,
+                legacy_capped_remaining=t.get("legacy_capped_remaining") if exact else None, recovered_nonempty=t.get("recovered_nonempty"), recovered_candle_verified=t.get("recovered_candle_verified"),
+                recovered_prints=t.get("recovered_prints"), empty_both_tiers=t.get("empty_both_tiers"), empty_historical_only=t.get("empty_historical_only"),
+                no_kickoff_anchor_excluded=t.get("recovered_tape_no_kickoff_anchor"), collection=(cov or {}).get("collection"), by_family=fam,
+                note="COMPLETE means the API cursor was exhausted; an empty tape is not proof of a complete traded history unless both tiers were checked")
+
+
+def replay_validity(rp):
+    """What the matched replay does and does not establish (aggregates only; no tickers)."""
+    cmp_, cohort = rp.get("comparison") or {}, rp.get("cohort") or {}
+    gates = {}
+    for tag in ("before", "after"):
+        gates[tag] = {fam: v.get("status") for fam, v in (rp.get(f"holdout_{tag}") or {}).items()}
+    positive = [f for f, st in gates["after"].items() if st == "POSITIVE_ABSOLUTE_NET_EV_OUT_OF_SAMPLE"]
+    return dict(label=rp.get("label"), fills=rp.get("fills"), cohort=dict(tapes=cohort.get("tapes"), games=cohort.get("games"), families=cohort.get("families")),
+                decisions=cmp_.get("decisions"), evaluable_before=cmp_.get("decisions_determinate_before"), evaluable_after=cmp_.get("decisions_determinate_after"),
+                newly_evaluable=cmp_.get("decisions_newly_evaluable"), uncertain_orders_before=cmp_.get("orders_uncertain_before"), uncertain_orders_after=cmp_.get("orders_uncertain_after"),
+                holdout_status_after=gates["after"], families_with_positive_absolute_net_ev=positive,
+                absolute_net_ev="NOT DEMONSTRATED" if not positive else "POSITIVE IN HOLDOUT FOR: " + ", ".join(positive) + " (verify before any use)",
+                separation="retrospective backfill replay; never merged into the prospective shadow ledger")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--shadow-summary"); ap.add_argument("--coverage"); ap.add_argument("--out", default="research/audit/exec/execution_research_summary.json")
+    ap.add_argument("--shadow-summary"); ap.add_argument("--coverage"); ap.add_argument("--replay"); ap.add_argument("--out", default="research/audit/exec/execution_research_summary.json")
     a = ap.parse_args(argv)
     st, live, fee, tape = L(R + "nfl_study.json"), L(R + "nfl_live_2026.json"), L(R + "fee_evidence.json"), L(R + "tape_audit.json")
     bn, bh = L(R + "book_depth_nba.json"), L(R + "book_depth_nhl.json")
@@ -61,6 +96,10 @@ def main(argv=None):
     # 5. data completeness / collector health
     out["data_completeness"] = dict(nfl_backfill_before=g(cov, "totals"), tape_cap=dict(capped_tapes=g(cov, "totals", "legacy_tape_capped_at_10000"), tapes=g(cov, "totals", "legacy_tape_files")),
                                    collector_repair="PR nfl-edge-finder#247 (not yet dispatched against the live API: after-coverage unverified)")
+    out["data_completeness"]["tape_recovery"] = tape_recovery(cov)
+    rp = L(a.replay or R + "recovery_replay.json")
+    if rp:
+        out["replay_validity"] = replay_validity(rp)
     out["status_labels"] = dict(entry_tactics="RESEARCH_ONLY", limit_with_fallback="RESEARCH_ONLY (conditional execution-cost improvement; no absolute EV)", outcome_models="RESEARCH_ONLY (none beats the market after fees)")
     # 6. outcome candidates (kept separate from execution)
     o = L("reports/outcome_exec/summary.json") or {}

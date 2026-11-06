@@ -134,6 +134,14 @@ class PublishedExperiment(unittest.TestCase):
         top = [c for c in st["cells"] if c["mid_bin"].startswith("(0.9") and c["side"] == "YES"][0]
         self.assertGreater(top["p_one_sided"], 0.05)
 
+    def test_drift_test_is_not_claimed_when_underpowered(self):
+        d = EXP["drift_test_T-24h_to_T-3h_entry_T-60m"]
+        if not d["enough_sample"]:
+            self.assertLess(d["with_move"], 30 if d["games"] >= 10 else 10**9)
+        for r in d["rules"].values():
+            if d["enough_sample"]:
+                self.assertTrue(r["holm_p"] >= 0.05 or r["ci95"][0] <= 0, "a passing drift rule needs human review before promotion")
+
     def test_contract_csv_matches_summary(self):
         df = pd.read_csv(ROOT / "research/audit/input_research/experiments/nfl_passyds_kalshi_v1_contracts.csv")
         w = EXP["horizons"]["primary_T-60m"]["waterfall"]

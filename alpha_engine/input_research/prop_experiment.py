@@ -389,6 +389,41 @@ def structure_test(df, hn="primary_T-60m"):
             "cells_passing_all_gates": int(sum(c["holm_p"] < 0.05 and c["ci95"][0] > 0 and c["enough_sample"] for c in cells))}
 
 
+def drift_test(df, move_min=0.05):
+    """Model-free 'slow incorporation' test. Contracts with a two-sided quote at BOTH T-24h and T-3h. Signal = mid(T-3h) - mid(T-24h). If |signal| >= move_min, MOMENTUM buys
+    the direction of the move at T-60m (YES at the ask after an up-move, NO at 1-bid after a down-move); FADE buys the opposite side. Taker fees. Holm over the two rules,
+    exact H0 simulation (win prob = price + fee), game-clustered bootstrap. Quotes from candles that ended before each horizon only."""
+    a, b, c = "secondary_T-24h", "secondary_T-3h", "primary_T-60m"
+    ok = df.stage == "ok"
+    for h in (a, b, c):
+        ok &= (df[f"ask_{h}"] < 1) & (df[f"bid_{h}"] > 0) & (df[f"ask_{h}"] > 0) & (df[f"bid_{h}"] < 1)
+    d = df[ok].copy()
+    sig = (d[f"ask_{b}"] + d[f"bid_{b}"]) / 2 - (d[f"ask_{a}"] + d[f"bid_{a}"]) / 2
+    qs = {str(q): round(float(sig.abs().quantile(q)), 4) for q in (0.5, 0.75, 0.9, 0.99)}
+    d = d[sig.abs() >= move_min]
+    sig = sig[d.index]
+    out = {"move_min": move_min, "two_sided_at_all_three_horizons": int(ok.sum()), "with_move": int(len(d)), "games": int(d.game_id.nunique()), "abs_move_quantiles": qs,
+           "enough_sample": bool(len(d) >= MIN_CELL_N and d.game_id.nunique() >= MIN_CELL_GAMES), "rules": {}}
+    pv = {}
+    for name, flip in (("momentum", 1), ("fade", -1)):
+        up = (sig * flip) > 0
+        price = np.where(up, d[f"ask_{c}"], 1 - d[f"bid_{c}"])
+        won = np.where(up, d.result == "yes", d.result == "no")
+        fee = np.array([fee_c(x) for x in price])
+        pnl = won.astype(float) - price - fee
+        be = np.clip(price + fee, 0, 1)
+        sims = (np.random.default_rng(13).random((20000, len(be))) < be).astype(float) - be
+        p1 = float((sims.mean(1) >= float((won.astype(float) - be).mean()) - 1e-12).mean())
+        m, lo, hi, k = boot_mean(pnl, d.game_id)
+        out["rules"][name] = {"n": int(len(pnl)), "games": k, "mean_net_cents": round(m * 100, 2), "ci95": [round(lo * 100, 2), round(hi * 100, 2)], "win_rate": round(float(won.mean()), 4), "p_one_sided": p1}
+    ps = sorted(out["rules"].items(), key=lambda kv: kv[1]["p_one_sided"])
+    run = 0.0
+    for r, (k, v) in enumerate(ps):
+        run = max(run, min(1.0, v["p_one_sided"] * (2 - r)))
+        out["rules"][k]["holm_p"] = round(run, 4); out["rules"][k]["p_one_sided"] = round(v["p_one_sided"], 4)
+    return out
+
+
 def ablate(df, qb, cols, hn="primary_T-60m"):
     """Descriptive group-drop ablation on the eligible contracts: refit WITHOUT each input group (training <=2025 only), log-loss change on the same contracts.
     Exploratory: 12 groups -> not multiplicity-controlled, small independent sample (games), no promotion."""
@@ -420,6 +455,7 @@ def main():
     res = summarize(df, diag, weights, cols)
     res["group_ablation_primary_T-60m_exploratory"] = ablate(df, qb, cols)
     res["structure_test_primary_T-60m"] = structure_test(df)
+    res["drift_test_T-24h_to_T-3h_entry_T-60m"] = drift_test(df)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     keep = ["ticker", "game_id", "week", "player", "floor", "result", "kickoff", "stage", "has_model_row", "mu", "sd", "p_model", "p_history", "actual_yards"] + [f"{p}_{h}" for h in HORIZONS_MIN for p in ("ask", "bid", "vol")]
     res["data_vintage"] = {"markets_listed_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "latest_completed_game": str(qb[qb.pass_yards.notna()].gameday.max())}

@@ -116,3 +116,12 @@ test("foundation audit states the market-free policy and the readiness table; se
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test("soccer shows the market-free search with an explicit no-Kalshi-comparison statement", async ({ page }) => {
+  await page.locator(".ir-sport", { hasText: /^SOCCER/ }).click();
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Systematic input search — soccer/)).toBeVisible();
+  await expect(ir.getByText(/No Kalshi comparison has been run for soccer/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});

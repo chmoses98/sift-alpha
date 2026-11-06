@@ -3,6 +3,7 @@ import universe from "../research/input_research/market_universe/universe_summar
 import gexp from "../research/audit/input_research/experiments/nfl_game_kalshi_v1.json";
 import audit from "../research/audit/input_research/coverage_audit.json";
 import srch from "../research/audit/input_research/experiments/search_nfl_qb_passing_v1.json";
+import soc from "../research/audit/input_research/experiments/search_soccer_v1.json";
 import exp from "../research/audit/input_research/experiments/nfl_passyds_kalshi_v1.json";
 
 // Rendered only from committed JSON artifacts (alpha_engine.input_research.market_universe / prop_experiment). Nothing hand-typed.
@@ -93,5 +94,16 @@ export function SearchResult() {
     <div className="ir-scroll"><table className="ir-table" style={{minWidth: 440}}><thead><tr><th>Input group</th><th>Inner-fold MSE increase when dropped (fixed ridge)</th><th>Folds it helped</th><th>Selected</th></tr></thead>
       <tbody>{imp.map(([k, v]) => <tr key={k}><td>{k.replaceAll("_", " ")}</td><td>{(100 * v.mean_rel_mse_increase_when_dropped).toFixed(2)}% ± {(100 * v.se).toFixed(2)}</td><td>{v.folds_where_dropping_hurts}/{v.folds}</td><td>{Math.round(100 * srch.group_selection_frequency[k])}%</td></tr>)}</tbody></table></div>
     <p>Only opponent pass defence helps in every fold; no other group is consistently needed. Weights are not promoted.</p>
+  </details>;
+}
+
+export function SoccerSearch() {
+  return <details className="ir-fine" open>
+    <summary><b>Systematic input search — soccer (market-free)</b>: {soc.leagues.join(", ")}, 2015/16–2025/26, {soc.studies.total_goals.n_matches.toLocaleString()} matches</summary>
+    <p className="ir-warn">Free football-data.co.uk results only; every bookmaker odds column is dropped before any feature is built. Same nested chronological search as NFL ({soc.n_configs_per_fold} configurations per fold). <b>No Kalshi comparison has been run for soccer</b>: these are independent-model results against a trivial baseline, not evidence about any price.</p>
+    <div className="ir-scroll"><table className="ir-table" style={{minWidth: 520}}><thead><tr><th>Target (baseline)</th><th>Out-of-sample MSE gain</th><th>Seasons positive</th><th>Permutation-null gain</th><th>Groups needed in every fold</th></tr></thead>
+      <tbody>{Object.values(soc.studies).map(t => <tr key={t.target}><td>{t.target.replaceAll("_", " ")} ({t.baseline})</td><td>{t.nested_gain.pct_gain.toFixed(2)}%</td><td>{t.nested_gain.seasons_positive}/{t.nested_gain.seasons.length}</td><td>{t.permutation_null.map(x => x.pct_gain.toFixed(2) + "%").join(", ")}</td>
+        <td>{Object.entries(t.group_importance_leave_one_group_out_inner).filter(([, v]) => v.folds_where_dropping_hurts === v.folds).map(([k]) => k.replaceAll("_", " ")).join("; ") || "none"}</td></tr>)}</tbody></table></div>
+    <p>Total goals: league scoring context and attack form carry the small, stable gain (~2%). Goal difference: team strength (Elo), defensive form and tempo/set-piece volume are needed in every fold, but the baseline contains no team information, so that large gain shows the inputs matter, not that the model is accurate enough to price a market.</p>
   </details>;
 }

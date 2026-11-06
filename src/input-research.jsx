@@ -1,7 +1,7 @@
 import React, {useEffect, useMemo, useState} from "react";
 import index from "../research/audit/input_research/index.json";
 import queue from "../research/audit/input_research/queue.json";
-import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult} from "./research-experiments.jsx";
+import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch} from "./research-experiments.jsx";
 import "./input-research.css";
 
 // Everything is rendered from research/audit/input_research/*.json (alpha_engine.input_research). Nothing is hand-typed.
@@ -64,6 +64,7 @@ export function InputResearch() {
           <strong>{s}</strong><small>{d.families} families · {d.catalog.inputs} candidate inputs</small><small>{tested} with a predictive test</small></button>;
       })}
     </div>
+    {sport === "SOCCER" && <SoccerSearch/>}
     {!doc ? <p className="ir-fine">Loading {sport}…</p> : <>
       <div className="ir-pick">
         <label>Market family

@@ -76,5 +76,20 @@ class Audit(unittest.TestCase):
         MF.assert_market_free(MF.SCRIPT_FEATURES)
 
 
+class PublishedSoccer(unittest.TestCase):
+    def test_soccer_search_is_market_free_and_beats_its_null(self):
+        r = json.loads((ROOT / "research/audit/input_research/experiments/search_soccer_v1.json").read_text())
+        self.assertTrue(r["market_free"])
+        MF.assert_market_free([c for g in r["groups"].values() for c in g])
+        for t, s in r["studies"].items():
+            self.assertGreater(s["nested_gain"]["pct_gain"], max(x["pct_gain"] for x in s["permutation_null"]) + 0.5, t)
+            self.assertEqual(s["nested_gain"]["seasons_positive"], len(s["nested_gain"]["seasons"]), t)
+
+    def test_odds_columns_are_never_loaded(self):
+        from alpha_engine.input_research import search_soccer as SS
+        for c in SS.KEEP:
+            self.assertFalse(c.startswith(("B365", "PS", "Max", "Avg", "BW", "WH", "BF", "1XB", "AH")), c)
+
+
 if __name__ == "__main__":
     unittest.main()

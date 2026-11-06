@@ -84,7 +84,7 @@ def final_player_predictions(lab: PL.PlayerLab, target: str, cfg: dict, contract
     tests = list(range(PL.FIRST_TEST, PL.VAL_END + 1))
     mu_wf = np.maximum(lab.wf(X, y, seasons, tests, cfg["model"]), 0.05)
     ok = ~np.isnan(mu_wf)
-    disp = 1.0 if sp["dist"] == "poisson" else dists.nb_size(mu_wf[ok], ((y - mu_wf) ** 2)[ok])
+    disp = 1.0 if sp["dist"] == "poisson" else dists.nb_size(mu_wf[ok], float(np.mean(((y - mu_wf) ** 2)[ok])))
     tr = seasons <= PL.VAL_END
     if cfg["model"] == "ridge":
         lam = S.fit_ridge_lambda(X, y, np.where(tr, seasons, 9999), PL.VAL_END + 1)
@@ -141,6 +141,43 @@ def run(data: Path, work: Path, out: Path, targets=("rec_yds", "receptions", "ru
         print(t, len(rows), "best sel", round(best["metrics"]["sel"]["mean"], 4), "val", round(best["metrics"]["val"]["mean"], 4), round(time.time() - t0), "s", flush=True)
     (out / "player_lab_report.json").write_text(json.dumps(report, indent=1, default=float))
     return report
+
+
+def selected_config(out: Path, target: str):
+    from . import ledger as L
+    led = L.Ledger(out / f"ledger_player_{target}.jsonl")
+    rows = led.select(lab="player/1", target=target)
+    return max(rows, key=lambda r: r["metrics"]["sel"]["mean"])["config"]
+
+
+def contract_probs(kalshi: Path, data: Path, work: Path, out: Path) -> tuple[pd.DataFrame, dict]:
+    """Fair P(YES) for every priced 2025 player contract (one frame row per contract x horizon), plus resolution diagnostics (never silently dropped)."""
+    horizons = sorted(Path(kalshi / "horizons").glob("*.jsonl"))
+    d = MK.load_contracts([str(h) for h in horizons])
+    d = d[d["family"].isin(list(MK.KALSHI_STAT.values()))].copy()
+    gt = pd.read_parquet(work / "game_table.parquet"); gpred = pd.read_parquet(work / "game_predictions.parquet")
+    pg, st = pd.read_parquet(work / "pg.parquet"), pd.read_parquet(work / "states.parquet")
+    ctx = build_game_ctx(gt, gpred); inj = PL.injury_status(data / "inj", kickoffs(gt))
+    players = pd.read_csv(data / "players.csv", low_memory=False)
+    nm, av = name_map(players, pg), Availability(pg)
+    date = pd.to_datetime(gt.set_index("game_id")["gameday"])
+    wk = gt.set_index("game_id")["week"]
+    u = d.drop_duplicates("ticker")[["ticker", "game_id", "family", "team", "player", "floor", "home", "away"]].copy()
+    u = resolve(u, nm)
+    diag = {"contracts": int(len(u)), "unresolved_player": int(u["pid"].isna().sum())}
+    u = u.dropna(subset=["pid"]).copy()
+    u["date"] = u["game_id"].map(date); u["season"] = 2025; u["week"] = u["game_id"].map(wk).astype(int)
+    u["home"] = (u["team"] == u["home"]).astype(float)
+    res = []
+    for fam, x in u.groupby("family"):
+        cfg = selected_config(out, fam)
+        lab = PL.PlayerLab(pg, st, ctx, inj, out / f"ledger_player_{fam}.jsonl")
+        p = final_player_predictions(lab, fam, cfg, x[["ticker", "pid", "team", "game_id", "season", "week", "date", "home", "floor"]], av)
+        diag[f"{fam}_p_act_missing"] = int(p["p_act"].isna().sum())
+        res.append(p[["ticker", "model_p", "p_act", "mu"]])
+    pp = pd.concat(res)
+    d = d.merge(pp[["ticker", "model_p"]], on="ticker", how="left")
+    return d, diag
 
 
 if __name__ == "__main__":

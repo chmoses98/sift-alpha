@@ -174,7 +174,7 @@ class GameLab:
         return out
 
     # -------------------------------------------------------------------------------------------- stage 2 and selection
-    def stage2(self, target: str, top=8) -> list[dict]:
+    def stage2(self, target: str, top=4) -> list[dict]:
         y = self.target(target); ok = ~np.isnan(y)
         s1 = [r for r in self.led.select(lab="game/1", stage=1, target=target)]
         s1.sort(key=lambda r: -r["metrics"]["sel"]["mean"])

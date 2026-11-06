@@ -28,6 +28,7 @@ HL = {"3": [3], "8": [8], "3+8": [3, 8]}
 OPTIONAL = ["share", "team_ctx", "opp_def", "script", "env", "injury"]
 FIRST_TEST, SEL_END, VAL_END, HOLDOUT = 2017, 2021, 2024, 2025
 STATUS = {"Out": 1.0, "Doubtful": 0.85, "Questionable": 0.25}
+DIAGNOSTICS: dict = {}
 
 
 def load_pbp_players(pbp_dir: Path, seasons) -> pd.DataFrame:
@@ -93,12 +94,15 @@ def injury_status(inj_dir: Path, kickoffs: pd.DataFrame) -> pd.DataFrame:
     """Worst official report status per (season, week, gsis_id) published BEFORE kickoff.  Reports without a timestamp are not used (counted by the caller)."""
     fr = []
     for f in sorted(Path(inj_dir).glob("inj_*.csv")):
-        d = pd.read_csv(f, usecols=["season", "week", "team", "gsis_id", "report_status", "date_modified"], low_memory=False)
-        fr.append(d)
+        d = pd.read_csv(f, low_memory=False)
+        if "date_modified" not in d.columns:
+            d["date_modified"] = pd.NaT          # no report timestamp in this release: cannot be shown to be pre-kickoff, so it is NOT used (counted in DIAGNOSTICS)
+        fr.append(d[["season", "week", "team", "gsis_id", "report_status", "date_modified"]])
     d = pd.concat(fr, ignore_index=True)
     d = d.merge(kickoffs[["season", "week", "team", "kickoff"]], on=["season", "week", "team"], how="left")
     ts = pd.to_datetime(d["date_modified"], utc=True, errors="coerce")
     d["code"] = d["report_status"].map(STATUS)
+    DIAGNOSTICS["injury_rows"] = int(len(d)); DIAGNOSTICS["injury_rows_without_timestamp"] = int((~ts.notna()).sum())
     d = d[ts.notna() & d["kickoff"].notna() & (ts < d["kickoff"]) & d["code"].notna()]
     return d.groupby(["season", "week", "gsis_id"])["code"].max().reset_index()
 
@@ -174,7 +178,7 @@ class PlayerLab:
             if dist == "poisson":
                 out[te] = 1.0
             else:
-                out[te] = dists.nb_size(np.concatenate(ms), np.concatenate(rs)) if rs and sum(len(r) for r in rs) >= 300 else 5.0
+                out[te] = dists.nb_size(np.concatenate(ms), float(np.mean(np.concatenate(rs)))) if rs and sum(len(r) for r in rs) >= 300 else 5.0
             ok = te & ~np.isnan(mu)
             rs.append(((y[ok] - mu[ok]) ** 2)); ms.append(mu[ok])
         return out

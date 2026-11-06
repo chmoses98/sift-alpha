@@ -14,7 +14,7 @@ CLOSE_MIN = 15
 # Used ONLY when the audit row says the tape is anchored at a real KICKOFF (never market close_time) and it holds prints.  Research only.
 V2_ANCHORS = ("kickoff", "kickoff_ticker_parse")
 V2_STATUSES = ("COMPLETE", "COMPLETE_WITH_SOURCE_GAP", "INCOMPLETE_RESUMABLE", "INCOMPLETE_ERROR")
-SRC_LEGACY, SRC_V2 = "legacy_trades_capped", "recovered_trades_v2"
+SRC_LEGACY, SRC_V2, SRC_NONE = "legacy_trades_capped", "recovered_trades_v2", "no_archived_tape"
 
 
 @dataclass
@@ -44,6 +44,8 @@ class Tick:
     def capped(self):
         """True when the tape may be missing OLDER prints (it keeps the newest).  Legacy: exactly the 10,000-line cap.  Recovered tape: anything
         short of a COMPLETE audit status (a source gap or a pending resume is NOT observable history)."""
+        if self.tape_source == SRC_NONE:
+            return True              # no archived tape at all: the history is UNKNOWN, never "complete and empty"
         if self.tape_source == SRC_V2:
             return self.v2_status != "COMPLETE"
         return self.raw_lines >= TAPE_CAP
@@ -94,14 +96,14 @@ def v2_meta(root):
     return _META[p][1]
 
 
-def read_tape(root, series, ticker):
+def read_tape(root, series, ticker, mode="auto"):
     """-> (ts, yes_c, size, taker_no, raw_lines, source, v2_status).  Recovered v2 tape replaces the legacy one only if audited, kickoff-anchored and non-empty;
     prints after the audit row's anchor are dropped defensively.  Block trades are excluded exactly as for the legacy tape."""
     meta = v2_meta(root).get(ticker)
     v2_status = meta.get("status") if meta else None
     ts, yc, sz, tn, seen, raw, src = [], [], [], [], set(), 0, SRC_LEGACY
     p2 = os.path.join(root, "trades_v2", series, ticker + ".jsonl")
-    if meta and meta.get("anchor_kind") in V2_ANCHORS and v2_status in V2_STATUSES and meta.get("anchor_ts") and os.path.exists(p2):
+    if mode == "auto" and meta and meta.get("anchor_kind") in V2_ANCHORS and v2_status in V2_STATUSES and meta.get("anchor_ts") and os.path.exists(p2):
         anchor = float(meta["anchor_ts"])
         for l in open(p2):
             raw += 1
@@ -115,7 +117,9 @@ def read_tape(root, series, ticker):
             return ts, yc, sz, tn, raw, SRC_V2, v2_status
         ts, yc, sz, tn, seen, raw = [], [], [], [], set(), 0           # empty recovered tape: never overrides the legacy archive
     p = os.path.join(root, "trades", series, ticker + ".jsonl")
-    if os.path.exists(p):
+    if not os.path.exists(p):
+        return [], [], [], [], 0, SRC_NONE, v2_status
+    if True:
         for l in open(p):
             raw += 1
             r = json.loads(l)
@@ -129,14 +133,14 @@ def read_tape(root, series, ticker):
 
 def tape_source_counts(ticks):
     """Coverage diagnostics: how many tickers used which tape, and how many are still truncated."""
-    out = {SRC_LEGACY: 0, SRC_V2: 0, "truncated": 0}
+    out = {SRC_LEGACY: 0, SRC_V2: 0, SRC_NONE: 0, "truncated": 0}
     for t in ticks:
         out[t.tape_source] += 1
         out["truncated"] += bool(t.capped)
     return out
 
 
-def load_tick(series, m, idx, root):
+def load_tick(series, m, idx, root, tape_mode="auto"):
     game = N.resolve_event(m["event_ticker"], idx)
     out = N.outcome_yes(m)
     if game is None or out is None:
@@ -148,7 +152,7 @@ def load_tick(series, m, idx, root):
     t.h_ends, t.m_ends = [x[0] for x in t.h], [x[0] for x in t.m]
     t.hp, t.mp = _price_candles(cd.get("h60"), 3600), _price_candles(cd.get("m1"), 60)
     t.m_first = min((int(r["end_period_ts"]) for r in cd.get("m1") or []), default=None)   # start of minute-candle coverage
-    ts, yc, sz, tn, t.raw_lines, t.tape_source, t.v2_status = read_tape(root, series, m["ticker"])
+    ts, yc, sz, tn, t.raw_lines, t.tape_source, t.v2_status = read_tape(root, series, m["ticker"], tape_mode)
     t.tape = Tape(ts, yc, sz, tn)
     t.first_ts = float(t.tape.ts[0]) if len(t.tape) else None
     return t

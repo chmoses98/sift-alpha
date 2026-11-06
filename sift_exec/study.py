@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 from . import fees as FE, candles as CA
 from .fills import replay_buy
+from sift_research import nfl25 as N
 from .nfl_data import quote_at, side_quote, tape_complete, CLOSE_MIN
 
 QTY = 10
@@ -55,11 +56,11 @@ def build_rows(ticks, horizons=HORIZONS, rules=RULES, queues=QUEUES, expiry_min=
         audit[k] = audit.get(k, 0) + 1
 
     for t in ticks:
-        fam = "moneyline" if t.series == "KXNFLGAME" else "spread"
+        fam = N.FAMILY.get(t.series, t.series.lower())
         ko = t.kickoff
         close_t = ko - CLOSE_MIN * 60
         cq = quote_at(t, close_t)
-        for side in (("YES",) if fam == "moneyline" else ("YES", "NO")):
+        for side in (("YES",) if t.series == "KXNFLGAME" else ("YES", "NO")):
             win = t.outcome if side == "YES" else 1 - t.outcome
             for hn, hm in horizons.items():
                 placed = ko - hm * 60
@@ -101,7 +102,7 @@ def build_rows(ticks, horizons=HORIZONS, rules=RULES, queues=QUEUES, expiry_min=
                         rows.append(dict(filled_lo=flo, filled_hi=fhi,
                             game=t.game["game_id"], ticker=t.ticker, family=fam, side=side, horizon=hn, rule=rule, queue=qn,
                             week=t.game["week"], split=week_split(t.game["week"]), win=win, limit=lim, bid=b, ask=a, close_bid=cb, close_ask=ca,
-                            quote_age=age, determinate=comp, candle_class=cclass[(side, lim)], filled=fr.filled,
+                            quote_age=age, determinate=comp, series=t.series, tape_source=t.tape_source, candle_class=cclass[(side, lim)], filled=fr.filled,
                             fills=[(f.price_c, f.qty, f.evidence) for f in fr.fills], first_fill_ts=fr.first_ts, placed=placed))
     return rows, audit
 

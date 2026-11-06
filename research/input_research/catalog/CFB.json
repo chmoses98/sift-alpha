@@ -1,0 +1,2847 @@
+{
+ "sport": "CFB",
+ "inputs": {
+  "cfb.off_ppa": {
+   "label": "Opponent-adjusted offensive PPA/EPA and success rate",
+   "category": "team_strength",
+   "mechanism": "Predicted points added per play measures offensive efficiency in expected-points units, and adjusting for defenses faced isolates how much scoring an offense produces per snap; it is the main driver of points per drive and margin.",
+   "rationale": "College schedules are wildly unbalanced (FCS/G5 cupcakes versus P4), so raw per-play averages are heavily contaminated by opponent quality; adjustment needs a connected-schedule model, and early-season samples (12 games) require a preseason prior and garbage-time filtering.",
+   "measurement": "From plays: PPA/EPA per play on non-garbage-time snaps (filter by score margin by quarter), split rush/pass; ridge-adjust for opponents (offense, defense, home) with recency weights; blend with a preseason prior from last year plus returning production weighted by 1/(1+n_games/k); report separately for the current QB.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /ppa/teams, /stats/season/advanced, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.off_ppa"
+   ]
+  },
+  "cfb.def_ppa": {
+   "label": "Opponent-adjusted defensive PPA/EPA and success rate",
+   "category": "team_strength",
+   "mechanism": "Defensive PPA allowed, adjusted for opposing offenses, measures how many expected points a defense prevents per snap and sets the baseline for opponent output.",
+   "rationale": "Defense is less stable than offense across seasons in college because of turnover from portal and graduation; early-season ratings must lean on returning-production priors and individual unit (front seven versus secondary) changes.",
+   "measurement": "Same ridge framework on defensive effect, splitting rush/pass, filtering garbage time; shrink toward prior from returning defensive production and recruiting talent; weight recent games; adjust for current injuries of defensive starters.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /ppa/teams, /stats/season/advanced, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.def_ppa"
+   ]
+  },
+  "cfb.sp_plus": {
+   "label": "SP+/FPI-style composite ratings",
+   "category": "team_strength",
+   "mechanism": "Published tempo- and opponent-adjusted composite ratings combine efficiency, explosiveness, finishing drives and turnover luck into a strength measure that captures much of team quality.",
+   "rationale": "Composite ratings are strong priors and a benchmark for any home-built model; subtle points: their preseason versions rely on returning production and recruiting, and in-season values embed the same noise, so they are not independent from the underlying PPA inputs.",
+   "measurement": "Pull SP+, FPI, SRS and Elo ratings by week and team; keep the version as of decision time (no revisions); compute rating difference with home adjustment and convert to margin via historical mapping; compare with market-implied margin to see residual.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /ratings/sp, /ratings/fpi, /ratings/srs, /ratings/elo"
+   ],
+   "registry_ids": [
+    "cfb.sp_plus"
+   ]
+  },
+  "cfb.talent": {
+   "label": "Recruiting talent composite and portal gains/losses",
+   "category": "team_strength",
+   "mechanism": "Roster talent (recruiting composite plus transfers) sets the long-run ceiling of a team and is the main preseason driver of strength, especially for depth and line play.",
+   "rationale": "Talent composites predict strength better than past win-loss at preseason and matter more at the extremes (blue-bloods versus small programs); they are slow-moving, so in-season play should dominate; the portal makes talent volatile year to year, so use the post-portal roster.",
+   "measurement": "CFBD team talent composite and recruiting classes (247 composite), net portal rating gains/losses by position group, weighted by position value; regression of margin vs talent difference after controlling for efficiency; shrink as games accumulate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /talent, /recruiting/teams, /player/portal"
+   ],
+   "registry_ids": [
+    "cfb.talent"
+   ]
+  },
+  "cfb.market_ratings": {
+   "label": "Market-implied team strength history",
+   "category": "team_strength",
+   "mechanism": "Spreads and moneylines across the season encode sharp information on injuries, QB status and matchups; implied ratings are the strongest prior on team quality.",
+   "rationale": "The market is typically well calibrated on spread; the model value is mostly incremental (lineup news, weather, totals) or on props and periods; a rating derived from lines must be tied to the lineup assumed by the line.",
+   "measurement": "Invert closing spreads and totals into team ratings via a ridge/Bradley-Terry fit with home edge by season; keep time-varying ratings and the opener-to-close move; cross-check with SP+ and Elo.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /lines",
+    "ESPN public JSON odds"
+   ],
+   "registry_ids": []
+  },
+  "cfb.cross_conf_calibration": {
+   "label": "Cross-conference calibration and schedule connectivity",
+   "category": "team_strength",
+   "mechanism": "FBS teams play few cross-conference games, so ratings of different conferences are connected by a thin web of results; mis-calibrated conference strength distorts every opponent-adjusted stat.",
+   "rationale": "A team with a great adjusted PPA inside a weak conference may be overrated relative to P4 opponents; the market corrects this with priors; calibration requires explicit conference effects estimated from non-conference games and shrinkage.",
+   "measurement": "Add conference random effects to the ridge model (offense and defense separately), estimate from non-conference games and bowls with shrinkage; include FCS opponent indicator; check connectivity and use priors from past-year conference strength.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /ratings/sp, /conferences"
+   ],
+   "registry_ids": []
+  },
+  "cfb.success_explosiveness": {
+   "label": "Success rate and explosiveness (IsoPPP) profile",
+   "category": "team_strength",
+   "mechanism": "Efficiency (success rate) and explosiveness (IsoPPP) describe how an offense scores: consistent chain-moving versus big plays; the combination determines drive length, variance and totals.",
+   "rationale": "Teams reliant on explosive plays have high variance and are less stable game to game; success-rate teams sustain drives and burn clock; this affects totals, team totals and the first-half/quarter distribution.",
+   "measurement": "Opponent-adjusted success rate by down and distance and IsoPPP (average PPA on successful plays) for offense and defense; compute explosive-dependence index = z(IsoPPP) - z(success rate); shrink and weight recent games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.rush_efficiency": {
+   "label": "Rush efficiency: line yards, opportunity rate, stuff rate",
+   "category": "team_strength",
+   "mechanism": "Rushing success relies on offensive-line production (line yards, opportunity rate), scheme and back-level creation; defenses differ in stuff rate and front quality.",
+   "rationale": "Rushing yards, team totals and clock usage depend on run efficiency and volume; individual RB stats confuse OL with RB skill; need opponent adjustment given weak schedules.",
+   "measurement": "From advanced stats: line yards per carry, opportunity rate, stuff rate, power success rate, highlight yards; opponent-adjust vs defense line yards allowed; shrink.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.pass_efficiency": {
+   "label": "Pass efficiency: PPA/dropback, yards per attempt, sack rate",
+   "category": "team_strength",
+   "mechanism": "Passing efficiency, QB quality and receiver/protection combination drive explosive scoring and variance in college, where pass rates vary from run-first to air-raid styles.",
+   "rationale": "Passing yardage and TD props require adjusted pass efficiency vs opposing secondaries and rush; heavy variance between games; QB changes (transfers) shift it sharply.",
+   "measurement": "PPA per dropback, adjusted yards per attempt, completion % over expected where charting exists, sack and INT rates; opponent adjust; blend with QB career prior and recency.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /ppa/teams, /ppa/players/season, /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.havoc": {
+   "label": "Havoc rate (TFL, forced fumbles, pass breakups) created and allowed",
+   "category": "team_strength",
+   "mechanism": "Havoc plays disrupt drives, create turnovers and negative plays and are a persistent defensive trait while havoc allowed marks offensive instability.",
+   "rationale": "Havoc is more stable than turnovers and predicts defensive success; offenses with high havoc allowed face low success and drive failure, affecting totals, and unstable red-zone outcomes.",
+   "measurement": "Havoc rate = (TFL + forced fumbles + PBU + INT)/plays for defense, and allowed for offense; opponent-adjusted; compare to turnover luck to separate process from outcome.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.pass_rush": {
+   "label": "Pass-rush and sack/pressure rates for and against",
+   "category": "matchup",
+   "mechanism": "Pass rush versus pass protection sets sacks, pressure-induced incompletions and turnover chances, which heavily influence passing props, drive stalls and scoring.",
+   "rationale": "College lines vary widely in quality; a dominant rush against a poor OL generates a disproportionate share of negative plays and punts; sack rates are noisy but pressure/havoc proxies and line talent help.",
+   "measurement": "Sack rate and adjusted sack rate for offense allowed and defense generated (standard/passing downs), opponent-adjusted; line talent composites and returning starters; QB mobility and time-to-throw proxies (screen share).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.ol": {
+   "label": "Offensive and defensive line quality and continuity",
+   "category": "availability",
+   "mechanism": "Line quality (returning starters, snaps together, injuries) determines run blocking and pass protection, which affects every offensive efficiency stat.",
+   "rationale": "Line injuries are less publicized in college and the official injury reporting is poor; continuity measured by returning starts is a proxy; effects are larger in the trenches than skill positions for team efficiency.",
+   "measurement": "Returning offensive-line starts and snaps from rosters and prior-year play logs; depth chart changes; adjusted line yards and sack rates; weight by position (tackles more for pass pro); flag changes.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /player/returning, /roster",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": [
+    "cfb.ol"
+   ]
+  },
+  "cfb.secondary_coverage": {
+   "label": "Secondary coverage and explosive pass defense",
+   "category": "matchup",
+   "mechanism": "Secondary quality (pass breakups, explosive passes allowed, coverage) limits opposing passing efficiency and yardage and determines who can exploit it.",
+   "rationale": "Pass defense in college is unstable and highly dependent on a few corners and safeties; matchup against air-raid or deep-pass offenses is particularly sensitive.",
+   "measurement": "Passing success rate allowed, explosive pass rate allowed, pass-defense PPA, PBU rate; opponent-adjust; adjust for key DB absence/portal departures.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced, /ppa/teams",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.run_defense": {
+   "label": "Run defense and front-seven quality",
+   "category": "matchup",
+   "mechanism": "Front-seven strength sets rushing success allowed, stuff rate and scoring opportunities, and controls how heavy the offense leans on the pass.",
+   "rationale": "Run defense is more stable than pass defense in college because of line depth and talent; run-first offenses face the largest effect; box counts differ by scheme.",
+   "measurement": "Line yards allowed, stuff rate, rushing PPA allowed, opponent-adjusted; talent composite for defensive line/linebackers; adjust for injuries.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced, /ppa/teams",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.turnover_luck": {
+   "label": "Turnover margin luck and fumble recovery regression",
+   "category": "variance_luck",
+   "mechanism": "Turnovers swing possessions; much of team turnover margin (especially fumble recoveries and INT conversion) is luck that regresses, creating mean reversion in scoring and ratings.",
+   "rationale": "Ratings and market priors that overweight recent turnover margin overrate lucky teams; SP+ explicitly adjusts, so using raw margin gives mistakes in totals and side markets, particularly in small samples.",
+   "measurement": "Expected turnovers = fumbles x 0.5 recovery rate + INT expectation from PBU and pass attempts; luck = actual minus expected; regress ~80-90% to zero; use process stats (havoc, PBU, sacks) as the persistent part.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/season/advanced, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.roster_continuity": {
+   "label": "Returning production and offseason roster churn",
+   "category": "team_strength",
+   "mechanism": "The share of last year's production returning (and position weight) governs how much past performance carries into the new season, particularly at QB, OL and defensive front.",
+   "rationale": "With the portal and NIL, roster churn is far larger than in the NFL; returning production is a key preseason predictor of SP+ changes; for in-season markets, the first 3-4 games carry high uncertainty.",
+   "measurement": "CFBD returning production (usage-weighted) overall, offense, defense; adjust by incoming transfers' prior production and recruit classes; regress last-year rating with coefficient by returning share; decay prior as games accumulate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /player/returning, /player/portal"
+   ],
+   "registry_ids": []
+  },
+  "cfb.transfer_roster": {
+   "label": "Transfers, roster churn and eligibility",
+   "category": "availability",
+   "mechanism": "Incoming and outgoing transfers change starters, depth and unit quality quickly, and eligibility rules determine who can play.",
+   "rationale": "Portal additions are often immediate starters; out-transfers can gut a position group; roster data is incomplete and eligibility (waivers, extra year) can change late.",
+   "measurement": "Portal entries with destination, prior-year production and star rating; compute net production added/lost by position group; verify eligibility status from official rosters and news; use as adjustment to unit ratings.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /player/portal, /roster",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": [
+    "cfb.transfer_roster"
+   ]
+  },
+  "cfb.opt_out_departures": {
+   "label": "Opt-outs, mid-season redshirt decisions and departures",
+   "category": "availability",
+   "mechanism": "Bowl/playoff opt-outs, four-game redshirt rule decisions and early draft entries remove players from late-season or postseason games.",
+   "rationale": "Postseason lineups differ from regular-season ones, and players with NFL futures may sit; the information comes late through announcements and beat reports.",
+   "measurement": "Track announced opt-outs and draft declarations with timestamp, estimate production share lost per player (usage), and update team and prop rating; base rates by draft prospect status and bowl type.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)",
+    "NONE_FOUND (structured opt-out feed; beat reports only)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.suspension_eligibility": {
+   "label": "Suspensions, targeting ejections and eligibility events",
+   "category": "availability",
+   "mechanism": "Disciplinary suspensions, first-half targeting suspensions and eligibility rulings remove players for specific games or halves.",
+   "rationale": "Targeting ejections carry into the next game for the first half; such events are public but irregular and not in standard feeds; the effect depends on player importance.",
+   "measurement": "Collect ejection/targeting events from play-by-play and official reports and map to next-game first-half unavailability; incorporate news-based suspensions with timestamp.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)",
+    "NONE_FOUND (structured suspension feed)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.qb": {
+   "label": "Starting QB status and QB performance/regime",
+   "category": "availability",
+   "mechanism": "The starting QB is the largest single determinant of team offense in college; QB transfers, injuries and benchings cause large rating shifts.",
+   "rationale": "QB identity is often announced late (or not at all), and backups can be very different from starters; production by QB (not team) must drive projections, with priors for new QBs from transfer or recruiting profile.",
+   "measurement": "Per-QB PPA, completion %, sack and INT rates, rushing contribution; shrink small samples with prior from recruiting rating and previous team; map QB changes to team rating shifts; use mixture when status is uncertain.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /ppa/players/season, /stats/player/season",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": [
+    "cfb.qb"
+   ]
+  },
+  "cfb.qb_status_pit": {
+   "label": "Confirmed QB/starter status with timestamped vintages",
+   "category": "availability",
+   "mechanism": "Timestamped starter confirmation (depth chart, beat report, pregame warmup) sets whether the line and props assume the right QB.",
+   "rationale": "No reliable official feed exists, so capture time matters: a QB known only at kickoff is not pregame-knowable for earlier-closing markets; sources are noisy and sometimes deliberately misleading.",
+   "measurement": "Collect depth charts and beat reporter posts with timestamps; label confirmation vintage (Mon-Fri, game-day), compute probability the listed QB starts by source reliability and historical hit rates.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)",
+    "NONE_FOUND (official QB confirmation feed)"
+   ],
+   "registry_ids": [
+    "cfb.qb_status_pit"
+   ]
+  },
+  "cfb.injuries": {
+   "label": "Injury and availability news (no reliable official feed)",
+   "category": "availability",
+   "mechanism": "Player availability changes team ratings and props, but college teams are not required to report injuries (only conference-level availability reports have started).",
+   "rationale": "Information is sparse and unequal across conferences; late scratches are common; use of available-player reports where they exist (Big Ten/SEC/ACC/Big 12 policies) is partial and recent; absence must be inferred from usage drops and beat news.",
+   "measurement": "Collect injury/availability reports where conferences publish, ESPN injuries, and beat-reporter posts with timestamps; track usage-based indicators (snaps drop); weight by player value; record vintage to avoid look-ahead.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)",
+    "Conference availability reports (where published)",
+    "NONE_FOUND (comprehensive official feed)"
+   ],
+   "registry_ids": [
+    "cfb.injuries"
+   ]
+  },
+  "cfb.depth_chart": {
+   "label": "Depth chart / starters",
+   "category": "availability",
+   "mechanism": "Depth charts list starters and ordering at each position and show role changes entering the game.",
+   "rationale": "Depth charts in college are team-published, strategic and sometimes unreliable (OR designations); they lag changes but combine with usage and snap data to infer roles.",
+   "measurement": "Weekly depth-chart snapshots with changes since last week; reconcile with play-by-play usage; flag OR positions and first-time starters; use as feature for player-stat markets.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)",
+    "Team athletics sites (weekly depth charts)",
+    "CollegeFootballData API (free key) /roster"
+   ],
+   "registry_ids": [
+    "cfb.depth_chart"
+   ]
+  },
+  "cfb.skill_avail": {
+   "label": "WR/TE/RB availability and replacement quality",
+   "category": "availability",
+   "mechanism": "Skill-player availability redistributes targets and carries and lowers efficiency when replaced by lower-quality players.",
+   "rationale": "In college, depth drops sharply behind starters, so absence of a top receiver or back has larger efficiency effects than in the NFL; availability news is sparse.",
+   "measurement": "Vacated target/carry share and PPA of absent players; allocate to teammates with historical splits shrunk by sample; adjust efficiency by replacement quality (recruiting rating).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /ppa/players/season, /stats/player/season",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.qb_rushing": {
+   "label": "QB rushing usage and mobility",
+   "category": "player_role",
+   "mechanism": "Dual-threat QBs add designed runs and scrambles, rushing yards and TDs, and change defense (spy) and offense (RPO) dynamics, important in college.",
+   "rationale": "QB rushing props and anytime TD depend on scheme; sack yardage counts against rushing in college stats (important for settlement); mobility reduces with injury.",
+   "measurement": "QB carries, designed run share, scramble rate, goal-line carries, yards before sack adjustments from plays; opponent adjust; shrink; check how stats source counts sacks.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /stats/player/season",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.player_usage": {
+   "label": "Player target, carry and snap share",
+   "category": "player_role",
+   "mechanism": "Target and carry shares determine volume of player props; college roles are more volatile due to depth rotation and blowouts.",
+   "rationale": "Usage is persistent for starters but depends on game script; rotation and garbage-time substitutions in blowouts decrease volume for starters; depth charts help.",
+   "measurement": "Rolling target/carry share, red-zone share, snap share by game state from play logs; project volume = team plays x share; adjust for script/blowout probability and injuries.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/player/season, /plays, /ppa/players/season",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.player_usage"
+   ]
+  },
+  "cfb.td_rates": {
+   "label": "Anytime and first-TD scoring rates by role",
+   "category": "player_role",
+   "mechanism": "Player TD probability derives from team expected TDs and the player's red-zone/goal-line share, including QB rushing scores.",
+   "rationale": "College teams have more variance in offense and sharper role specialization (goal-line backs, mobile QBs); small samples require shrinkage and regression of TD luck.",
+   "measurement": "Team expected TDs from total/spread; shares from red-zone carries/targets, QB sneak rate, goal-line role; calibrate with shrinkage; first-TD multiplies by P(team scores first).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /stats/player/season",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.td_rates"
+   ]
+  },
+  "cfb.dvp": {
+   "label": "Defense versus position and receiver/back matchup",
+   "category": "matchup",
+   "mechanism": "How a defense allows yards and TDs to RBs, WRs and TEs (opponent-adjusted) indicates which player types benefit in a matchup.",
+   "rationale": "Raw defense-vs-position reflects opponents faced; the useful form is adjusted per-target efficiency and share; heavily shrunk in college because of weak schedule connectivity.",
+   "measurement": "Allowed yards and PPA per target/carry by position adjusted for opponents (ridge), schedule connectivity shrinkage; combine with player share to forecast.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /ppa/teams",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.offense_style": {
+   "label": "Offensive style clash (option, air raid, RPO, tempo) and defensive preparation",
+   "category": "matchup",
+   "mechanism": "Unconventional schemes (triple option, heavy RPO, air raid) produce atypical pace, run/pass splits and variance, and opponents' preparation and scheme fit alter results.",
+   "rationale": "Style mismatch explains outsized rushing totals (service academies) and unusual totals; defenses face unfamiliar schemes once per year, so adjusted ratings may understate or overstate effect; teams with long bye weeks prepare better.",
+   "measurement": "Classify teams by scheme using pass rate, option share, tempo and formation; estimate style-specific residuals of spread/total; adjust opponent defenses for familiarity (bye, prior exposure); shrink.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.coaching": {
+   "label": "Coaching changes, scheme and tempo tendencies",
+   "category": "matchup",
+   "mechanism": "Head coach and coordinator regimes determine tempo, run/pass mix, 4th-down aggression and in-game management, changing volume and variance.",
+   "rationale": "Coaching changes cause large preseason rating changes and early-season volatility; coaching tenure and experience influence close-game performance and handling of blowouts.",
+   "measurement": "Coach/coordinator history for pace, pass rate, 4th-down go rate (fourth-down model), 2-pt rate, blowout behavior; regime-break dates; new-coach prior from previous stops; shrink.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /coaches, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.coaching"
+   ]
+  },
+  "cfb.pace": {
+   "label": "Plays per game, tempo and no-huddle rate",
+   "category": "pace_volume",
+   "mechanism": "Plays per game and seconds per play set the number of possessions and counting stats; college tempo ranges far wider than NFL.",
+   "rationale": "Pace is stable and strongly regime-based; matchup pace is a function of both offenses and clock rules; run-heavy teams lower total plays; the effect on totals is large given the variance in tempo.",
+   "measurement": "Seconds per play on neutral situations, plays per game, no-huddle rate (non-garbage); combine pace of both teams (e.g., weighted average with opponent-adjusted tempo), and clock rules by season; recency-weight.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.pace"
+   ]
+  },
+  "cfb.drives": {
+   "label": "Drives per game, explosiveness and finishing drives",
+   "category": "pace_volume",
+   "mechanism": "Drive count and points per scoring opportunity set total scoring, and are driven by pace, turnover rate, quick scores and clock management.",
+   "rationale": "Possession-level modelling accounts for the fact that explosive offenses may play few plays but many drives; finishing (red-zone, 4th down) is a partly persistent skill.",
+   "measurement": "Drives per game, plays per drive, available yards, points per scoring opportunity, drive-level success; opponent adjusted; forecast drives = f(pace both teams, turnover rates, expected script).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /drives",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.drives"
+   ]
+  },
+  "cfb.pass_rate": {
+   "label": "Pass rate and script behaviour",
+   "category": "pace_volume",
+   "mechanism": "Pass rate in neutral situations and its response to score determines pass attempts, passing yards and time of possession.",
+   "rationale": "College run/pass splits vary strongly by team style; spread-based game script drives volume; late-game leader run rate affects clock and total.",
+   "measurement": "Neutral-situation pass rate (non-garbage), pass rate over expected by down/distance/score; response slope to score difference; forecast attempts under the spread-implied script distribution.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.pass_rate"
+   ]
+  },
+  "cfb.clock_rules": {
+   "label": "Clock rules regime by season (first-down clock stops, play clock)",
+   "category": "pace_volume",
+   "mechanism": "College clock rules (whether the clock stops after first downs, stoppages after incompletions, play-clock details) change plays per game and total scoring across seasons.",
+   "rationale": "Rule changes shift pace and totals; model training must account for regime breaks; recent rule changes reduce plays, requiring older seasons to be adjusted.",
+   "measurement": "Indicator variables for rule regime by season, with regime-specific mean plays and scoring; re-estimate pace baseline after each rule change; adjust for tempo teams that benefit most.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA football rules committee announcements",
+    "CollegeFootballData API (free key) /plays (plays per game by season)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.field_pos": {
+   "label": "Field position, special teams and kicking",
+   "category": "team_strength",
+   "mechanism": "Starting field position and special teams (returns, punts, kickoffs, field goals) add expected points per drive and are highly variable in college.",
+   "rationale": "Special-teams quality is highly variable by program (kicker/punter talent), and kickoff/touchback rules affect starting spots; effect is persistent but small versus offense, and larger in low-scoring games.",
+   "measurement": "Average starting field position for each side, net punting, return EPA, FG%/range; opponent-adjusted; shrink; consider rule regime changes (fair catch on kickoff).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /drives, /stats/season/advanced",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.field_pos"
+   ]
+  },
+  "cfb.kicker": {
+   "label": "Kicker accuracy by distance, effective range, FG attempt rate",
+   "category": "player_role",
+   "mechanism": "Kicker make probability by distance and the coach's FG-attempt policy determine how many stalled drives yield 3 points and total-line key-number structure.",
+   "rationale": "College kickers have wide quality variance and few attempts; shrinkage is crucial; wind, altitude and dome conditions matter; coach aggressiveness on 4th down changes FG attempts.",
+   "measurement": "Make probability by distance with random kicker effect and weather covariates; FG attempt rate by field position and score; kickoff touchback rates; shrink small samples.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)",
+    "Open-Meteo forecast API (free)"
+   ],
+   "registry_ids": [
+    "cfb.kicker"
+   ]
+  },
+  "cfb.redzone": {
+   "label": "Red-zone efficiency and FG versus TD",
+   "category": "team_strength",
+   "mechanism": "Red-zone TD rate converts yards into points; skill and personnel (goal-line QB runs) contribute but variance is large.",
+   "rationale": "In small college samples red-zone rates regress strongly; teams with unusual goal-line schemes (QB sneak, power run) are partly persistent; matters for totals and team totals.",
+   "measurement": "Red-zone TD%, points per trip, goal-to-go success; shrink toward league mean and expected rate from yardage and field position; opponent adjust; recency weighting.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /drives",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.redzone"
+   ]
+  },
+  "cfb.script": {
+   "label": "Opening script, early-game scripting and blowout/garbage-time behaviour",
+   "category": "game_state",
+   "mechanism": "Early scripted plays, pass/run response to score, and starters' removal in blowouts shape quarter/half scoring and player stat volume.",
+   "rationale": "The spread-implied script drives pace and run/pass splits; heavy favorites change style in the second half; garbage time changes player usage and yardage.",
+   "measurement": "Pace and pass rate as functions of score differential and time; opening-drive pass rate; blowout multiplier for second-half pace; integrate over distribution of states from spread/total.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.script"
+   ]
+  },
+  "cfb.blowout_management": {
+   "label": "Blowout management and starter removal",
+   "category": "game_state",
+   "mechanism": "Large favorites pull starters, run clock and play backups once ahead, reducing the favorite's points and shifting garbage-time points to the underdog.",
+   "rationale": "College mismatches (FCS or large P4-vs-G5 spreads) are common; coach-specific lead behavior decides how many points the favorite scores in the second half, directly affecting team totals, totals, and the cover probability for big spreads.",
+   "measurement": "For each coach/team: second-half pace, pass rate and points when leading by 21+, share of starters' snaps in Q4; estimate probability of 21+ lead from spread and apply behavior; shrink.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays, /games",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.opening_poss": {
+   "label": "Opening possession (coin toss/deferral) and first-quarter pace",
+   "category": "game_state",
+   "mechanism": "Who receives first and the deferral habits shift first-quarter scoring and the halftime possession order, influencing first-half and first-quarter markets.",
+   "rationale": "Coin toss is random; teams' deferral tendency is coach-specific; knowledge is revealed only at the toss, so pregame markets need a mixture.",
+   "measurement": "Team and coach defer rate; first-quarter scoring by possession order; adjust the first-quarter and first-half distribution with a 50/50 mixture.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.opening_poss"
+   ]
+  },
+  "cfb.first_drive": {
+   "label": "Opening-drive tendencies and outcomes",
+   "category": "game_state",
+   "mechanism": "Scripted first drives show team-specific tempo, run/pass mix and scoring rates that feed first-quarter and first-TD markets.",
+   "rationale": "The first drives are pre-scripted and efficient for some teams but the sample per team is small (12-14 games), requiring pooling.",
+   "measurement": "Share of first drives ending in TD/FG/punt/turnover, plays and tempo; opponent adjust; shrink with prior of ~20 drives.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /drives",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.first_drive"
+   ]
+  },
+  "cfb.q_scoring": {
+   "label": "Historical scoring by quarter and half, opponent-adjusted",
+   "category": "distribution",
+   "mechanism": "Scoring by period reveals first-half vs second-half profile, slow starters, blowout fade and end-of-half scoring, needed for quarter and half markets.",
+   "rationale": "Period markets require period-specific rates; college blowouts distort Q3-Q4 more than in the NFL; adjusted rates avoid conflating weak opponents.",
+   "measurement": "Per team points and plays by quarter and half (opponent adjusted); period share of game scoring; combine with the game total; shrink.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.q_scoring"
+   ]
+  },
+  "cfb.half_split": {
+   "label": "First/second-half scoring split and adjustments",
+   "category": "distribution",
+   "mechanism": "Teams adjust at halftime and starters' usage differs when leading; consistent patterns in first-half versus second-half scoring exist for coaches and styles.",
+   "rationale": "Halftime-adjustment skill is noisy, but structural effects such as ball-control teams and blowout behavior persist; second-half totals are more sensitive to the script.",
+   "measurement": "Ratio of first-half to full-game points for team and opponents, conditional on spread bins; hierarchical shrinkage; link to coaching and script.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": [
+    "cfb.half_split"
+   ]
+  },
+  "cfb.score_resid": {
+   "label": "Score residual distribution around lines (key numbers)",
+   "category": "distribution",
+   "mechanism": "Final margins and totals relative to lines are fat-tailed in college (blowouts, FCS mismatches) and cluster at key numbers (3, 7, 10, 14).",
+   "rationale": "Normal approximations misprice tails and push-adjacent lines; college SD of margin versus spread is larger than NFL and increases with spread size.",
+   "measurement": "Empirical distribution of margin - closing spread and total - closing total by spread bucket and conference tier, with key-number mass; scale variance with total and spread size.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /lines, /games"
+   ],
+   "registry_ids": [
+    "cfb.score_resid"
+   ]
+  },
+  "cfb.ot_model": {
+   "label": "Overtime rules and tie/OT model",
+   "category": "distribution",
+   "mechanism": "College overtime alternates possessions from the opponent's 25-yard line with no ties, and later overtimes require 2-point attempts, so overtime outcomes and scoring differ from the NFL.",
+   "rationale": "Regulation tie probability and OT length determine overtime markets, and moneyline/spread wording determines whether OT points count; the effective rules changed over years and must match the sample period.",
+   "measurement": "P(tied after 60 minutes) from margin distribution with key-number mass; OT possession outcomes (score probability from the 25), number of OT periods distribution (2-point rule from later periods); mapping to settlement wording.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)",
+    "NCAA football rulebook (overtime)"
+   ],
+   "registry_ids": [
+    "cfb.ot_model"
+   ]
+  },
+  "cfb.corr": {
+   "label": "Within-game correlation across stats, periods and teams",
+   "category": "distribution",
+   "mechanism": "Scores, periods and player stats are correlated through script, pace and mismatch; independence assumptions misprice joint events.",
+   "rationale": "Quarter/half legs, team totals and player stats share the same latent drives; mismatch games have particular correlation structure (favorite and total).",
+   "measurement": "Estimate correlations of residuals (team scores, period totals, player stats) from game-level data; model through simulation of drives or copulas; calibrate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.team_total_split": {
+   "label": "Team-points split from game total and spread",
+   "category": "distribution",
+   "mechanism": "Team totals must satisfy the game total and spread implied means; deviations indicate mispricing or lineup differences.",
+   "rationale": "Team-total markets often lag lineup news; the split also depends on pace asymmetry and blowout behavior.",
+   "measurement": "Compute implied means from spread and total; adjust for team-specific variance and blowout behavior; compare team-total quotes with implied split.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /lines",
+    "ESPN public JSON odds"
+   ],
+   "registry_ids": []
+  },
+  "cfb.player_stat_variance": {
+   "label": "Player-stat distribution shape and volatility",
+   "category": "distribution",
+   "mechanism": "The dispersion of player stats around expectation (usage volatility, garbage time, injuries) determines rung probabilities.",
+   "rationale": "College player stats are more volatile than the NFL because of rotation, blowouts and heavy matchup variance; ladders need mixtures.",
+   "measurement": "Fit game-level distributions (negative binomial/zero-inflated) with dispersion by role; include blowout and exit mixture components; compute exceedance probabilities.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/player/season, /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.weather_pit": {
+   "label": "Kickoff-hour weather forecast vintages",
+   "category": "environment",
+   "mechanism": "Wind, rain and cold reduce passing and kicking performance and shift run rates, with stronger effects in open college stadiums.",
+   "rationale": "Forecast vintages matter; effects are nonlinear; many college stadiums are open-air; extreme weather leads to delays or cancellations (lifecycle).",
+   "measurement": "Store forecasts at fixed lead times by stadium coordinates (wind, gusts, precipitation, temperature); ignore domes; compute effect on totals, pass rate and FG success.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Open-Meteo forecast API (free)",
+    "NWS api.weather.gov hourly forecast grids",
+    "CollegeFootballData API (free key) /games/weather (realized, post-hoc)"
+   ],
+   "registry_ids": [
+    "cfb.weather_pit"
+   ]
+  },
+  "cfb.venue": {
+   "label": "Venue, altitude, home-field and crowd effect",
+   "category": "environment",
+   "mechanism": "Home-field advantage in college is large and variable (crowd, travel, altitude) and neutral-site games remove it.",
+   "rationale": "College HFA differs by program and stadium; neutral-site and bowl games should be modeled with zero or small HFA; altitude or noise affects tempo and false starts.",
+   "measurement": "Venue table (capacity, altitude, surface, roof), team-specific HFA estimated with shrinkage; neutral-site indicator; crowd/attendance signal.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /venues, /games"
+   ],
+   "registry_ids": [
+    "cfb.venue"
+   ]
+  },
+  "cfb.rest_travel": {
+   "label": "Rest, travel, bye, short week and lookahead/rivalry",
+   "category": "schedule_context",
+   "mechanism": "Rest days, travel distance and schedule position (bye, short week, lookahead and letdown spots) influence performance and preparation.",
+   "rationale": "College schedules have weekly rhythm with occasional short weeks and byes; effects are modest but can be notable for emotional spots; the market partly prices them.",
+   "measurement": "Days of rest, bye previous week, travel distance/time zone, kickoff time, rivalry and next-opponent importance flags; regress margin residuals on these with shrinkage.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": [
+    "cfb.rest_travel"
+   ]
+  },
+  "cfb.motivation": {
+   "label": "Bowl/CFP eligibility, rivalry and standings stakes",
+   "category": "motivation",
+   "mechanism": "Stakes such as bowl eligibility, conference title, playoff berth, rivalry or coach transitions alter effort and personnel decisions.",
+   "rationale": "Motivation is a notable factor in late-season and bowl games: opt-outs, transfers and coaching changes interact; hard to quantify, so use structured flags.",
+   "measurement": "Flags for bowl eligibility at stake, CFP implications (change in playoff probability), rivalry, eliminated/clinched; from standings simulation compute marginal game importance.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /rankings",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": [
+    "cfb.motivation"
+   ]
+  },
+  "cfb.officials": {
+   "label": "Officiating crew penalty tendencies",
+   "category": "officiating",
+   "mechanism": "Crews vary in flag rates (holding, pass interference, targeting) that shift drive length, scoring and ejections.",
+   "rationale": "College crews are conference-specific, so effects are intertwined with conference style; data on crew assignments are not widely published.",
+   "measurement": "Crew-level penalties per game with team adjustment (random effects) when assignments are available; otherwise conference-level penalty tendencies.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "sportsdataverse cfbfastR-data (github releases, play_by_play) (penalty flags by game, post-hoc)",
+    "NONE_FOUND (reliable crew assignment feed)"
+   ],
+   "registry_ids": [
+    "cfb.officials"
+   ]
+  },
+  "cfb.standings": {
+   "label": "Conference standings, tiebreakers and CFP ranking model",
+   "category": "team_strength",
+   "mechanism": "Season outcomes (conference title, playoff berth, rankings) depend on strength, remaining schedule and tiebreaker/selection rules.",
+   "rationale": "Selection involves committee judgement and format changes (12-team playoff), so simulations must encode rules and uncertain committee behaviour.",
+   "measurement": "Monte Carlo of remaining games with ratings uncertainty; conference tiebreakers; playoff selection model (rank-based with historical committee behavior).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /rankings, /records"
+   ],
+   "registry_ids": [
+    "cfb.standings"
+   ]
+  },
+  "cfb.polls": {
+   "label": "Poll and ranking dynamics and committee behaviour",
+   "category": "other",
+   "mechanism": "Rankings influence perceived strength, committee decisions and market-based futures; their movements follow predictable patterns after wins and losses.",
+   "rationale": "Committee rankings anchor playoff odds; movement depends on game results and quality; useful for markets resolved by rankings.",
+   "measurement": "Weekly rankings history (AP, coaches, CFP); model transition probabilities conditional on result, margin and opponent rank.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /rankings",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": [
+    "cfb.polls"
+   ]
+  },
+  "cfb.playoff_format": {
+   "label": "Playoff format and seeding rules in force",
+   "category": "market_structure",
+   "mechanism": "The format (number of teams, automatic bids, seeding, byes, home-field) defines how strength translates into title and berth probabilities.",
+   "rationale": "Rules changed recently; futures and make-playoff markets need the exact format and bracket; wrong rule set gives structurally wrong probabilities.",
+   "measurement": "Document format by season (bids, seeding, tiebreakers, bracket paths, neutral/home sites); encode in simulation; check contract wording.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "College Football Playoff official protocol and announcements",
+    "Kalshi rules text"
+   ],
+   "registry_ids": []
+  },
+  "cfb.schedule_strength": {
+   "label": "Remaining and conference schedule strength",
+   "category": "schedule_context",
+   "mechanism": "Remaining opponents and home/away distribution determine expected wins and playoff paths.",
+   "rationale": "College schedules are unbalanced across conferences; remaining schedule difficulty is a central input to futures and rankings.",
+   "measurement": "Sum of win probabilities over remaining games using current ratings with home/rest adjustments; correlation within conference; compare to market.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /ratings/sp"
+   ],
+   "registry_ids": []
+  },
+  "cfb.pythag_luck": {
+   "label": "Close-game record and Pythagorean luck",
+   "category": "variance_luck",
+   "mechanism": "Records in one-score games and points-based expected wins deviate from true strength; lucky records regress.",
+   "rationale": "Season futures and rankings based on record overstate lucky teams; Pythagorean/advanced-stat wins are better predictors.",
+   "measurement": "Pythagorean wins and PPA-based expected wins; one-score game record vs expectation; regress most of the luck.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /games, /stats/season/advanced"
+   ],
+   "registry_ids": []
+  },
+  "cfb.award_narrative": {
+   "label": "Award candidates (Heisman) production and narrative",
+   "category": "other",
+   "mechanism": "Awards like the Heisman follow production, team success, QB/position bias and narrative in an electorate that is known and timed.",
+   "rationale": "Winners are mostly QBs on top-ranked teams; narrative changes weekly; ballots close before certain late games.",
+   "measurement": "Candidate stats and team rank, historical winners model, odds path, ballot timeline; update weekly.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "CollegeFootballData API (free key) /stats/player/season, /rankings",
+    "ESPN public JSON (site.api.espn.com college-football scoreboard / summary / rankings / injuries)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.futures_coherence": {
+   "label": "Cross-market coherence for season-level futures",
+   "category": "market_structure",
+   "mechanism": "Conference, playoff, title and ranking markets are linked by sum-to-one and implication constraints.",
+   "rationale": "Violations identify stale quotes; linked markets share common uncertainty about team strength.",
+   "measurement": "Aggregate related contracts, compute sum of mids and monotonic constraints, compare with model.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": []
+  },
+  "cfb.in_game_exit_risk": {
+   "label": "In-game injury exit and starter removal risk",
+   "category": "availability",
+   "mechanism": "Players exiting mid-game (injury, blowout rest) truncate counting stats and shift volume to backups.",
+   "rationale": "In college, blowouts remove starters early and injuries are common; the risk is a hidden haircut to stat props.",
+   "measurement": "Estimate probability of missing a chunk of snaps by role using historical snap-share distributions, blowout probability and injury status; apply as mixture.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "CollegeFootballData API (free key) /plays",
+    "sportsdataverse cfbfastR-data (github releases, play_by_play)"
+   ],
+   "registry_ids": []
+  },
+  "m.quote_history": {
+   "label": "Kalshi bid/ask/last time series through close",
+   "category": "market_structure",
+   "mechanism": "The market's own price path aggregates information over time and is the benchmark any model must beat; movements around news and lineup release show how quickly information is absorbed.",
+   "rationale": "Closing price is a strong prior; the useful question is whether early prices lag information (injury news, weather forecasts, lineup release) or overreact; the time-to-close and vintage of each quote must be recorded so research is point-in-time. Last-trade can be stale in thin markets; mid of bid/ask is more informative.",
+   "measurement": "Store timestamped bid, ask, last and volume candlesticks for each contract; compute mid, spread, time since last trade, drift from open to close and price at fixed horizons (24h, 3h, 1h, 5m before start); use as prior/benchmark and for closing-line value computations.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.quote_history"
+   ]
+  },
+  "m.orderbook_depth": {
+   "label": "Order-book depth and spread",
+   "category": "market_structure",
+   "mechanism": "Depth and spread determine how much size can be executed at a price and the cost of crossing; thin books imply noisy mids and slippage.",
+   "rationale": "Edge estimated from mid price is not realizable if the executable price is worse; depth also signals liquidity providers' confidence; wide spreads in props/ladder rungs mean much of the model edge is consumed.",
+   "measurement": "Snapshot orderbook levels (price, size) per contract; compute spread, depth at top 3 levels, expected fill price for a given size; track by time to start and rung; compare with model edge.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.orderbook_depth"
+   ]
+  },
+  "m.volume_oi": {
+   "label": "Volume and open interest",
+   "category": "market_structure",
+   "mechanism": "Volume and open interest measure participation and price reliability; high-volume markets are better aggregated while low-volume ones can be stale or manipulated.",
+   "rationale": "Information content of the price scales with volume; low-volume rungs may lag; volume spikes follow news and identify reaction windows.",
+   "measurement": "Per-contract cumulative volume, open interest and volume velocity by time before start; use as reliability weight for price benchmarks and for execution feasibility.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.volume_oi"
+   ]
+  },
+  "m.ladder_structure": {
+   "label": "Cross-rung consistency of threshold ladders",
+   "category": "market_structure",
+   "mechanism": "Threshold ladders (over 199.5, 249.5, 299.5 ...) must be monotone and jointly define an implied distribution; inconsistencies or a kinked implied density reveal stale or mispriced rungs.",
+   "rationale": "Correlated rungs mean a model error propagates across rungs, so edges at adjacent thresholds are not independent bets; rung spacing and push rules (half-point lines avoid pushes) change settlement; implied mean/median from the ladder can be compared with model forecast.",
+   "measurement": "Fit a smooth CDF to rung prices (isotonic or parametric, e.g. negative binomial), check monotonicity, compute implied mean/SD/skew and implied mass between rungs; detect rungs deviating from fitted curve; treat adjacent rungs as one position in sizing.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.ladder_structure"
+   ]
+  },
+  "m.settlement_truth": {
+   "label": "Settled result, settlement value and timestamp",
+   "category": "market_structure",
+   "mechanism": "The settlement value and time define ground truth for training and evaluation; discrepancies between source stats and settled outcomes expose rule or source risk.",
+   "rationale": "Labels must be the settled outcomes with exact definitions (regulation vs including overtime, official stats), not recomputed from convenient sources; timing of settlement affects capital.",
+   "measurement": "Pull settled results (result, settlement value, settlement time) for each market and reconcile with independent box-score source; track mismatch rate and delay between event end and settlement.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)",
+    "CollegeFootballData API (free key) (cross-check)"
+   ],
+   "registry_ids": [
+    "m.settlement_truth"
+   ]
+  },
+  "m.rules_text": {
+   "label": "Versioned rules and settlement wording (overtime, ties, postponement, void)",
+   "category": "market_structure",
+   "mechanism": "The rules text defines what counts: whether overtime is included, how pushes, ties, player DNP, postponements, and stat corrections are handled; the same football event can settle differently across contracts.",
+   "rationale": "Probability models must match the exact settlement clause; e.g. a regulation-only market has a tie mass while an including-OT market does not; void and DNP rules change whether a prop is a loss or a refund; rule text may change between versions.",
+   "measurement": "Collect rules_primary/secondary text per contract with version/timestamp; parse for OT inclusion, push/tie treatment, void conditions, data source and expiration; map to the model output definition and flag ambiguous clauses.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.rules_text"
+   ]
+  },
+  "m.external_lines": {
+   "label": "Sportsbook and exchange reference prices with timestamps",
+   "category": "market_structure",
+   "mechanism": "Sharp sportsbook and exchange prices are a high-information benchmark for game, props and futures; comparing Kalshi to them tests for staleness or inefficiency.",
+   "rationale": "Using the right reference matters: de-vig, line timing and book selection change the implied probability; closing lines at sharp books are best proxies for true probability, while opening lines are noisy.",
+   "measurement": "Collect timestamped lines for spread, total, moneyline, props and futures; remove vig by multiplicative/power method; compute cross-book consensus and its lead/lag versus Kalshi quotes.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN public JSON odds (limited)",
+    "CollegeFootballData API betting lines (free key)",
+    "The Odds API (free tier, limited)"
+   ],
+   "registry_ids": [
+    "m.external_lines"
+   ]
+  },
+  "m.fees": {
+   "label": "Fee schedule and maker/taker rules",
+   "category": "market_structure",
+   "mechanism": "Fees reduce realized edge and scale with price (larger near 50c), changing which markets and thresholds are tradable.",
+   "rationale": "A model edge of a few cents may vanish after fees and spread; fees and maker/taker rebates differ by time and market type, so the cost model must follow the schedule in force at trade time.",
+   "measurement": "Maintain fee schedule versions and compute fee per contract at each price; net edge = model probability - price - fees - slippage; include maker/taker difference.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi fee schedule (kalshi.com documentation)"
+   ],
+   "registry_ids": [
+    "m.fees"
+   ]
+  },
+  "m.lifecycle": {
+   "label": "Open/close/halt/postponement lifecycle events",
+   "category": "market_structure",
+   "mechanism": "Market lifecycle (opening time, trading halts, close, early determination or postponement) controls when information can be used and when exposure ends.",
+   "rationale": "A market that closes at kickoff versus one that remains open during play uses different information sets; postponed or suspended games trigger void/extension rules.",
+   "measurement": "Track created/open/close/settle timestamps and status changes per ticker; compute time from open to start and close to start; flag delayed/postponed games; define decision time for point-in-time features.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.lifecycle"
+   ]
+  },
+  "m.strike_hit_rates": {
+   "label": "Historical realized frequency by strike and rung per family",
+   "category": "distribution",
+   "mechanism": "Realized frequencies for each strike in a family (e.g. QB over 250.5) provide an empirical calibration baseline and expose systematic bias in how rungs are priced.",
+   "rationale": "Thresholds around round numbers and half-point lines can show systematic over/under pricing (favorite-longshot bias); empirical hit rates need sufficient sample and conditioning on season/regime.",
+   "measurement": "From settled contracts: hit rate by family, threshold relative to expected (or ladder percentile) and price bucket; compute calibration curve (price vs realized) with confidence intervals; compare across seasons.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.strike_hit_rates"
+   ]
+  },
+  "m.trade_tape": {
+   "label": "Executed trades (price, size, taker side, time)",
+   "category": "market_structure",
+   "mechanism": "The trade tape shows executed prices, sizes and aggressor side, revealing order flow, information arrival and realistic fill prices.",
+   "rationale": "Mid quotes can be stale; trades show where liquidity actually transacted and whether flow is informed (one-sided aggressive buying before news); needed for realistic slippage and CLV.",
+   "measurement": "Collect trades with timestamps, count, taker side; compute volume-weighted price, signed order flow imbalance before news, and execution slippage vs mid; use with candlesticks to measure price impact.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)"
+   ],
+   "registry_ids": [
+    "m.trade_tape"
+   ]
+  },
+  "m.stat_source_mismatch": {
+   "label": "Official versus provider stat definition and source mismatch",
+   "category": "market_structure",
+   "mechanism": "College statistics differ across sources (NCAA official, ESPN, school stat crews) and in definitions (sack yardage counted against rushing, bowl and conference game inclusion), so thresholds near a boundary can resolve differently.",
+   "rationale": "Stat props resolve on a named source; if the model is trained on another source the label is wrong; corrections after the game and differences in treatment (kneel-downs, sacks) are sources of tail risk especially around round thresholds.",
+   "measurement": "Compare player/team stats across at least two sources for completed games and record mismatch rates by stat; identify the contract source and lock time; flag ladders where realized values fall within typical mismatch tolerance.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "Kalshi public market API (markets, candlesticks, trades, orderbook)",
+    "CollegeFootballData API (free key) /stats/player/season and /plays",
+    "ESPN public JSON (site.api.espn.com college-football summary)",
+    "NCAA official statistics (stats.ncaa.org)"
+   ],
+   "registry_ids": []
+  }
+ },
+ "blueprints": {
+  "game_side": {
+   "mechanism": "College moneyline, spread and half/quarter side markets price the distribution of margin: opponent-adjusted team strength (efficiency, talent, QB), venue and travel, schedule spots and motivation shift the mean, while tails are fatter than in the NFL because of mismatches, blowout management and variable pace. Roster churn from the portal, no reliable injury feed and cross-conference connectivity make priors and calibration central.",
+   "target": "Probability a team wins, covers a spread rung, or leads at a period end, under the contract's regulation/overtime wording.",
+   "inputs": [
+    {
+     "id": "cfb.market_ratings",
+     "why": "Market-implied strength anchors the prior and absorbs sharp information.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.sp_plus",
+     "why": "Composite ratings give an independent strength estimate and benchmark.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.off_ppa",
+     "why": "Opponent-adjusted offense efficiency drives scoring margin.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.def_ppa",
+     "why": "Opponent-adjusted defense efficiency completes the margin estimate.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.cross_conf_calibration",
+     "why": "Conference-level offsets prevent weak-schedule inflation in adjusted stats.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb_status_pit",
+     "why": "QB identity at decision time shifts margin by points.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.injuries",
+     "why": "Availability news (sparse) changes strength late.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.venue",
+     "why": "Home-field effects vary widely; neutral sites remove them.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.rest_travel",
+     "why": "Short weeks, byes and travel create small effects.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.motivation",
+     "why": "Rivalry, bowl, playoff stakes and opt-outs.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Favorite behavior with large leads changes cover probabilities for big spreads.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.score_resid",
+     "why": "Fat-tailed margin residuals and key numbers.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.ot_model",
+     "why": "Overtime has no ties but extends the game; wording matters.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sharp reference lines for benchmarking.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Regulation vs OT inclusion and period definitions.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.transfer_roster",
+     "why": "Roster churn from the portal makes last season's results a weaker guide, especially early in the season.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote history shows how fast the market absorbs QB news.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.qb_status_pit",
+      "cfb.market_ratings",
+      "cfb.score_resid"
+     ],
+     "hypothesis": "QB status interacts with team strength and spread size: a QB change in college moves the line more than in the NFL because depth drops sharply behind the starter."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.score_resid",
+      "cfb.off_ppa"
+     ],
+     "hypothesis": "Spread size interacts with blowout management: for 21+ point favorites, cover probability depends on the coach's second-half behavior as much as on strength."
+    },
+    {
+     "inputs": [
+      "cfb.cross_conf_calibration",
+      "cfb.off_ppa",
+      "cfb.def_ppa"
+     ],
+     "hypothesis": "Conference calibration interacts with adjusted efficiency: cross-conference matchups are where raw adjusted stats are least reliable."
+    }
+   ]
+  },
+  "period": {
+   "mechanism": "Half and quarter markets inherit the game-level strength model with period-specific structure: scripted openers and opening-possession order, first-half vs second-half style (starters in/out, blowout management), halftime adjustments and end-of-half drives. Period scores are smaller and lumpier so ties and zero scoring have material mass; spreads on halves use margin distributions at period end.",
+   "target": "Points, margin, winner or total in a period (first/second half, quarter) with tie handling per contract.",
+   "inputs": [
+    {
+     "id": "cfb.q_scoring",
+     "why": "Opponent-adjusted period scoring rates.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.half_split",
+     "why": "First/second half scoring split by team and spread bucket.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.opening_poss",
+     "why": "Opening possession order and deferral behavior.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.first_drive",
+     "why": "Opening-drive scripts and outcomes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.script",
+     "why": "Early scripting and state-dependent pace.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Second-half starter removal reduces favorite scoring.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.pace",
+     "why": "Plays per period scale scoring.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.team_total_split",
+     "why": "Implied team scoring allocated to periods.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.coaching",
+     "why": "Coach tempo and halftime management.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.kicker",
+     "why": "FG probability in short periods.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Tie and push rules per period.",
+     "role": "primary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.opening_poss",
+      "cfb.first_drive",
+      "cfb.q_scoring"
+     ],
+     "hypothesis": "Opening possession interacts with scripted first drives: the first-quarter edge is concentrated in teams with high first-drive scoring rates."
+    },
+    {
+     "inputs": [
+      "cfb.half_split",
+      "cfb.blowout_management",
+      "cfb.team_total_split"
+     ],
+     "hypothesis": "Spread size interacts with half split: big favorites score a larger share of points early, so first-half totals and spreads scale faster than game spread."
+    },
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.clock_rules",
+      "cfb.q_scoring"
+     ],
+     "hypothesis": "Tempo interacts with clock rules: fast teams get more possessions per period, and clock-rule regime changes alter the effect."
+    }
+   ]
+  },
+  "game_total": {
+   "mechanism": "Totals combine possessions (tempo of both offenses, turnover and punt rates, clock rules) with points per possession from opponent-adjusted PPA, explosiveness, red-zone finishing, field position and kicking, modified by weather, venue and lineup (QB). College totals have huge variance in pace and style, fat tails from mismatches, and favorite blowout management; team totals are slices of the same joint distribution.",
+   "target": "Total or team points exceeding a threshold in regulation (or including overtime per wording).",
+   "inputs": [
+    {
+     "id": "cfb.pace",
+     "why": "Tempo of both offenses sets plays; ranges wide in college.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.drives",
+     "why": "Expected possessions and plays per drive are the base unit of scoring; explosive teams have few plays but many scoring drives.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.off_ppa",
+     "why": "Own offense PPA, adjusted for opponents and recency, gives points per drive for each side.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.def_ppa",
+     "why": "Opponent defense PPA suppresses points per drive and must be adjusted for conference connectivity.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.success_explosiveness",
+     "why": "Success rate versus explosiveness determines drive length and the variance of the total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.redzone",
+     "why": "Red-zone TD versus FG conversion changes points per scoring trip and regresses strongly in college sample sizes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.field_pos",
+     "why": "Starting field position and special teams change expected points per drive and short-field scoring chances.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.kicker",
+     "why": "Kicker range and accuracy decide how many stalled drives yield 3 points and create key-number structure in totals.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb_status_pit",
+     "why": "QB identity at decision time shifts both offense efficiency and pace, and is often confirmed late.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Wind and rain forecast vintages reduce passing and FG success, with open-air stadiums most exposed.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.clock_rules",
+     "why": "The clock-rule regime in the season determines plays per game and thus the baseline of scoring for the sample.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Starter removal and clock running by a leading favorite cut late scoring, while the underdog collects garbage-time points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.score_resid",
+     "why": "Total residuals by spread and total bucket give fat-tailed probabilities for each rung and key-number mass.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sharp sportsbook totals embed weather and lineup information; the Kalshi total ladder should be compared with them after de-vig.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Adjacent total rungs imply a distribution; kinks or non-monotone quotes identify stale rungs and avoid double-counting correlated bets.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.pass_rate",
+      "cfb.clock_rules"
+     ],
+     "hypothesis": "Tempo of both teams interacts with clock rules: the effect of a no-huddle offense is partially offset by an opponent that controls the clock with the run."
+    },
+    {
+     "inputs": [
+      "cfb.weather_pit",
+      "cfb.pass_efficiency",
+      "cfb.offense_style"
+     ],
+     "hypothesis": "Wind and rain interact with passing style: air-raid offenses lose more efficiency than run-heavy teams, so weather impact on totals is style-dependent."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.team_total_split",
+      "cfb.score_resid"
+     ],
+     "hypothesis": "Mismatch size interacts with total: the favorite's late pace and the underdog's garbage-time scoring determine the net effect on totals."
+    }
+   ]
+  },
+  "game_event": {
+   "mechanism": "Game-event and stat props (overtime, team/game statistics) depend on the same drive and score process, with additional style and rules factors: regulation tie probability and overtime rules for overtime markets, pace and pass/run mix for yardage and count stats, and havoc/pressure for sacks and turnovers. College stat counts have scoring-source ambiguity (e.g. sack yardage in rushing) that matters for settlement.",
+   "target": "Occurrence or count of a game-level event or team statistic as defined by contract.",
+   "inputs": [
+    {
+     "id": "cfb.score_resid",
+     "why": "Mass at zero margin for overtime events.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.ot_model",
+     "why": "Overtime rules and tie probability determine overtime markets and any event defined over extra periods.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.pace",
+     "why": "Counting events (TDs, sacks, penalties, yards) scale with plays, and college tempo varies widely between teams.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pass_rate",
+     "why": "Pass/run mix determines yardage categories.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pass_rush",
+     "why": "Sack and pressure rates for and against determine sack and negative-play counts.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.havoc",
+     "why": "Havoc rates predict TFLs, forced fumbles and pass breakups, which feed turnover and negative-play counts.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.turnover_luck",
+     "why": "Takeaway counts are heavily luck-driven, so realized turnover margin must be regressed before pricing turnover events.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.redzone",
+     "why": "Red-zone finishing determines TD versus FG counts and TD-count events.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.team_total_split",
+     "why": "Expected team scoring sets the base for TD counts and scoring-based events.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Weather shifts passing, fumbles and kicking events with known forecast timing.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.officials",
+     "why": "Penalty-related events depend on crew and conference flag rates and team discipline.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Statistic definitions and source.",
+     "role": "primary"
+    },
+    {
+     "id": "m.settlement_truth",
+     "why": "Event labels come from settled outcomes, not approximations.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.score_resid",
+      "cfb.team_total_split",
+      "cfb.ot_model"
+     ],
+     "hypothesis": "Tie mass interacts with total and spread: overtime is most likely in close, low-scoring, kicker-driven games."
+    },
+    {
+     "inputs": [
+      "cfb.pass_rush",
+      "cfb.ol",
+      "cfb.qb_rushing"
+     ],
+     "hypothesis": "Pass rush interacts with protection and QB mobility: sack counts concentrate in matchups with dominant rush versus weak OL and immobile QB."
+    },
+    {
+     "inputs": [
+      "cfb.havoc",
+      "cfb.turnover_luck",
+      "cfb.pace"
+     ],
+     "hypothesis": "Havoc interacts with turnover luck: takeaways counts regress unless supported by process (PBU, pressure)."
+    }
+   ]
+  },
+  "player_other": {
+   "mechanism": "College player props (TD scorer, yardage, receptions) = volume x efficiency: volume from team plays and script (spread), target/carry share and depth chart roles; efficiency from opponent-adjusted skill and the matchup. Rotation depth, blowouts, QB mobility, scheme style and sparse availability data mean wider variance and greater role uncertainty than the NFL.",
+   "target": "Probability a player scores or exceeds a statistical threshold under the contract definition.",
+   "inputs": [
+    {
+     "id": "cfb.player_usage",
+     "why": "Share of targets/carries/snaps by role.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.td_rates",
+     "why": "Role-based scoring rates combine red-zone and goal-line usage with team expected TDs.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.pace",
+     "why": "Total plays scale the volume available to individual players.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pass_rate",
+     "why": "Pass versus run split determines whether volume flows to receivers or backs.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.script",
+     "why": "Spread-implied script shifts volume between passing and rushing and between starters and backups.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Starters leave lopsided games early, capping counting stats for favorites' players.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.skill_avail",
+     "why": "Teammate availability redistributes targets and carries, and depth is thin in college.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.dvp",
+     "why": "Opponent-adjusted position defense.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb_rushing",
+     "why": "QB rushing competes for carries and TDs.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.player_stat_variance",
+     "why": "Distribution shape (rotation, blowouts, boom-bust usage) determines exceedance probability at each rung.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.depth_chart",
+     "why": "Depth chart clarity and recent changes identify role stability and starter status.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Contract treatment of non-participation (void versus loss) and how stats are counted (e.g. sacks) define settlement.",
+     "role": "primary"
+    },
+    {
+     "id": "m.stat_source_mismatch",
+     "why": "Official and provider stats differ in definitions and corrections, producing label noise near thresholds.",
+     "role": "context"
+    },
+    {
+     "id": "m.strike_hit_rates",
+     "why": "Realized hit rates by rung calibrate player-prop ladders.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.script",
+      "cfb.blowout_management",
+      "cfb.player_usage"
+     ],
+     "hypothesis": "Spread and blowout management: a large favorite's RB1 gets early volume but loses late carries to backups, reducing counting-stat ceilings."
+    },
+    {
+     "inputs": [
+      "cfb.qb_rushing",
+      "cfb.td_rates",
+      "cfb.player_usage"
+     ],
+     "hypothesis": "QB mobility and goal-line usage: dual-threat QBs absorb red-zone carries, lowering RB and WR TD probability."
+    },
+    {
+     "inputs": [
+      "cfb.dvp",
+      "cfb.player_usage",
+      "cfb.pass_efficiency"
+     ],
+     "hypothesis": "Opponent matchup and role: slot receivers vs weak nickel corners gain share more than outside receivers vs average defenses."
+    }
+   ]
+  },
+  "season_outcome": {
+   "mechanism": "Season-level college outcomes (conference title, playoff berth, rankings, awards, national title) derive from team strength with uncertainty, the unbalanced schedule, tiebreakers and a selection process (committee/format) that adds non-statistical judgement; format changes and conference realignment change structure; roster churn and QB injuries dominate preseason uncertainty.",
+   "target": "Season-level event resolution (title, berth, ranking, award) under contract definition.",
+   "inputs": [
+    {
+     "id": "cfb.standings",
+     "why": "Simulation of conference race and tiebreakers.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.playoff_format",
+     "why": "Format and seeding rules in force.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.market_ratings",
+     "why": "Time-varying market-implied strength with uncertainty is the base for simulations and futures prices.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.sp_plus",
+     "why": "Composite ratings provide an independent strength estimate and a check against the market-implied rating.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.roster_continuity",
+     "why": "Preseason regression and returning production.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.schedule_strength",
+     "why": "Forward-looking opponent strength over an unbalanced schedule drives expected wins and tiebreaker paths.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pythag_luck",
+     "why": "Lucky one-score records inflate rankings and perceived strength and regress going forward.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.polls",
+     "why": "Ranking dynamics and committee behavior.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb",
+     "why": "QB injury or change is the dominant single risk for a contender's season distribution.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.futures_coherence",
+     "why": "Constraints across linked markets.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook futures give benchmark probabilities after de-vig, though vig-heavy and sparse for small outcomes.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Contract defines eligibility, cancelled-game handling and which ranking or source resolves the market.",
+     "role": "primary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.polls",
+      "cfb.standings",
+      "cfb.playoff_format"
+     ],
+     "hypothesis": "Committee behavior interacts with record and strength: playoff berth probability depends on both results and committee preferences (quality wins, strength of record)."
+    },
+    {
+     "inputs": [
+      "cfb.roster_continuity",
+      "cfb.schedule_strength",
+      "cfb.market_ratings"
+     ],
+     "hypothesis": "Roster continuity interacts with schedule: teams with low returning production and tough early schedules have wider win distributions."
+    },
+    {
+     "inputs": [
+      "cfb.pythag_luck",
+      "cfb.polls",
+      "cfb.sp_plus"
+     ],
+     "hypothesis": "Luck regression interacts with rankings: lucky records inflate polls and rankings, so regress before projecting."
+    }
+   ]
+  }
+ },
+ "archetypes": {
+  "game_moneyline_spread": {
+   "blueprint": "game_side",
+   "label": "Game moneyline and spread",
+   "families": [
+    "CFB/game_moneyline",
+    "CFB/game_spread"
+   ],
+   "target": "Probability a team wins (regulation plus overtime; no ties) or covers a spread rung.",
+   "mechanism": "Margin mean = opponent-adjusted rating difference (efficiency, talent, QB-specific) + home or neutral-site edge + rest/travel/motivation, with fat tails and key numbers. Because college connectivity is thin and injury information is sparse, the market-implied rating is the primary prior and the model searches for incremental information: QB status, availability, weather, scheme style, and blowout behavior at large spreads. Overtime is certain to produce a winner so moneyline has no tie leg.",
+   "inputs": [
+    {
+     "id": "cfb.market_ratings",
+     "why": "Market-implied rating as prior.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.sp_plus",
+     "why": "Composite ratings give a second strength estimate that checks the market-implied rating and highlights disagreements.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.off_ppa",
+     "why": "Opponent-adjusted offensive PPA is the structural scoring component of the margin independent of market lines.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.def_ppa",
+     "why": "Opponent-adjusted defensive PPA completes the margin estimate and matters more for matchups against specific offenses.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.cross_conf_calibration",
+     "why": "Cross-conference connectivity correction.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.talent",
+     "why": "Talent ceiling and depth, important at extremes and early season.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.roster_continuity",
+     "why": "Early-season regression of last year's ratings.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb_status_pit",
+     "why": "The QB identity vintage determines whether the model assumes the starter; changes can move the line by several points.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.injuries",
+     "why": "Sparse availability information (conference reports and beat reporters) can change strength late; vintage tracking avoids look-ahead.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.ol",
+     "why": "Line continuity and injuries change pass protection and run blocking and are under-reported in college.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.turnover_luck",
+     "why": "Teams with lucky turnover margins are overrated by results-based ratings and regress.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.venue",
+     "why": "Home-field strength varies widely and neutral sites (bowls, rivalry neutral) remove it.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.rest_travel",
+     "why": "Byes, short weeks, long travel and kickoff time shift the margin slightly.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.motivation",
+     "why": "Rivalry, bowl, playoff stakes and opt-outs change effort and lineup in specific games.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Large-favorite coaches pull starters and run clock, capping margins in ways that matter for big-spread covers.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Weather increases margin variance and reduces passing teams' advantage.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.score_resid",
+     "why": "Margin distribution and key numbers.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sharp sportsbook sides are the benchmark; deviations in Kalshi quotes show staleness or lag after news.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Spread rungs imply a margin distribution; inconsistent rungs signal stale quotes and shared risk across adjacent covers.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.transfer_roster",
+     "why": "Portal arrivals and departures change starters and unit quality, and eligibility rulings can be decided late.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.opt_out_departures",
+     "why": "Bowl and playoff opt-outs and four-game-redshirt decisions remove starters from specific late games.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.suspension_eligibility",
+     "why": "Suspensions and first-half targeting carryovers remove players for a game or half and are only partly in feeds.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote history shows when the market absorbs QB, weather and lineup news and benchmarks closing-line value.",
+     "role": "context"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread determine whether a modeled edge is executable.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fees reduce edge, especially near 50c where fee per contract peaks.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Volume and open interest signal price reliability and feasible size.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Executed trades reveal real fills and informed flow versus stale quotes.",
+     "role": "context"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Open/close/halt and postponement events (including weather delays) define the information set.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.qb_status_pit",
+      "cfb.market_ratings",
+      "cfb.qb"
+     ],
+     "hypothesis": "QB status x spread: a QB change in college moves the line more because of depth and system fit; Kalshi quotes may lag the news, so timing of QB vintage matters."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.score_resid",
+      "cfb.coaching"
+     ],
+     "hypothesis": "Spread size x blowout management: cover probability for big favorites depends on whether the coach keeps pressing, shifting the tail of the margin distribution."
+    },
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.off_ppa",
+      "cfb.def_ppa"
+     ],
+     "hypothesis": "Tempo mismatch x efficiency: when a fast offense meets a slow, ball-control team, variance falls and margin shrinks; spreads with high rating gaps may overstate."
+    },
+    {
+     "inputs": [
+      "cfb.roster_continuity",
+      "cfb.talent",
+      "cfb.sp_plus"
+     ],
+     "hypothesis": "Early season: low returning production x talent prior: ratings carry large uncertainty; weight talent and portal data more than last year's results."
+    }
+   ]
+  },
+  "game_total": {
+   "blueprint": "game_total",
+   "label": "Game total points",
+   "families": [
+    "CFB/game_total"
+   ],
+   "target": "Probability that total points exceed a rung (regulation plus overtime per wording).",
+   "mechanism": "Total = possessions x points per possession for both teams. In college, tempo spans a wider range, clock rules and style (option, air raid) change plays per game, and mismatch/blowout management lowers the favorite's late scoring while inflating variance; weather and QB identity are the main late-information drivers. Distribution has key numbers and fat right tail; the Kalshi ladder should be consistent with the implied distribution.",
+   "inputs": [
+    {
+     "id": "cfb.pace",
+     "why": "Both teams' tempo and no-huddle rates.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.drives",
+     "why": "Expected possessions and plays per drive are the base unit of scoring; explosive teams have few plays but many scoring drives.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.pass_rate",
+     "why": "Pass share determines clock usage.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.clock_rules",
+     "why": "The clock-rule regime in the season determines plays per game and thus the baseline of scoring for the sample.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.off_ppa",
+     "why": "Own offense PPA, adjusted for opponents and recency, gives points per drive for each side.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.def_ppa",
+     "why": "Opponent defense PPA suppresses points per drive and must be adjusted for conference connectivity.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.success_explosiveness",
+     "why": "Success rate versus explosiveness determines drive length and the variance of the total.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.redzone",
+     "why": "Red-zone TD versus FG conversion changes points per scoring trip and regresses strongly in college sample sizes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.havoc",
+     "why": "High havoc defenses create negative plays and turnovers that kill drives and cut totals.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.field_pos",
+     "why": "Starting field position and special teams change expected points per drive and short-field scoring chances.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.kicker",
+     "why": "Kicker range and accuracy decide how many stalled drives yield 3 points and create key-number structure in totals.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb_status_pit",
+     "why": "QB identity at decision time shifts both offense efficiency and pace, and is often confirmed late.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Wind and rain forecast vintages reduce passing and FG success, with open-air stadiums most exposed.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.offense_style",
+     "why": "Option or air-raid styles produce atypical plays per game and run/pass splits, shifting the total relative to efficiency ratings.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Starter removal and clock running by a leading favorite cut late scoring, while the underdog collects garbage-time points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.officials",
+     "why": "Penalty-heavy crews or conferences lengthen drives and change pace, with small effects.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.score_resid",
+     "why": "Total residuals by spread and total bucket give fat-tailed probabilities for each rung and key-number mass.",
+     "role": "primary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sharp sportsbook totals embed weather and lineup information; the Kalshi total ladder should be compared with them after de-vig.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Adjacent total rungs imply a distribution; kinks or non-monotone quotes identify stale rungs and avoid double-counting correlated bets.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.opt_out_departures",
+     "why": "Bowl lineups with opt-outs lower expected scoring relative to regular-season efficiency ratings.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote history shows when the market absorbs QB, weather and lineup news and benchmarks closing-line value.",
+     "role": "context"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread determine whether a modeled edge is executable.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fees reduce edge, especially near 50c where fee per contract peaks.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Volume and open interest signal price reliability and feasible size.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Executed trades reveal real fills and informed flow versus stale quotes.",
+     "role": "context"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Open/close/halt and postponement events (including weather delays) define the information set.",
+     "role": "context"
+    },
+    {
+     "id": "m.settlement_truth",
+     "why": "Labels should use settled totals with the contract's overtime handling, not recomputed scores.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.pass_rate",
+      "cfb.drives"
+     ],
+     "hypothesis": "Combined tempo: two fast teams compound plays and drives, but a slow opponent controls clock; model pace as an interaction rather than average."
+    },
+    {
+     "inputs": [
+      "cfb.weather_pit",
+      "cfb.offense_style",
+      "cfb.kicker"
+     ],
+     "hypothesis": "Weather x style: wind/rain reduce points more for pass-heavy and explosive teams and affect FG range, so the total effect depends on both offenses' styles."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.team_total_split",
+      "cfb.score_resid"
+     ],
+     "hypothesis": "Blowout management x spread: large spreads lower the favorite's second-half scoring but raise underdog garbage-time points; net effect depends on coach behavior."
+    },
+    {
+     "inputs": [
+      "cfb.success_explosiveness",
+      "cfb.havoc",
+      "cfb.def_ppa"
+     ],
+     "hypothesis": "Success vs explosiveness x havoc: an explosive offense facing a high-havoc defense has more failed drives but more big plays, widening the total distribution."
+    }
+   ]
+  },
+  "team_total": {
+   "blueprint": "game_total",
+   "label": "Team total points",
+   "families": [
+    "CFB/team_total"
+   ],
+   "target": "Probability that one team's points exceed a rung.",
+   "mechanism": "Team points = own possessions x points per possession against the opponent's defense, constrained by the implied split of game total and spread and by blowout behavior (starters pulled when leading, garbage points when trailing). Team-specific pace, QB, line, red-zone finishing and special teams drive the mean; the distribution depends on style variance. Quotes must be consistent with game total and spread ladders.",
+   "inputs": [
+    {
+     "id": "cfb.team_total_split",
+     "why": "Implied team means from lines.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.off_ppa",
+     "why": "Own opponent-adjusted offensive efficiency determines the team's points per drive.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.def_ppa",
+     "why": "Opposing defense efficiency (pass versus rush) adjusts the team's expected points.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.pace",
+     "why": "Own possessions, influenced by own tempo and the opponent's clock usage, scale team points.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.redzone",
+     "why": "Team-specific red-zone TD rate and goal-line approach affects points per trip.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.kicker",
+     "why": "Own kicker quality shapes the 3-point share of points and the key-number clusters.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.qb_status_pit",
+     "why": "The team's starting QB status is the dominant driver of its own total and is confirmed late.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.skill_avail",
+     "why": "Absent receivers or backs lower the scoring ceiling and need replacement-quality estimates.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.ol",
+     "why": "Own line health shifts sack rate and rushing efficiency and so the scoring rate.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Behavior when leading/trailing.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Weather effects on own scoring depend on the team's pass-heavy or run-heavy style.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.score_resid",
+     "why": "Team score residuals show clustering at multiples of 3 and 7 and fat tails.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook team totals and implied splits from spread and total provide the benchmark.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Consistency with game total/spread.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote history shows when the market absorbs QB, weather and lineup news and benchmarks closing-line value.",
+     "role": "context"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread determine whether a modeled edge is executable.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fees reduce edge, especially near 50c where fee per contract peaks.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Volume and open interest signal price reliability and feasible size.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Executed trades reveal real fills and informed flow versus stale quotes.",
+     "role": "context"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Open/close/halt and postponement events (including weather delays) define the information set.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.team_total_split",
+      "cfb.score_resid"
+     ],
+     "hypothesis": "Favorite team total x blowout management: when expected to lead big, the favorite's team total is capped by starter removal and clock running; underdog gets garbage points."
+    },
+    {
+     "inputs": [
+      "cfb.off_ppa",
+      "cfb.secondary_coverage",
+      "cfb.pass_rate"
+     ],
+     "hypothesis": "Own offense x opponent defense style: pass-heavy offense vs strong secondary is hurt more than vs run defense strength; match style to opponent strengths."
+    },
+    {
+     "inputs": [
+      "cfb.qb_status_pit",
+      "cfb.ol",
+      "cfb.pass_rush"
+     ],
+     "hypothesis": "QB and OL availability: unknown QB or OL changes sack rates and efficiency simultaneously, so team total adjustment should combine them."
+    }
+   ]
+  },
+  "quarter_and_half_totals": {
+   "blueprint": "period",
+   "label": "Quarter and half totals and team totals",
+   "families": [
+    "CFB/first_half_total",
+    "CFB/first_half_team_total",
+    "CFB/second_half_total",
+    "CFB/quarter_total"
+   ],
+   "target": "Probability that points in a quarter/half (game or one team) exceed a rung.",
+   "mechanism": "Period totals = period possessions x points per possession, allocated from the game total by period shares: first-quarter scripted drives and opening possession, end-of-half scoring, second-half tempo and substitution patterns (blowouts), and halftime adjustments. College second-half totals depend heavily on lead size and coach behavior. Short periods have lumpy scoring (0, 3, 7), so exact distribution matters.",
+   "inputs": [
+    {
+     "id": "cfb.q_scoring",
+     "why": "Opponent-adjusted period scoring rates give each team's typical profile across quarters and halves.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.half_split",
+     "why": "First-half versus second-half share of scoring, conditional on spread size, is the key allocation parameter.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.team_total_split",
+     "why": "Implied team points from the game market allocate the expected scoring that periods share.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.opening_poss",
+     "why": "Opening possession order changes first-quarter and second-half-start scoring chances.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.first_drive",
+     "why": "Opening-drive outcomes capture scripted early efficiency for first-quarter totals.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pace",
+     "why": "Plays in the period depend on tempo, and tempo differs between early and late periods.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.script",
+     "why": "State-dependent pace and pass rate differ by lead and shift period totals.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Second-half starter removal when leading reduces second-half totals for favorites.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.coaching",
+     "why": "Tempo and halftime management.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.kicker",
+     "why": "In short periods, FG chances at end-of-half drives are a material component of scoring.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Weather by period (wind late).",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Overtime excluded in period totals; rules.",
+     "role": "primary"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Period total rungs share information; consistency checks avoid correlated mistakes across thresholds.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.opening_poss",
+      "cfb.first_drive",
+      "cfb.q_scoring"
+     ],
+     "hypothesis": "Opening possession x first-drive scripts: Q1 totals depend on both who receives and how scripted drives perform."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.half_split",
+      "cfb.pace"
+     ],
+     "hypothesis": "Lead size x second-half pace: second-half totals fall when a favorite leads by 3 scores; scale by coach behavior."
+    },
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.coaching",
+      "cfb.q_scoring"
+     ],
+     "hypothesis": "End-of-half scoring x tempo: fast teams get extra possessions at end of the first half, lifting Q2 totals."
+    }
+   ]
+  },
+  "quarter_and_half_sides": {
+   "blueprint": "period",
+   "label": "Quarter and half moneyline and spread",
+   "families": [
+    "CFB/first_half_moneyline",
+    "CFB/first_half_spread",
+    "CFB/second_half_moneyline",
+    "CFB/second_half_spread",
+    "CFB/quarter_moneyline",
+    "CFB/quarter_spread"
+   ],
+   "target": "Probability a team leads/wins or covers a spread in a specific half or quarter (period margin, ties per wording).",
+   "mechanism": "Period margin mean is a fraction of the game margin (not proportional): favorites win first halves more reliably because starters and scripted plays dominate early, while second-half margins depend on blowout management, adjustments and depth. Period margin has high variance relative to mean, a large tie mass for quarters, and depends on opening possession and QB/personnel. Settlement of ties (push, no-action or lose) is critical.",
+   "inputs": [
+    {
+     "id": "cfb.market_ratings",
+     "why": "Full-game strength prior is the starting point for period margin means.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.off_ppa",
+     "why": "Adjusted offense differs by period because of scripted openers and depth.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.def_ppa",
+     "why": "Adjusted defense determines early and late-period suppression.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.half_split",
+     "why": "Team-specific first versus second-half profile determines period margins relative to game margin.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.q_scoring",
+     "why": "Quarter scoring history by team shows slow starters or strong closers.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.opening_poss",
+     "why": "Receiving first shifts the first quarter and the order of second-half possessions.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.first_drive",
+     "why": "Scripted opening-drive efficiency gives early-period edge.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Second-half behavior of a leading team determines whether the half margin shrinks.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.qb_status_pit",
+     "why": "QB identity shifts early scripted efficiency and period margins.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.talent",
+     "why": "Depth at tails matters in second halves.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.coaching",
+     "why": "Halftime adjustments and tempo.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.score_resid",
+     "why": "Period margin residual distribution (with tie mass) is required for spread and ML at periods.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Treatment of ties for period winners (push or loss) and overtime exclusion define settlement.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.corr",
+     "why": "Quarter and half legs share the game script so period margins are correlated with the game margin; model jointly.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.talent",
+      "cfb.half_split",
+      "cfb.market_ratings"
+     ],
+     "hypothesis": "Talent depth x period: more talented teams win second halves via depth and rotation, so depth matters more in H2 than in Q1."
+    },
+    {
+     "inputs": [
+      "cfb.opening_poss",
+      "cfb.first_drive",
+      "cfb.q_scoring"
+     ],
+     "hypothesis": "Opening possession x first-half margin: receiving first adds expected margin to first quarter and shifts half-end possession order."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.score_resid",
+      "cfb.half_split"
+     ],
+     "hypothesis": "Blowout behavior x second-half spread: favorites' second-half margins shrink when leading big, requiring conditional distribution on halftime lead."
+    }
+   ]
+  },
+  "game_stat_props": {
+   "blueprint": "game_event",
+   "label": "Game and team stat props",
+   "families": [
+    "CFB/game_stat_prop",
+    "CFB/team_stat_prop"
+   ],
+   "target": "Probability that a team or game statistic (yards, turnovers, sacks, TDs, first downs, etc.) meets a threshold per official stat source.",
+   "mechanism": "Team/game stats scale with plays and style: yardage by pass/rush split and efficiency, turnovers and sacks by havoc/pressure and ball security, TDs by scoring expectation and red-zone style. The data source and stat definitions (e.g. sack yards counted against rushing, bowl stats, FBS vs FCS) matter for settlement; heavy variance from blowouts and tempo.",
+   "inputs": [
+    {
+     "id": "cfb.pace",
+     "why": "Plays scale all counting statistics and differ widely in college tempo.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.pass_rate",
+     "why": "Pass share determines the split between passing and rushing statistics.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.rush_efficiency",
+     "why": "Opponent-adjusted rushing efficiency gives rushing yards per attempt.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pass_efficiency",
+     "why": "Opponent-adjusted passing efficiency gives passing yards and TDs.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.run_defense",
+     "why": "Opposing run defense adjusts rushing counts and efficiency.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.secondary_coverage",
+     "why": "Opposing secondary adjusts passing yards and explosive passes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pass_rush",
+     "why": "Pass rush against protection determines sacks and pressure-driven incompletions.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.havoc",
+     "why": "Havoc rates predict negative plays, forced fumbles and turnovers.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.turnover_luck",
+     "why": "Takeaway luck regresses; use process measures to project turnover props.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.team_total_split",
+     "why": "Expected scoring and TD counts.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.script",
+     "why": "Game state changes pace and pass rate and thus counting-stat expectations.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Weather shifts pass attempts, completions and kicking statistics.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.player_stat_variance",
+     "why": "Distribution shape for team and game stats (blowouts, tempo) determines threshold probabilities.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Stat definition (e.g. whether sack yards count in rushing, FBS-only) and source determine settlement.",
+     "role": "primary"
+    },
+    {
+     "id": "m.stat_source_mismatch",
+     "why": "Discrepancies between data sources.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.corr",
+     "why": "Team stats correlate with scoring and script; use joint simulation rather than independent marginals.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.pass_rate",
+      "cfb.pass_efficiency"
+     ],
+     "hypothesis": "Pace x pass rate: yardage thresholds depend on both plays and mix, and a fast pass-heavy team inflates yards while being penalized by opponent efficiency."
+    },
+    {
+     "inputs": [
+      "cfb.havoc",
+      "cfb.turnover_luck",
+      "cfb.pass_rush"
+     ],
+     "hypothesis": "Havoc x turnover luck: takeaway counts should be projected from havoc and pressure with strong regression of realized turnovers."
+    },
+    {
+     "inputs": [
+      "cfb.script",
+      "cfb.rush_efficiency",
+      "cfb.run_defense"
+     ],
+     "hypothesis": "Spread script x rushing: favorites in lopsided games accumulate rushing yards late, pushing team rushing yards above neutral-situation projections."
+    }
+   ]
+  },
+  "overtime": {
+   "blueprint": "game_event",
+   "label": "Overtime occurrence and overtime length",
+   "families": [
+    "CFB/overtime"
+   ],
+   "target": "Probability that the game goes to overtime (and potentially to multiple overtimes) as defined in the contract.",
+   "mechanism": "Overtime occurs when regulation ends tied: probability = mass of the final-margin distribution at exactly zero, which is concentrated in close spreads and kicker-driven scoring, and sensitive to the lattice of college scoring (3, 6, 7, 8) and late-game decisions (kneel, go-for-it, field goal at end). Rule mechanics (25-yard start, alternating possessions, 2-point attempts from later periods) determine length and extra-period markets. Market wording must define overtime as an extra period played.",
+   "inputs": [
+    {
+     "id": "cfb.score_resid",
+     "why": "Mass at zero margin conditioned on spread and total.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.team_total_split",
+     "why": "Expected scoring, with lower scoring raising tie mass.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.market_ratings",
+     "why": "Small rating gap lifts overtime probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.ot_model",
+     "why": "Overtime rules, number of periods, 2-pt rule.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.kicker",
+     "why": "Kicker-driven scoring clusters on 3s.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.coaching",
+     "why": "End-of-regulation decisions (kneel, take a tie).",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pace",
+     "why": "Possessions: fewer possessions raises tie variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.weather_pit",
+     "why": "Low-scoring conditions raise tie chance.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Reduces tie chance for large favorites.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Contract definition and any restrictions.",
+     "role": "primary"
+    },
+    {
+     "id": "m.strike_hit_rates",
+     "why": "Realized overtime frequency for calibration.",
+     "role": "secondary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.score_resid",
+      "cfb.team_total_split",
+      "cfb.market_ratings"
+     ],
+     "hypothesis": "Spread near zero x low total: overtime probability peaks for evenly matched, low-scoring games and is nearly flat for large spreads."
+    },
+    {
+     "inputs": [
+      "cfb.coaching",
+      "cfb.kicker",
+      "cfb.ot_model"
+     ],
+     "hypothesis": "Coach end-of-game decisions x kicker: teams that settle for a tie-breaking or tying FG vs go for win change overtime odds in the final minutes."
+    },
+    {
+     "inputs": [
+      "cfb.pace",
+      "cfb.score_resid",
+      "cfb.drives"
+     ],
+     "hypothesis": "Pace x variance: fewer possessions increase the share of games within a score at the end, boosting tie probability."
+    }
+   ]
+  },
+  "touchdown_scorer": {
+   "blueprint": "player_other",
+   "label": "Touchdown scorer markets (anytime and first)",
+   "families": [
+    "CFB/touchdown_scorer"
+   ],
+   "target": "Probability that a named player scores a touchdown (anytime or first) under contract definition.",
+   "mechanism": "Player TD probability = team expected TDs x player share of scoring opportunities (goal-line carries, red-zone targets, QB rushing), adjusted for blowout removal and availability, with first-TD adding the probability the team scores first. College features: wide variation in team scoring, QB rushing TDs, goal-line specialists, heavy rotation and garbage-time TDs by backups.",
+   "inputs": [
+    {
+     "id": "cfb.td_rates",
+     "why": "Role-based scoring rates convert team TDs to player probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.team_total_split",
+     "why": "Expected team TDs derived from implied totals are the scoring pool.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.player_usage",
+     "why": "Red-zone and goal-line share distinguishes scorers from yardage accumulators.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.qb_rushing",
+     "why": "QB rushing TDs and sneaks take scoring opportunities from backs and receivers.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.blowout_management",
+     "why": "Starter removal and backup TDs.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.skill_avail",
+     "why": "Teammate absences redistribute goal-line and red-zone usage.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.depth_chart",
+     "why": "Depth chart clarity and recent changes show who holds the goal-line role.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.opening_poss",
+     "why": "First-possession probability shifts first-TD team odds.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.first_drive",
+     "why": "Opening-drive TD rates inform first-TD markets.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.dvp",
+     "why": "Opposing defense's red-zone and position-specific weakness modulates scoring odds.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.in_game_exit_risk",
+     "why": "Early exits (injury, blowout) remove scoring opportunities from starters.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "What counts (offensive TDs only?).",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.suspension_eligibility",
+     "why": "Suspended or ejected players (targeting) are removed from scoring chances and shift shares to teammates.",
+     "role": "context"
+    },
+    {
+     "id": "cfb.transfer_roster",
+     "why": "New transfers often take goal-line or receiving roles, changing historical share-based scoring rates.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote history shows when the market absorbs QB, weather and lineup news and benchmarks closing-line value.",
+     "role": "context"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread determine whether a modeled edge is executable.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fees reduce edge, especially near 50c where fee per contract peaks.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Volume and open interest signal price reliability and feasible size.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Executed trades reveal real fills and informed flow versus stale quotes.",
+     "role": "context"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Open/close/halt and postponement events (including weather delays) define the information set.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.team_total_split",
+      "cfb.td_rates",
+      "cfb.player_usage"
+     ],
+     "hypothesis": "Team TD pool x role share: share depends on the expected game script; trailing teams pass more near goal line, shifting TD probability from RBs to WRs."
+    },
+    {
+     "inputs": [
+      "cfb.qb_rushing",
+      "cfb.td_rates",
+      "cfb.player_usage"
+     ],
+     "hypothesis": "QB mobility x goal-line carries: mobile QBs absorb TDs, lowering RB scoring odds even with high red-zone volume."
+    },
+    {
+     "inputs": [
+      "cfb.blowout_management",
+      "cfb.depth_chart",
+      "cfb.in_game_exit_risk"
+     ],
+     "hypothesis": "Blowout x depth: in lopsided games backups score late, raising anytime TD for backups and lowering for starters pulled early."
+    }
+   ]
+  },
+  "season_futures": {
+   "blueprint": "season_outcome",
+   "label": "Season-level events (conference, playoff, title, awards)",
+   "families": [
+    "CFB/season_level_events"
+   ],
+   "target": "Probability of a season-level college event (conference title, playoff berth/seed, national title, final ranking, award).",
+   "mechanism": "Simulate the season with uncertainty in team strength, unbalanced schedules, conference tiebreakers and the selection process; priors from market ratings and roster continuity; selection by committee adds a behavioural layer modelled from past rankings. Awards add narrative and ballot timing. Cross-market coherence constrains the set and exposes stale quotes.",
+   "inputs": [
+    {
+     "id": "cfb.standings",
+     "why": "Conference race simulation with tiebreakers links team ratings to title game and berth odds.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.playoff_format",
+     "why": "Format and seeding rules in force define how strength converts to playoff and title probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.market_ratings",
+     "why": "Strength prior with uncertainty is the base for all season simulations.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.sp_plus",
+     "why": "Composite ratings provide an independent check on strength.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.roster_continuity",
+     "why": "Returning production determines how much last-season results carry over in preseason priors.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.talent",
+     "why": "Talent composite gives the ceiling and depth used for preseason priors and late-season durability.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.schedule_strength",
+     "why": "Unbalanced schedule difficulty changes expected wins and playoff-resume quality.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.pythag_luck",
+     "why": "Luck-adjusted records give truer strength than raw wins for resume and ranking projections.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.polls",
+     "why": "Ranking dynamics and committee behavior translate results into playoff selection.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.qb",
+     "why": "QB injuries or changes drive contenders' title odds.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.award_narrative",
+     "why": "Award markets depend on narrative and team success more than on pure production.",
+     "role": "secondary"
+    },
+    {
+     "id": "cfb.futures_coherence",
+     "why": "Linked futures must satisfy sum-to-one and implication constraints; violations flag stale quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "Sportsbook futures prices provide benchmark probabilities after de-vig.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Contract definitions of eligibility, cancelled games and the ranking source resolve edge cases.",
+     "role": "primary"
+    },
+    {
+     "id": "cfb.transfer_roster",
+     "why": "Portal churn is the main driver of preseason rating changes and futures priors.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Quote history shows when the market absorbs QB, weather and lineup news and benchmarks closing-line value.",
+     "role": "context"
+    },
+    {
+     "id": "m.orderbook_depth",
+     "why": "Depth and spread determine whether a modeled edge is executable.",
+     "role": "context"
+    },
+    {
+     "id": "m.fees",
+     "why": "Fees reduce edge, especially near 50c where fee per contract peaks.",
+     "role": "context"
+    },
+    {
+     "id": "m.volume_oi",
+     "why": "Volume and open interest signal price reliability and feasible size.",
+     "role": "context"
+    },
+    {
+     "id": "m.trade_tape",
+     "why": "Executed trades reveal real fills and informed flow versus stale quotes.",
+     "role": "context"
+    },
+    {
+     "id": "m.lifecycle",
+     "why": "Open/close/halt and postponement events (including weather delays) define the information set.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "cfb.polls",
+      "cfb.standings",
+      "cfb.playoff_format"
+     ],
+     "hypothesis": "Committee preferences x results: berth probability depends on the quality of wins and strength-of-record language; losses late weigh more than early."
+    },
+    {
+     "inputs": [
+      "cfb.schedule_strength",
+      "cfb.standings",
+      "cfb.market_ratings"
+     ],
+     "hypothesis": "Schedule x conference tiebreakers: remaining head-to-head games determine tiebreakers non-linearly."
+    },
+    {
+     "inputs": [
+      "cfb.qb",
+      "cfb.roster_continuity",
+      "cfb.standings"
+     ],
+     "hypothesis": "QB injury risk x top-heavy contenders: title odds concentrate in teams with a single dominant QB, so injury scenarios dominate variance."
+    }
+   ]
+  }
+ }
+}

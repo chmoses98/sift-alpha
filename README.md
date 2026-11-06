@@ -43,6 +43,10 @@ The separate GitHub Actions CI workflow builds and runs unit tests on PRs. It ha
 
 **Alpha's first research priority is rebuilding our already-collected Kalshi market history across sports.** Captured prices, bids/asks, trades, depth and settlements provide a valuable empirical research laboratory, subject to the strictest point-in-time and execution checks. The starting cross-sport archive inventory is in [research/kalshi_archive_sources.json](research/kalshi_archive_sources.json), with a [$0 read-only inventory tool](alpha_engine/market_inventory.py), [full research plan](docs/KALSHI_MARKET_RESEARCH.md), and [P0 tracking issue](https://github.com/chmoses98/sift-alpha/issues/4). Listing locations is **not** yet reconstructing price histories or verifying profitable edges.
 
+## Input research (what predicts each market)
+
+The dashboard's **Input research** section lets you pick any sport and market family and see every candidate predictive input with its rationale, data source/completeness/freshness, current-model use, learned importance/weight, evidence for or against it, performance against the relevant benchmark, remaining gaps and the ranked next questions. **RESEARCH_ONLY**: hypotheses and availability audits are not evidence; only the NFL game total/spread/winner (vs the near-close line) and NFL QB passing yards (vs the QB's own history) have predictive tests so far, and nothing is above L2. See [docs/INPUT_RESEARCH.md](docs/INPUT_RESEARCH.md).
+
 ## Research standards
 
 A measured projection discrepancy is **not** a proven +EV bet. Strategies must be evaluated against contemporaneous market prices, honest fees and fills, calibrated probabilities, independent out-of-sample observations, and explicit uncertainty. The research lab may reject every candidate.

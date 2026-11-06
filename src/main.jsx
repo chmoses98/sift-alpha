@@ -11,6 +11,7 @@ import { ExecutionResearch } from "./exec-research.jsx";
 import { LiveEvidence } from "./live-evidence.jsx";
 import { CollectorsStatus } from "./collectors-status.jsx";
 import { VerificationDesk } from "./verification-desk.jsx";
+import { InputResearch } from "./input-research.jsx";
 import "./styles.css";
 
 function loadLocal() {
@@ -204,6 +205,7 @@ function App() {
         {newSport === "__new__" && <label>New sport name<input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Cycling" required maxLength={59} /></label>}
         <button className="button" type="submit">Save research question</button>
       </form>}
+      <InputResearch />
       <MarketIntelligence />
       <VerificationDesk />
       <FoundationDashboard />

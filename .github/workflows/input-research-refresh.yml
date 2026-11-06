@@ -1,0 +1,37 @@
+name: Input research refresh (research-only, free sources, no orders)
+
+# Re-runs the input-discovery system on the newest completed games: downloads free nflverse release assets, rebuilds point-in-time features,
+# re-runs every research path (walk-forward, cluster bootstrap, Holm/BH), rebuilds the catalog/availability/evidence/queue artifacts and uploads them.
+# It does NOT commit, merge, deploy, call any Kalshi/betting API, or use credentials. Review the uploaded artifact, then land it through the normal PR path.
+# Cost: $0 (GitHub-hosted standard runner; stops at the 40-minute timeout; artifact retention 14 days).
+on:
+  schedule:
+    - cron: '17 9 * * 3'     # Wednesdays after Monday-night games have been published by nflverse
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: input-research-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas pyarrow scikit-learn pytest
+      - name: Refresh research (downloads ~400 MB of free nflverse assets)
+        run: python -m alpha_engine.input_research.refresh --data-dir "$RUNNER_TEMP/nflverse"
+      - name: Validate artifacts
+        run: python -m unittest tests.test_input_research -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: input-research-artifacts
+          path: research/audit/input_research/
+          retention-days: 14

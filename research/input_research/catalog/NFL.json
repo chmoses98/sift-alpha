@@ -1442,6 +1442,1416 @@
     "Pro-Football-Reference coaching records"
    ],
    "registry_ids": []
+  },
+  "nfl.player_xtd": {
+   "label": "Player expected touchdowns (xTD) from play-level opportunity",
+   "category": "player_role",
+   "mechanism": "Each rushing attempt and target carries a modelled TD probability that depends on yard line, down and distance, and play type; summing gives an opportunity-based TD expectation independent of luck.",
+   "rationale": "Season TD counts and TD rates are dominated by finishing luck (a back with 6 carries inside the 5 can score 0-6). xTD collapses to the opportunity and removes the single-season noise that makes nfl.td_rates misleading.",
+   "measurement": "For each rush attempt or target in the player's last 17 team games (half-life 6 games), assign P(TD | yardline_100, down, ydstogo, play_type, is_target) from a league-wide model fit on 2006+ pbp; sum by player; divide by team xTD to get a share. Shrink share to positional prior with k=4 team games' worth of goal-line touches. As-of: through the previous game; recompute after inactives.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (nflreadr::load_pbp)",
+    "nflverse ff_opportunity expected TD columns (SOURCE_UNVERIFIED for exact field names)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.goal_line_personnel": {
+   "label": "Goal-line package and personnel tree (inside the 5)",
+   "category": "player_role",
+   "mechanism": "In goal-to-go snaps inside about the 5-yard line, teams switch to heavy sets (extra TE/OL, FB) and select specific ball carriers and a QB-sneak option, so the TD-eligible set differs from the field-wide rotation.",
+   "rationale": "A back who plays 70% of snaps may have zero goal-line role; a 250-pound change-of-pace back may play 5% of snaps and take 60% of inside-the-3 carries. The share of snaps and the share of goal-line carries are different quantities.",
+   "measurement": "For snaps with yardline_100 <= 5 over the last 20 team games (half-life 8 games): tabulate by player share of carries, targets, QB sneaks, and offense_personnel (e.g. 22, 23, 12). Report share_carry_i5, share_tgt_i5, sneak_rate and TE/FB TD share. Shrink to team-level rates at k=8 snaps. Zero-fill and flag players who joined the team during the window.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp + participation (personnel from FTN/NGS charting; coverage 2016+ varies, SOURCE_UNVERIFIED)",
+    "Pro Football Reference play index (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.fourth_and_goal_policy": {
+   "label": "4th-and-goal and goal-to-go go-for-it policy",
+   "category": "game_state",
+   "mechanism": "On 4th-and-goal from inside the 2-3 yards, coaches either kick a FG or go for the TD, changing the number of TDs and the target and carry mix on those snaps.",
+   "rationale": "TD pool is what matters, not points; two teams with equal implied totals can differ by half a TD per game because of this choice. It also drives who receives the final-yard touches.",
+   "measurement": "Go-for-it rate on 4th-and-goal with ydstogo <= 3 over the last 2 seasons, opponent and win-probability adjusted: logistic regression on wp, ydstogo, score_differential, time; coach-level random effect with k=12 attempts shrinkage; as-of last game of the prior week; flagged on coach change.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (fourth_down_decision fields, wp)",
+    "4th-down model (nflfastR 4th down)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.team_first_td_attribution": {
+   "label": "Team first-TD scorer attribution history",
+   "category": "player_role",
+   "mechanism": "The scorer of a team's first TD is drawn from a distribution that differs from the full-game distribution because the first score arises in scripted and early-down contexts.",
+   "rationale": "Scorer shares in first TDs are rated off about 17 events per team-season, so they need strong shrinkage to the full-game xTD share; naive 'first TD hit rate' is nearly pure noise.",
+   "measurement": "For each team-game, record the scorer of the team's first TD and the yard line; compute recency-weighted shares (half-life 20 team games, includes prior-season games at 0.5 weight) and shrink to the player's full-game xTD share with k=10 team first-TD events; output: scorer share and expected yardline.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.dst_td_hazard": {
+   "label": "Defensive and special-teams TD hazard per team-game",
+   "category": "distribution",
+   "mechanism": "Pick-sixes, fumble returns, punt and kick return TDs happen at low frequency and are partly attributable to scheme and returner skill but largely random.",
+   "rationale": "These events end the 'first TD' contest for every offensive player and count in the team first-TD and D/ST TD markets; they are about 1 in 8-10 team games.",
+   "measurement": "Per team-game rate = 0.5*(own takeaway-return TD rate regressed to league mean with k=40 team games + opponent giveaway rate) + returner threat (kick and punt return TD per return, k=60 returns) + opponent special teams allowed rate. Poisson mean; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (touchdown with td_team != posteam)",
+    "Pro Football Reference returns tables"
+   ],
+   "registry_ids": []
+  },
+  "nfl.zero_snap_active_risk": {
+   "label": "Active-but-zero-snap and protected-void probability",
+   "category": "availability",
+   "mechanism": "A player can be active and take no snap (RB3, TE3, gadget WR), which voids the contract, and protected contracts void on first-half-only exposure.",
+   "rationale": "The contract is conditional on a snap; ignoring this overstates a low-usage player's effective price and misses the void probability that determines how much capital is truly at risk.",
+   "measurement": "P(no snap | active) = fraction of last 12 active games with zero offensive snaps, shrunk with a beta prior by depth-chart slot (k=6); P(first-half-only) = fraction of active games with snaps in 1H and none in 2H, plus a Friday-designation uplift from past data; as-of 90-minute inactive list.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse participation and snap_counts (nflreadr::load_snap_counts)",
+    "NFL game-day inactives"
+   ],
+   "registry_ids": []
+  },
+  "nfl.multi_td_dispersion": {
+   "label": "Within-player multi-TD dispersion factor",
+   "category": "distribution",
+   "mechanism": "A player's TDs share a latent intensity (team total and goal-line role), so P(2+) exceeds the Poisson implied by P(1+).",
+   "rationale": "2+ TD contracts and 'multiple touchdowns' markets are priced off the same marginal intensity; dispersion decides the tail ratio P(2+)/P(1+).",
+   "measurement": "Fit a negative-binomial dispersion r by position group (RB goal-line, WR1, TE, QB rush) on the last 5 seasons of player-games with at least 4 expected TD-opportunity touches; report r and P(2+|P(1+)) lookup table; as-of start of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse player_stats and pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.model_team_td_mean": {
+   "label": "Market-free team touchdown mean (drives times TD-per-drive, with FG-vs-TD split)",
+   "category": "team_strength",
+   "mechanism": "A team's expected touchdowns are expected drives times the per-drive probability of ending in a touchdown rather than a field goal or no score, estimated from opponent-adjusted offence and defence and red-zone conversion, with no spread, total or price as a feature.",
+   "rationale": "Every scorer market is a share of the team's touchdown pool. A points-based implied team total is market-derived and is not touchdown-specific (24 points can be 3 TD + FG or 2 TD + 3 FG). A model-derived TD mean keeps wind, availability and matchup visible and gives P(team scores at least one TD), the quantity the team-own first-TD contract depends on.",
+   "measurement": "lambda_TD(team i vs j) = E[drives_i] x P(TD | drive). E[drives] from both teams' neutral seconds per play and expected plays (2015+ pbp, shrink 50/50 to league at 8 games). P(TD|drive) = logistic ridge on own opponent-adjusted offensive EPA per play (half-life 8 games, prior-season weight 0.3 fading to 0 by week 10), opponent defensive EPA per play, red-zone trips per drive and red-zone TD rate (shrunk k=30 trips), 4th-and-goal go-for-it rate (k=12), wind>15 mph and dome flags, starting-QB indicator. Output mean, variance (overdispersion from tercile residuals) and P(N>=1)=1-exp(-lambda_TD) with a negative-binomial correction. As-of: after the previous game, refreshed at the final injury report. Spreads, totals and prices excluded; used only afterwards as a benchmark.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (drive results, redzone, td flags)",
+    "nflverse schedules (wind, roof)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.leg_dependence_by_margin_regime": {
+   "label": "Leg-pair dependence conditioned on margin and total regime",
+   "category": "distribution",
+   "mechanism": "Cross-leg dependence between pairs such as favourite cover and QB yards, or total over and rusher yards, changes sign by game regime (competitive, favourite blowout, shootout).",
+   "rationale": "A single correlation coefficient averages a positive correlation in shootouts with a negative one in blowouts, understating joint probabilities for some leg sets and overstating for others.",
+   "measurement": "For each leg-type pair (about 30 types), estimate the Kendall tau or tetrachoric correlation of the two leg indicators within bins of pregame spread (|s|<3, 3-7, >7) and total terciles, using 2015+ player-games; shrink bin estimates toward the pooled estimate with k=150 games; require 400+ games per cell; report standard errors; as-of end of previous week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp, player_stats, schedules (spread and total fields)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.team_stat_accounting_constraints": {
+   "label": "Team-to-player accounting constraints for same-game legs",
+   "category": "distribution",
+   "mechanism": "Individual player outputs must sum to team outputs, so player legs on one team compete for a fixed pool, and incompatible leg sets have zero joint probability.",
+   "rationale": "Gaussian correlations allow two teammates to both hit first-TD legs or both clear very large yardage lines; the identity-based approach prevents impossible combinations and captures negative dependence among teammates.",
+   "measurement": "Compute, from historical player-games, the distribution of the share of team yards and TDs captured by the top-k players; define a Dirichlet-multinomial allocation for each team-game with concentration from the prior 17 games (shrink k=20); enforce sum(player) = team and floor for unlisted players. Output joint distribution over pairs of player legs on one team; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp and player_stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.common_availability_shock": {
+   "label": "Shared availability shock across legs (QB, WR1, OL, kicker)",
+   "category": "availability",
+   "mechanism": "One lineup event (QB scratch, kicker injury, star WR late scratch) moves several legs of the same combo simultaneously.",
+   "rationale": "Legs priced early assume a baseline lineup; a late change lowers the QB yards leg, total and favourite-cover jointly, so the joint probability is a mixture over lineup states rather than a product.",
+   "measurement": "Define lineup states (QB1/QB2, WR1 in/out, starting kicker, RT in/out) with probabilities from injury designation base rates (shrink to position-level, k=10 games); condition each leg on state using prior-season splits with k=3 games shrinkage; joint = sum over states of P(state) x product of conditional legs adjusted by in-state dependence. As-of per injury report vintage.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NFL official injury reports (own_capture)",
+    "nflverse depth charts and rosters"
+   ],
+   "registry_ids": []
+  },
+  "nfl.leg_void_push_matrix": {
+   "label": "Per-leg void, push and overtime state matrix",
+   "category": "market_structure",
+   "mechanism": "Each leg type has deterministic rules for pushes, postponement, no-snap voids and overtime that define the joint event and its payout.",
+   "rationale": "Combo payoff differs between a pushed leg being dropped or the combo lost; near 3 and 7 on integer spreads the push mass is 6-9% of games and cannot be ignored.",
+   "measurement": "Table with columns: leg_series, includes_OT (yes/no/unknown), push_possible (integer line), void_rule, fair_price_rule, source text hash and date; join to the combo's rules text; for each combo, compute P(joint | rule variant) for each variant of the unknown combo wording and carry the spread as model uncertainty. As-of rules text version captured at order time.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi API rules_primary and rules_secondary (free, own_capture for versions)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.model_team_points_mean": {
+   "label": "Market-free team expected points and margin (drive-model mean and SD per team)",
+   "category": "team_strength",
+   "mechanism": "Each team's expected points are expected drives times points per drive, built from opponent-adjusted offence and defence efficiency, tempo, kicker and quarterback status and weather, with no betting line, price or implied total used as a feature.",
+   "rationale": "Market-derived team means (spread and total splits) are benchmarks that already contain the market's injury, weather and sharp information; feeding them into a model of the same game makes the model unable to show any independent information and hides which fundamental channels are missing. A market-free mean keeps the availability, weather, matchup and coaching channels explicit and lets the line be used only as an evaluation benchmark.",
+   "measurement": "For team i vs opponent j, expected points = E[drives_i] x E[points per drive_i]. E[drives] = 3600 / (mean seconds per drive implied by both teams' neutral-situation seconds per play and expected plays per drive), 2015+ regular-season pbp, ridge-shrunk 50/50 toward league mean at 8 games. Points per drive from a ridge regression on own opponent-adjusted offensive EPA per play (exponential half-life 8 games, prior-season carryover weight 0.3 decaying to 0 by week 10), opponent defensive EPA per play, red-zone TD rate (shrunk k=30 trips), kicker FG-range rating, starting-QB indicator, wind above 15 mph and dome flags, home indicator. Output team mean, SD (from residuals by tercile) and the margin and total means as differences and sums. As-of timestamp: after the previous game and re-run at the latest injury report. Betting lines are excluded from the feature set and used only for after-the-fact benchmarking.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp and schedules (EPA, drives, seconds per play, wind, roof)",
+    "nflverse injuries and depth charts (QB status)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.model_margin_lattice": {
+   "label": "Model-based regulation margin lattice with mass at zero (key-number corrected, end-of-game behaviour included)",
+   "category": "distribution",
+   "mechanism": "Probability that the regulation margin equals k, especially k=0, from a drive-outcome simulation or lattice centred on the market-free team means, corrected for the excess mass that 3-point and 7-point scoring and late tie-forcing behaviour put on small margins.",
+   "rationale": "Tie, overtime and integer-spread markets are priced on atoms at specific margins, which a smooth normal density misses; a lattice centred on betting-line residuals would import the market's own view of the game. Centring on the model mean margin and total from the market-free team means keeps the input market-free and lets the line serve as a benchmark only.",
+   "measurement": "Simulate 20,000 games per matchup from per-drive outcome multinomials (TD with 94 percent extra-point conversion, FG, safety, no score) calibrated so team means equal the market-free model team means, then fit an isotonic correction of simulated P(margin=k) to empirical regulation-margin frequencies (all regular-season games since 2002, about 5,500, binned by model |mean margin| in 0-3, 3-6, 6-10, 10+ points and model total terciles) with Beta(a=2, b=30) shrinkage in each bin for k=0 and Dirichlet smoothing for key numbers 3, 6, 7, 10, 14. Add an end-of-game term for tied games where the team with the ball inside two minutes can run the clock. Output P(margin=k) for k from -30 to 30. As-of: latest model means at kickoff minus 90 minutes; no spread, total or price enters.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules/results (final regulation scores by quarter)",
+    "nflverse pbp (drive outcomes)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.drive_clock_allocation": {
+   "label": "Drive-start allocation across periods (clock-resolved)",
+   "category": "pace_volume",
+   "mechanism": "The number of drives that begin in each quarter, and where the quarter ends relative to drive boundaries, for both teams.",
+   "rationale": "Quarter totals depend on counts of starts and finishes in a 15-minute window; a game-level drives estimate ignores kickoff order, tempo by period, and clock burn.",
+   "measurement": "From pbp: for each team-game, count drives starting in Q1..Q4 and seconds per drive by period; use 20-game recency weights (half-life 8) and opponent-adjust by regressing on opponent pace; combine with kickoff order to produce expected starts for each quarter and the probability of a second drive in Q1. Shrink to league mean with k=10 games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (drive, qtr, game_seconds_remaining)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.period_drive_scoring_rates": {
+   "label": "Opponent-adjusted per-drive TD/FG rates by period",
+   "category": "team_strength",
+   "mechanism": "Per-drive probability of TD, FG and no score separately for Q1, Q2 (including two-minute drives), Q3 and Q4 by team and opponent.",
+   "rationale": "Team quality is measured on all plays; period rates differ because scripted openers and hurry-up drills have different efficiency, and Q4 depends on game state; averaging understates the spread of per-quarter rates.",
+   "measurement": "Multinomial (TD, FG, no score) logistic with team offence and opponent defence random effects per period, fitted on 3 seasons with exponential decay (half-life 12 team games); shrink period effects to the team's all-period rate with k=30 drives; as-of previous game; exclude garbage-time Q4 drives (win probability <5% or >95%) from the training sample and treat them separately.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.period_zero_tie_mass": {
+   "label": "Zero-score and tied-period mass by quarter",
+   "category": "distribution",
+   "mechanism": "Empirical and model probabilities of 0-0 in a quarter, an equal non-zero score, and BTTS by quarter.",
+   "rationale": "Tie strike, 'both teams score' and over 7.5 are determined by the atoms of the joint distribution, which a Gaussian or Poisson-total approximation badly misstates.",
+   "measurement": "From 2010+ team-quarters: frequencies of each (home, away) score pair by quarter; smooth with a bivariate model whose marginal means come from the drive-allocation and per-drive rates; calibrate atom masses at 0, 3, 7 with isotonic regression; report P(0-0), P(tie), P(BTTS) by quarter and total scoring tercile; as-of start of season with rolling refresh.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp / schedules with period scores"
+   ],
+   "registry_ids": []
+  },
+  "nfl.halftime_state_conditional_scoring": {
+   "label": "Second-half scoring conditional on halftime margin",
+   "category": "game_state",
+   "mechanism": "Second-half scoring and the split Q3/Q4 depend on halftime margin and the team's script response.",
+   "rationale": "3Q and 4Q totals/spreads are mixtures; the same team plays differently when leading by 14 vs trailing by 3, and pregame it must be mixed over halftime states.",
+   "measurement": "Condition historical Q3 and Q4 team points on halftime margin bins (<=-10, -9..-4, -3..+3, +4..+9, >=+10) and on pregame spread; use kernel-weighted estimates (bandwidth 3 points of margin) shrunk to team-level second-half scoring with k=15 games; mixture weights from the pregame margin distribution; as-of start of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.cross_period_score_dependence": {
+   "label": "Cross-quarter dependence of team scoring",
+   "category": "distribution",
+   "mechanism": "The correlation between a team scoring in quarter j and in quarter k, accounting for pace, quality and clock burn.",
+   "rationale": "Every-quarter BTTS and 1H/2H combos require the joint of period events, which differs from the product of marginals.",
+   "measurement": "Compute tetrachoric correlations of team-scored-in-quarter indicators across quarter pairs from 2015+ team-games, split by team offensive EPA tercile; compare to the independence benchmark; shrink pairwise estimates toward the pooled with k=300 games; as-of season-to-date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.kickoff_rule_regime": {
+   "label": "Kickoff and touchback rule regime and return rates",
+   "category": "officiating",
+   "mechanism": "League kickoff rules (dynamic kickoff, touchback spot, setup zone) set the starting field position for Q1 and Q3 drives and for post-score drives.",
+   "rationale": "Rule changes since 2024 moved touchback placement and return rates, shifting early field position and short-field scoring; models fit to older seasons carry stale starting-position values.",
+   "measurement": "Per-season distribution of starting yard line after kickoffs, touchback rate, return rate and return TD rate; effective expected starting field position by team returner (k=20 returns shrinkage); flag season of rule change and refit; as-of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (kickoff fields)",
+    "NFL rulebook and competition committee announcements"
+   ],
+   "registry_ids": []
+  },
+  "nfl.drive_outcome_by_index": {
+   "label": "Per-drive outcome probabilities by drive index and starting field position",
+   "category": "team_strength",
+   "mechanism": "Multinomial outcome of drive 1, 2 and 3 for each team, conditional on starting yard line and opponent.",
+   "rationale": "The first drive is scripted and starts from a kickoff; season-average drive efficiency misses the hazard that matters for first-score contracts.",
+   "measurement": "Fit multinomial logit (TD, FG, punt, turnover, other) on the first four team drives of each game 2015+ with covariates: team offence random effect, opponent defence random effect, starting yardline_100; recency half-life 15 games; shrink team early-drive effect toward its all-drive effect with k=25 early drives; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (drive-level via fixed_drive and drive result)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.drive_duration_by_outcome": {
+   "label": "Drive duration distribution by outcome and team style",
+   "category": "pace_volume",
+   "mechanism": "Seconds of game clock consumed by TD drives, FG drives, punts and turnovers for each team and opponent.",
+   "rationale": "The time of the first TD (and bucket probabilities) is a convolution of these durations, so mean pace is insufficient; the right tail matters for late buckets.",
+   "measurement": "From pbp: drive_time_of_possession by outcome for each team over the last 20 games (half-life 10); opponent adjustment by regression on the opponent's allowed durations; fit a lognormal for each outcome class with team-level scale shrunk to league with k=15 drives; as-of previous game; clock-converted to elapsed game clock including quarter-end stops.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (drive_time_of_possession)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.scoring_event_point_values": {
+   "label": "Scoring package distribution (TD value, extra points, two-point, safety)",
+   "category": "distribution",
+   "mechanism": "Points per TD depend on the extra-point success rate and two-point attempt policy; FG is 3; safeties 2.",
+   "rationale": "Race-to-N lattices depend on the exact increment distribution; treating a TD as 7 misses 6-point and 8-point cases that change which team crosses N first.",
+   "measurement": "Per team: P(XP made | kicker, distance) with k=50 attempts shrinkage; two-point attempt rate by coach and win probability state with k=15; safety rate per game; compute P(TD value in {6,7,8}); as-of start of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (extra_point_result, two_point_attempt)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.early_nonoffensive_score_hazard": {
+   "label": "Early-game non-offensive scoring hazard (pick-six, return TD, safety)",
+   "category": "distribution",
+   "mechanism": "Probability of a defensive, return or safety score in the first half of the opening quarter or before the first offensive TD.",
+   "rationale": "Such scores pre-empt the race and occur on a different hazard from offensive drives; ignoring them biases first-team probabilities toward the stronger offence.",
+   "measurement": "Hazard per team-game of non-offensive TD (own takeaway returns + returner threat + opponent giveaways) and safety, estimated over 3 seasons with k=40 team-games shrinkage; allocate within the first 15 game minutes using the empirical share of such events by quarter (about one quarter of events); as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.opening_kick_field_position": {
+   "label": "Opening kickoff field position distribution by returner and rule regime",
+   "category": "environment",
+   "mechanism": "Starting yard line after the opening kickoff (touchback spot, return average, return TD risk).",
+   "rationale": "Field position at drive 1 changes TD probability for the first drive; rule changes alter the touchback spot and return frequency season to season.",
+   "measurement": "Per team's returner and kicker: P(touchback), mean starting yardline_100 after kick, return TD per kickoff, shrunk to league by season with k=20 kicks; flag the season-specific rule; as-of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (kickoff data)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.late_tie_game_management": {
+   "label": "Late-game tie-state management policy",
+   "category": "game_state",
+   "mechanism": "In the last two minutes with the score level, trailing by 3 or leading by 3, coaches choose between kneeling, kicking a game-winning FG, or pushing; these decisions concentrate regulation margin mass at 0.",
+   "rationale": "The margin distribution at zero is partly behavioural: a team tied with the ball inside two minutes may run the clock to guarantee overtime, and a team trailing by 3 kicks a tying FG. A smooth score model misses this.",
+   "measurement": "From pbp: for each coach and season, rate of kneel-downs, FG attempts and go-for-it when score diff in {-3..0} and game_seconds_remaining<=120; shrink to league with k=10 occasions; compute P(tie at final | state) by state and apply to the simulated margin distribution; as-of previous week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (score_differential, game_seconds_remaining, play_type)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.ot_ending_hazard": {
+   "label": "P(game ends level | overtime) under current OT rules",
+   "category": "distribution",
+   "mechanism": "Probability that the overtime period fails to produce a decisive score, given each team's possession counts, scoring rates and 4th-down choices under the OT rule set.",
+   "rationale": "Overtime ending level is a very small but rule-dependent event; the tie market is the product of two small probabilities and the OT-rule change makes historical frequencies stale.",
+   "measurement": "Simulate OT as a drive process with period length 10 min (regular season), possession rule per season, team TD/FG rates per drive (from nfl.drive-level data, shrunk), and 4th-down aggression; calibrate to realized OT outcomes since 2012 (about 100+ regular-season OT games); report P(level | OT) with credible interval; as-of start of season and refreshed weekly.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules and pbp (overtime flag, result)",
+    "NFL rulebook text on OT"
+   ],
+   "registry_ids": []
+  },
+  "nfl.endzone_exposure_plays": {
+   "label": "End-zone exposure plays per team-game",
+   "category": "pace_volume",
+   "mechanism": "Count of offensive plays run with the ball inside the team's own 5-yard line and punts from within the own end zone or 5, which are the sites of most safeties.",
+   "rationale": "Safeties scale with exposure; a team that starts drives deep and has a poor punt unit has several times more exposed plays than another.",
+   "measurement": "From pbp: per team-game count of offensive plays with yardline_100>=95 plus punts with yardline_100>=90, with a per-play safety probability by play type (sack, run, pass, punt) from 2010+ league data, team factor shrunk with k=30 exposed plays; recency half-life 20 games; expected safeties = sum count x probability; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.rush_yardage_tail": {
+   "label": "Per-carry yardage tail (explosive-run probability) by rusher",
+   "category": "player_role",
+   "mechanism": "Mixture distribution of rushing yards per carry for the named player: P(10+), P(20+), P(40+) per carry after opponent adjustment.",
+   "rationale": "The maximum over N carries is governed by tail probabilities, not average yards per carry; two backs with equal averages have different longest-rush distributions.",
+   "measurement": "For rushers (RB and QB separately) fit a discrete tail: P(yards>=k per carry) for k in {7, 10, 15, 20, 30, 40} on 3 seasons of carries, half-life 25 carries; shrink to positional prior with k=60 carries; adjust by opponent run-defence tail rate (stuff and explosive-allowed) with k=100 carries; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp",
+    "Next Gen Stats rushing (SOURCE_UNVERIFIED for public access)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.carry_count_forecast": {
+   "label": "Named-player carry count distribution by script",
+   "category": "player_role",
+   "mechanism": "Forecast distribution of the player's number of carries given team spread, game script, role and injury designation.",
+   "rationale": "N, the number of draws for the maximum, is overdispersed; a leading team gives the back 25 carries, a trailing team 10; zero for no-play voids.",
+   "measurement": "Negative binomial for carries with mean from role share (snap-weighted, half-life 6 games) times team rush attempts (spread-conditioned: mean attempts by closing spread bucket), dispersion by role; shrink share to depth-chart prior with k=3 games; include probability of 0 carries from nfl.injuries_pit; as-of inactive list.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse player_stats, pbp, snap_counts"
+   ],
+   "registry_ids": []
+  },
+  "nfl.lineup_adjusted_team_rating": {
+   "label": "Lineup-adjusted team rating (position-weighted value over replacement)",
+   "category": "team_strength",
+   "mechanism": "Team margin rating is rebuilt each week as a sum of position-weighted player values over replacement for the players expected to play, rather than a team average.",
+   "rationale": "Team EPA averages blend games with and without key starters; the effective rating for a given Sunday depends on who is active, which is known (partially) at known timestamps. Position weights differ greatly: QB, OT, EDGE, CB1 matter more per player than interior positions.",
+   "measurement": "Per position slot s (QB, LT, RT, C, G, TE, WR1-3, RB, EDGE1-2, DT, LB, CB1-2, S), estimate weight w_s as the points-per-game coefficient from a ridge regression of team game margin residuals (actual margin minus the rating_state_space expectation, not a betting line) on player-availability indicators (2015+, ridge lambda chosen by cross-validation); value of a starter = w_s x (his performance index - replacement index), replacement index from the backup's snaps; sum over active starters; update at each injury report vintage and at the inactive list; as-of timestamp.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse rosters, injuries, depth charts, snap_counts",
+    "PFF grades / ESPN win-rate metrics (paid)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.heteroskedastic_margin_sd": {
+   "label": "Conditional margin variance model",
+   "category": "distribution",
+   "mechanism": "Standard deviation and shape of the final margin as a function of expected total, spread magnitude, pace, weather and QB state.",
+   "rationale": "The fixed SD of 13 points misprices tails: a low-total, windy game has a narrower margin distribution than a shootout; cover probability at +/- 10 differs by regime for the same mean.",
+   "measurement": "Fit quantile regression (or location-scale model with t-distributed errors) of final margin on the model mean margin and model total from nfl.model_team_points_mean (not betting lines), wind, dome, backup-QB flag and divisional flag, with data 2010+ (about 4,500 games); report conditional SD and 5/95% tail multipliers; refit annually; as-of pregame values. Betting lines are excluded from the feature set and used only to benchmark the fitted SD after the fact.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules (spread_line, total_line, result, weather)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.deep_tail_margin_model": {
+   "label": "Blowout tail model for margins above 21 points",
+   "category": "distribution",
+   "mechanism": "Extreme-margin probability as a function of mismatch, QB state, turnover snowballing and weather.",
+   "rationale": "Deep rungs (20+) and season-maximum blowout contracts are priced on the tail and a normal fit materially understates them; the distribution of margins above 28 across 2000+ is thick.",
+   "measurement": "Fit generalized Pareto (threshold 21) to |margin| for 2000+ games with covariates: |model expected margin| bucket from nfl.model_team_points_mean, backup QB, model total; estimate shape xi with bootstrap CI; expected number of games above k in a season = sum over games of P(|M|>k); for season max compute 1 - prod(1 - p_g); as-of start of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules/results"
+   ],
+   "registry_ids": []
+  },
+  "nfl.slate_total_extremes": {
+   "label": "Slate-level highest-total and largest-margin order statistics",
+   "category": "distribution",
+   "mechanism": "Joint distribution of the week's game totals and margins, for maxima and tie-splitting.",
+   "rationale": "The highest-scoring game market and weekly max margin are maxima over 13-16 games with heterogeneous means; ties split the payout so exact integer ties matter.",
+   "measurement": "For each slate game g draw total from the game-total distribution (mean from nfl.pace/off_epa model, SD from nfl.heteroskedastic_margin_sd analog for totals), include shared weather correlation (rho from nfl.corr), simulate 20,000 slates; report P(game g has highest total) and expected payout under $1/N split; as-of kickoff vintages for each game.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "derived from nflverse"
+   ],
+   "registry_ids": []
+  },
+  "nfl.rating_state_space": {
+   "label": "Team-strength state-space updating rule (preseason prior, process noise, opponent adjustment)",
+   "category": "team_strength",
+   "mechanism": "Team ratings are latent states updated weekly with an offseason regression to the mean and weekly process noise, with opponent adjustment simultaneously solved.",
+   "rationale": "Different updating speeds produce different mid-season ratings; slow updating misses real changes, fast updating chases noise; the choice is rarely defined in the catalog.",
+   "measurement": "Kalman filter on team offence and defence EPA/play ratings: state_t+1 = 0.6*state_t + 0.4*preseason_prior at season boundary (coefficient estimated by prior-year to next-year correlation 2005+), weekly process variance sigma_p^2 estimated by marginal likelihood, observation = opponent-adjusted game EPA with garbage-time weights; report posterior mean and variance per team as-of previous week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (epa, wp)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.total_plays_state_model": {
+   "label": "State-conditional total plays model (mutual tempo with lead effects)",
+   "category": "pace_volume",
+   "mechanism": "Total plays are a function of both teams' seconds per play, run rates, expected lead state and clock stoppages rather than the average of two neutral paces.",
+   "rationale": "Neutral pace is measured when the score is close; actual plays depend on how the game goes, and a favourite protecting a lead cuts plays substantially; the combination of two paces is not additive.",
+   "measurement": "Regress total plays per game on each team's neutral seconds per play, PROE, own and opponent run rate, expected absolute margin (from model, not market), pass-completion rate and penalty rate, with team and opponent random effects; use 2015+ games; shrink coefficients; output expected plays and SD; as-of previous week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (play counts, clock)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.total_distribution_tail": {
+   "label": "Both-tail model of game total points",
+   "category": "distribution",
+   "mechanism": "Tail probabilities of the combined score beyond about 1.8 SD in each direction conditional on expected total and environment.",
+   "rationale": "TOTALPRECISE ladders extend to 98.5 and TOTAL to 24.5; these rungs are priced on tails, which a normal approximation gets wrong because totals are right-skewed with heavy upper tail from blowout cascades and short-field TDs. The expected total it conditions on is the market-free model total, so the tail does not inherit the line.",
+   "measurement": "Fit a skewed distribution (shifted lognormal or discrete mixture of negative-binomial team scores) to 2000+ game totals conditioned on the model expected total (sum of the market-free team means from nfl.model_team_points_mean, not a betting total) in terciles and weather regime; add empirical atoms at key totals (37, 41, 43, 44, 47, 51) as residuals of a smoothed fit with Dirichlet smoothing; estimate P(total >= 70), P(<=24) with bootstrap CI (about 5,000 games); validate calibration by decile of model expected total; as-of start of season and each week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules/results"
+   ],
+   "registry_ids": []
+  },
+  "nfl.weather_total_response": {
+   "label": "Weather dose-response function for totals (wind, cold, precipitation, roof)",
+   "category": "environment",
+   "mechanism": "Estimated effect on expected total points of wind speed, temperature and precipitation categories with roof interactions.",
+   "rationale": "Weather effects are strongly nonlinear: below 10 mph wind is negligible, above 15-20 mph reduces totals by several points; forecast error needs to be handled at the pregame time. Historical fits use observed (not forecast) conditions until a season of forecast capture exists.",
+   "measurement": "Hierarchical regression of total points residual (game total minus team-baseline expectation from EPA model) on wind (piecewise linear with knots 10, 15, 20 mph), temperature (knots 32, 50), precipitation flag, dome flag; 2010+ games; shrink with k=100 games per bin; use forecast vintages 24 and 3 hours pregame and propagate forecast error as measurement noise; as-of pregame forecast.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse schedules (wind, temp as measured at game)",
+    "NOAA/NWS forecast archives (free_limited)",
+    "Weather API vendors e.g. Tomorrow.io (paid)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.ot_total_increment": {
+   "label": "Overtime points increment and probability by rule era",
+   "category": "distribution",
+   "mechanism": "Points scored in overtime and the probability of reaching overtime, by season rule set.",
+   "rationale": "If overtime counts for the contract, the total shifts by the OT points; under the rule changes of 2012-2025 OT length and possession rules changed, so frequency and points differ by era.",
+   "measurement": "P(OT) by closing spread bucket and total bucket from 2012+ (about 4,000 games), expected OT points = mean points scored in OT by rule era (10-minute regular-season period), distribution of OT points (0, 3, 6, 7, 10); report contribution to total; flag current-season rule; as-of start of season.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (qtr 5)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.event_calendar_hazard": {
+   "label": "Calendar-structured hazard curve by event type",
+   "category": "schedule_context",
+   "mechanism": "Time-varying hazard of each event type (coach exit, retirement, signing, trade, cut) across the league calendar.",
+   "rationale": "Contracts with fixed dates (before Mar 1, 2027) integrate the hazard over uneven time; ignoring the spikes (Black Monday, cut-down, deadline) misallocates probability across the window.",
+   "measurement": "From the transaction wire and coach history 2000-2025, count events per calendar week by type; estimate piecewise-constant weekly hazard with Gamma-Poisson shrinkage (prior shape 2, rate 4 pseudo-team-years); condition on state (team win % bin, contract year remaining); compute P(event in [now, deadline]) = 1 - exp(-sum of hazard x exposure); as-of date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Pro Football Reference coaches and transactions (free_scrape)",
+    "nflverse rosters/transactions (free)",
+    "Spotrac/OverTheCap transaction logs (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.insider_report_conversion": {
+   "label": "Insider report-to-official-announcement conversion and lag",
+   "category": "availability",
+   "mechanism": "Probability and delay with which a report by a given insider and wording is followed by the official act.",
+   "rationale": "Settlement requires the official act; report credibility and lag determine whether the event resolves before the market closes.",
+   "measurement": "Build a table of reports (reporter, timestamp, wording class: 'agreed', 'expected', 'discussing') for 2018-2025, link to the official action; estimate conversion rate and median lag by reporter tier and wording with beta prior (alpha=2, beta=2) shrinkage; as-of report timestamp; output P(official within horizon).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "X/Twitter and NFL Network archives (own_capture needed)",
+    "Pro Football Reference transactions for official dates"
+   ],
+   "registry_ids": []
+  },
+  "nfl.initial_roster_cut_model": {
+   "label": "Initial 53-man roster inclusion model",
+   "category": "player_role",
+   "mechanism": "Probability that a player is on the initial 53-man active roster given draft round, guarantees, preseason usage, position depth and injury status.",
+   "rationale": "Inclusion is a constrained selection with an explicit IR/PUP exclusion; stars on IR resolve NO, while fringe players depend on dead-cap cost and roster composition.",
+   "measurement": "Logistic regression on 2010-2025 cut-down histories: draft round, years of service, fully-secured (non-releasable) salary share, dead-cap cost of release, preseason snaps share, position group count vs slot count, injury designation at cut-down (IR/PUP/NFI flags as hard exclusion), special-teams snaps; shrink by team random effect (k=5 players per team); as-of cut-down eve.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse rosters weekly status (ACT/RES/DEV)",
+    "OverTheCap/Spotrac contracts (free_scrape)",
+    "preseason snap counts via PFR (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.coach_exit_hazard": {
+   "label": "Head-coach exit hazard (firing, resignation, pre-announced departure)",
+   "category": "motivation",
+   "mechanism": "Hazard of a head coach leaving or announcing departure as a function of record vs expectation, contract status, owner history and calendar.",
+   "rationale": "The contract counts announced exits, so resignations, retirements and mutual parting count; the hazard rises sharply after the season and after specific loss patterns.",
+   "measurement": "Cox or discrete-time logistic hazard with covariates: win% minus preseason expectation (using non-market expectation from ratings), consecutive losses, playoff outcome, years remaining on contract (0-1 vs more), tenure, owner's historical turnover, GM tenure, prior-season record; train on 2000-2025 coach-seasons (about 800); report weekly hazard in-season and post-season; as-of date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Pro Football Reference coaches history",
+    "contract info from press reports (SOURCE_UNVERIFIED)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.vote_outcome_model": {
+   "label": "Vote-share model for awards and the Top 100 list",
+   "category": "distribution",
+   "mechanism": "Winner or rank probability from candidate quality, narrative, previous votes, timing and electorate composition.",
+   "rationale": "Awards and ranks are decided by a small electorate with identifiable biases (position, team success, prior awards); the leader's share is concentrated.",
+   "measurement": "Multinomial logit of historical winner on candidate features (team win%, individual statistical rank, prior award wins, position, narrative flags) for each award 2000-2025 with k=3 pseudo-observations shrinkage; for T100, ordered logit on previous rank, change in production, position group and age; compute P(candidate=winner) and P(rank=#r); as-of announcement date. Aggregation layer: for division or conference specials (KXNFLMVPSPECIALS, KXNFLOPOYSPECIALS, DPOY specials) P(group) = sum over candidates of P(win) by the team of record at announcement time, with the sampled 1/N co-winner payout rule; for Executive of the Year the 'Tie/Co-Winners' strike gets P(tie) = historical co-winner frequency in the award's own history (to be counted from its published list) shrunk toward the pooled frequency across comparable awards with k=10 awards.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Pro Football Reference awards and voting (free_scrape)",
+    "NFL T100 list archives (free)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.draft_qb_class_model": {
+   "label": "Draft positional-selection model (QB class order, draft order, team need and trade-up)",
+   "category": "other",
+   "mechanism": "The k-th quarterback drafted is determined by the ranked order in which teams on the clock select QBs, which depends on consensus prospect rank, the order of picks of QB-needy teams, and trades that move teams up.",
+   "rationale": "Draft contracts such as 'player X is the 3rd quarterback drafted' are order statistics over a small class (about 8 to 14 QBs drafted per year), where a single early-round team's need and a trade-up change the rank of all later QBs. The generic consensus-board input gives one prospect's rank but not the joint ordering that the count-based contract settles on.",
+   "measurement": "Plackett-Luce ordering model over the QBs in the class: utility_j = -beta*ln(consensus_rank_j) + gamma*need(team on the clock) with consensus_rank an average of at least 5 public big boards (time-stamped; weights proportional to each board's historical rank-correlation with actual draft order), beta and gamma fit by maximum likelihood on 2010-2025 drafts (about 180 QBs), team need = 1 if the current starter contract expires within one year or the starter's EPA per play is below the league 25th percentile; draft order from the final standings and traded picks. Simulate 20,000 drafts including a trade-up probability for QB-needy teams outside the top 5 (estimated from the 2010-2025 share of QBs taken before their consensus slot, shrunk with k=5). Report P(QB j is the k-th QB selected) and P(QB j drafted in the top n). As-of: refreshed after the combine, pro days, and each time a credible insider reports intentions; final run at draft start. Betting or market odds are excluded and used as benchmarks only.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse draft_picks (historical picks and positions)",
+    "public big-board and mock draft aggregator pages",
+    "team standings and traded-pick lists (nflverse, league site)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.broadcast_role_assignment": {
+   "label": "Broadcast and event role assignment model (announced crews, contracts and appearance history)",
+   "category": "other",
+   "mechanism": "A named person performs a role in a named network's broadcast only if the network assigns them to that event and they appear, which follows announced crew sheets, multi-year talent contracts and prior appearance frequency.",
+   "rationale": "KXNFLROLE settles on whether a person performs as an on-air analyst in a specific network broadcast in a window; this is a staffing decision with a mostly public paper trail (crew announcements, contract news), not an athletic outcome, and it needs base rates by role type rather than a vote or a season model.",
+   "measurement": "P(role) = P(person on the network's announced crew for at least one qualifying event in the window) x P(appears given assigned). Crew assignment is estimated by logistic regression on the person's number of qualifying events in each of the previous 3 seasons (with weights 0.5, 0.3, 0.2), contract end year, the network's announced lead-crew roster (binary), and whether the event is the network's lead broadcast; P(appears | assigned) = 1 minus the withdrawal rate (illness, conflicts) from the past 5 seasons, shrunk with k=10 events toward 0.97. As-of: each network crew press release and contract report, stamped to the hour; before an announcement the prior-season frequency is used.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "network press releases and crew announcements (free)",
+    "Pro-Football-Reference or Wikipedia broadcaster history (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.injury_return_timeline": {
+   "label": "Injury-specific return-time distribution",
+   "category": "availability",
+   "mechanism": "Time from injury onset to first game played, by body part and severity.",
+   "rationale": "Whether a player appears in week k depends on the recovery clock; type-specific survival curves replace an undifferentiated 'injured' flag.",
+   "measurement": "Kaplan-Meier or Weibull survival of games missed by (body part, injury report wording, surgical or not, position group) from 2009-2025 injury reports, censored at season end; hazard of return by week since onset; shrink to position-pooled curves with k=10 cases; as-of report date; output P(returns by game k).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse injuries (weekly report_primary_injury)",
+    "Pro Football Reference injury data",
+    "FantasyPros/Spotrac injury trackers (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.designation_to_play_calibration": {
+   "label": "Practice-sequence and designation to play-probability calibration",
+   "category": "availability",
+   "mechanism": "Calibrated P(plays | Wednesday, Thursday, Friday practice status, designation, position, team, week).",
+   "rationale": "The mapping is team-specific: some teams use Questionable for near-certain players, others reserve it for coin flips; position matters because linemen and skill players differ.",
+   "measurement": "Hierarchical logistic regression of played (>=1 snap) on practice-sequence pattern (e.g., DNP-LP-FP), designation, position group, days of rest, and team random effect with shrinkage prior (tau fitted); training 2012-2025 injury reports with vintages; as-of each report time; output P(play) with credible interval.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse injuries (practice status, report status) and snap counts",
+    "NFL official injury reports (own_capture for timing)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.healthy_inactive_base_rate": {
+   "label": "Healthy-inactive and rest base rates by role and coach",
+   "category": "motivation",
+   "mechanism": "Probability that a healthy player is inactive due to coach choice (rest, discipline, 46-man cut).",
+   "rationale": "About a fifth of inactives are healthy; rest decisions are concentrated in weeks 17-18 and for veterans on clinched teams.",
+   "measurement": "From inactive lists and injury report absences (no injury listed) 2015-2025: rate by position, age band, depth slot, team clinch status, coach; shrink to league by k=15 player-games; as-of the week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse inactives and injuries"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_change_hazard": {
+   "label": "Starting-QB change hazard (benching or promotion) by week",
+   "category": "player_role",
+   "mechanism": "Per-week hazard that the depth chart lists a different starting QB than the previous week.",
+   "rationale": "First-start contracts are about the hazard of leaving the starter's role; incumbent performance, team record and the next QB's draft capital govern it, and the weeks right after the bye are higher hazard.",
+   "measurement": "Discrete-time logistic hazard on QB-weeks 2010-2025: incumbent EPA+CPOE composite vs prior, team record, turnovers, week since bye, challenger draft round and contract, coach tenure, owner pressure; shrink coefficients with ridge; output weekly h and cumulative probability over contract window excluding byes; as-of report date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp and rosters/depth charts"
+   ],
+   "registry_ids": []
+  },
+  "nfl.snap_appearance_given_active": {
+   "label": "P(at least one snap | active) by role",
+   "category": "player_role",
+   "mechanism": "Probability that an active player plays at least one snap (including or excluding special teams) by depth slot and script.",
+   "rationale": "The contract requires a snap, so an active emergency QB or deep rotation player may resolve NO; the base rate varies by role.",
+   "measurement": "From snap counts 2016-2025: fraction of active player-games with at least one offensive, defensive or special-teams snap by position and depth slot; shrinkage k=10 games; adjust for spread (blowouts raise backup snaps); output separate probabilities with and without special-teams snaps.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse snap_counts"
+   ],
+   "registry_ids": []
+  },
+  "nfl.depth_chart_publication_lag": {
+   "label": "Depth-chart publication mechanics and lag by team",
+   "category": "market_structure",
+   "mechanism": "How and when each team publishes its official depth chart and how 'starter' is encoded.",
+   "rationale": "First-start contracts settle on the published chart; teams differ on publication day and encoding (or-designations), so the label can differ from who actually starts.",
+   "measurement": "Per team-week from archive of depth charts (team websites and nflverse depth_charts), record publication weekday, whether an 'or' slot is used, change relative to prior week; compute P(chart lists a different QB1 than the actual week's starter); as-of week.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse depth_charts",
+    "team websites (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.roster_designation_constraints": {
+   "label": "Roster designation and league-rule hard constraints (IR, PUP, NFI, suspension)",
+   "category": "officiating",
+   "mechanism": "Mandatory minimum absence lengths and eligibility windows from the IR, PUP, NFI and suspension rules.",
+   "rationale": "A player on IR cannot return for four games; suspensions have fixed lengths; these hard constraints dominate the injury recovery curve in the short run.",
+   "measurement": "Rule table by season (IR minimum games, designated-to-return count, practice window 21 days, PUP and NFI rules, suspension length) joined to the player's status on each date; output earliest eligible game and the probability mass allowed by rule; as-of transaction wire.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NFL Operations roster rules",
+    "nflverse transactions/rosters"
+   ],
+   "registry_ids": []
+  },
+  "nfl.non_roster_return_status": {
+   "label": "Non-roster status transition model (retired, free agent, suspended or unsigned player returning to play)",
+   "category": "availability",
+   "mechanism": "A player who is not on an active roster can only take a snap after a chain of discrete events: ending retirement or suspension, signing with a team, passing a physical, and being activated, each with its own timing and decision-maker.",
+   "rationale": "The injury-report-to-inactive-list mechanism does not apply to a retired or unsigned player such as the sampled KXNFLWEEKCOMPETE subject (a player outside any current roster); the live contracts KXNFLRETURN and KXNFLNEXTTEAM are also status-transition events, so a separate model with reference classes for comebacks is required.",
+   "measurement": "P(plays in week w) = P(contract signed by the week-w roster deadline) x P(activated and takes a snap | signed). Estimate the first factor as a discrete-time hazard on retired and unsigned veterans 2000-2025 (age, years since last game, Pro Bowl count, stated intent in the previous 12 months as a binary flag, team contract interest reported by named insiders as a binary flag with a timestamp, days to the target week), with ridge shrinkage and a Beta(1, 19) prior for the base comeback rate; estimate the second from signing-to-first-snap lags of mid-season veteran signings (median lag in weeks, shrunk with k=8 signings). For NEXTTEAM contracts output P(team k) by multinomial logit on prior-team cap space, position need and reported interest, with a 'retires or no team' category. As-of: each transaction-wire timestamp and insider report time.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "league transactions page and Pro-Football-Reference transactions (free_scrape)",
+    "insider reports (own_capture)",
+    "nflverse rosters (free)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_challenger_prior": {
+   "label": "Incumbent-versus-challenger quarterback value gap (draft-capital prior for unproven QBs)",
+   "category": "player_role",
+   "mechanism": "The expected performance gap between the incumbent starter and a challenger drives benching and promotion decisions; for rookies and players with few dropbacks the challenger's value rests on a prior built from draft position.",
+   "rationale": "The first-start contracts (KXNFLFIRSTSTART, KXNFLDEBUT) are about a named unproven QB overtaking an incumbent, and the incumbent's in-season EPA alone ignores how good the challenger is expected to be; teams that spent a high pick tolerate a shorter leash for the incumbent.",
+   "measurement": "gap_w = EPA_incumbent_w - EPA_challenger_prior_w where EPA_incumbent_w is the incumbent's opponent-adjusted EPA per dropback over the last 8 games with a prior of league-average QB EPA at weight 150 dropbacks, and EPA_challenger_prior_w = a regression of first-3-season EPA per dropback on log draft pick (2000-2025 QBs with at least 150 dropbacks) blended with the challenger's own preseason and in-game dropbacks using weight n/(n+150). Pick number enters as a continuous slope, undrafted as pick 260. Output the gap and its SD for the discrete-time logistic hazard in nfl.qb_change_hazard. As-of: after each game, with bye weeks excluded from the exposure count.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp (EPA per dropback)",
+    "nflverse draft_picks (draft slot)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_expected_pass_td": {
+   "label": "QB expected passing TDs (xPassTD) from dropback-level location and target",
+   "category": "team_strength",
+   "mechanism": "Sum over a QB's dropbacks of the probability that the attempt becomes a TD given field position, down, distance, target type and defensive look.",
+   "rationale": "Realized TD counts are noisy; a location-based expectation separates opportunity from finishing luck and gives the per-attempt TD rate that actually predicts forward counts.",
+   "measurement": "Fit a logistic model P(pass TD | yardline_100, down, ydstogo, air_yards bucket, pass_location, offense_personnel, defenders_in_box) on 2006+ pass attempts using pbp-only fields (yardline_100, down, ydstogo, air_yards bucket, pass_location) and, as an upgrade fitted only on the participation era (about 2016+), offense_personnel and defenders_in_box, which are not available for earlier seasons; for each QB, expected TDs per attempt = average over his attempts last 700 attempts (half-life 350 attempts); shrink to team-level rate with k=300 attempts; ratio of actual to expected regressed 70% to 1.0; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp",
+    "nflverse ff_opportunity expected pass TD columns (SOURCE_UNVERIFIED for exact fields)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.goal_to_go_pass_rate": {
+   "label": "Team goal-to-go and inside-20 pass rate by zone and down",
+   "category": "game_state",
+   "mechanism": "Share of snaps that are dropbacks in the zones 20-11, 10-6, 5-1 yards, by down and score state, by team and coach.",
+   "rationale": "The share of team TDs that are passing depends on goal-to-go play-calling; it varies from about 30% to 70% across teams and drives the QB's TD count more than the total.",
+   "measurement": "From pbp 2 seasons (half-life 20 games): dropback rate in each zone by down and score_differential bucket; coach random effect shrunk with k=25 plays per zone; blend for new coordinator with league prior; output expected passing TDs fraction of team TDs given the team's red-zone trips; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_attempt_forecast": {
+   "label": "QB pass-attempt count distribution by script and environment",
+   "category": "pace_volume",
+   "mechanism": "Forecast distribution of the QB's attempts using team plays, pass rate conditional on expected state, sacks, wind and QB participation.",
+   "rationale": "Attempts are the exposure for TDs, completions and INTs; ignoring their conditional distribution across scripts mixes games where the QB throws 25 times and 45 times.",
+   "measurement": "Negative binomial regression of QB attempts on expected team plays, expected spread bucket (model-based), neutral PROE, wind>15 flag, dome, opponent run-defence rank, with team random effects; 2015+ QB-games; output mean and dispersion; adjust for P(QB pulled) using nfl.qb_blowout_pull_hazard; as-of start of week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp and player_stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_blowout_pull_hazard": {
+   "label": "QB blowout pull and early-exit hazard",
+   "category": "game_state",
+   "mechanism": "Probability that the QB leaves the game early because of a lopsided score or injury, as a function of lead and time.",
+   "rationale": "Protected and standard contracts differ on pulls; a QB pulled up 28 in the fourth quarter has truncated counts and the protected contract voids.",
+   "measurement": "From pbp 2010-2025: hazard that the starting QB's last snap occurs before game end, by lead size and clock; coach random effect (k=8 blowout games); combine with in-game injury hazard by QB mobility; P(plays 2H) and P(pulled with lead>=21 before end of Q3); as-of start of week.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse pbp (passer substitutions)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.opp_def_int_propensity": {
+   "label": "Opponent defence interception propensity, QB-quality adjusted",
+   "category": "matchup",
+   "mechanism": "Opponent's interceptions per attempt over expectation given the quality of QBs faced and pressure generated.",
+   "rationale": "Interception counts by defence are heavily luck; the skill component (ball skills, safety range) must be separated from the pressure effect and from opposing QB quality.",
+   "measurement": "Interceptions per attempt faced by the defence, adjusted by opposing QB turnover-worthy rate (season), pressure rate faced and pass depth; regress to league mean with k=350 attempts; recency half-life 12 games; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse pbp",
+    "PFF/Sports Info Solutions charting (paid) for turnover-worthy throws"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_career_milestone_accrual": {
+   "label": "Season and career passing-TD accrual model with games and aging",
+   "category": "distribution",
+   "mechanism": "Projected remaining TDs given per-game rate, games remaining, availability and aging curve.",
+   "rationale": "Season (40+) and career markets are sums over games; the distribution of games played and a QB's age-related change in TD rate matter as much as the per-game mean.",
+   "measurement": "Per-game TD mean from nfl.qb_expected_pass_td and attempt forecast, trend by age (QB aging curve estimated 2000-2025: attempts flat then decline from age 35, TD rate regressed), games remaining from schedule minus byes, availability from injury hazard (QB games missed per season by age and mobility, beta prior); simulate season totals with negative binomial game counts; as-of previous game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse player_stats",
+    "Pro Football Reference career logs"
+   ],
+   "registry_ids": []
+  },
+  "nfl.red_zone_target_quality": {
+   "label": "Red-zone catcher quality and availability (contested-catch and size-weighted target value)",
+   "category": "player_role",
+   "mechanism": "The probability that a red-zone or goal-to-go throw becomes a touchdown depends on who is the target: tall, contested-catch receivers and tight ends convert short throws at higher rates than slot receivers, so QB touchdown counts depend on the supporting cast.",
+   "rationale": "nfl.skill_avail captures absences but not the quality level of red-zone catchers; a QB with a dominant red-zone target has a higher per-attempt TD rate independent of his own skill, and a team's passing-TD count is lost when that player is out or replaced.",
+   "measurement": "For each team-week, rz_target_quality = sum over players of (share of team targets inside the opponent 20 over the last 12 games, half-life 6 games) x (player's red-zone catch rate over expected, shrunk to the league mean with k=20 red-zone targets) x (availability weight from the active/inactive status at the as-of time); standardise across teams within season; output the team value and the value lost when the top red-zone target is replaced by the next on the chart. As-of: after the previous game and updated at the inactive list.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse pbp (targets, yardline_100, receiver_id, complete_pass)",
+    "nflverse rosters and depth charts"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_blowout_pull_threshold": {
+   "label": "Quarterback benching rule: margin and clock at which the starter is pulled",
+   "category": "matchup",
+   "mechanism": "Head-coach-specific rule for resting the starter in lopsided games, which removes dropbacks on the winning side and sets the zero-attempt atom after halftime for the protected variant.",
+   "rationale": "Existing exit-risk input treats injury and benching together. For a quarterback on a heavy favourite, benching is a coach habit tied to margin and minutes remaining, not a physical hazard; it lowers the top rungs even when the pre-game model expects a high-yardage game and decides whether a protected contract refunds.",
+   "measurement": "For each head coach, over the last 3 seasons (min 8 qualifying games, shrink toward league mean with k=6 games), record the lead (points) and game-clock minute at which the starter QB's last snap occurred in games decided by 17+; fit a logistic: P(starter pulled | lead, minutes_remaining). Output pre-game: P(pull before Q4 ends) = integral over simulated margin paths, as-of the last pre-game depth chart. Unit: probability and expected minutes lost.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play (last QB snap per game)",
+    "nflverse snap counts"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_dropback_to_attempt_leakage": {
+   "label": "Dropback-to-attempt leakage rate (sack, scramble, spike, kneel) for the QB-offence pair",
+   "category": "team_strength",
+   "mechanism": "Share of dropbacks that never become passing attempts because they end in sacks, scrambles or clock-stopping spikes.",
+   "rationale": "Passing yards credit only attempts and official QB yardage is gross, so the attempts count is dropbacks times (1 - leakage). Leakage is the interaction of the opponent pressure rate and this passer's tendency to escape or hold the ball; two quarterbacks with equal EPA per dropback can differ by 4-6 attempts per game from this alone.",
+   "measurement": "Per QB over his last 17 starts, time-decayed with half-life 8 games: (sacks + scrambles + spikes) / dropbacks, shrunk toward the offence-level rate with k=150 dropbacks. Pre-game forecast = QB rate adjusted by opponent pressure rate allowed relative to league (log-odds additive), capped to 3 sd. Units: fraction of dropbacks.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play: qb_scramble, sack, qb_spike, qb_kneel flags"
+   ],
+   "registry_ids": []
+  },
+  "nfl.receiving_corps_route_weighted_quality": {
+   "label": "Route-weighted receiving-corps quality for the projected active set",
+   "category": "player_role",
+   "mechanism": "Aggregate of expected separation, catch-probability-over-expected and yards after catch over expected across the receivers and backs projected to run routes, weighted by projected route share.",
+   "rationale": "The passer's yield depends on who catches the ball. A binary flag for WR1 out ignores that a replacement with a much lower route share and weaker separation changes yards per attempt, and that the effect depends on the whole route tree. Need a number that moves when a name changes on the inactive list.",
+   "measurement": "For each receiver, rolling 12-game route-weighted separation, catch rate over expected and YACOE, shrunk toward position mean with k=60 targets; corps score = sum over projected active receivers of projected route share x player score, where route shares are redistributed from the declared inactive list using the last 3 games' conditional shares. Units: standardized yards per attempt over league mean, as-of inactive list time (about 90 minutes pre-kick) or last practice report.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse participation and FTN charting where available",
+    "NFL Next Gen Stats public tables (separation, cushion, YAC over expected)",
+    "nflverse depth charts and inactives"
+   ],
+   "registry_ids": []
+  },
+  "nfl.long_completion_tail_rate": {
+   "label": "Long-completion (20+, 40+ yard) rate and its team-opponent matchup",
+   "category": "distribution",
+   "mechanism": "Probability per attempt of a 20+ or 40+ yard completion, which creates the right tail of a quarterback's yardage total.",
+   "rationale": "The over-rung probability for 300+ is governed by tail events, not the mean. Explosive-pass rate is more erratic than yards per attempt, depends on deep-target share, pass protection time and the opponent's safety play, and is the first thing wind removes.",
+   "measurement": "Per QB-offence, rate of completions >=20 and >=40 yards per attempt over the last 20 games with half-life 10 games, shrunk with k=200 attempts; opponent factor = opponent's allowed explosive-pass rate relative to league over last 12 games with k=150 attempts; combined multiplicatively on log scale; wind above 15 mph applied as a separate multiplier from nfl.weather_pit. Output: expected count of 20+ and 40+ completions and a compound-Poisson tail for yards.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (passing_yards, air_yards, yards_after_catch)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.own_rating_game_state_prior": {
+   "label": "Own-rating margin and total prior for the game-state distribution (market-free)",
+   "category": "game_state",
+   "mechanism": "Builds the distribution of the expected score path from the team's own offence and defence ratings, home edge and starter quarterback status, so nfl.script is fed without any sportsbook spread or total.",
+   "rationale": "nfl.script's catalog measurement integrates over a margin distribution centred on the point spread; that makes the volume driver an echo of the market. The margin and total centre must come from own opponent-adjusted EPA ratings so it can be compared against Kalshi prices rather than copied from them.",
+   "measurement": "Expected margin = (off_epa_A - def_epa_B) - (off_epa_B - def_epa_A) per play x expected plays per team (nfl.pace), plus a home-field constant fitted on 2015-2025 games (about 1.5 points, refit yearly) and a starter-QB adjustment from nfl.qb_efficiency versus the replacement backup; EPA inputs use a 10-game exponential half-life (about 6 games) shrunk to league mean with k=6 games, opponent-adjusted by ridge. Expected total = sum of the two team expected plays x points per play. Margin sd = 13.0 points, total sd = 9.5 points, re-estimated from own residuals. As-of: last game before kickoff, QB and injury status at the latest inactive list. Contains no spread_line, total_line or moneyline.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (epa, posteam, defteam, home_team)",
+    "nflverse schedules (home/away, roof)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.with_without_target_redistribution": {
+   "label": "With/without target redistribution matrix for the projected inactive set",
+   "category": "player_role",
+   "mechanism": "Conditional split of routes, targets and air yards among remaining receivers when a given teammate does not play.",
+   "rationale": "The generic target-competition input says teammates matter; what a model needs is the share each remaining player gains when a specific player is out, because slot, outside and tight end absorbers behave differently and the gain is not proportional to current share.",
+   "measurement": "For each team-season from 2018, compute each receiver's target share and TPRR in games without teammate X versus with X (X = a top-3 target earner), requiring at least 4 games without X over the last 3 seasons, else use a position-role template pooled across teams (shrink with k=40 targets). Apply to the projected inactive list at the last available timestamp. Output: expected target share vector summing to 1 and a standard error per receiver.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play and rosters",
+    "nflverse inactives and injuries"
+   ],
+   "registry_ids": []
+  },
+  "nfl.player_reception_length_distribution": {
+   "label": "Player reception-length distribution (air yards plus yards after catch), incl. longest-play probability",
+   "category": "distribution",
+   "mechanism": "Empirical distribution of this receiver's yards per reception and probability that any single reception exceeds 20, 30, 40 and 60 yards.",
+   "rationale": "The longest-reception market and the escalator tails need the upper tail of catch lengths, which differs from the mean yards per catch; YAC-heavy slot players and deep WRs have the same mean and very different tails.",
+   "measurement": "For each receiver, take receptions from the last 24 games (min 40; pooled to position-alignment template with k=30 receptions otherwise), fit a log-normal/ Pareto splice at the 85th percentile; then P(longest >= x | N catches) = 1 - F(x)^N with N drawn from the projected receptions distribution. Opponent factor = opposing defence's allowed explosive-reception rate vs league (k=120). Units: probabilities for each strike.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (receiver, air_yards, yards_after_catch)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.defense_target_funnel_share": {
+   "label": "Defensive target funnel: share of opponent targets allowed by alignment and position",
+   "category": "matchup",
+   "mechanism": "Fraction of opposing pass targets a defence allows to WRs (slot and outside), TEs and RBs, relative to league and adjusted for the offences it faced.",
+   "rationale": "Defence-versus-position yield tells how efficient receivers are against a defence but not how many targets it sends to each group, which sets a receiver's share before efficiency matters.",
+   "measurement": "For each defence: over the last 12 games (half-life 6 games) compute target shares by alignment, adjusted for opponent offence's usual share using a ridge model (alpha tuned by cross-season validation); shrink toward league with k=100 targets. Output: log ratio of expected share vs the receiver's usual share. Needs alignment tags from charting data.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse FTN charting (limited alignment fields), play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_target_concentration": {
+   "label": "Quarterback target concentration and first-read lean",
+   "category": "player_role",
+   "mechanism": "Gini or Herfindahl of the quarterback's targets across his receivers, plus the share to the primary read in the last 20 starts.",
+   "rationale": "A quarterback who locks onto one receiver gives that receiver both a higher mean and a higher variance, and when the primary receiver is out the concentration determines how widely targets spread.",
+   "measurement": "For each quarterback, compute target-share Herfindahl over his last 20 starts (half-life 10 games, min 200 targets; shrink to team-level with k=150 targets) and the primary receiver's share. Apply to the receiver under study as a multiplier on expected target share relative to neutral dispersion: share_adj = share x (1 + b x (conc - league_conc)) with b estimated by out-of-sample regression.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nfl.late_lead_clock_carry_yield": {
+   "label": "Late-lead clock-killing carries: expected volume and yield by back",
+   "category": "game_state",
+   "mechanism": "Number of carries a runner takes while his team leads in the second half and their yards per carry, which differ from neutral-game carries because defences stack boxes and runs are designed to burn clock.",
+   "rationale": "Volume rises for favourites but each carry yields less, so counting these carries at the average yards per carry overstates yardage, and the carries often go to a different back than the one who carried in neutral situations.",
+   "measurement": "Using play-by-play from the last 3 seasons, for each team compute carries per game in second-half states with lead >= 7 by back, and yards per carry in those states (shrink toward the league leading-state yield with k=25 carries). Forecast = integral over pre-game margin distribution of lead-state carries x lead-state yield, using the back depth chart at the last report. Units: carries and yards per carry.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play (score_differential, rusher_id, yards_gained)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.run_scheme_vs_front_matchup": {
+   "label": "Run-scheme versus defensive front match by gap and direction",
+   "category": "matchup",
+   "mechanism": "Matches the offence's distribution of runs by gap and direction (inside zone, outside zone, power) and blocking scheme with the defence's yards-allowed by the same gap and its front alignment.",
+   "rationale": "Team-level rush defence hides that a front may be soft to the outside and stout inside; the runner's yardage depends on how often the offence attacks the weak gap.",
+   "measurement": "For each offence compute share of rushes by run_gap and run_location over the last 16 games (shrink to league with k=60 carries); for each defence compute yards per carry and success rate allowed by the same bins (shrink with k=40). Matchup score = sum over bins of offence share x (defence allowed - league), as expected yards over average per carry. Add nominal front type (odd/even) as a context flag.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (run_gap, run_location)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.rush_explosive_tail_rate": {
+   "label": "Runner explosive-run rate (10+, 20+) and opponent explosive allowed",
+   "category": "distribution",
+   "mechanism": "Per-carry probabilities of 10+ and 20+ yard runs for this runner and the matching rate the defence allows.",
+   "rationale": "The 100+ rung is rarely reached through steady 4-yard carries; it needs one or two long runs, and the per-carry explosive probability is a separate parameter with its own persistence and opponent dependence.",
+   "measurement": "For each runner, explosive rate over the last 25 games with half-life 12 games, shrunk to the position-role mean with k=60 carries; opponent factor = defence's allowed 10+ rate vs league over last 16 games (k=100); combine on a log scale; use in a compound simulation of yardage with carries from stage s1-s4. Output: P(10+), P(20+) per carry.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_scramble_yield_given_pressure": {
+   "label": "Quarterback scramble and designed-run yield conditioned on pressure",
+   "category": "player_role",
+   "mechanism": "For a quarterback: probability that a pressured dropback becomes a scramble, yards per scramble and designed-run carries per game by situation.",
+   "rationale": "For quarterback rushing contracts yardage arises from scrambles under pressure and from scheme, not from handoffs; scramble conversion depends on coverage downfield and on the passer's mobility, and designed runs are a coaching feature.",
+   "measurement": "For each QB, scrambles per pressured dropback and yards per scramble over the last 24 games (half-life 12), designed-run carries per game from the last 12; shrink with k=80 dropbacks (scramble) and k=5 games (designed). Opponent adjustment: opposing pressure rate (log-odds) and spy/contain tendencies from charting. Output: expected carries and yards with variance. Needs pressure flags from a charting vendor or the sack/hit proxy.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play (qb_scramble)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.award_milestone_proximity": {
+   "label": "Milestone and record proximity for each candidate",
+   "category": "game_state",
+   "mechanism": "Distance of a candidate's projected final total from round-number or record milestones that voters respond to (e.g. 2,000 rushing yards, 5,000 passing yards, 20 sacks, franchise or league records).",
+   "rationale": "Vote probability is not smooth in production: reaching a milestone adds a discrete narrative bump and a record chase draws attention for several weeks, so award probability has a cliff near thresholds.",
+   "measurement": "For each candidate and award, list milestone totals from the last 15 years of winners' stat lines (the 20th percentile of winners' totals for each key stat as threshold); compute probability that projected final total exceeds each threshold from the season-to-date accrual model (rate x remaining games with games-played risk); feature = P(exceed) and distance in games. Rolls forward after each week; units: probability.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Pro-Football-Reference season stats and award voting history",
+    "nflverse seasonal stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.teammate_vote_split_penalty": {
+   "label": "Teammate and look-alike candidate vote-splitting penalty",
+   "category": "distribution",
+   "mechanism": "Reduction in a candidate's vote share caused by another strong candidate with the same team, position or narrative.",
+   "rationale": "Plurality voting splits similar support: two quarterbacks on the same team or two edge rushers with similar sack counts take votes from each other, so independent win probabilities overstate the sum and understate a third candidate's chance.",
+   "measurement": "From historical AP voting records (last 20 seasons), estimate a Plackett-Luce or Dirichlet model where each candidate's latent score includes a penalty beta x (score of the best same-team or same-position rival); estimate beta by maximum likelihood with candidates having at least one vote; shrink beta toward 0 with a ridge prior (lambda tuned by leave-one-season-out). Output: winner probabilities after the split correction.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Pro-Football-Reference AP voting tables"
+   ],
+   "registry_ids": []
+  },
+  "nfl.rookie_opportunity_and_draft_capital": {
+   "label": "Rookie opportunity: draft capital, starter status and snap/role share",
+   "category": "player_role",
+   "mechanism": "Draft pick number, starter status in Week 1 and cumulative snap share of rookies, plus team context (quarterback, line) that gives opportunities.",
+   "rationale": "Rookie awards go to rookies who played substantial roles on visible teams; draft capital predicts both opportunity and the voters' prior, and the role is determined by early-season depth charts and injuries ahead of him.",
+   "measurement": "For each rookie: draft pick (log scale), team depth chart rank at the first week's report, snap share and touches or pressures per game over the season, shrunk with k=3 games; feature = expected rest-of-season production given role, based on a regression of final production on first-6-week role and draft slot over 2010-2025 rookies.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse draft picks and snap counts",
+    "Pro-Football-Reference rookie tables"
+   ],
+   "registry_ids": []
+  },
+  "nfl.award_month_window_games": {
+   "label": "Monthly award window: games, byes and stat accrual inside the calendar window",
+   "category": "pace_volume",
+   "mechanism": "Number of games each candidate's team plays in the contract's calendar month and the candidate's stat production within that window.",
+   "rationale": "Monthly awards are decided on three to five games, so a team on a bye, a rest day or a Thursday game changes the sample; a candidate with five games has more chances than one with three.",
+   "measurement": "For each award month, from the league schedule: games per team in the window (3, 4 or 5); expected stats per game from the candidate's role and an opponent adjustment; window total = sum over games; standard deviation scaled by sqrt(games) with game-level variance from the player's last 20 games. Output probability that the candidate leads the window at his position.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules"
+   ],
+   "registry_ids": []
+  },
+  "nfl.coach_surprise_vs_own_prior": {
+   "label": "Coach surprise: wins above own pre-season expectation",
+   "category": "matchup",
+   "mechanism": "Team win total minus the expected wins from a pre-season rating built without betting-market inputs (own roster and last-year efficiency prior).",
+   "rationale": "Coach of the Year is a vote for surprise rather than quality, so the relevant measure is outcome minus prior expectation; using a sportsbook win total would import a market price as an input, so the prior must be from the model's own rating.",
+   "measurement": "Pre-season expected wins = sum over remaining games of own win probability from team rating (roster continuity regression of last-year EPA, QB change, strength of schedule); surprise = (projected final wins from standings simulation) - pre-season expected wins; add division title and playoff seed bonuses based on historical winners; units: wins above expectation.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules and results",
+    "own team rating"
+   ],
+   "registry_ids": []
+  },
+  "nfl.voter_exposure_and_straw_poll_signal": {
+   "label": "Voter exposure: primetime games, national attention and public straw polls",
+   "category": "schedule_context",
+   "mechanism": "Count of primetime and national games for the candidate's team so far and standing in published writers' ballots or straw polls from non-market sources.",
+   "rationale": "Voters see the nationally televised games and discuss candidates in public straw polls; this is a signal of voter sentiment distinct from production and is not a market price.",
+   "measurement": "Primetime-game counts and share of the candidate's yards or touchdowns in those games to date; rank in published straw polls (e.g. by members of the voting panel) at each week (rank points via Borda). Combined into one score with weights from historical regression on vote share, as-of each Tuesday; no betting prices or Kalshi quotes used.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "public media straw polls (manual capture)",
+    "schedule data"
+   ],
+   "registry_ids": []
+  },
+  "nfl.position_peer_production_index": {
+   "label": "Cross-position production index versus peers (offence and defence)",
+   "category": "player_role",
+   "mechanism": "Converts a candidate's season-to-date production into a position-neutral standing among eligible candidates, using EPA-based value for offensive players and a defensive-production composite for defenders.",
+   "rationale": "The record's production stage relied on WEAK inputs and one QB-only input, so DPOY, DROY and OPOY (skill positions) had no calibrated production measure. Voters compare a sack leader with a coverage corner, so a within-position percentile is needed; it must also be shrunk for small samples early in the season.",
+   "measurement": "Offensive candidates: EPA contributed per game (QB: EPA+CPOE composite from nfl.qb_efficiency; RB/WR/TE: receiving or rushing EPA plus yards over expected per touch) converted to z-score versus the 2015-2025 distribution of the same position at the same week of season. Defenders: composite z of sacks per game, pressures per game (if available) and QB hits, interceptions plus passes defensed, tackles for loss, and forced fumbles with weights 0.35/0.25/0.15/0.15/0.10 (weights are assumptions to be fit to past DPOY vote share); shrink toward position mean with k=5 games; ranks within the eligible pool (rookies only for rookie awards); as-of the last completed week. Output: rank and z-gap to the next candidate.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats (sacks, QB hits, interceptions, passes defended, TFL)",
+    "nflverse play-by-play (epa by player)",
+    "Pro-Football-Reference season stats (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.rest_of_season_stat_projection": {
+   "label": "Rest-of-season statistical projection to the ballot cutoff",
+   "category": "pace_volume",
+   "mechanism": "Projects each candidate's final regular-season totals by adding expected remaining-game production to banked totals, with a games-played hazard.",
+   "rationale": "Awards are voted on final-season body of work, and Kalshi prices trade in October to January while about half the games remain; ranking by banked stats ignores that a candidate on a bye or with a tough schedule will fall behind. The projection is for production rank, not a price.",
+   "measurement": "Projected total = banked total + sum over remaining games g of P(plays g) x expected per-game rate_g, where the per-game rate is a 50/50 blend of season-to-date per-game rate and a 3-year prior (shrunk with k=6 games), scaled by opponent defence adjustment from nfl.schedule_strength (+-10 percent cap) and by P(plays g) from nfl.games_played_dist; uncertainty from a negative-binomial per-game sd fitted on 2015-2025. As-of: before the next kickoff window; cutoff = last regular-season game (ballot close date assumed at the end of the regular season, unverified, see u3).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats",
+    "nflverse schedules"
+   ],
+   "registry_ids": []
+  },
+  "nfl.role_regime_change_hazard": {
+   "label": "Role-regime change hazard (trade, teammate injury, coordinator change)",
+   "category": "player_role",
+   "mechanism": "Probability per week that a player's share of targets, carries or snaps shifts materially because of an event outside his own performance.",
+   "rationale": "Season projections assume the current role persists; events that rewrite a depth chart or play-calling are the main source of large forecast errors and do not appear in per-game variance.",
+   "measurement": "From 2012-2025 weekly data, define a regime shift as a change of at least 25 percent in a 4-game rolling usage share relative to the prior 4 games; estimate hazard per week by event type (teammate injury, trade, coordinator change, rookie return) with logistic regression, shrunk with k=20 events per type; apply to each contender conditional on the current team state; output expected share distribution (mixture) for the remaining games.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse weekly stats, rosters, transactions (roster moves)",
+    "public coaching change records"
+   ],
+   "registry_ids": []
+  },
+  "nfl.per_game_rate_persistence": {
+   "label": "Within-season persistence of per-game rate (variance components)",
+   "category": "distribution",
+   "mechanism": "Decomposition of per-game output variance into a persistent player-season component and a game-level noise component.",
+   "rationale": "Season-sum variance is sqrt(n) times game sd only if games are independent; role persistence makes the sum more dispersed, so the probability of reaching distant rungs is larger than an independent model says.",
+   "measurement": "For each statistic and position fit a mixed model on 2012-2025 player-games: y_game = u_player-season + e_game, with u from a normal distribution and e from a count distribution; estimate the ratio sigma_u / sigma_e and the ICC by position and stat; apply to project season total variance = n x Var(e) + n^2 x Var(u) over remaining games; use the current-season estimate of u as the posterior mean with shrinkage proportional to games played.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.clinched_rest_starter_probability": {
+   "label": "Clinched-seed rest: expected snap fraction of starters in the final two weeks",
+   "category": "motivation",
+   "mechanism": "Probability and magnitude of reduced snaps for starters in Week 17-18 when seeds or division titles are clinched.",
+   "rationale": "In the final weeks teams with nothing to play for rest key starters, which truncates cumulative totals just when leader races are decided; the effect depends on the coach's history and on the clinch state.",
+   "measurement": "For each team, compute the probability of each clinch state by Week 16 from the standings simulation; from 2015-2025, estimate expected snap fraction in Weeks 17-18 for starters by position as a function of state (clinched top seed, clinched any seed, eliminated), coach-specific rest history (shrink with k=2 occasions), and player age; output expected fraction of normal snaps and its distribution.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse snap counts and schedules",
+    "own standings simulation"
+   ],
+   "registry_ids": []
+  },
+  "nfl.contender_pairwise_covariance": {
+   "label": "Pairwise covariance of remaining output among contenders",
+   "category": "distribution",
+   "mechanism": "Covariance of remaining-season output between contenders sharing a team, position room or quarterback.",
+   "rationale": "Leader probability involves the probability that one exceeds the other, so independence overstates the probability of both being high; teammates' rushing is negatively linked, and passing and receiving of a QB and his top receiver positively.",
+   "measurement": "From 2012-2025 player-seasons, estimate residual correlation between remaining-season output of pairs (same team same stat; QB-WR pairs; RB-RB) after removing season-level means, using the last 8 weeks as the test window; shrink pairwise correlation to the category average with k=30 pairs; use in a multivariate normal or copula simulation of the contender field.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.weekly_leader_threshold_distribution": {
+   "label": "Distribution of the weekly leader's value by position and statistic",
+   "category": "distribution",
+   "mechanism": "Baseline distribution of the single-game maximum over all players of a position in a given week and the number of near-miss contenders.",
+   "rationale": "The weekly leader market is decided by the top of a very large field; the winner's threshold, not the favourite's mean, sets the chance, and the leader's value is heavy-tailed.",
+   "measurement": "For each position and statistic, from 2010-2025 weeks collect the weekly maximum and top-5 values; fit a generalized extreme value distribution by position; condition on number of games in the week (Thursday, Monday, bye-heavy weeks) and weather. Output P(player i is the weekly max) via simulation of the active-player field with player-specific distributions.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.rating_uncertainty_shared_error": {
+   "label": "Shared team-rating uncertainty (posterior sd) carried across all games",
+   "category": "team_strength",
+   "mechanism": "Posterior standard deviation of each team's latent rating, applied as a common draw across all of that team's games in a simulation.",
+   "rationale": "If every game is simulated at a fixed rating, win totals are too concentrated and tail probabilities for 4-win or 13-win teams are underestimated; the shared error is the main reason season win-total distributions are wider than binomial.",
+   "measurement": "Prior sd = 4.0 points of margin rating at the preseason (assumption: preseason win-total errors have sd about 2.9 wins against a binomial sd of about 2.1, implying a rating sd near 4 points; re-estimate from residuals of own preseason ratings against final ratings over 2002-2025); posterior sd after n games = 1/sqrt(1/prior_sd^2 + n/s^2) where the game-level residual standard deviation is 13.5 points, so s^2 = 13.5^2 = 182.25 points^2. Sample one team-level strength draw per simulation and keep it across all remaining games. Output: sd by team and week.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules and results",
+    "own rating history"
+   ],
+   "registry_ids": []
+  },
+  "nfl.qb_scenario_rating_drop": {
+   "label": "Team-specific quarterback scenario tree and rating drop to the backup",
+   "category": "availability",
+   "mechanism": "Expected loss in team rating, in points, when the starting quarterback is replaced by the depth-chart backup, and the probability distribution of missed games.",
+   "rationale": "Quarterback change is the largest swing in team rating, and the size of the drop varies from one point for teams with a competent backup to ten points for teams with a replacement-level one.",
+   "measurement": "For each team, rating drop = (QB1 value - QB2 value) in points, where QB value = career-regressed EPA per dropback prior x dropbacks x conversion (about 0.2 points of margin per 0.01 EPA per dropback per game, from regression), shrunk to league mean with k=300 dropbacks; missed-game distribution from historical QB games missed by age and injury history (negative binomial); scenario tree: QB1 all games, partial, absent. Output expected wins lost and a distribution.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play",
+    "nflverse depth charts and injuries"
+   ],
+   "registry_ids": []
+  },
+  "nfl.head_to_head_leverage_games": {
+   "label": "Direct-competitor leverage: remaining games among teams contending for the same slots",
+   "category": "schedule_context",
+   "mechanism": "Matrix of remaining games between teams whose division or wild-card outcomes are linked, with each game's swing in the target contract's probability.",
+   "rationale": "Games among rivals are zero-sum for the division and seed contract, so they move probabilities by roughly twice as much as other games, and the head-to-head tiebreaker also locks in earlier results.",
+   "measurement": "In each weekly simulation, for each remaining game compute the change in P(contract) between simulated worlds where each team wins (leverage = |P(win)-P(loss)| x game probability uncertainty); aggregate to team-level remaining leverage by division and wild-card group; add head-to-head results to date as first-tiebreak state. Output: leverage score per game and per team.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules",
+    "own standings simulation"
+   ],
+   "registry_ids": []
+  },
+  "nfl.full_strength_rating_vs_season_average": {
+   "label": "Full-strength playoff rating versus season-average rating",
+   "category": "team_strength",
+   "mechanism": "Team rating computed on games with the current starting lineup (healthy QB, lines, defence) excluding games with rested starters or garbage time.",
+   "rationale": "Regular-season averages include injuries that have healed and rested-starter games in Weeks 17-18, which bias the rating used for playoffs and title futures.",
+   "measurement": "Compute opponent-adjusted efficiency (EPA/play margin) over games where the current starting QB and at least 80 percent of current starters (by snap weight) played, excluding Week 18 rested-starter games and fourth-quarter garbage time (win probability >95 percent); shrink to the season average with k=5 games; output rating in points of margin and the difference from season average as an adjustment for playoff-round probabilities.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play and snap counts",
+    "depth charts and injuries"
+   ],
+   "registry_ids": []
+  },
+  "nfl.draft_first_pick_loser_race": {
+   "label": "First-overall-pick race: bottom of standings, strength-of-schedule tiebreak and pick ownership",
+   "category": "other",
+   "mechanism": "Distribution of the team that ultimately makes the first pick, from the worst-record contest with its tiebreak and from ownership of traded picks.",
+   "rationale": "The first-pick contract depends on who has the worst record, the tiebreak for ties (strength of schedule rather than team strength) and whether the pick has been traded, so it is an extreme-value problem of losing, not winning.",
+   "measurement": "Simulate final records, take the minimum-wins team with the league's draft-order tiebreak (lower strength of schedule gets the higher pick, as an assumption flagged SOURCE_UNVERIFIED), then map the draft slot owner via a table of traded picks; add a small tanking adjustment (reduced win probability for teams eliminated by Week 12, estimated from history).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "league draft order publications",
+    "historical draft order",
+    "trade records"
+   ],
+   "registry_ids": []
+  },
+  "nfl.own_team_rating_market_free": {
+   "label": "Own opponent-adjusted team rating with preseason prior (market-free)",
+   "category": "team_strength",
+   "mechanism": "A Bayesian margin rating per team built only from game results, play-level EPA, roster continuity and quarterback status, with a home-field constant and a preseason prior, used as the latent strength for every futures simulation.",
+   "rationale": "Every contract in this archetype depends on team strength, and nfl.ratings is built by inverting spreads and totals, which makes it a copy of the market. A rating from results, EPA and roster inputs can be compared with Kalshi prices as an independent estimate; the subtle part is the preseason prior, which dominates in September and October.",
+   "measurement": "Weekly update: rating_t in points of margin per game from ridge regression of capped game margin (cap 24) on team and opponent indicators, home indicator (home-field constant fitted yearly, about 1.5 points) over all games since the prior season, weights exp(-ln2 x games_ago/10); combine 50/50 with an opponent-adjusted EPA/play margin rating converted to points (points margin per game = EPA/play margin x about 63 plays per team per game, a conversion to be refit yearly). Preseason prior = 0.67 x last season's final rating (one third reversion to zero) + 0.10 points x (returning-production percent above league mean)/10 + starting-QB change adjustment (QB value difference per nfl.qb_scenario_rating_drop) with prior sd 4.0 points (assumption to be recalibrated against 2002-2025 final ratings). Posterior sd after n games = 1/sqrt(1/4.0^2 + n/13.5^2) points (13.5 is a standard deviation, so n/182.25). As-of: kickoff of the next game; no spread, total or moneyline enters.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules (final scores, home team)",
+    "nflverse play-by-play (epa)",
+    "nflverse rosters and snap counts for returning production"
+   ],
+   "registry_ids": []
+  },
+  "nfl.drive_result_lattice": {
+   "label": "Drive-result lattice: touchdown, field goal, turnover, punt probabilities by start position",
+   "category": "team_strength",
+   "mechanism": "Per-drive probabilities of touchdown, field goal and no score for this offence against this defence conditioned on starting field position and game state.",
+   "rationale": "Team points are the convolution of drive outcomes, not a smooth function of EPA per play: two offences with equal EPA can have different touchdown-to-field-goal mixes, and the mixture decides the cluster of the score.",
+   "measurement": "From drive-level play-by-play 2016-2025 estimate multinomial logit of drive result on start yard line, offence rating, defence rating, down-and-distance style, with team-level random effects (shrink team deviations with k=10 drives); output P(TD), P(FG), P(none) for each of 11 drives by start-position distribution and compute the discrete points distribution by convolution including 2-point and XP outcomes.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (drive table)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.fourth_down_fg_decision_rate": {
+   "label": "Fourth-down go-for-it versus field-goal decision rate and two-point policy",
+   "category": "matchup",
+   "mechanism": "Coach-specific probability of going for it on fourth down by field position and distance, and of attempting a two-point conversion.",
+   "rationale": "The decision converts a stalled drive into 3 points, 0 points or 7 points; aggressive coaches raise the variance and shift the mean of team totals, and two-point attempts change points per touchdown.",
+   "measurement": "For each head coach over 3 seasons: P(go | yard line bin, distance bin, score and time bin), shrink to model-based optimum with k=15 decisions; two-point attempts per touchdown shrunk with k=10; expected points per stalled drive = P(go) x [conv x 7 + (1-conv) x 0] + (1-P(go)) x P(make FG | distance) x 3; output delta in expected points per game and variance. As-of last completed game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (fourth_down_converted, play_type, two_point_attempt)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.non_offensive_scoring_rate": {
+   "label": "Non-offensive scoring rate: defensive and special-teams points for and against",
+   "category": "game_state",
+   "mechanism": "Expected points per game from interception returns, fumble returns, kick and punt return touchdowns and safeties credited to the team, and the equivalent against it.",
+   "rationale": "These points enter the team's total independent of offence, and when scored against the team they end drives; ignoring them biases rungs low for teams with opportunistic defences.",
+   "measurement": "Per team, count of defensive and special-teams scoring plays per game over the last 25 games with half-life 12, shrunk heavily toward league (k=40 games) because these events are rare; split into takeaway-driven part (own takeaway rate x return-score probability) and special-teams part; opponent's rate against the team computed symmetrically. Output expected points and probability of at least one such score.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (touchdown with td_team differing from posteam, safety flag)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.opponent_ball_control_denial": {
+   "label": "Opponent ball-control denial: expected drives and time removed from this offence",
+   "category": "pace_volume",
+   "mechanism": "How much the opponent's time of possession, run share and clock usage cut this offence's number of drives relative to its neutral pace.",
+   "rationale": "A team's own tempo says nothing about drives if the opponent holds the ball; the effect depends on the matchup of styles and is not captured by pace alone.",
+   "measurement": "For each opponent compute average seconds per play, run rate in neutral situations and drive length over the last 12 games (half-life 6); expected own drives = league drives x (own-share model) where own share = own pace / (own pace + opponent pace) adjusted by a regression on historical game drive counts; output expected drives for each side and variance. As-of last game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nfl.team_score_pmf_own_mean": {
+   "label": "Own-mean team score probability mass function with key-number structure (market-free)",
+   "category": "distribution",
+   "mechanism": "Converts the model's own expected points for a team into a discrete integer score distribution that carries the extra mass at 3, 6, 7, 10 and 14, so every rung of the ladder is read from one pmf.",
+   "rationale": "The catalog score residual is defined around the closing spread and total, and the team-total split is derived from the same lines, so both are market echoes. The key-number lumpiness is real, but it must be fitted around own predicted means; otherwise the model inherits the market's mean and the comparison with Kalshi prices is circular.",
+   "measurement": "From all regular-season team-games 2010-2025 take the integer final score; bin by the model's own pre-game expected team points (from nfl.drive_result_lattice means; no sportsbook line) in 1-point bins from 10 to 35; fit within each bin a discrete mixture: negative-binomial body (dispersion estimated per bin, roughly sd 9-10 points) plus a kernel-smoothed empirical correction ratio at scores 0,3,6,7,9,10,13,14,16,17,20,21,23,24,27,28 (correction = observed/NB frequency, shrunk to 1 with k=60 team-games per score). Include overtime points in the pmf and also keep a regulation-only pmf, selecting by contract (KXNFLBOTH counts overtime; KXNFLTEAMTOTAL unstated, see u1). Output: P(score >= n) for n in 0..60, as-of the final pre-kickoff mean.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules (final scores, overtime flag)",
+    "nflverse play-by-play (scoring plays)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.paired_score_covariance_own": {
+   "label": "Paired team-score covariance from pace, script and weather (market-free)",
+   "category": "distribution",
+   "mechanism": "Estimates the covariance between the two teams' scores through shared pace, shared weather and the zero-sum score path, so the joint tail for the both-teams-35 contract is not a product of marginals.",
+   "rationale": "Team scores are positively correlated through plays and drives and conditionally negative through script (a leading team slows play and shortens the other side's comeback window). The joint tail P(both >= 35) is a tail of a score pair and is highly sensitive to the correlation sign at high totals.",
+   "measurement": "Using 2010-2025 games compute the residual correlation of the two team scores after subtracting each team's own model mean, in bins of the expected total (own model total from the two means: low <40, mid 40-50, high >50 points), expected plays (nfl.pace) and wind (calm <10 mph, windy >=15 mph); shrink bin correlations toward the pooled value with k=150 games; sample score pairs from a Gaussian copula with the bin correlation over the two nfl.team_score_pmf_own_mean marginals; add a home-field and venue shift (nfl.venue, home team mean +1.5 points, dome flag) into each mean. Output: P(both >= 35) and the correlation by bin. As-of: kickoff forecasts.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules (final scores, roof, wind, temp)",
+    "nflverse play-by-play (plays per team)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.pass_run_split_epa_both_sides": {
+   "label": "Pass and run EPA split for both offence and defence, opponent-adjusted",
+   "category": "team_strength",
+   "mechanism": "Separates each side's points production and prevention into pass and rush components so the matchup between an offence's style and the defence's pass and run strengths can be computed.",
+   "rationale": "Collapsing the opposing defence to one defensive EPA hides whether it is strong against the pass or the run; a pass-heavy offence is hurt by a pass-defence strength and a run-heavy one by a run-defence strength. The split needs both offences and both defences with enough shrinkage.",
+   "measurement": "For each team compute offensive EPA per dropback and EPA per rush and defensive EPA per dropback faced and per rush faced from 2016-present play-by-play (excluding kneel-downs, spikes and garbage time at win probability above 95 percent), opponent-adjusted by a ridge regression over the last 12 games with exponential half-life 6 games; shrink each component toward the league mean with k=150 plays for pass and k=100 plays for rush. Expected points rate = pass share x (off pass EPA - opponent pass defence EPA) + run share x (off rush EPA - opponent run defence EPA), with pass share from nfl.pace-adjusted neutral pass rate. As-of last completed game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (epa, pass, rush, wp)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.fantasy_component_and_stack_covariance": {
+   "label": "Component and teammate-stack covariance of fantasy points",
+   "category": "distribution",
+   "mechanism": "Correlation matrix of a player's scoring components (receptions, yards, touchdowns) and between teammates' scores (quarterback-receiver, same-backfield).",
+   "rationale": "Variance of the fantasy total is mostly covariance, and head-to-head, top-N and ladder markets depend on it; a quarterback touchdown pass produces four points for him and six for his receiver, which the sum-of-marginals logic ignores.",
+   "measurement": "From 2012-2025 player-game data compute the correlation between components within a player and between pairs of teammates, by position pair, after removing team-week means; shrink pairwise correlations to position-pair averages with k=80 games; use a Gaussian or t-copula for joint simulation. Output a correlation matrix per game by team and position and variance multipliers for total scores.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.expected_touchdowns_by_play_location": {
+   "label": "Play-level expected touchdowns (xTD) from opportunity location",
+   "category": "variance_luck",
+   "mechanism": "Sum over a player's carries and targets of the probability that the play scores a touchdown given its yard line, distance to go and air yards.",
+   "rationale": "Touchdowns are the largest fantasy variance source and regress strongly; share of red-zone usage alone is a coarse measure, while a play-level expected touchdown count is a direct estimate of true touchdown rate.",
+   "measurement": "Fit a logistic model on 2016-2025 plays: P(TD | yardline_100, down, ydstogo, play type, air yards, role) for carries and targets, then player xTD per game = sum of play probabilities over the last 12 games with half-life 6, shrunk toward position-role mean with k=4 games; forecast = xTD rate x projected opportunities; compare actual TD minus xTD for regression diagnostics.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nfl.sleeper_scoring_and_group_definitions": {
+   "label": "Sleeper scoring settings, group membership and correction timing",
+   "category": "other",
+   "mechanism": "Mapping from official stats to Sleeper's default full-PPR points, including kicker and bonus rules, the position group each player is assigned to and when Sleeper publishes or corrects totals.",
+   "rationale": "The contract settles on Sleeper's number, not on the league's stat; a player's position group (WR/RB/TE/QB), rookie flag, rounding and timing of the published value determine the outcome and cannot be assumed from another fantasy platform.",
+   "measurement": "Archive Sleeper's scoring settings (points per yard, per touchdown, per reception, kicker table) and each week's published points at game end, at 24 hours and at settlement; flag differences from the standard stat sheet; keep a table of Sleeper position assignment as of the expiration date; compute a score from official stats and compare with the Sleeper value (error in points).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sleeper public API (players, stats endpoints)",
+    "nflverse weekly stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.single_game_ceiling_tail_model": {
+   "label": "Single-game ceiling tail model for any-game highs",
+   "category": "distribution",
+   "mechanism": "Probability that a player's single-game score exceeds a high threshold (34, 49 points) in a given game, based on per-game distributions with an extreme-value tail.",
+   "rationale": "Season-high contracts depend on rare big games rather than the mean; the maximum of 17 games grows with the log of games and is dominated by touchdown clusters and long plays.",
+   "measurement": "For each player estimate per-game score distribution with a Poisson-touchdown plus compound yardage model (components from stage s2-s4) and a Pareto tail above the 90th percentile fitted on position-level game scores from 2012-2025; P(max over N remaining games >= x) = 1 - prod(1 - p_g(x)) with p_g adjusted for game-specific total and availability; add an upward correlation correction via nfl.fantasy_component_and_stack_covariance. Output P at several thresholds by remaining games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly player stats"
+   ],
+   "registry_ids": []
+  },
+  "nfl.weekly_field_projection_grid": {
+   "label": "Weekly full-pool projection grid and correlation by game",
+   "category": "pace_volume",
+   "mechanism": "Projected distribution of fantasy points for every player in a position pool in the week, including bye weeks, inactives and game environment, with shared game effects.",
+   "rationale": "Weekly leader and top-5 contracts are decided across the whole pool, so the probability for a listed player depends on how many other strong options play that week, and on shootouts that lift several players together.",
+   "measurement": "For each week and position pool (WR, RB, TE, QB) project every player with at least 5 percent of position snap share: mean and variance from the component model, game environment effect from the own-model projected team points (nfl.off_epa, nfl.def_epa and nfl.pace; never a sportsbook total) shared across the game's players, and a probability of inactivity from the injury vintage; simulate 20,000 weeks to compute P(rank = 1) and P(rank <= 5) for each player including ties at the cutoff (1/N).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse weekly stats and schedules",
+    "own component model"
+   ],
+   "registry_ids": []
+  },
+  "nfl.count_stat_dispersion_and_state_split": {
+   "label": "Count-statistic dispersion by stat and score-state split",
+   "category": "distribution",
+   "mechanism": "Negative-binomial dispersion parameters and mean multipliers for field goals, sacks, interceptions, rushing attempts and yards by score state and game total.",
+   "rationale": "Thresholds like 4+ field goals or 6+ sacks are tail masses; a Poisson assumption understates them, and dispersion changes with whether the game is a blowout or a close contest.",
+   "measurement": "From 2012-2025 team-games fit, per stat, a negative binomial with mean = opportunities x rate and dispersion k by stat and by score-state bucket (lead>=14, within 7, trail>=14); shrink k toward the league-stat value with a gamma prior (equivalent to 200 team-games); output PMF for each stat given expected mean and state mixture over the pre-game margin distribution.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play and team-game aggregates"
+   ],
+   "registry_ids": []
+  },
+  "nfl.long_fg_attempt_and_make_model": {
+   "label": "Long field-goal attempt and make model (50+ and 60+ yards), by kicker, venue and weather",
+   "category": "player_role",
+   "mechanism": "Expected number of attempts of 55+ and 60+ yards and make probability by distance bin for each kicker, adjusted for altitude, roof and wind.",
+   "rationale": "The 60+ yard season contract needs the number of attempts (a coaching and game-state decision, usually at the end of halves) and a steeply falling make probability, both with strong venue and kicker dependence.",
+   "measurement": "Per kicker over his last 3 seasons: make probability by distance bin (50-54, 55-59, 60+) from a logistic regression on distance, altitude, dome and wind with kicker random effect (shrink with k=8 attempts); league attempt rate of 60+ per 100 games adjusted for end-of-half and score state; season expected count = sum over games of attempts x make; for Denver (altitude) add venue multiplier. Output expected count and variance for the league total.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (kick_distance, field_goal_result, roof, wind)",
+    "kicker lists"
+   ],
+   "registry_ids": []
+  },
+  "nfl.streak_and_undefeated_hazard_path": {
+   "label": "Win-streak and undefeated-hazard path model across 32 teams",
+   "category": "team_strength",
+   "mechanism": "Probability distribution of the longest win streak, the week of the last first loss, and the number of ties, from a correlated season simulation with shared rating uncertainty.",
+   "rationale": "Streak and undefeated contracts depend on the sequence of game outcomes and on strength dispersion, not just on win totals; ties break streaks without being losses, and a bye week is an unrecorded week. It is now week 9 of the season, so most of these contracts are partly decided by banked results and the input must carry the current season state, not restart at Week 1.",
+   "measurement": "Do not build a separate simulator: use the single shared season simulator nfl.standings_sim (with the shared rating-uncertainty draw and tie probability of the win-totals record, 0.25 percent per game and rating prior sd of 4.0 points as the shared assumptions) run on REMAINING games only, conditioned on the results already played as of the current week (completed scores, ties, each team's current win streak and undefeated flag, banked 60+ yard field goals and tie count), current injuries and quarterback status. For each of 100,000 runs record: the longest streak (under both tie treatments, see u2) for each team, the week of each team's first loss (ties not losses; same-week first losses tied), season tie count and 60-yard field goal count (banked + simulated), and the worst-to-first indicator; output probabilities for each contract rung.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules and results",
+    "own team ratings"
+   ],
+   "registry_ids": []
+  },
+  "nfl.primetime_flex_probability": {
+   "label": "Primetime window assignment and flex-scheduling probability",
+   "category": "schedule_context",
+   "mechanism": "Number of national-window games a team has in the published schedule and the probability that flexible scheduling adds or removes games before the season ends.",
+   "rationale": "The primetime count is a deterministic function of the schedule apart from flex decisions, which depend on team records and appeal and are announced 6 to 12 days ahead; the count of 5+ games is therefore mostly known at release with a flex-driven change.",
+   "measurement": "From the published schedule, count designated national games by team (Sunday, Monday, Thursday night plus Thanksgiving and Christmas, excluding the Wednesday opener); estimate the probability of a flex in/out per eligible week as a logistic function of team record and previous primetime count from 2023-2025 flex rules (SOURCE_UNVERIFIED for current flex rules); expected final count = base + sum of flex probabilities; output PMF.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NFL schedule releases and flex announcements"
+   ],
+   "registry_ids": []
+  },
+  "nfl.defence_sack_count_decomposition": {
+   "label": "Defence sack-count decomposition: opponent dropbacks, pressure rate, conversion",
+   "category": "matchup",
+   "mechanism": "Expected sacks by this defence equal opponent expected dropbacks times pressure rate times pressure-to-sack conversion, with opposing quarterback's sack avoidance and the offence's pass protection.",
+   "rationale": "The 6+ sacks contract is a tail of a thin count; the mean depends on three multiplicative factors with different regression speeds, and the conversion factor is quarterback specific.",
+   "measurement": "Expected opponent dropbacks from nfl.pace and nfl.script; team pressure rate over last 12 games (half-life 6, shrink k=120 dropbacks); conversion = sacks / pressures with opposing quarterback's career-regressed rate (shrink k=100 pressures) and pass-rusher availability adjustment; E[sacks] = dropbacks x pressure rate x conversion; add overdispersion from the count model. Needs pressure data or a sack-plus-hit proxy.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play (sack, qb_hit)"
+   ],
+   "registry_ids": []
+  },
+  "nfl.team_points_for_against_rates": {
+   "label": "Separate offence and defence scoring rates for season and weekly extremes",
+   "category": "team_strength",
+   "mechanism": "Estimates each team's points scored and points allowed per game as separate rates with their own uncertainty, so that season scoring extremes and the weekly highest-scoring team can be simulated.",
+   "rationale": "A single margin rating cannot give points for and points against; the most/least points scored and allowed are extremes over 32 teams that depend on pace, defence and offence separately, and the weekly high score is the maximum of 32 correlated-through-nothing but heavy-tailed team scores. Contracts are priced from the right tail of each team's score distribution.",
+   "measurement": "For each team compute opponent-adjusted points per game for offence and defence separately: ridge regression of team points on offence and opposing-defence indicators with home indicator, over the last 17 games weighted exp(-ln2 x games_ago/8) with a one-third reversion to league mean before the season (offence k=6 games, defence k=6 games shrink to mean). Simulate remaining games conditioned on points already banked (as of the current week): team season points = banked + sum of simulated scores, each score drawn from a negative binomial with mean from the team's own rates (sd about 9.5 points per team-game, an assumption to refit) and a shared per-team rate draw (sd 1.2 points per game). Weekly high score = max over that week's 32 (or fewer on byes) simulated scores. Output P(team has min/max points scored/allowed) with 1/N ties, and P(team has the weekly high). As-of: after the last completed game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse schedules (scores)",
+    "nflverse play-by-play (pace, epa)"
+   ],
+   "registry_ids": []
   }
  },
  "blueprints": {
@@ -2760,6 +4170,31 @@
      "id": "m.trade_tape",
      "why": "Executed trades show where liquidity actually transacted, informing realistic fills and whether price moves are informed flow.",
      "role": "context"
+    },
+    {
+     "id": "nfl.qb_blowout_pull_threshold",
+     "why": "Defines the left-tail mass for strong favourites and the refund trigger for KXNFLPASSYDSPROT that the generic exit-risk input cannot separate from injuries.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb_dropback_to_attempt_leakage",
+     "why": "Converts the volume stage into attempts and explains why dropback forecasts overstate attempts for scramble-prone quarterbacks facing strong rushes.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.receiving_corps_route_weighted_quality",
+     "why": "Gives the receiving-corps leg of a passing-yards forecast a continuous quantity rather than the skill-availability flag.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.long_completion_tail_rate",
+     "why": "Directly shapes the probability of high rungs and the correlation between a QB's yards and his top receiver's yards.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.own_rating_game_state_prior",
+     "why": "Supplies the margin-state distribution that drives dropback inflation and the benching line for quarterback yards without using sportsbook lines.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2893,6 +4328,46 @@
      "id": "m.rules_text",
      "why": "Whether defensive/pick-six or overtime counts; stat source.",
      "role": "primary"
+    },
+    {
+     "id": "nfl.qb_expected_pass_td",
+     "why": "Per-attempt TD rates need a location-aware expectation that the existing luck input only gestures at.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.goal_to_go_pass_rate",
+     "why": "Controls pass versus run allocation of the team TD pool, the key factor between team total and QB TDs.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.qb_attempt_forecast",
+     "why": "Gives the opportunity count with its dispersion, rather than a mean pass rate.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb_blowout_pull_hazard",
+     "why": "Quantifies the void and truncation states of the contract.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.opp_def_int_propensity",
+     "why": "Interception outcomes depend on defence ball skills but need adjustment for QB and pressure; the existing list has only schemes.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb_career_milestone_accrual",
+     "why": "Season and career series are not single-game events; the aging and games-played component is a separate mechanism.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.model_team_td_mean",
+     "why": "Supplies the team TD pool from which the pass-versus-run split near the goal line yields the QB's passing TDs, without a market-implied total.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.red_zone_target_quality",
+     "why": "Adds receiver and tight-end quality to the passing-TD chain, which was represented only by availability.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3037,6 +4512,26 @@
     {
      "id": "m.trade_tape",
      "why": "Executed trades show where liquidity actually transacted, informing realistic fills and whether price moves are informed flow.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.late_lead_clock_carry_yield",
+     "why": "Prevents the common error of letting spread-driven carries inflate expected yards at the neutral yards-per-carry rate in the favourite's own rung.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.run_scheme_vs_front_matchup",
+     "why": "Converts opponent run defence from a single rank into a game-plan-specific yard expectation for each runner.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.rush_explosive_tail_rate",
+     "why": "Separates ceiling probability from mean yards and avoids the use of a single boom-bust variance label for the high rungs.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb_scramble_yield_given_pressure",
+     "why": "Provides the QB-specific mechanism for Drew Lock style 40+ rushing rungs in the protected series, which a running-back chain would misprice.",
      "role": "context"
     }
    ],
@@ -3194,6 +4689,26 @@
      "id": "m.trade_tape",
      "why": "Executed trades show where liquidity actually transacted, informing realistic fills and whether price moves are informed flow.",
      "role": "context"
+    },
+    {
+     "id": "nfl.with_without_target_redistribution",
+     "why": "Directly addresses the largest error source for WR2/WR3/TE/RB reception and yards rungs when a starter is out and prices change within hours.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.player_reception_length_distribution",
+     "why": "Required for KXNFLLONGREC and for tails of escalator yardage contracts, neither of which can be priced from mean and variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.defense_target_funnel_share",
+     "why": "Moves a receiver's expected share at the target stage, independently of dvp efficiency, and is the reason RB/TE reception rungs often shift with opponent scheme.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb_target_concentration",
+     "why": "Explains differences in reception overdispersion between teams with equal average shares and controls the second-option response when a primary receiver is out.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -3345,6 +4860,46 @@
      "id": "nfl.drives",
      "why": "Expected drives set red-zone trip counts.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.player_xtd",
+     "why": "Anytime and first-TD probability is a share times a pool; xTD share is the cleanest estimate of the share and is absent from the existing list.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.goal_line_personnel",
+     "why": "Separates nominal depth-chart role from real goal-line role, which is the main allocator of TDs.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.fourth_and_goal_policy",
+     "why": "Turns a points forecast into a TD forecast and decides which role gets the last-yard touch.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.team_first_td_attribution",
+     "why": "First-TD props are conditional on the team scoring first, and who scores first differs from who scores overall.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.dst_td_hazard",
+     "why": "Both first-TD and D/ST TD contracts need an event rate that offensive models ignore.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.zero_snap_active_risk",
+     "why": "Directly parameterizes the fair-price void in KXNFLTEAMFIRSTTD and KXNFLTDPROT.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.multi_td_dispersion",
+     "why": "Needed for the 2+ TD protected contract and the 2TD series; the existing list covers only P(1+).",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.model_team_td_mean",
+     "why": "Gives scorer markets a touchdown-specific, market-free team pool and P(team has any TD).",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3522,6 +5077,41 @@
      "id": "nfl.coaching",
      "why": "Fourth-down aggression and tempo tendencies change variance.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.lineup_adjusted_team_rating",
+     "why": "Converts the injury and depth data into an explicit margin adjustment; absent from the current list, which treats availability as a flag.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.heteroskedastic_margin_sd",
+     "why": "Needed to convert any mean into cover and win probabilities consistently across rungs and regimes.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.deep_tail_margin_model",
+     "why": "Prices KXNFLSPREAD at 35.5 and KXNFLBLOWOUT 51.5 type markets that live entirely in the tail.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.slate_total_extremes",
+     "why": "The existing list has season-level order statistics but not week-slate maxima with ties.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.rating_state_space",
+     "why": "Defines how ratings stay current and carries rating uncertainty into the margin variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.model_team_points_mean",
+     "why": "Market-free team means (and hence mean margin and total) that locate the margin distribution and ladder rungs without line-implied inputs.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.model_margin_lattice",
+     "why": "Margin atoms at 3, 7 and zero for integer rungs, ties and win-margin buckets built around model means, not line residuals.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3709,6 +5299,31 @@
      "id": "nfl.run_defense",
      "why": "Run defence controls clock and drive length.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.total_plays_state_model",
+     "why": "Turns two team paces into the number of snaps that the total actually counts.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.total_distribution_tail",
+     "why": "Deep rungs are tail events; the existing key-number input does not define tails.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.weather_total_response",
+     "why": "The existing weather input lists data fields but not the response function or the forecast-versus-actual issue.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.ot_total_increment",
+     "why": "Contract text for full-game totals is silent on OT; this quantifies the effect of either reading.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.model_team_points_mean",
+     "why": "Market-free expected total (sum of both team means) and its drivers; the source of the 'expected total' that tail and joint-distribution inputs condition on.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3859,6 +5474,41 @@
      "id": "nfl.pass_rush",
      "why": "Pressure against this offensive line cuts scoring.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.drive_result_lattice",
+     "why": "Creates the discrete team-score distribution that the team total ladder needs and replaces a mean times variance approximation.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.fourth_down_fg_decision_rate",
+     "why": "Alters the mean and variance of the points associated with the same drive state, and is a coaching feature absent from this archetype's inputs.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.non_offensive_scoring_rate",
+     "why": "Directly adds a team-total source that the offence-only inputs omit and shifts the lower rungs through the chance of scoring without the offence.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.opponent_ball_control_denial",
+     "why": "Gives the possession count its two-sided structure, which the existing own-pace input lacks.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.team_score_pmf_own_mean",
+     "why": "Provides the integer pmf from which every KXNFLTEAMTOTAL rung and the KXNFLBOTH tail are read, without importing market lines.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.paired_score_covariance_own",
+     "why": "Supplies the score-pair joint distribution KXNFLBOTH needs and corrects the team-total ladder for home field and venue.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.pass_run_split_epa_both_sides",
+     "why": "Gives the opponent-style matchup the team-total chain needs, while the single defensive EPA input hides the pass and run split.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3987,6 +5637,41 @@
      "id": "nfl.td_luck",
      "why": "A quarter holds only a few scoring drives; touchdown conversion luck regresses and moves period totals.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.drive_clock_allocation",
+     "why": "Quarter markets have two or three drives; the allocation sets whether Q1 can host two scoring drives.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.period_drive_scoring_rates",
+     "why": "Directly feeds the period-specific scoring distribution rather than a game-average rate.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.period_zero_tie_mass",
+     "why": "Tie, BTTS and over 7.5 contracts settle on atoms.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.halftime_state_conditional_scoring",
+     "why": "The existing garbage-time and script inputs are unconditional; this defines the state-mixture for 3Q and 4Q contracts.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.cross_period_score_dependence",
+     "why": "BTTS every quarter and 1HFT use dependence across periods.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.kickoff_rule_regime",
+     "why": "Opening and second-half drives depend on starting field position, which the rule regime changes.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.model_team_points_mean",
+     "why": "Market-free whole-game team points mean (with weather, QB and matchup channels) from which period scoring expectations are allocated.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -4095,6 +5780,51 @@
      "id": "nfl.rest_travel",
      "why": "Short weeks and byes change practice participation and the odds a questionable player plays.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.injury_return_timeline",
+     "why": "A recovery clock is the mechanism of return markets; the existing list records status snapshots without a time-to-return model.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.designation_to_play_calibration",
+     "why": "Existing inputs hold the raw data but no calibration of participation by sequence and team.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.healthy_inactive_base_rate",
+     "why": "Handles the absences with no injury, which injury inputs cannot predict.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb_change_hazard",
+     "why": "The key mechanism for first-start contracts, absent from the existing list.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.snap_appearance_given_active",
+     "why": "Settlement requires a snap rather than active status.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.depth_chart_publication_lag",
+     "why": "Settlement artefact separate from football events.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.roster_designation_constraints",
+     "why": "Hard rules truncate the distribution of return dates and are missing from the existing list.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.non_roster_return_status",
+     "why": "Covers WEEKCOMPETE for retired or unsigned players, NEXTTEAM and RETURN, which the injury-report chain cannot model.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.qb_challenger_prior",
+     "why": "Defines the measurable QB gap the benching hazard needs, including for rookies with no NFL sample.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -4238,6 +5968,36 @@
      "id": "nfl.season_sim_distribution",
      "why": "Win totals and division markets are tails of a 17-game schedule simulation with injury and rating uncertainty.",
      "role": "primary"
+    },
+    {
+     "id": "nfl.rating_uncertainty_shared_error",
+     "why": "Controls tail mass of wins and playoff probabilities in the season simulation, which the current catalog states as 'with uncertainty' without a defined quantity.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.qb_scenario_rating_drop",
+     "why": "Directly converts quarterback availability into a team win distribution, which the current catalog treats as a flag.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.head_to_head_leverage_games",
+     "why": "Explains why division and seed contracts are not functions of expected wins alone and identifies when a single rival game decides the contract.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.full_strength_rating_vs_season_average",
+     "why": "Title and round-qualification futures depend on playoff-time strength, not on the average over games with a different lineup.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.draft_first_pick_loser_race",
+     "why": "The sampled KXNFLDRAFT1ST rules state that the team making the selection resolves YES, and none of the other inputs model the loser race or pick ownership.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.own_team_rating_market_free",
+     "why": "Defines the latent strength that all win-total, exact-win, seed, division and title simulations consume, without sportsbook ratings or spreads.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -4352,6 +6112,46 @@
     {
      "id": "nfl.fantasy_points_model",
      "why": "Translates role and volume into a comparable production score across positions.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.award_milestone_proximity",
+     "why": "Captures threshold effects in voting that a smooth production-to-vote function misses, especially for OPOY, DPOY and rookie awards driven by round-number totals.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.teammate_vote_split_penalty",
+     "why": "Needed to make winner probabilities sum to one and to price second-tier candidates on a team that has a front runner.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.rookie_opportunity_and_draft_capital",
+     "why": "Defines the viable candidate set and base rates for KXNFLDROTY, KXNFLOROTY, KXNFLROTM and Rookie All-Team, the awards sampled in the rules text.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.award_month_window_games",
+     "why": "The October rookie-of-the-month sample contract is decided inside a short window; opportunities vary by bye and the model must use the real game count.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.coach_surprise_vs_own_prior",
+     "why": "Gives KXNFLCOTY (and the Comeback/COTY style awards) a quantity that responds to over-performance, which the existing production-based inputs lack.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.voter_exposure_and_straw_poll_signal",
+     "why": "Provides a voter-behaviour signal without importing prices, helping to distinguish the front runner from candidates with equal production.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.position_peer_production_index",
+     "why": "Gives DPOY/DROY/OPOY/OROY a production measure that is comparable across positions, instead of the weak award-stats and QB-only fields.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.rest_of_season_stat_projection",
+     "why": "Turns banked production into a projected final production rank, the quantity voters ultimately compare, at the date the contract trades.",
      "role": "secondary"
     }
    ],
@@ -4479,6 +6279,41 @@
      "id": "nfl.opening_script",
      "why": "Scripted opening drives drive first-score events.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.late_tie_game_management",
+     "why": "Behaviour at the end of regulation moves the zero-margin atom, which sets both tie and OT markets.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.ot_ending_hazard",
+     "why": "Needed because the tie market equals OT probability times this hazard; the existing ot_model lacks an explicit definition.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.endzone_exposure_plays",
+     "why": "Provides the opportunity count for the rare event rather than relying on team-level safety counts that are mostly zero.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.rush_yardage_tail",
+     "why": "Longest rush markets are maxima of carries; tail rates are the missing parameter.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.carry_count_forecast",
+     "why": "Carries are the opportunity count; existing carry-share input does not give a distribution conditional on script.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.model_team_points_mean",
+     "why": "Market-free team means (hence mean margin and total) that locate the regulation-tie, overtime and slate-level tie probabilities without line-implied inputs.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.model_margin_lattice",
+     "why": "Gives KXNFLTIE, KXNFLOT and KXNFLWEEKTIE a market-free atom-at-zero input instead of line-centred residuals.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -4586,6 +6421,31 @@
      "id": "m.rules_text",
      "why": "What counts as first score; ties for time buckets.",
      "role": "primary"
+    },
+    {
+     "id": "nfl.drive_outcome_by_index",
+     "why": "The first-score hazard is the product of these early-drive probabilities; absent from the existing list.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.drive_duration_by_outcome",
+     "why": "Needed to convert drive-count hazards into time buckets.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.scoring_event_point_values",
+     "why": "Defines the lattice increments for race-to-N markets.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.early_nonoffensive_score_hazard",
+     "why": "The first TD can be defensive or special-teams; hazard needed for early time buckets.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.opening_kick_field_position",
+     "why": "First possession starts at a rule-dependent yard line that the existing inputs do not describe.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -4696,6 +6556,31 @@
      "id": "m.rules_text",
      "why": "Contract defines eligible games (regular season only), the stat source and tiebreak rules for leaders.",
      "role": "primary"
+    },
+    {
+     "id": "nfl.role_regime_change_hazard",
+     "why": "Adds the largest unmodelled variance source for season totals: a 25 percent share change on 8 remaining games moves a season total by far more than game-level noise.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.per_game_rate_persistence",
+     "why": "Provides the correct dispersion for threshold and leader probabilities and is why season-stat rungs are wider than normal-approximation estimates.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.clinched_rest_starter_probability",
+     "why": "Cuts the expected games and snaps of the leading contenders in the exact weeks when many leader contracts are decided, which season-to-date pace ignores.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.contender_pairwise_covariance",
+     "why": "Needed so leader probabilities sum correctly across the field and so a teammate's injury changes the leader odds of another candidate.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.weekly_leader_threshold_distribution",
+     "why": "Weekly leader contracts are a different statistical object from season leaders and cannot be priced from the season-to-date pace input.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -4792,6 +6677,41 @@
      "id": "nfl.offfield_base_rate",
      "why": "Coach firings, trades and announcements are priced from historical frequency by calendar window.",
      "role": "primary"
+    },
+    {
+     "id": "nfl.event_calendar_hazard",
+     "why": "The key quantity for any 'before date' contract; the existing base-rate input does not define the calendar structure.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.insider_report_conversion",
+     "why": "Directly estimates how much a report should move probability and when; the existing input is only a generic news feed.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.initial_roster_cut_model",
+     "why": "Specific mechanism for roster contracts that no existing input defines.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.coach_exit_hazard",
+     "why": "Defines the hazard model beyond a qualitative hot-seat signal.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.vote_outcome_model",
+     "why": "Provides a calibrated selection model; existing catalog inputs list data but no vote model.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.draft_qb_class_model",
+     "why": "Gives draft-position-count contracts a joint ordering model, which the single-prospect consensus board in the catalog does not provide.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.broadcast_role_assignment",
+     "why": "Supplies a staffing-event model for the on-air role series that no award or hazard input covers.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -4880,6 +6800,36 @@
      "id": "m.orderbook_depth",
      "why": "Combo books are thin and spreads wide; executable price may erase modeled edge.",
      "role": "context"
+    },
+    {
+     "id": "nfl.leg_dependence_by_margin_regime",
+     "why": "Provides the specific conditional dependence structure that a constant matrix misses and is what separates combo pricing from multiplying marginals.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.team_stat_accounting_constraints",
+     "why": "Directly handles same-team multi-leg combos that are the dominant retail leg set.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.common_availability_shock",
+     "why": "Late news makes combos stale unevenly; the mixture decomposition is needed to price the correlated move.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.leg_void_push_matrix",
+     "why": "Combo wording is unknown here and materially changes the joint event.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.model_team_points_mean",
+     "why": "Supplies the market-free side, total and team-total marginals and their coherent joint mean that same-game combo legs inherit.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.model_margin_lattice",
+     "why": "Key-number atoms and push probabilities for spread and total legs built around model means rather than line residuals.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -5002,6 +6952,36 @@
      "id": "nfl.officials_crew",
      "role": "secondary",
      "why": "Crew tendencies change penalties and tempo."
+    },
+    {
+     "id": "nfl.count_stat_dispersion_and_state_split",
+     "why": "Turns means into tail probabilities for the 'N+' strikes used in the per-game count series.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.long_fg_attempt_and_make_model",
+     "why": "Provides the Poisson-like tail for the 8+ league-wide 60-yard field goals market and for per-game field goal thresholds beyond the range effects.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.streak_and_undefeated_hazard_path",
+     "why": "Defines the simulation outputs required for six distinct season-extreme contracts in the archetype, which none of the existing inputs provide.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.primetime_flex_probability",
+     "why": "The primetime contract has a different information set than game outcomes: it is decided by network scheduling, which no existing input models.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.defence_sack_count_decomposition",
+     "why": "Splits the team sack count into three separately estimable factors and brings the opposing quarterback into a defensive count.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.team_points_for_against_rates",
+     "why": "Gives the offence-versus-defence scoring split that KXNFLTEAMPTS, KXNFLTEAMDPTS and KXNFLWEEKHIGHSCORE need, which one margin rating cannot supply.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -5111,6 +7091,31 @@
      "id": "nfl.games_played_dist",
      "role": "secondary",
      "why": "Season totals need games-played risk."
+    },
+    {
+     "id": "nfl.fantasy_component_and_stack_covariance",
+     "why": "Needed for H2H, top-N and ladder probabilities where correlation changes the answer, and for the shootout effect across a whole game.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.expected_touchdowns_by_play_location",
+     "why": "Provides the touchdown component of a PPR forecast with a play-level calculation that red-zone share and anytime-TD rates only approximate.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.sleeper_scoring_and_group_definitions",
+     "why": "Defines the target of every contract in the archetype and reduces risk from position classification and corrections, which have no equivalent in the other inputs.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.single_game_ceiling_tail_model",
+     "why": "Directly gives the probabilities for KXNFLFFPLAYERHIGH and KXNFLFFHIGHSCORE, which are not threshold events on the mean.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.weekly_field_projection_grid",
+     "why": "Provides a defined field model for the weekly leader contracts whose rules say all eligible players in the group are ranked.",
+     "role": "secondary"
     }
    ],
    "interactions": [

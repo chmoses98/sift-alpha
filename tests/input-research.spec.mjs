@@ -164,3 +164,33 @@ test("verified computable inputs and scaled search panels show counts, statuses,
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test.describe("catalog completeness gate", () => {
+  const gate = JSON.parse(readFileSync(new URL("../research/input_research/completeness/summary.json", import.meta.url)));
+
+  test("leads with the pause banner and never claims completeness", async ({ page }) => {
+    const cc = page.getByTestId("catalog-completeness");
+    await expect(cc).toBeVisible();
+    await expect(page.getByTestId("pause-banner")).toContainText("PAUSED");
+    await expect(cc.getByText(/none declared complete/i)).toBeVisible();
+    await expect(cc.getByText(/Approval recorded:/)).toContainText("no");
+    expect(await cc.innerText()).not.toMatch(/\bcatalog is complete\b|\bfully complete\b/i);
+  });
+
+  test("shows a row per archetype with status, and a sport x status table", async ({ page }) => {
+    const cc = page.getByTestId("catalog-completeness");
+    await expect(cc.locator("table").nth(1).locator("tbody tr")).toHaveCount(gate.rows.length);
+    await expect(cc.locator("table").first().locator("tbody tr")).toHaveCount(8);
+  });
+
+  test("expanding an archetype loads its mechanism, audit, new inputs, data, gaps and independent review", async ({ page }) => {
+    const cc = page.getByTestId("catalog-completeness");
+    await cc.getByRole("button", { name: "player_points", exact: true }).first().click();
+    for (const h of ["Contract", "Mechanism", "Audit of existing inputs", "New inputs discovered", "Required data", "Unresolved", "Independent review"]) await expect(cc.getByRole("heading", { name: new RegExp(h) }).first()).toBeVisible();
+  });
+
+  test("no horizontal page overflow with the panel open", async ({ page }) => {
+    const o = await measureOverflow(page);
+    expect(o.pageOverflow ?? o.overflow ?? 0).toBeLessThanOrEqual(1);
+  });
+});

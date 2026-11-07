@@ -73,7 +73,7 @@ export function CatalogCompleteness() {
   const sports = Object.keys(summary.by_sport);
   const rows = useMemo(() => summary.rows.filter(r => (sport === "All" || r.sport === sport) && (status === "All" || r.status === status)), [sport, status]);
   const t = summary.totals, paused = phase.predictive_experiments.state !== "RUNNING";
-  return <section className="ir cc" aria-label="Catalog completeness gate" data-testid="catalog-completeness">
+  return <section className="cc" aria-label="Catalog completeness gate" data-testid="catalog-completeness">
     <div className="eyebrow">CATALOG COMPLETENESS / WHAT INFORMATION DOES EVERY MARKET NEED</div>
     <h2>Catalog completeness gate: {t.READY_FOR_USER_APPROVAL} of {t.archetypes} archetypes ready for your approval, none declared complete</h2>
     {paused && <p className="ir-warn" data-testid="pause-banner"><b>Predictive experimentation is PAUSED.</b> {phase.instruction} All predictive results below on this page are <b>preliminary</b> (PR #60 / #62), preserved and not being expanded. RESEARCH ONLY: no orders, spending, deployments or merges.</p>}
@@ -81,7 +81,7 @@ export function CatalogCompleteness() {
     <div className="ir-cards">{ORDER.map(k => <div key={k}><b>{t[k]}</b><small>{LABEL[k]}</small></div>)}</div>
     <div className="ir-scroll"><table className="ir-table" style={{minWidth: 700}}>
       <thead><tr><th>Sport</th><th>Archetypes</th><th>Progress</th>{ORDER.map(k => <th key={k}>{LABEL[k]}</th>)}<th>Inputs in catalog</th></tr></thead>
-      <tbody>{sports.map(s => { const v = summary.by_sport[s]; return <tr key={s}><td><button className="ir-link" onClick={() => setSport(s)}>{s}</button></td><td>{v.archetypes}</td><td><Bar v={v}/></td>{ORDER.map(k => <td key={k}>{v[k]}</td>)}<td>{v.inputs}</td></tr>; })}</tbody></table></div>
+      <tbody>{sports.map(s => { const v = summary.by_sport[s]; return <tr key={s}><td><button className="cc-link" onClick={() => setSport(s)}>{s}</button></td><td>{v.archetypes}</td><td><Bar v={v}/></td>{ORDER.map(k => <td key={k}>{v[k]}</td>)}<td>{v.inputs}</td></tr>; })}</tbody></table></div>
     <details className="ir-fine"><summary><b>Acceptance criteria</b> (every archetype)</summary><ol>{summary.criteria.map((c, i) => <li key={i}>{c}</li>)}</ol></details>
     <div className="ir-filter" role="group" aria-label="Sport filter">{["All", ...sports].map(s => <button key={s} className={s === sport ? "on" : ""} onClick={() => setSport(s)}>{s}</button>)}</div>
     <div className="ir-filter" role="group" aria-label="Status filter">{["All", ...ORDER].map(s => <button key={s} className={s === status ? "on" : ""} onClick={() => setStatus(s)}>{s === "All" ? "All statuses" : LABEL[s]}</button>)}</div>
@@ -89,10 +89,10 @@ export function CatalogCompleteness() {
       <thead><tr><th>Sport</th><th>Market archetype</th><th>Status</th><th title="live Kalshi series (with rules text read)">Series (rules read)</th><th>Stages</th><th>New inputs</th><th>Existing audited</th><th>Interactions / non-linear</th><th>Datasets</th><th>Open gaps</th><th>Contract rules</th><th>Independent (open)</th></tr></thead>
       <tbody>{rows.map(r => { const id = r.sport + ":" + r.archetype; return <React.Fragment key={id}>
         <tr className={open === id ? "on" : ""}><td>{r.sport}</td>
-          <td><button className="ir-link" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)}>{r.archetype}</button><div className="ir-why">{r.registered ? "registered" : "unregistered contract type"} · {r.label}</div></td>
+          <td><button className="cc-link" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)}>{r.archetype}</button><div className="ir-why">{r.registered ? "registered" : "unregistered contract type"} · {r.label}</div></td>
           <td><Chip s={r.status}/></td><td>{r.live_series} ({r.rules_text_series})</td><td>{r.stages ?? "–"}</td><td>{r.new_inputs ?? "–"}</td><td>{r.existing_inputs_audited ?? "–"}</td>
           <td>{r.interactions ?? "–"} / {r.nonlinearities ?? "–"}</td><td>{r.datasets ?? "–"}</td><td>{r.unresolved ?? "–"}</td><td>{nice(r.rules_verification) || "–"}</td><td>{r.independent ? nice(r.independent) : "–"} ({r.open_findings ?? "–"})</td></tr>
-        {open === id && <tr className="ir-open"><td colSpan={12}><Detail sport={r.sport} k={r.archetype}/></td></tr>}</React.Fragment>; })}</tbody></table></div>
+        {open === id && <tr className="cc-open"><td colSpan={12}><Detail sport={r.sport} k={r.archetype}/></td></tr>}</React.Fragment>; })}</tbody></table></div>
     <details><summary><b>Contract universe behind the review</b> (exact ledger)</summary>
       <div className="ir-scroll"><table className="ir-table" style={{minWidth: 600}}><thead><tr><th>Sport</th><th>Series</th><th>Covered (registered)</th><th>Covered (unregistered type)</th><th>No listed market: contract unreadable, unresolved</th><th>Classified, no archetype</th><th>Rules text read / title only</th></tr></thead>
         <tbody>{Object.entries(summary.contract_universe).map(([s, v]) => <tr key={s}><td>{s}</td><td>{v.series}</td><td>{v.COVERED_REGISTERED || 0}</td><td>{v.COVERED_UNREGISTERED || 0}</td><td>{v.NO_LISTED_MARKETS || 0}</td><td>{v.CLASSIFIED_NO_ARCHETYPE || 0}</td><td>{v.evidence.RULES_TEXT || 0} / {v.evidence.TITLE_ONLY || 0}</td></tr>)}</tbody></table></div>

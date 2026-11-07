@@ -1215,6 +1215,803 @@
     "Natural Stat Trick / Moneypuck public tables"
    ],
    "registry_ids": []
+  },
+  "nhl.third_period_equalizer_hazard": {
+   "label": "Late-game equalizer and empty-net hazard by team and coach",
+   "category": "game_state",
+   "mechanism": "Converts a one-goal late deficit into tie or two-goal-loss outcomes using 6v5 rates and the coach's pull time.",
+   "rationale": "The existing empty_net input is a single bucket for 'pulled-goalie timing'; for tie probability the two competing outcomes of a pull (equalizer vs empty-net goal against) and their dependence on pull time are what move the diagonal of the score distribution. Pull time has drifted earlier league-wide and differs by coach.",
+   "measurement": "From play-by-play, for every regular-season and playoff game since 2015-16 find states with the trailing team down exactly one goal and the goalie pulled; per team-coach compute (a) median pull time in seconds remaining, (b) equalizer rate = goals for per 60 minutes of 6v5 time, (c) empty-net goals against per 60 of 6v5 time. Shrink each to league with k=20 pulls, weight seasons with 2-year half-life, and reset on a coaching change. Output pregame P(equalizer | trailing by 1 at T-3:00) and P(EN | trailing by 1) per team pair.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (situationCode and event times)",
+    "Natural Stat Trick 6v5 splits",
+    "MoneyPuck game files"
+   ],
+   "registry_ids": []
+  },
+  "nhl.ot_sudden_death_hazard_5v5": {
+   "label": "[Playoff-only, dormant for KXNHLOT] 5v5 sudden-death overtime goal hazard (playoff OT)",
+   "category": "game_state",
+   "mechanism": "Hazard of a goal per 20-minute playoff overtime period at 5v5 given tied score, fatigue and style.",
+   "rationale": "Playoff overtime is 5v5 sudden death in 20-minute periods, not the 3v3 of the regular season, so the existing 3v3 rate does not transfer; double-OT markets depend on the first period producing no goal, which has a different hazard than 60-minute rates imply.",
+   "measurement": "Pool all playoff OT minutes since 2005-06 (about 450 games) at 5v5 and compute the goal rate per 60 for tied score; model hazard h(t) = h0 x tied-game 5v5 multiplier x team-pair factor, where the team-pair factor is the geometric mean of both teams' tied 5v5 xG rate shrunk to league with k=500 minutes. Fatigue multiplier estimated from period index (OT1 vs OT2) and rest differential. P(no goal in OT1) = exp(-h x 20/60). Do not use regular-season 3v3 minutes.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (playoff OT events)",
+    "Hockey-Reference playoff game logs",
+    "Natural Stat Trick tied-state 5v5 splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.series_ot_count_dependence": {
+   "label": "[Playoff-only, dormant until KXNHL2OT/KXNHLSERIESOT list markets] Within-series dependence of overtime occurrence",
+   "category": "distribution",
+   "mechanism": "Intraclass correlation of per-game tie indicators within the same playoff series.",
+   "rationale": "Games in one series share goalies, coaches and defensive structure, so OT counts are overdispersed relative to independent Bernoulli; a binomial series-OT price is too thin-tailed.",
+   "measurement": "Fit a beta-binomial to the count of games reaching OT in each historical playoff series (2005-06 onward, series lengths 4-7 handled by conditioning on length), estimate overdispersion rho; then per series set p_game = reg_tie_model pregame tie probability and apply rho to get the pmf of OT-game count. Update rho with a prior of 0.05 and k=40 series.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Hockey-Reference series logs",
+    "NHL API schedule/results"
+   ],
+   "registry_ids": []
+  },
+  "nhl.tied_late_risk_posture": {
+   "label": "Tied-game closing posture (late risk aversion when a point is banked)",
+   "category": "motivation",
+   "mechanism": "Change in late 5v5 attempt share and danger in tied games relative to earlier tied-game play.",
+   "rationale": "A tied third period guarantees a standings point, which may lower risk-taking; if present it raises P(OT) above what 60-minute rates give. It is a hypothesis to measure, not an assumed effect.",
+   "measurement": "For each team and season compute shot-attempt share and high-danger attempts per 60 at 5v5 in the final 5:00 of regulation when the score is tied, minus the same team's rate in minutes 40:00-55:00 when tied; shrink to league with k=60 tied-late minutes and report per-team posture index; interact with standings leverage (points pct within 4 of a cutoff). Add the minimum of two teams' indices as the pair posture.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Natural Stat Trick score-and-time filtered splits",
+    "NHL API play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nhl.ratings_script_distribution": {
+   "label": "Ratings-only pregame score-path distribution (lead/trail/tied time shares and entering-state matrix)",
+   "category": "game_state",
+   "mechanism": "Simulated from team goal rates alone, the distribution of score states by period and the share of 60 minutes spent leading, trailing or tied shapes shot volume, star deployment, pull timing and empty-net goals without ever touching a price.",
+   "rationale": "The catalog nhl.game_script_prob derives its win probability from ratings AND the market line, so it is contaminated by the benchmark. This replacement is built only from market-free inputs: it keeps the useful scenario-probability content (conditional state mixtures, not a single win probability) while leaving the market line as a comparison target. The subtle point is that the object needed is a distribution over states, not one number.",
+   "measurement": "For each team, set expected 5v5 and special-teams goal rates for the game as lambda_i = league mean x (attack_i x defence_j adjusted xG ratings, shrunk with prior_to_current_blend where available, or ratings built from score-adjusted xGF/xGA per 60 over a 40-game EWMA with 20-game half-life shrunk 25 games toward league mean) x goalie factor (confirmed or probability-weighted starter GSAx per 60 shrunk 1000 shots) plus a home-ice constant estimated from the last 5 seasons. Simulate 20000 games with a negative-binomial goal process with the fitted dispersion, event times drawn from a time-varying rate with score effects, a pull rule at the coach-specific trailing time, and OT 3v3 play. Output per game: P(lead/tied/trail) entering each period, expected minutes in each score state, P(margin>=2 entering the third), and expected 6v5 minutes per team. As-of timestamp: latest ratings and confirmed or probabilistic starter before puck drop; never include any sportsbook or Kalshi price.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "MoneyPuck team and game data (moneypuck.com/data.htm)",
+    "Natural Stat Trick team game logs",
+    "NHL API play-by-play for pull times (api-web.nhle.com)"
+   ],
+   "registry_ids": []
+  },
+  "nhl.settlement_goal_pmf": {
+   "label": "Settlement-adjusted final-margin distribution (regulation, OT, shootout, empty net)",
+   "category": "distribution",
+   "mechanism": "Maps team goal-rate parameters to the full pmf of final margin under official scoring rules.",
+   "rationale": "Moneyline, spread and regulation-winner contracts read different functionals of one distribution; building each from its own ad hoc model creates inconsistent prices. The pmf must apply: regulation bivariate counts, late empty-net transitions, an OT goal as a one-goal margin, and a shootout as a one-goal margin with a near-even winner.",
+   "measurement": "Simulate or enumerate: regulation (H, A) from fitted bivariate overdispersed counts at 55:00 plus a final-5-minute jump process using team pull-time and 6v5 rates; if tied at 60:00 draw OT with 3v3 goal hazard (regular season) giving +/-1 margin, else shootout winner with p = 0.5 + shrunk team SO talent (k=60 attempts) giving +/-1. Output P(margin >= m) for m=1..6 per team and P(regulation tie). Validate by reproducing the league margin histogram (about 25 percent one-goal games) per season.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API results and play-by-play",
+    "MoneyPuck game data"
+   ],
+   "registry_ids": []
+  },
+  "nhl.lineup_impact_delta": {
+   "label": "Lineup impact delta from player value model (skater and goalie)",
+   "category": "availability",
+   "mechanism": "Converts who is in or out into a change in expected goal difference using per-player impact estimates.",
+   "rationale": "Injury status flags tell who is missing but not what it costs; a top-pair defenceman, a first-line centre and a starting goalie have different values, and replacements play different minutes. The cost must be computed from minutes redistributed times impact difference.",
+   "measurement": "Estimate per-skater impact as regularised adjusted xG per 60 at 5v5 (ridge RAPM on shift-level data, 3-season window, half-life 1.5 seasons, shrink toward position mean) plus special-teams impact per PP/PK minute; for the projected lineup compute delta = sum_over_players(proj_TOI_new x impact_new) minus same for base lineup, restated as goals per 60 and then x 60/60 per game; for goalies use shrunk GSAx per 1000 shots (k=2000 shots) scaled by opponent shot volume. As-of rule: use lineups published by the team at the time of prediction; keep prior vintages.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Evolving-Hockey RAPM/WAR (paid)",
+    "HockeyViz impact (visual only, not a data feed: SOURCE_UNVERIFIED, see ml6; free path = own RAPM from NHL shiftcharts)",
+    "NHL shift charts API"
+   ],
+   "registry_ids": []
+  },
+  "nhl.prior_to_current_blend": {
+   "label": "Preseason prior blend weight by games played",
+   "category": "team_strength",
+   "mechanism": "Weights current-season data against a preseason prior as a function of sample size.",
+   "rationale": "At this point in the season (early November) a team has played about 12-15 games; xG share has a stabilisation point of several dozen games, so raw current xG overstates differences and ignores roster turnover.",
+   "measurement": "Prior = last two seasons' score-adjusted rating (weights 0.6/0.4) adjusted by net roster change (minutes-weighted impact of arrivals minus departures) and age curve; posterior = (n x current + k x prior)/(n + k) with k in the 25-40 games range fit by minimising out-of-sample log loss of game result; recompute weekly. Report posterior sd to the simulator.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Own computation from MoneyPuck/Natural Stat Trick history",
+    "CapWages/PuckPedia roster moves"
+   ],
+   "registry_ids": []
+  },
+  "nhl.pp_termination_unit_split": {
+   "label": "Power-play termination and unit-time split",
+   "category": "player_role",
+   "mechanism": "Expected PP goals per penalty given that a minor ends on a goal and PP1/PP2 share the clock.",
+   "rationale": "PP time is not additive: a two-minute minor ends when the power-play team scores, so goals per PP are concave in minutes, and the first unit plays roughly the first 60-80 seconds, so PP1 production dominates short power plays. Using PP time x rate overstates multi-goal PP games and misallocates credit among players.",
+   "measurement": "From play-by-play, for each team and season compute: (a) conversion per PP opportunity (minor penalties only, excluding coincident and 4v4 states), (b) hazard of a PP goal as a function of elapsed PP seconds in 15-second bins, (c) PP1 share of PP time as a function of elapsed seconds, (d) PP goal share by unit. Shrink team hazard to league with k=150 PP opportunities and 2-season half-life. Expected PP goals = sum over expected penalties of integral hazard x survival; keep major and double-minor cases separate.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API play-by-play with penalty events and situationCode",
+    "Natural Stat Trick PP splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.pair_attempt_volume": {
+   "label": "Pair attempt-volume composite (log-additive team tempo model)",
+   "category": "matchup",
+   "mechanism": "Expected combined attempts from offence-for and defence-against terms fit jointly.",
+   "rationale": "Combined pace is not the average of the two teams' season paces: each team's attempts depend on its own offence and the opponent's suppression and on score effects, and the two teams' counts are correlated through game state. A pair composite avoids double counting.",
+   "measurement": "Fit a Poisson regression of 5v5 attempts per 60 for each team-game: log E = mu + off_team + def_opp + home + score-state adjustment, with ridge penalty and 2-season half-life; game attempts = sum of both teams' predictions x projected 5v5 minutes (60 minus expected PP/PK minutes). Add pair random effect with variance estimated from residual covariance. Evaluate pace-weighted xG, not raw attempts, when converting to goals.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "MoneyPuck game and team files",
+    "Natural Stat Trick attempts by team-game"
+   ],
+   "registry_ids": []
+  },
+  "nhl.opp_sog_for_rate": {
+   "label": "Opponent shots-on-goal-for rate by strength state, score adjusted",
+   "category": "pace_volume",
+   "mechanism": "Opponent's own shot-on-goal generation per 60 at EV and on the power play.",
+   "rationale": "The draft carries opponent xG (a quality measure) and the defence's suppression, but saves count shots on goal, so the opponent's volume of on-target shots, separate from danger, is the first-order driver. xG weights shots by quality and understates the effect of low-danger volume teams.",
+   "measurement": "Per team compute SOG for per 60 at 5v5 (score-and-venue adjusted via regression of SOG rate on score differential bins) and at 5v4, with 2-season half-life 40 games and shrink to league with k=15 games; project game SOG faced = EV_rate_opp x defence_adjustment x projected EV minutes + PP_rate_opp x projected PP minutes. Use log-additive combination with opponent defence SOG-against: log E = mu + off_opp + def_team.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Natural Stat Trick team SOG splits",
+    "MoneyPuck team tables",
+    "NHL API boxscores"
+   ],
+   "registry_ids": []
+  },
+  "nhl.goalie_minutes_in_net_dist": {
+   "label": "Goalie minutes-in-net distribution (entry, pull and overtime)",
+   "category": "availability",
+   "mechanism": "Probability distribution of the named goalie's exposure in minutes and the relief goalie's partial exposure.",
+   "rationale": "The settlement rule makes exposure part of the contract: no entry -> fair-price, entry -> own saves only. Exposure is neither 60 nor zero; pulls and relief appearances create a mass at partial minutes. This is a distribution, not a scalar start probability.",
+   "measurement": "From box scores since 2015-16 build for each goalie the empirical pmf of minutes, conditional on starting: P(pulled before 40:00), P(pulled in 40-55), P(full + OT). Shrink each goalie's pull rate to team-coach and league rates with k=25 starts; make pull hazard depend on goals allowed in the first period (0, 1, 2, 3+). Combine with P(start | rest, schedule, report) from the forecast to get an overall mixture, and mark the no-start component as fair-price (excluded from the YES/NO distribution).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API boxscore (TOI and shots per goalie)",
+    "Daily Faceoff starter confirmations"
+   ],
+   "registry_ids": []
+  },
+  "nhl.arena_sog_recording_factor": {
+   "label": "Arena-level SOG recording factor",
+   "category": "environment",
+   "mechanism": "Home-arena effect on recorded shots on goal after controlling for teams.",
+   "rationale": "Official scorers record SOG; arenas can differ systematically, but the size for SOG is smaller and less certain than for hits or giveaways. A measured factor lets the model decide whether venue matters rather than assuming it.",
+   "measurement": "Fit a mixed model log(SOG_game) = team offence + team defence + arena effect + season, using all games from 2015-16 on, with the arena random effect shrunk with prior sd 0.03; always use the shrunk posterior mean for every arena (never a significance cutoff, which would bias the retained estimates upward). Report the posterior sd alongside and re-estimate each season, because tracking and scorer changes alter bias.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API boxscores by arena",
+    "Natural Stat Trick home/road splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.ot_shot_exposure": {
+   "label": "Overtime shot exposure given regulation tie probability",
+   "category": "game_state",
+   "mechanism": "Expected extra shots faced in overtime weighted by probability of a tie.",
+   "rationale": "Overtime is a 3v3 period with high shot density that can add several shots to a goalie's count; its expected contribution is P(OT) times shots per OT period, which can push a goalie across a threshold. It enters only if the contract counts OT, which is not stated.",
+   "measurement": "Estimate team-pair P(regulation tie) from the tie model and shots on goal per 3v3 five-minute period from NHL play-by-play 2015-16 on (pooled mean and sd, team adjustments shrunk with k=200 overtime minutes); expected extra saves = P(tie) x shots_per_OT x (1 - OT goal prob); when playoff 5v5 OT applies use hazard-based shots per 20 minutes.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (OT events)",
+    "Hockey-Reference OT records"
+   ],
+   "registry_ids": []
+  },
+  "nhl.period_entry_state_matrix": {
+   "label": "Entering-period score-state distribution and state-conditional rates",
+   "category": "game_state",
+   "mechanism": "pmf of the score margin entering periods two and three together with team rates conditional on margin.",
+   "rationale": "The pregame win probability does not give the distribution of the margin at 20:00 and 40:00, and period-three scoring depends on that margin through score effects. Markets for later periods are mixtures that cannot be priced from unconditional period rates.",
+   "measurement": "From period-by-period history compute for each team the empirical transition matrix of margin after one and two periods, shrunk to a model-based matrix from the bivariate period count model (prior strength 30 games); compute rates of goals and SOG for and against per period conditional on entering margin in {-2,-1,0,+1,+2 or more} with k=40 team-period minutes shrinkage; output the expected rate in period p as a mixture sum over margins of P(margin) x rate(margin). Include the effect of pulled goalie probability in period 3.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (goals by period)",
+    "Natural Stat Trick score state splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.period_penalty_intensity_balance": {
+   "label": "Period-level penalty intensity and within-game balancing",
+   "category": "officiating",
+   "mechanism": "Distribution of the number of minors per period and the tendency to even out calls against the earlier imbalance.",
+   "rationale": "Because one power play can decide a 20-minute period, the count distribution and its dependence on earlier calls matter more here than in full-game markets. Referee balancing is a mechanism where penalties against a team become less likely after the opponent has received more.",
+   "measurement": "From play-by-play compute for each period the pmf of minors called on each team; estimate a logit/Poisson regression of the next penalty on cumulative penalty differential with period fixed effects, using crew effects as random intercept with prior sd 0.1; shrink team taken/drawn rates with k=300 minutes. Forecast per period: expected minors for each side as a function of crew, teams and period; simulate balancing within the game for periods two and three.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API penalty events",
+    "Scouting The Refs (referee rates)",
+    "NHL game summaries (crew)"
+   ],
+   "registry_ids": []
+  },
+  "nhl.period_pair_count_model": {
+   "label": "Period-level bivariate count model with cross-period dependence",
+   "category": "distribution",
+   "mechanism": "Joint pmf of the two teams' goals in a period with period-specific dispersion, correlation and zero mass.",
+   "rationale": "The full-game dispersion parameter cannot be reused for a 20-minute window where zero mass and tie probability are driven by different variances; moreover periods within a game are dependent through game total and score effects.",
+   "measurement": "Fit a bivariate negative-binomial or Poisson-mixture model with parameters (mu_home, mu_away, dispersion, correlation) per period index using all games since 2010-11, with covariates team strength and PP expectations; estimate cross-period dependence by a shared game random effect (variance parameter) and a score-effect term; validate on frequency of 0-0, ties and margins of two or more in each period; recalibrate each season.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API results by period",
+    "Hockey-Reference period scoring tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.period_home_ice_split": {
+   "label": "Home-ice and last-change effect by period (home flag, period-specific home goal share)",
+   "category": "environment",
+   "mechanism": "The home team gets last change at every stoppage and the home crowd and scorer effects are modest and constant in size, but their effect on a 20-minute winner or spread contract differs by period because deployment, score state and the second-period long change interact with the home bench position.",
+   "rationale": "Period winner and spread contracts are team-versus-team, so a small constant home edge shifts every tie, win and rung probability and is not captured by team ratings alone. A single full-game home constant mis-scales the period effect: it is most visible in match-ups of the first period when coaches can pick the matchup, and it is compressed in the third by score effects. Reviewers noted no home input existed in this record.",
+   "measurement": "From team-period goal and xG data since 2015-16 fit goal differential per period = team strength difference + home indicator x period (three coefficients) with season fixed effects; shrink each period coefficient toward the pooled home edge with a prior of 25 percent of the pooled value variance, estimate on 5v5 xG and on goals separately, and refresh yearly. Treat last-change strength as a league-level effect only (no team-specific estimate, samples are too small). As-of: all games before the target date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play and boxscore (api-web.nhle.com)",
+    "MoneyPuck game data",
+    "Natural Stat Trick period splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.rest_fatigue_period_profile": {
+   "label": "Rest and back-to-back fatigue profile by period (and its backup-goalie channel)",
+   "category": "schedule_context",
+   "mechanism": "A team on the second night of a back-to-back or after long travel plays a higher share of games with a backup goalie, which changes the first-period goal rate, and may fade late in the game, so the rest effect is not constant across periods.",
+   "rationale": "Reviewers argued rest was ignored because the record treated it as a full-game constant. The channel that is certain is goalie identity (backup starts concentrate on back-to-backs), which hits period one; the possible skater fatigue channel would show up as a later-period fade and is unproven. The input keeps the two channels separate so that the certain one is not diluted by the uncertain one.",
+   "measurement": "For every team-game since 2015-16 compute rest days, back-to-back second-night flag and time-zone miles travelled; regress period goal differential and period xG differential on rest differential interacted with period (3 coefficients), with team strength and home controls and season fixed effects. Add the backup-start probability from the goalie start forecast as a separate covariate so the fatigue term is estimated net of goalie identity. Shrink period coefficients to the pooled rest effect with a prior sd of one third of the pooled estimate. As-of: schedule is known weeks ahead, goalie confirmation arrives on game day.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API schedule (api-web.nhle.com /v1/schedule)",
+    "NHL boxscores for goalie of record",
+    "Natural Stat Trick period splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.ipp_by_state": {
+   "label": "Individual points percentage by strength state (points per on-ice goal for)",
+   "category": "player_role",
+   "mechanism": "Share of team goals scored while on ice on which the player is credited with a goal or assist.",
+   "rationale": "Points are credited on team goals, so expected points equal on-ice goals for times the share of those on which the skater is credited; this share is far more stable than assists per game and is role dependent (forwards on scoring lines high, defencemen lower, PP1 shooters very high).",
+   "measurement": "For each skater and strength state (EV, PP) compute IPP = (goals + assists) / on-ice goals for, using 3 seasons weighted by 0.5/0.3/0.2 and shrunk to position-and-role priors with k=25 on-ice goals; separate primary and secondary assist components, shrinking secondary toward position mean with k=60; apply per-60 conversion: expected points per game = sum over states of (on-ice GF/60 x state TOI/60 x IPP_state).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (goals with scorer and assists, on-ice players)",
+    "Natural Stat Trick on-ice tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.onice_xgf_per60": {
+   "label": "On-ice expected goals for per 60 by strength state (RAPM-adjusted)",
+   "category": "team_strength",
+   "mechanism": "Team scoring chances created while the player is on ice, adjusted for teammates, opponents and zone starts.",
+   "rationale": "Individual xG measures only the shooter's own attempts but points depend on all chances the player's line creates; a forward on a top line has points even when he does not shoot much. Linemate_quality is a single-label proxy; a regularised on-ice xGF rate is the measurable form.",
+   "measurement": "Estimate per-skater on-ice xGF per 60 at 5v5 and on the PP with ridge regression on shift data (3-season window, half-life 1.5 seasons, shrink toward position mean with prior sd chosen by cross-validation) controlling for teammates, opponents, zone starts and score state. Projected on-ice xGF for the game uses projected linemates (from lines input) and is multiplied by the opposing team's defence factor and the opposing goalie factor.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Evolving-Hockey RAPM (paid)",
+    "HockeyViz (free, visual)",
+    "NHL API shiftcharts + play-by-play"
+   ],
+   "registry_ids": []
+  },
+  "nhl.first_goal_scorer_share": {
+   "label": "First-goal scorer share and team first-goal probability",
+   "category": "distribution",
+   "mechanism": "Probability that the player scores the game's first goal given team-level first-goal race and his share within the scoring line.",
+   "rationale": "The first-goalscorer contract is a competing-risk race: either team scores first, and given that the scorer is drawn from the players on ice at that moment weighted by shot share. Early-game deployment and early power plays raise top-line and PP1 chances relative to full-game share.",
+   "measurement": "Estimate team first-goal probability from per-team scoring hazard h_team(t) in the first 20 minutes (opposing goalie adjusted); then P(player scores first | his team scores first) = early-minutes goal share of the player (goals in first 20 minutes of games where his team scored first, divided by team first goals, shrunk to ixG-based share with k=40). Combine P(player first goal) = P(team first) x share x P(regulation or OT goal occurs). Exclude shootout goals.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (first goals with scorer and time)",
+    "MoneyPuck shot-level data"
+   ],
+   "registry_ids": []
+  },
+  "nhl.skater_en_usage": {
+   "label": "Skater extra-attacker and empty-net usage share",
+   "category": "game_state",
+   "mechanism": "Share of 6v5 minutes and of empty-net goals scored/assisted by the player, and share of 5v6 defending time.",
+   "rationale": "Late empty-net goals are credited to a handful of players, and the extra attacker is usually a top forward or defenceman; these minutes are tiny but produce many scoring chances at high conversion, shifting P(1+) and P(2+) for those players in close games.",
+   "measurement": "From play-by-play identify intervals with goalie pulled (situationCode or inferred) and compute per skater: minutes of 6v5 as extra attacker, goals and assists in those intervals, and share of team EN goals; shrink to team-wide EN goal rate with k=15 EN goals; weight by projected probability of close late game (from game script).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API play-by-play",
+    "Natural Stat Trick 6v5 splits"
+   ],
+   "registry_ids": []
+  },
+  "nhl.next_man_up_redistribution": {
+   "label": "Next-man-up redistribution after lineup absences",
+   "category": "availability",
+   "mechanism": "Empirical change in TOI, line slot and PP unit for each teammate when a given player is out.",
+   "rationale": "When a top forward or PP1 member is absent, who inherits his minutes and PP time is team- and coach-specific; the status flag alone does not tell the size of promotion for the candidate whose prop is listed.",
+   "measurement": "For each team-season find games where player X was absent and compute teammates' change in TOI by state, line number and PP unit versus matched games with X present (matched on rest and home/away); shrink team-specific redistribution toward league position-slot priors with k=8 absence games; as-of rule uses only games before the market time. Output delta-TOI and delta-PP-share per teammate for the current absence scenario.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API shiftcharts/boxscore (TOI by game)",
+    "Daily Faceoff line projections",
+    "PuckPedia/CapWages roster tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.early_window_goal_rate": {
+   "label": "Early-window (first 10:00 of period one) team goal hazard for the pair",
+   "category": "game_state",
+   "mechanism": "The event is that either team scores in the first 10 minutes, so it depends on the two teams scoring hazards in the opening minutes at 5v5 and on early power plays, with the opposing goalie and the opening lines setting the level.",
+   "rationale": "KXNHLF10G has no player in it: the probability is one minus the chance that both teams are held scoreless for 10 minutes. Opening-period scoring rates differ from full-game rates (fresh goalies, coach matchups, fewer penalties early), so the full-game goal rate scaled by 10/60 is biased. The tail event of an early power play (penalty in the first minutes) adds a lumpy extra hazard.",
+   "measurement": "For each team compute goals for and against per 60 in minutes 0:00-9:59 of period one at 5v5 and on the power play since 2018-19 (half-life 60 games, shrunk 30 games to league), adjust for the confirmed opposing goalie GSAx per 60 shrunk 1000 shots, estimate the early-penalty rate per team (penalties drawn and taken in the window) and combine: lambda_window = sum over teams of (5v5 hazard x minutes at 5v5 + PP hazard x expected PP minutes in window); P(YES) = 1 - NB zero mass with fitted dispersion. Never use a price. As-of: starting goalies confirmed pregame, otherwise a mixture.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play with event times (api-web.nhle.com)",
+    "Natural Stat Trick period and time-window splits",
+    "MoneyPuck game data"
+   ],
+   "registry_ids": []
+  },
+  "nhl.skater_ot_3v3_exposure": {
+   "label": "Skater overtime 3v3 exposure and point rate",
+   "category": "game_state",
+   "mechanism": "Overtime adds a short 3v3 stretch only in games tied after 60 minutes, where stars play very heavy minutes and points come at a much higher rate per minute than at 5v5.",
+   "rationale": "KXNHLFIRSTGOAL explicitly counts overtime goals and the N+ ladder text does not exclude them, so for stars the OT block adds a few percent to the first rung. The effect is small per game but systematic for top forwards, and zero in games decided in regulation.",
+   "measurement": "P(OT) from the regulation tie model for the pair; per skater, 3v3 minutes per OT game (mean and sd, 3 seasons, shrunk 20 OT games to position-role mean) times point rate per 3v3 minute shrunk to the league rate (k=100 minutes); expected extra points = P(OT) x minutes x rate; add as a mixture component only for contracts whose rules count overtime. As-of: lineup as known pregame.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play and shiftcharts",
+    "Natural Stat Trick 3v3 splits",
+    "Hockey-Reference overtime logs"
+   ],
+   "registry_ids": []
+  },
+  "nhl.games_played_hazard": {
+   "label": "Games-played hazard (injury, rest and load management)",
+   "category": "availability",
+   "mechanism": "Distribution of games missed for a player over the season given age, position, injury history and team situation.",
+   "rationale": "A season total is capped by games played; a 60-goal pace needs about 78-82 games, so the left tail from injuries is the main downside. A distribution (not an expected value) is needed because missing a month removes the contract's chances.",
+   "measurement": "From 10 seasons of player-game logs compute for each skater-season games missed, then fit a zero-inflated negative binomial for games missed with covariates age, position, prior-season games missed (weights 0.5/0.3/0.2), prior major injury count, and current injury status; update for the current season with games already played and the current injury report; shrink toward position-age cohort with k=25 player-seasons; output the pmf of games remaining played given status.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API game logs",
+    "Hockey-Reference player game logs",
+    "Man Games Lost datasets (paid) or injury trackers"
+   ],
+   "registry_ids": []
+  },
+  "nhl.player_season_points_projection": {
+   "label": "Player season points projection (rate x games-played distribution)",
+   "category": "player_role",
+   "mechanism": "A season points threshold is reached by points already banked plus per-game production on the games still to be played, so the outcome is the sum of a rate (role, time on ice, power-play share, on-ice chance creation and credit share) and an opportunity count (games played).",
+   "rationale": "Season-points contracts such as a 110+ points threshold for a defenceman sit in the extreme tail of a rate times games distribution, so both the central rate and its dispersion matter. Rate comes from the same components as the single-game record (role, power-play time, on-ice xGF, individual points percentage); games remaining comes from the games-played hazard. The subtle part is that role changes (power-play unit, line, injuries to teammates) move the rate level for the rest of the season.",
+   "measurement": "Points to date P0 plus the sum over remaining games g of expected points per game, where per-game expected points = sum over strength states of (on-ice goals-for per 60 x projected state time on ice per 60 x individual points percentage in that state), using 3 seasons weighted 0.5/0.3/0.2 with half-life 1.5 seasons, shrunk to position-and-role priors (k=25 on-ice goals) and updated for the current season by a gamma-Poisson rate posterior; multiply by the pmf of games remaining from nhl.games_played_hazard; simulate 20000 seasons with negative-binomial per-game dispersion fitted on player-seasons of comparable rate; report P(total >= threshold). As-of: all games before the contract date, with the current power-play unit and line assignment from the latest lineup report.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API player game logs and play-by-play (api-web.nhle.com)",
+    "Natural Stat Trick on-ice tables",
+    "Hockey-Reference player season pages"
+   ],
+   "registry_ids": []
+  },
+  "nhl.sog_share_on_ice": {
+   "label": "Skater share of team shots on goal while on ice, by strength state",
+   "category": "player_role",
+   "mechanism": "Player's SOG divided by team SOG during his minutes at even strength and on the power play.",
+   "rationale": "Team shot volume against a specific opponent can be projected from team models; the player's share of that volume while on ice is more persistent than his raw per-60 rate because it removes team-level shocks. It also captures role as a shooter versus a playmaker.",
+   "measurement": "For each skater and state compute share = player SOG / team SOG while the player is on ice, over a 3-season window weighted 0.5/0.3/0.2, shrunk to position-and-line priors with k=40 team shots; project expected SOG = (team SOG per 60 in state projected for the pairing) x (state minutes/60) x share, then sum across states. Update shares when linemate composition changes using the reallocation input.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (shot events with shooter and on-ice players)",
+    "Natural Stat Trick individual and on-ice tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.shot_share_reallocation": {
+   "label": "Shot-share reallocation within a line or power-play unit",
+   "category": "availability",
+   "mechanism": "Change in a skater's share of unit shots when a linemate or PP unit mate is absent or replaced.",
+   "rationale": "Shot shares in a unit sum to one: when the high-volume shooter is out, remaining players' shares rise by the vacated amount in proportion to their usage, not equally; the promoted player also changes his own rate by the quality of the replacement. Status flags do not tell the size.",
+   "measurement": "From team-season games with a unit member out compute each teammate's share before and after, using matched control games (same opponent tier, rest); estimate the pass-through coefficient beta = d(share_j)/d(vacated share) per position, shrink team estimates to league with k=10 games; apply to the current absence scenario. As-of rule uses lineups published at the time of prediction. Caveat: per-team samples of games with a given unit member absent are small (typically 5-20 games per season), so pool teams by role cluster, estimate beta at league-by-position level and use team deviations only when more than 15 absence games exist.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API shiftcharts and play-by-play",
+    "Daily Faceoff lines"
+   ],
+   "registry_ids": []
+  },
+  "nhl.pair_difference_distribution": {
+   "label": "[Model output, not raw data] Pair difference distribution with tie mass by pair type and stat",
+   "category": "distribution",
+   "mechanism": "Joint count model for (X_A, X_B) yielding the exact pmf of the difference including P(D=0).",
+   "rationale": "The sign of a difference of two small counts cannot be approximated by comparing means: tie mass, dispersion and pair-specific correlation set the probability. A pair-type-aware joint pmf is the contract's own object and also yields P(A>B | no tie) for rule variants.",
+   "measurement": "Fit bivariate count models per stat (points: zero-inflated NB with a shared-goal term; shots: bivariate NB with correlation; saves: bivariate NB for opposing goalies) with pair-type-specific correlation parameters (same line, same team different line, opponents), estimated from 5 seasons of player-game logs; shrink pair-type correlations to league values with k=300 pair-games; compute pmf of D by convolution, report P(D>0), P(D=0), P(D<0) under both tie rules, and recalibrate on holdout seasons by tie frequency.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API player-game logs",
+    "Hockey-Reference game logs",
+    "Natural Stat Trick player tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.teammate_point_co_credit": {
+   "label": "Teammate point co-credit rate",
+   "category": "distribution",
+   "mechanism": "Probability that a goal on which player A earns a point also gives player B a point, by strength state.",
+   "rationale": "Two linemates are positively correlated in points because the same goal credits both; this co-credit structure is a source of dependence beyond shared script and reduces the variance of D for teammate pairs.",
+   "measurement": "From goal events compute for each ordered teammate pair the share of A's points that came on goals where B also earned a point, per strength state, over three seasons with k=30 shared points shrinkage to position-line priors; summarise in a pair-level co-credit coefficient used in the joint count model as the shared-goal Poisson component.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API play-by-play (scorer and assists)",
+    "Natural Stat Trick"
+   ],
+   "registry_ids": []
+  },
+  "nhl.goal_credit_allocation_kernel": {
+   "label": "Goal-credit allocation kernel (probability each skater scores or assists on a team goal)",
+   "category": "player_role",
+   "mechanism": "Probability that a skater is credited with the goal, primary or secondary assist, conditional on a team goal at a given strength state and lineup.",
+   "rationale": "A combo mixing team and player legs needs one coherent mechanism linking team goals to individual stats; a kernel based on on-ice shares and credit shares guarantees consistency and the cap of one goal and two assists per team goal.",
+   "measurement": "For each skater and strength state (EV, PP, EN) compute: P(on ice | team goal) = team goals scored while on ice / team goals in the state, and P(credit type | on ice, goal) from three seasons of goal events (shrunk to position/line priors with k=30 goals); build for the projected lineup a kernel K[skater, role(goal, A1, A2)] with columns summing to 1 for goals, and at most two assists per goal; in simulation draw each goal's state, then allocate credit by K. Recalibrate so that simulated team assists per goal match league and team averages.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL API play-by-play (goal credits and on-ice skaters)",
+    "Natural Stat Trick on-ice tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.lineup_scenario_tree": {
+   "label": "Joint lineup scenario tree (goalies and key skaters)",
+   "category": "availability",
+   "mechanism": "Joint probability over starter goalie for each team and the status of the three or four most influential skaters.",
+   "rationale": "A single leg's availability probability is not enough: several legs move at once on the same news, and the joint probability of states (e.g., backup in net and star out) is not the product of marginal probabilities because of shared causes such as back-to-backs.",
+   "measurement": "Define for each team K key players (starting goalie plus top-4 skaters by impact) and enumerate states; estimate P(state) from the team's historical patterns: goalie rotation (consecutive-start rules, back-to-back), injury reports and morning skate evidence; assume independence beyond shared schedule factors unless data show otherwise; limit leaves to those with probability above 1 percent and merge the rest; store each state with its decision-time vintage.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Daily Faceoff",
+    "NHL team injury reports",
+    "PuckPedia/CapWages injury lists"
+   ],
+   "registry_ids": []
+  },
+  "nhl.copula_tail_dependence": {
+   "label": "Tail dependence between leg pairs (copula parameters by pair type)",
+   "category": "distribution",
+   "mechanism": "Dependence in the joint upper and lower tails of leg pairs beyond linear correlation.",
+   "rationale": "Hockey legs show stronger dependence in the tails than in the centre: blowout games produce high totals, large margins and many points together. A Gaussian copula with a pooled correlation underprices joint tail events and overprices central ones.",
+   "measurement": "For each pair type (win-total, win-player points, total-player points, goalie saves-total, total-team total) compute from five seasons of game logs the empirical conditional exceedance chi(u) = P(U>u, V>u)/(1-u) at u = 0.7, 0.8, 0.9 using rank transforms with discrete tie handling; fit Gaussian, Student-t and Clayton copulas by maximum likelihood on the pseudo-observations and choose by out-of-sample joint log-likelihood; shrink pair-type parameters with k=400 games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API player-game and team logs",
+    "Hockey-Reference game logs"
+   ],
+   "registry_ids": []
+  },
+  "nhl.parlay_leg_void_payoff_map": {
+   "label": "Parlay leg-void payoff map",
+   "category": "market_structure",
+   "mechanism": "Lookup table mapping each combination of leg statuses (win, lose, void-at-fair-price) to the contract payoff under the rules in force.",
+   "rationale": "The fair price depends on what happens to the combo when a leg voids: collapse to fair price, drop the leg, or lose. The same probabilities give different prices under different maps, and none is observed in the sampled rules.",
+   "measurement": "From the rules text of each combo series build a table payoff(status vector); where text is missing mark the map as unknown and carry multiple candidate maps (drop-leg, fair-price collapse, lose) with prior weights; compute price under each candidate and report the range; version by rules_text vintage so that changes are visible.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi rules text via API"
+   ],
+   "registry_ids": []
+  },
+  "nhl.leg_logical_relations": {
+   "label": "Leg logical-relations map (implications, exclusions, shared ladders)",
+   "category": "market_structure",
+   "mechanism": "Deterministic implications and exclusions among legs of the same game.",
+   "rationale": "Nested rungs and mutually exclusive outcomes fix part of the joint probability exactly: points 2+ implies points 1+, a team win excludes the opponent win, the spread leg implies the win leg. A correlation model that ignores this can assign probability to impossible combinations.",
+   "measurement": "Enumerate for each pair of legs the logical relation under the game's settlement rules (including shootout credit, third-period OT exclusion, and nested player ladders) and store as a matrix of {implies, excludes, independent-by-construction, free}; the simulator rejects draws violating relations and the pricing uses P(A and B) = P(A) for implied and 0 for excluded.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Rules text of each leg",
+    "Own derivation"
+   ],
+   "registry_ids": []
+  },
+  "nhl.rating_posterior_uncertainty": {
+   "label": "Team rating posterior uncertainty and in-season drift",
+   "category": "team_strength",
+   "mechanism": "Posterior standard deviation of each team's strength and its random-walk drift per game.",
+   "rationale": "A season or title simulation using point ratings is overconfident: the spread of true strengths and the error of the estimate both matter, and title probability is convex in rating so uncertainty raises the probability of mid-tier teams. Early-season data are noisy.",
+   "measurement": "Fit a state-space model: rating_t = rating_{t-1} + eta (sd 0.02 goals/game per game, estimated by out-of-sample likelihood), observation = score-adjusted xG differential and goal differential with measurement sd from game-level residuals; initialise with preseason prior (sd 0.25 goals/game). Output posterior mean and sd per team per day; draw ratings from the posterior in each simulation run. Re-estimate drift variance each season.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Own computation from MoneyPuck/Natural Stat Trick game data",
+    "MoneyPuck published simulations (free)"
+   ],
+   "registry_ids": []
+  },
+  "nhl.loser_point_rate": {
+   "label": "Loser-point and overtime-resolution rate by team",
+   "category": "variance_luck",
+   "mechanism": "Share of a team's games decided after regulation and its conditional win share.",
+   "rationale": "Standings points include a point for an overtime or shootout loss, so two teams with equal win rates can differ in points by their extra-time frequency; regulation-win tiebreaks also depend on how often games are decided in regulation.",
+   "measurement": "Per team and season compute: P(game goes beyond regulation) shrunk to league with k=30 games and 2-season weights; P(win | beyond regulation) shrunk to 0.5 with k=40 games (shootout/OT skill slight); regulation win rate from regulation results. Points per game = 2 x P(reg win) + 2 x P(extra) x p_win_extra + 1 x P(extra) x (1 - p_win_extra). Record regulation wins and ROW separately for tiebreak tracking.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL standings API (RW, ROW, OTL)",
+    "Hockey-Reference standings"
+   ],
+   "registry_ids": []
+  },
+  "nhl.bracket_path_difficulty": {
+   "label": "Playoff bracket path difficulty by seed and division",
+   "category": "matchup",
+   "mechanism": "Distribution of first and second round opponents and home-ice status given the final seed.",
+   "rationale": "The bracket pairs division winners with wild cards and keeps divisional paths, so equal-strength teams have different Cup and conference probabilities depending on their division and seed; the path must be simulated from standings.",
+   "measurement": "For each simulated final standings compute the bracket (3 per division plus 2 wild cards; division winner with better record faces the lower wild card) and the opponent set per round; record probabilities by team of facing each opponent and of home-ice in each series; use for series win recursion with rating uncertainty draws. Validate that simulated seed frequencies match historical qualifier frequencies by points.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL standings API",
+    "NHL playoff format rules page"
+   ],
+   "registry_ids": []
+  },
+  "nhl.cap_flexibility_deadline": {
+   "label": "Cap flexibility and deadline additions capacity",
+   "category": "availability",
+   "mechanism": "Cap space, long-term injured reserve relief and tradable assets that allow a team to add or replace players before the deadline.",
+   "rationale": "A team's rating at the playoffs differs from today's rating through deadline moves and injury replacement; teams with cap room and assets can improve, which shifts long-horizon probabilities and is partially public.",
+   "measurement": "From cap sites gather per team cap hit, projected deadline cap space (daily cap accrual x days remaining), LTIR usage, number of first-round picks and prospect capital (rank-based score from public prospect ratings); compute capacity = deadline space + LTIR relief; map to expected rating gain via historical deadline acquisitions of playoff contenders (average WAR added per cap dollar) with k=10 team-seasons; refresh weekly.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "PuckPedia",
+    "CapWages",
+    "CapFriendly (archived)"
+   ],
+   "registry_ids": []
+  },
+  "nhl.series_goalie_volatility": {
+   "label": "Series-level goaltending volatility beyond binomial",
+   "category": "variance_luck",
+   "mechanism": "Extra variance of a series' save percentage and goal differential beyond a Bernoulli game model.",
+   "rationale": "A best-of-seven series with fixed team ratings is binomial, but goalie performance autocorrelates within a series, producing a heavier-tailed distribution of series outcomes and more upsets than a constant p model gives.",
+   "measurement": "From playoff series 2005-06 onward compute the series-level excess variance of goalie save percentage over binomial given shots faced; estimate intra-series correlation of single-game goalie GSAx; add a random effect on the winner's per-game p with sd estimated by maximum likelihood on series results; use in the series recursion. Shrink to league average with k=60 series.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API playoff boxscores",
+    "Hockey-Reference series data",
+    "MoneyPuck playoff goalie data"
+   ],
+   "registry_ids": []
+  },
+  "nhl.award_vote_share_model": {
+   "label": "Award vote-share model (electorate-specific)",
+   "category": "player_role",
+   "mechanism": "Historical multinomial-logit model of vote shares for each award using production, team success, position and narrative variables.",
+   "rationale": "Hart, Norris and Calder are voted by writers and Vezina by general managers; each electorate rewards different features (points, team rank, goalie wins, shutouts, GSAx), so a single player-quality model does not map to voting outcomes.",
+   "measurement": "For each award collect the last 20 seasons' finalists and vote shares; regress log vote share on points per game, goals, team points percentage, games played, position and for goalies wins, save percentage and shutouts; fit multinomial logit with season fixed effects and shrinkage; apply to the projected end-of-season stat line distribution from simulations; output win probability by candidate with draw uncertainty; update with finalists and ballot dates. Source caveat (SOURCE_UNVERIFIED for the Ted Lindsay Award): full vote shares are not known to be published for player-voted awards (only finalists and the winner), so where shares are missing fit a conditional-logit on winner-among-finalists instead of a share regression; with only a few dozen finalists per award use at most 4 covariates and strong shrinkage.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Hockey-Reference award voting pages",
+    "NHL awards archive",
+    "NHL stats API"
+   ],
+   "registry_ids": []
+  },
+  "nhl.award_eligibility_tiebreak_map": {
+   "label": "Award eligibility and tiebreak rules map",
+   "category": "market_structure",
+   "mechanism": "Eligibility conditions and tiebreak rules for each trophy and stat title.",
+   "rationale": "Rookie eligibility for the Calder, the way Art Ross and Rocket Richard ties are broken and Kalshi's 1/N payout interact: a tied or ineligible candidate changes the contract value even if production is identical.",
+   "measurement": "For each award list eligibility criteria (age, prior NHL games) and the league's tiebreak (fewer games played or more goals for Art Ross) from the NHL rulebook or award page; label each as verified or SOURCE_UNVERIFIED; map to Kalshi tie handling (1/N rounded down) and compute the probability of ties for counting leaders from simulation (points ties at the top occur in a minority of seasons).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL.com award descriptions",
+    "NHL official rules"
+   ],
+   "registry_ids": []
+  },
+  "nhl.goalie_award_projection": {
+   "label": "Goalie award projection (Vezina: GSAx rate, starts share, team context)",
+   "category": "player_role",
+   "mechanism": "A goalie award is decided on saves above expectation and workload over the season, so the rest-of-season distribution is the goalie rate (GSAx per start, save percentage) times the number of starts he gets, with the team context that shapes the voters narrative.",
+   "rationale": "Vezina voters (general managers) reward workload and results; a goalie who splits starts cannot accumulate the case of a clear number one, and GSAx has low persistence so the projection must be shrunk heavily. The subtle part is starts share: it is set by the team depth chart and back-to-back schedule, not only by quality.",
+   "measurement": "Per goalie: GSAx per 60 over 3 seasons weighted 0.5/0.3/0.2 shrunk toward the league mean with k=1500 shots faced; projected remaining starts = games remaining x starts share (team goalie rotation pattern, back-to-back share, 2-season average, shrunk to 0.6 for a clear number one); simulate remaining GSAx as normal with sd from shots-faced noise; add wins and save percentage to date. As-of: all games before the contract date, current depth chart from the latest lineup reports.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "MoneyPuck goalie data (moneypuck.com/data.htm)",
+    "NHL API goalie game logs",
+    "Natural Stat Trick goalie tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.rookie_role_pedigree": {
+   "label": "Rookie role and pedigree for Calder candidates",
+   "category": "player_role",
+   "mechanism": "Calder voters pick the best first-year player, so the probability depends on eligibility, the rookie role actually obtained (line, power-play unit, minutes) and the production pace, with pedigree (draft position, prior league) setting early expectations.",
+   "rationale": "A rookie projection has little NHL history, so draft slot, junior or college scoring and age carry weight early while deployment (top-six, PP1, defence pair) dominates once games are played. Eligibility rules (age cap, prior games) also remove candidates, which makes the candidate set itself uncertain.",
+   "measurement": "Prior points per game = league translation factor for the prior league (CHL, NCAA, European) applied to the last season points per game, regressed 50 percent toward the draft-slot mean; posterior update with NHL games to date by gamma-Poisson with prior weight equal to 20 games; add role terms (share of team forward TOI, PP1 flag) and eligibility flag from the league rulebook; output rest-of-season points projection and eligibility probability. As-of: before each ballot deadline.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Elite Prospects player pages (draft and prior-league stats)",
+    "NHL API game logs",
+    "NHL.com Calder eligibility rules"
+   ],
+   "registry_ids": []
+  },
+  "nhl.coach_expectation_delta": {
+   "label": "Coach expectation delta (results versus preseason projection, year-over-year change)",
+   "category": "motivation",
+   "mechanism": "Difference between realised points percentage and the preseason-projected value, plus year-over-year change and coaching tenure flags.",
+   "rationale": "The Jack Adams Award is voted on who coached best relative to expectations, so what matters is the surprise, not the level; a team that finished first as expected earns less credit than one that jumped from the bottom. The expectation must be formed before the season to avoid hindsight bias.",
+   "measurement": "Preseason projection P_exp = last two seasons' points percentage blend (0.6/0.4) adjusted by roster change impact and age; delta = realised points pct to date (or simulated final) minus P_exp, with standard error from remaining games; add change from last season, first-year-coach flag, injury games lost to key players, and goalie change flag. Fit a ranking model of historical winners/finalists on delta and these flags (20 seasons) and output candidate win probabilities with simulation draws for final points.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL standings API",
+    "Hockey-Reference coaches and standings",
+    "MoneyPuck preseason projections (free)"
+   ],
+   "registry_ids": []
+  },
+  "nhl.draft_lottery_odds_by_standing": {
+   "label": "Draft lottery odds by final standing and ownership",
+   "category": "game_state",
+   "mechanism": "Probability each team wins the top pick from the simulated final standings and the league lottery format.",
+   "rationale": "The first pick is not simply given to the worst team: the lottery format gives the worst team a limited chance and caps how far a team can move, so the distribution is flat over the bottom teams and depends on exact standings and on the number of draws.",
+   "measurement": "Simulate final standings from the ratings posterior (with points ties resolved by league rules), identify the 16 non-playoff teams, map rank to lottery combinations using the current published format (SOURCE_UNVERIFIED for 2027) with ranges for odds of first pick and for the maximum movement allowed; combine with pick ownership to get P(team T holds the first pick) = sum over teams of P(team wins lottery) x ownership; output with the standings uncertainty.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL lottery rules (NHL.com)",
+    "Tankathon-style odds (free)",
+    "MoneyPuck simulation (free)"
+   ],
+   "registry_ids": []
+  },
+  "nhl.pick_ownership_and_protection": {
+   "label": "First-round pick ownership and protection conditions",
+   "category": "market_structure",
+   "mechanism": "Which team holds each first-round pick with its protections and conditionality.",
+   "rationale": "Traded picks, top-ten protections and conditional swaps change who benefits from a bad finish; a lottery winner that has traded its pick selects nothing, so ownership multiplies the lottery probability.",
+   "measurement": "Collect the first-round pick table for the draft year with owner, original team, protection (top-N, lottery), and conditions (swap rights), from PuckPedia/CapWages and official transaction records; version it by date; encode as owner(team) and conditional logic evaluated on the simulated standings; track changes after each trade.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "PuckPedia",
+    "CapWages",
+    "NHL official transactions"
+   ],
+   "registry_ids": []
+  },
+  "nhl.prospect_consensus_ranking": {
+   "label": "Prospect consensus ranking and selection agreement history",
+   "category": "player_role",
+   "mechanism": "Consensus ordering of top prospects and the historical probability that the consensus choice is selected at each pick.",
+   "rationale": "The selecting team's choice follows a board that correlates strongly with public consensus at the very top, with more disagreement later; a clear gap between the first and second prospects makes the top-pick contract nearly a one-candidate event.",
+   "measurement": "Aggregate public rankings (NHL Central Scouting final list, Elite Prospects consensus, Bob McKenzie/TSN list, others) into a rank-averaged score, compute the gap between first and second; calibrate P(consensus #1 is selected first) from 15 drafts as a function of gap with a logistic fit; for later picks use rank deviation distributions; update with injuries and with team-specific needs flags.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Elite Prospects (free)",
+    "NHL Central Scouting rankings",
+    "TSN/McKenzie rankings (partly paywalled)",
+    "Scouching consensus"
+   ],
+   "registry_ids": []
+  },
+  "nhl.player_contract_status_clauses": {
+   "label": "Player contract status and movement clauses",
+   "category": "availability",
+   "mechanism": "Contract expiry year, cap hit, no-trade or no-move clauses, arbitration and free-agent status for the named player.",
+   "rationale": "Destination markets are bounded by the contract: a player under a long contract with a no-movement clause can only move with consent, while a player on an expiring contract becomes a free agent on a known date; the same inputs determine whether any team can acquire him at all.",
+   "measurement": "For the player compile from cap sites: contract end year, AAV, NMC/NTC status and no-trade list if public, RFA/UFA status and arbitration rights, extension eligibility date, and the signing/trade windows of the NHL calendar; compute months to free agency and an indicator of whether a trade requires consent; refresh weekly and after each transaction; encode a feasible destination set with ex ante constraint flags.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "PuckPedia",
+    "CapWages",
+    "NHL.com transactions"
+   ],
+   "registry_ids": []
+  },
+  "nhl.suitor_cap_and_roster_fit": {
+   "label": "Suitor cap space and roster-fit table",
+   "category": "matchup",
+   "mechanism": "Cap space, positional need and competitive window of each team relative to the player.",
+   "rationale": "A destination requires cap room and a lineup need; teams with space and a hole at the position are the likely suitors, and the number of feasible suitors changes the probabilities in a partition over 32 teams.",
+   "measurement": "For each team compute projected cap space at the next signing window (cap ceiling minus committed salary for the next season, adjusted for LTIR), roster need for the position (depth chart gap in impact score), and a competitive-window score (points percentage and age of core); form a suitor score = space feasibility x need x window with weights fit on past star free-agent decisions (5 seasons, k=15 events); normalise to a probability vector with the player's preference (location, prior team) if known.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "PuckPedia/CapWages",
+    "Hockey-Reference rosters"
+   ],
+   "registry_ids": []
+  },
+  "nhl.expansion_governance_gates": {
+   "label": "Expansion governance gates and readiness checklist",
+   "category": "market_structure",
+   "mechanism": "Calendar of Board of Governors meetings and the readiness steps (ownership group, arena, fee, committee statements) for a candidate city.",
+   "rationale": "An expansion award requires an official Board decision, which cannot occur without an expansion process and a meeting; the hazard of a decision before a given date is the probability that these gates are cleared in time.",
+   "measurement": "Record the scheduled Board of Governors meeting dates before the market close, the public status of the expansion process (committee formed, applications requested, ownership group named, arena plan, expansion fee level) and commissioner statements with dates; assign a stage score (0-5) and map stage to the probability of a vote before the date using historical expansion cases (Vegas 2016, Seattle 2018, Utah transfer) with wide uncertainty; update after each public statement.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL.com press releases",
+    "Commissioner press conferences",
+    "Board of Governors announcements"
+   ],
+   "registry_ids": []
+  },
+  "nhl.insider_report_credibility": {
+   "label": "Insider report credibility and lag",
+   "category": "other",
+   "mechanism": "Reporter- and report-type-specific hit rate and lag between a report and the official announcement.",
+   "rationale": "Reports of talks, offers or agreements differ in reliability; the contract only settles on official actions, so the hit rate and lag set how much a report should move the probability within the time window.",
+   "measurement": "Collect reports by named insiders on transactions for 5 seasons with report type (talks, close, agreed, official), then label outcomes (official within 7, 30, 90 days); compute per-reporter and per-type hit rate with Beta(2,2) prior and the distribution of lag; convert to likelihood ratio of a report for the contract's event within its window; store report timestamp and wording.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Public posts of NHL insiders (own capture)",
+    "NHL transaction logs for labelling"
+   ],
+   "registry_ids": []
+  },
+  "nhl.reference_class_hazard": {
+   "label": "Class-specific event hazard (player move by contract class, expansion by process stage, award by finalist)",
+   "category": "distribution",
+   "mechanism": "Each off-field contract belongs to a narrow reference class whose hazard is estimated separately: a player changing teams inside a dated window given contract status and team situation, an expansion announcement given its process stage, an award given its finalist set.",
+   "rationale": "The pooled base rate is meaningless for three unrelated generating processes. Narrow classes have small samples, so each hazard needs an explicit estimator and shrinkage, and expansion has so few events that its probability is a stage-transition judgement rather than a frequency.",
+   "measurement": "Player move: from NHL transactions since 2005-06, hazard of a trade or signing with a new team within the window = logistic regression on contract class (expiring, term remaining, NMC/NTC), month, team standing and cap space, shrunk to the class mean with k=30 player-windows; status quo probability = 1 minus the hazard. Expansion: stage-transition probabilities between process stages (committee formed, applications, ownership named, vote scheduled) from the 1991-2021 expansion waves (n of about 8), reported with wide intervals and never as a precise frequency. Award: conditional-logit winner-among-finalists from past finalist sets. As-of: latest transaction wire and governance statements; never a market price.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL transactions pages and PuckPedia/CapWages contract tables",
+    "NHL Board of Governors announcements",
+    "Hockey-Reference award pages"
+   ],
+   "registry_ids": []
+  },
+  "nhl.win_streak_extremum_dist": {
+   "label": "[Simulation output, not raw data] Winning-streak extremum distribution (league-wide max run length)",
+   "category": "distribution",
+   "mechanism": "Probability distribution of the longest winning streak among 32 teams over the season, and per-team shares.",
+   "rationale": "The longest streak is an extremum, determined by the best teams' win probability and by streakiness; modelling teams one at a time with independent geometric runs underestimates the maximum when goalie form and schedule clusters create autocorrelation.",
+   "measurement": "Simulate seasons from the rating posterior (with per-game win probabilities, drift and a goalie-form autocorrelation parameter estimated from historical runs: lag-1 correlation of results controlling for strength, k=600 games); for each simulation record each team's longest regular-season streak counting regulation, OT and shootout wins as wins unless the rules say otherwise; output per-team probability of holding the maximum (with 1/N for ties). Calibrate against 20 seasons of league-max streak lengths.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL game results",
+    "Hockey-Reference streak records"
+   ],
+   "registry_ids": []
+  },
+  "nhl.league_scoring_environment": {
+   "label": "League scoring environment drift",
+   "category": "environment",
+   "mechanism": "Current-season league goals per game relative to the prior-season baseline, with shrinkage.",
+   "rationale": "League scoring levels shift between seasons by a few percent (rules, enforcement, goalie equipment, shot quality), moving every player's goal expectation together; a 60-goal threshold is sensitive to a three percent level change.",
+   "measurement": "Compute league goals per team per game and PP opportunities per game to date; the season-end estimate is a precision-weighted average of the prior-season value (weight 0.6) and the to-date value with game-count weight n/(n+250); report the estimated multiplier and its sd (about 1.5 percent) and apply it as a common factor on all player and team scoring rates in simulation; refresh weekly.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL standings API",
+    "Hockey-Reference league tables"
+   ],
+   "registry_ids": []
+  },
+  "nhl.schedule_sequence_profile": {
+   "label": "Schedule sequence profile (home stands, back-to-backs, opponent strength along the path)",
+   "category": "schedule_context",
+   "mechanism": "Winning streaks and division races depend on the order of games, not only on their count: long home stands, runs of back-to-backs and strings of weak opponents raise the chance of long runs of wins.",
+   "rationale": "A longest-streak statistic is an extremum over 32 teams, so a small schedule-driven lift in the per-game win probability of a strong team over a stretch changes the tail. The same sequence matters for the remaining-schedule strength in a division race. The effect is small but is the only pregame-knowable driver of streak timing.",
+   "measurement": "For each team build the remaining game list with venue, rest days (back-to-back flag), travel and opponent rating (posterior mean); compute per-game win probability from the rating difference, home flag and rest effect and the cumulative win probability along every window of 8-20 games; output for each team the expected maximum run and the distribution of remaining-schedule strength; refresh daily. As-of: schedule is fixed in advance, ratings as of the contract date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NHL API schedule (api-web.nhle.com /v1/schedule)",
+    "MoneyPuck team ratings",
+    "Hockey-Reference schedule pages"
+   ],
+   "registry_ids": []
+  },
+  "nhl.team_season_points_distribution": {
+   "label": "Team season points distribution (current points + remaining games with loser points)",
+   "category": "team_strength",
+   "mechanism": "A team season point total is points banked plus the sum over remaining games of two points for a win and one for an overtime or shootout loss, so its distribution follows from per-game win and extra-time probabilities.",
+   "rationale": "Six of the eight live series are team-level; a points threshold, a division title and a streak all need the same team-level layer: a rating posterior turned into per-game outcomes with the loser-point structure. This input states that chain explicitly rather than relying on undefined catalog items.",
+   "measurement": "Per remaining game, P(regulation win), P(OT/SO win), P(OT/SO loss) from the team ratings posterior (score-adjusted xG differential plus goalie GSAx shrunk 1000 shots plus pdo regression, home and rest adjustments) with extra-time probability from the league tie model (about a quarter of games, to be measured); points = 2 x wins + 1 x extra-time losses; add points to date; simulate 20000 seasons drawing a rating from the posterior once per season; output the pmf of final points, P(points >= threshold) and the joint distribution across teams for the division winner using league tiebreaks (regulation wins first). As-of: standings and injuries as of the contract date.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NHL standings API (api-web.nhle.com /v1/standings)",
+    "MoneyPuck team ratings and simulations (method reference)",
+    "Natural Stat Trick team xG"
+   ],
+   "registry_ids": []
   }
  },
  "blueprints": {
@@ -2575,6 +3372,61 @@
      "id": "m.rules_text",
      "role": "context",
      "why": "Counts of empty-net goals, OT and shootout goals vary by wording."
+    },
+    {
+     "id": "nhl.ipp_by_state",
+     "why": "Provides the stable credit share that converts team scoring into points and assists; absent from the draft which relied on raw assist rate and finishing.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.onice_xgf_per60",
+     "why": "Linemate and role effects on points and assists enter the model as a measurable on-ice chance-creation rate.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.first_goal_scorer_share",
+     "why": "Supplies the competing-risk structure for the first-goal contract, which is not a simple ladder rung.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.skater_en_usage",
+     "why": "Explains late-game point production beyond the 5v5 and PP model and helps the multi-point rungs.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.next_man_up_redistribution",
+     "why": "Converts injury news into the specific promoted player's minutes, the key personnel effect in prop ladders.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.pp_termination_unit_split",
+     "why": "Skater production on the power play is limited by the first-unit share and termination of minors on a goal; PP1 membership is worth more than raw PP minutes.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Gives the contract a market-free script latent (state mixture and entering-state matrix) so that benchmark prices remain an independent yardstick.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.early_window_goal_rate",
+     "why": "Provides the only defined input chain for KXNHLF10G, a team-pair early-goal event with a half-open 0:00 to 10:00 window.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.skater_ot_3v3_exposure",
+     "why": "Captures the overtime 3v3 exposure that the single-game ladders and first-goal contract can include but the record omitted.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.games_played_hazard",
+     "why": "Opportunity cap for all player season counting contracts, and the source of the left tail of the goal total.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.player_season_points_projection",
+     "why": "Gives the season-points contracts a market-free chain (rate, role, games played) instead of leaving them to a single-game or goals-only mechanism.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2710,6 +3562,36 @@
      "id": "nhl.shot_location",
      "role": "secondary",
      "why": "Danger-zone versus perimeter shot mix separates volume shooters from high-quality shooters and shows whether opponents force low-value shots on goal."
+    },
+    {
+     "id": "nhl.sog_share_on_ice",
+     "why": "Separates team-level volume from the skater's role share so lineup changes and opponent volume are handled correctly.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.shot_share_reallocation",
+     "why": "Gives the exact change in the listed skater's SOG expectation from teammate absences, which matter more in this market than the injury flag itself.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.pp_termination_unit_split",
+     "why": "Shots on the power play are concentrated in the first unit's initial seconds and the penalty ends on a goal, so PP shots per penalty is concave in minutes and PP1 shooters dominate.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.arena_sog_recording_factor",
+     "why": "Official SOG is a scorer-recorded count, so any arena-level recording factor shifts counts directly for thresholds, and the claim must be tested before being used.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.ot_shot_exposure",
+     "why": "If overtime counts, 3v3 produces several shots for top skaters in a short period and shifts the 4+ rungs for stars in games with high tie probability.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Gives the contract a market-free script latent (state mixture and entering-state matrix) so that benchmark prices remain an independent yardstick.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -2835,6 +3717,31 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "DNP, pulled-goalie and OT counting rules."
+    },
+    {
+     "id": "nhl.opp_sog_for_rate",
+     "why": "Directly forecasts the number of shots the goalie will see, which is the main variance driver of saves.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.goalie_minutes_in_net_dist",
+     "why": "Turns 'goalie plays' into the precise exposure distribution that determines the lower tail and the settlement mixture of this contract.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.arena_sog_recording_factor",
+     "why": "Tests the draft's claim that rink counting bias is a primary driver of saves; if the factor is under two percent the input is dropped.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.ot_shot_exposure",
+     "why": "Provides the OT contribution to a threshold that sits near the median where a few shots matter.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Gives the contract a market-free script latent (state mixture and entering-state matrix) so that benchmark prices remain an independent yardstick.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -2968,6 +3875,26 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "Which settlement path counts OT/SO."
+    },
+    {
+     "id": "nhl.settlement_goal_pmf",
+     "why": "Single source of truth for KXNHLGAME and KXNHLSPREAD rungs so that win and spread prices are mutually consistent.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.third_period_equalizer_hazard",
+     "why": "Late empty-net goals decide whether 2-goal margins are reached and whether one-goal leads survive; the spread rungs at 1.5 and 2.5 are sensitive to leader EN rate and trailer pull time.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.lineup_impact_delta",
+     "why": "Turns the existing injury status flags into a goal-difference number so a late scratch is priced in goals rather than binary news.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.prior_to_current_blend",
+     "why": "Early-season ratings are the biggest source of rating error in an otherwise efficient market; the blend sets how much current xG should count.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3114,6 +4041,21 @@
      "id": "nhl.shot_location",
      "why": "Danger-zone mix converts attempts to goals.",
      "role": "secondary"
+    },
+    {
+     "id": "nhl.settlement_goal_pmf",
+     "why": "Totals and team totals read the same pmf with different functionals; the shootout +1 credit and empty-net goals change odd-total mass, which a goals-only model does not reproduce.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.pp_termination_unit_split",
+     "why": "Gives the power-play part of totals as a compound count with termination rather than a product of time and rate, which fattens the penalty-heavy tail of the over rungs.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.pair_attempt_volume",
+     "why": "Replaces the single combined pace number with a matchup-specific attempt forecast for the pair, where combined-pace errors are a first-order driver of totals.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3242,6 +4184,41 @@
      "id": "nhl.pdo_regression",
      "why": "A team's shooting and save percentage beyond expectation regress; period markets inherit the noise.",
      "role": "secondary"
+    },
+    {
+     "id": "nhl.period_entry_state_matrix",
+     "why": "Provides the entering-state mixture that period 2 and 3 winner, spread and total contracts require.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.third_period_equalizer_hazard",
+     "why": "In the third-period contracts empty-net goals count and overtime does not, so the pull and equalizer rates directly set the last two minutes' goals for both totals and spreads.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.period_penalty_intensity_balance",
+     "why": "Concentrated volatility source for short windows; also tests whether early imbalances change later-period tie mass.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.period_pair_count_model",
+     "why": "Gives the tie, winner, spread and total functionals in one coherent distribution so period contracts agree with each other.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Gives the contract a market-free script latent (state mixture and entering-state matrix) so that benchmark prices remain an independent yardstick.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.period_home_ice_split",
+     "why": "Supplies the missing home flag and period-specific home edge to winner, spread and tie contracts of each of the three periods.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.rest_fatigue_period_profile",
+     "why": "Adds period-specific rest effects, especially the first-period backup-goalie channel, that a full-game rest constant would blur.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -3382,6 +4359,31 @@
      "id": "nhl.finishing",
      "why": "Finishing talent versus luck separates repeatable shooting from variance in rare-event counts.",
      "role": "secondary"
+    },
+    {
+     "id": "nhl.third_period_equalizer_hazard",
+     "why": "Directly sets P(tie at 60:00) beyond the 55-minute state; two teams with identical 60-minute ratings but different pull policy get different OT probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.ot_sudden_death_hazard_5v5",
+     "why": "Needed for the KXNHL2OT sibling (no listed markets now): that market is a conditional on a goalless first OT.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.series_ot_count_dependence",
+     "why": "Only series-level OT contracts need it; those series are not currently listed, so it is a gap-closing input rather than an active signal.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.tied_late_risk_posture",
+     "why": "Tests whether level late games under-produce regulation goals relative to the tie model.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Gives the contract a market-free script latent (state mixture and entering-state matrix) so that benchmark prices remain an independent yardstick.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3498,6 +4500,56 @@
      "id": "nhl.season_sim_distribution",
      "why": "Points and playoff markets are tails of an 82-game simulation with overtime-point rules and injury uncertainty.",
      "role": "primary"
+    },
+    {
+     "id": "nhl.rating_posterior_uncertainty",
+     "why": "Controls overconfidence in long-horizon contracts and is the main reason simple point ratings misprice the tails.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.loser_point_rate",
+     "why": "Maps game-level win probability into points and tiebreak counts, which the playoff boundary and Presidents' Trophy contracts depend on.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.bracket_path_difficulty",
+     "why": "Turns qualification and seed into the opponent set that determines conference and Cup probability.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.cap_flexibility_deadline",
+     "why": "Adds a forward-looking component to ratings for contracts that resolve after the trade deadline.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.series_goalie_volatility",
+     "why": "Short series are variance-dominated; this sets how far a rating gap translates to series win probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.award_vote_share_model",
+     "why": "Needed for the six award and stat title contracts because they resolve by voters, not by team quality.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.award_eligibility_tiebreak_map",
+     "why": "Defines who can win and what a tie pays, which matters in tight races.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.player_season_points_projection",
+     "why": "Gives the season-points contracts a market-free chain (rate, role, games played) instead of leaving them to a single-game or goals-only mechanism.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.goalie_award_projection",
+     "why": "Gives the Vezina contract a goalie-specific production chain (rate, starts share, shrinkage) that skater inputs do not provide.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.rookie_role_pedigree",
+     "why": "Supplies the rookie-specific prior and role inputs for the Calder contract that veteran production inputs lack.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3601,6 +4653,46 @@
      "id": "nhl.stat_dist",
      "why": "Season totals are sums of over-dispersed per-game counts.",
      "role": "primary"
+    },
+    {
+     "id": "nhl.coach_expectation_delta",
+     "why": "The core of the Jack Adams voter model and absent from the draft's player-production inputs.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.draft_lottery_odds_by_standing",
+     "why": "Provides the first stage of the top-pick contract: which team will be on the clock.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.pick_ownership_and_protection",
+     "why": "Determines which franchise's selection a top-pick contract depends on, with conditionality evaluated on simulated standings.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.prospect_consensus_ranking",
+     "why": "Gives the second stage of the draft contracts: what the team on the clock does.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.player_season_points_projection",
+     "why": "Gives the season-points contracts a market-free chain (rate, role, games played) instead of leaving them to a single-game or goals-only mechanism.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.goalie_award_projection",
+     "why": "Gives the Vezina contract a goalie-specific production chain (rate, starts share, shrinkage) that skater inputs do not provide.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.rookie_role_pedigree",
+     "why": "Supplies the rookie-specific prior and role inputs for the Calder contract that veteran production inputs lack.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.award_vote_share_model",
+     "why": "Needed for the six award and stat title contracts because they resolve by voters, not by team quality.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3703,6 +4795,41 @@
      "id": "nhl.score_state",
      "why": "Trailing teams shoot more; leading teams protect leads, shifting both players' volume.",
      "role": "secondary"
+    },
+    {
+     "id": "nhl.pair_difference_distribution",
+     "why": "Provides the exact difference distribution and tie mass that the head-to-head contract settles on.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.teammate_point_co_credit",
+     "why": "The positive correlation of linemates is the main reason a teammate comparison is tighter than an opponent comparison with equal means.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.ipp_by_state",
+     "why": "For a points comparison the credit share relative to team on-ice goals separates roles with equal TOI, e.g. a playmaking centre versus a defenceman on the same line.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.sog_share_on_ice",
+     "why": "For a shots comparison the share of team volume is more stable than raw per-60 rate and controls for the opponent shot volume that both players share.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.goalie_minutes_in_net_dist",
+     "why": "A goalie comparison needs each goalie's exposure distribution: pulled or non-playing goalies drive tie and void probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.opp_sog_for_rate",
+     "why": "Two opposing goalies face different opponents; the saves difference is dominated by the difference in opponent SOG-for volumes.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Gives the contract a market-free script latent (state mixture and entering-state matrix) so that benchmark prices remain an independent yardstick.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3795,6 +4922,36 @@
      "id": "m.ladder_structure",
      "role": "context",
      "why": "Leg-level prices in the ladder must be consistent before combining; inconsistent legs give spurious edge."
+    },
+    {
+     "id": "nhl.goal_credit_allocation_kernel",
+     "why": "Forms the bridge between team-goal legs and player-stat legs so that win, total and points legs come from the same simulated goals.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.lineup_scenario_tree",
+     "why": "Provides the joint discrete shocks across legs; voided legs and shifted marginals happen on these same states.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.copula_tail_dependence",
+     "why": "Corrects the Gaussian-correlation shortcut that is the main source of error in joint tails.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.parlay_leg_void_payoff_map",
+     "why": "Determines what the combo is worth when a leg voids, which can swing price by more than any modelling edge.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.leg_logical_relations",
+     "why": "Prevents impossible or double-counted combinations in the combo price.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.ratings_script_distribution",
+     "why": "Provides the shared score-path latent for all legs from ratings only, so the benchmark prices stay an independent yardstick.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3877,6 +5034,41 @@
      "id": "m.strike_hit_rates",
      "role": "context",
      "why": "Historical realized frequency for this market type provides a calibration check on listed strikes."
+    },
+    {
+     "id": "nhl.player_contract_status_clauses",
+     "why": "Sets the support of the destination distribution and the timing of movement for the next-team contract.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.suitor_cap_and_roster_fit",
+     "why": "Provides the probability vector across teams that the contract's partition requires.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.expansion_governance_gates",
+     "why": "Defines whether the formal decision step can occur inside the window, which dominates the probability for the expansion contract.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.insider_report_credibility",
+     "why": "Controls the weight to put on news in markets that settle only on official events.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.award_vote_share_model",
+     "why": "The Ted Lindsay Award is voted by an electorate different from the writers' awards, so the vote-share model must be fit separately with peer-vote proxies, but the same structure (finalists, production, team success, reputation) applies.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.player_season_points_projection",
+     "why": "Gives the season-points contracts a market-free chain (rate, role, games played) instead of leaving them to a single-game or goals-only mechanism.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.reference_class_hazard",
+     "why": "Replaces the audited-WEAK pooled base rate by per-class hazards so that rare-event markets have a defined central quantity.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3963,6 +5155,46 @@
      "id": "nhl.shot_rate",
      "role": "secondary",
      "why": "Shot-attempt rate per 60 is the most stable component of goal scoring and anchors the projection."
+    },
+    {
+     "id": "nhl.games_played_hazard",
+     "why": "Opportunity cap for all player season counting contracts, and the source of the left tail of the goal total.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.win_streak_extremum_dist",
+     "why": "The only contract in the archetype that depends on a run-length extremum rather than a total.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.league_scoring_environment",
+     "why": "Common scale factor for season goals; failing to model it overstates certainty across all player thresholds.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.loser_point_rate",
+     "why": "The team points threshold includes the one-point extra-time losses, which are a partly random stream, so its rate and conditional win share determine the points distribution at a given win rate.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.rating_posterior_uncertainty",
+     "why": "Team point totals and division and streak contracts depend on rating uncertainty: ignoring the spread of true strength understates the chance of an upset in the points race and of an unexpected long streak.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.player_season_points_projection",
+     "why": "Gives the season-points contracts a market-free chain (rate, role, games played) instead of leaving them to a single-game or goals-only mechanism.",
+     "role": "primary"
+    },
+    {
+     "id": "nhl.schedule_sequence_profile",
+     "why": "Supplies the schedule-path driver for longest-streak and division-race contracts that rating-only simulation ignores.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.team_season_points_distribution",
+     "why": "Defines the team-level chain (ratings to points to division and threshold) that this record previously used without definition.",
+     "role": "primary"
     }
    ],
    "interactions": [

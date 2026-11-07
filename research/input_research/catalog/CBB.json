@@ -1153,6 +1153,873 @@
     "Sports-reference CBB poll history"
    ],
    "registry_ids": []
+  },
+  "cbb.unrated_opponent_prior": {
+   "label": "Tier prior for unrated or newly reclassifying opponents",
+   "category": "team_strength",
+   "mechanism": "Division III, NAIA and first-year D1 transition schools have no or almost no D1 games, so adjusted-efficiency ratings do not exist or are one-game noise; margin must come from a tier prior with a very wide sd.",
+   "rationale": "The ledger lists a D3 game series and a spread strike of 50.5 against a D1 newcomer. A rating pipeline that silently fills these with the league mean gives wrong means and understated variance; the market in these games is thin and can be stale.",
+   "measurement": "For each opponent with fewer than 8 D1 games in the current season, replace its rating with prior = tier_mean + 0.5*(conference_or_division_mean - tier_mean) learned from past seasons of the same tier (D3 vs D1 buy games, reclassifying schools in years 1 to 4), in points per 100 possessions; set prior sd to the empirical sd of that tier's rating residual (about 3 times the sd of an established D1 team). As-of: use the rating snapshot taken before tip; update with the opponent's own prior-game results with weight n/(n+8).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference CBB schedule and game logs",
+    "NCAA stats site D3 and D1 records",
+    "Bart Torvik (D1 only)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.coach_blowout_substitution_rate": {
+   "label": "Coach-specific bench-clearing and lead-protection behaviour",
+   "category": "game_state",
+   "mechanism": "How quickly a coach removes starters and what pace he plays once ahead by a lot determines how much of an in-game lead survives to the final margin.",
+   "rationale": "Cover probability at large spreads is dominated by the end-of-game margin decay, not by the pregame mean. Some coaches play starters until a 30-point lead; others empty the bench at +20 by the second-half under-12 timeout. This is a stable trait across seasons (coach, not roster), unlike team scoring luck.",
+   "measurement": "From play-by-play: for every game in which a team led by at least 15 at any media timeout, compute lead_at_time_t (t = 12:00, 8:00, 4:00 remaining) and the final margin; coach_decay = mean(final_margin - lead_at_8min) per 8 minutes of game time, estimated over the coach's last 4 seasons with shrinkage weight n/(n+15) to the league mean decay, split by lead bucket (15 to 25, over 25). Also compute the share of second-half minutes played by the top-5 minutes players when ahead by 20 or more.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN play-by-play (unofficial JSON)",
+    "Sports-Reference play-by-play pages (partial)",
+    "NCAA live stats archive"
+   ],
+   "registry_ids": []
+  },
+  "cbb.margin_regime_mixture": {
+   "label": "Competitive versus blowout regime mixture of the final margin",
+   "category": "distribution",
+   "mechanism": "Final margin is a mixture of a competitive regime (late fouling, overtime) and a blowout regime (compressed, coach-dependent), with the mixing weight a threshold function of the expected margin.",
+   "rationale": "A single normal with sd 10 mis-prices tails at both ends: too fat in the blowout regime for favourites covering large numbers, and too thin right at tied-game and overtime-driven 1 to 5 point margins. Winning-margin buckets and 40+ point spreads sit in exactly these regimes.",
+   "measurement": "Fit on historical closing-line-independent model expected margins m_hat: P(blowout)=logistic(a + b*|m_hat| + c*coach_decay) with a normal-in-regime margin for each regime (mu_k, sd_k) and a discrete overtime spike mass at margins 1 to 6 whose weight equals P(tie at 0:00) from the ot model; output the integer-margin pmf (for strikes at .5 and win-margin buckets) at pregame as-of; refit each season with at least 10 prior seasons.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference and ESPN historical scores",
+    "own model expected margins"
+   ],
+   "registry_ids": []
+  },
+  "cbb.margin_total_covariance": {
+   "label": "Joint distribution of margin and total for same-game parlays",
+   "category": "distribution",
+   "mechanism": "Margin and total are not independent: tempo and scoring-environment shocks move both teams' points together while blowouts reshape both margin and total through bench play and clock use.",
+   "rationale": "KXNCAAMBSGP is a conjunction of a spread cover and a total; pricing it as the product of two marginals mis-prices a systematic correlation, typically positive for favourites in fast games (favourite scores more, total higher) and negative when a slow favourite grinds.",
+   "measurement": "Estimate corr(margin_resid, total_resid) from standardized residuals (actual minus model expectation, divided by game-level sd) bucketed by favourite size (0-5, 5-10, 10-20, 20+) and by team tempo tercile, with shrinkage to the pooled correlation weight n/(n+200) per bucket; as-of all prior games; apply through a bivariate normal copula with the regime mixture margins.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference historical scores",
+    "Bart Torvik game files"
+   ],
+   "registry_ids": []
+  },
+  "cbb.point_in_time_rating_snapshot": {
+   "label": "Point-in-time rating snapshots (no retroactive revision)",
+   "category": "team_strength",
+   "mechanism": "Free rating sites recompute the whole season after each game and revise past ratings; a rating pulled today for a past date contains information from games after that date.",
+   "rationale": "A backtest or live feature using the current rating page overstates edge via look-ahead; archival snapshots are rare and paid for KenPom. The strength gap input is only valid if it equals the number visible before tip.",
+   "measurement": "Store, each day by 06:00 ET, adj_off, adj_def, tempo, games_played, rank and the schedule-adjustment version for every D1 team from the chosen source; define the feature rating_gap(game) as the snapshot value from the last snapshot before tip minus the venue term; add snapshot_age_hours and an indicator for rating-method revision dates; for history use time-machine pages only where timestamps exist, otherwise rebuild from game results using a fixed algorithm.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik time machine (SOURCE_UNVERIFIED for full coverage)",
+    "own daily scrape from today"
+   ],
+   "registry_ids": []
+  },
+  "cbb.ratings_fundamentals": {
+   "label": "Fundamentals-only power rating ensemble (no betting lines)",
+   "category": "team_strength",
+   "mechanism": "Team strength measured only from game outcomes, box-score efficiency and roster priors, so the opponent-adjusted efficiency gap carries no information that came from a sportsbook or Kalshi price.",
+   "rationale": "The catalog input cbb.ratings blends free ratings with ratings inferred from de-vigged closing lines; using it as a driver makes the model partly a copy of the market and destroys the ability to measure edge against it. A fundamentals-only ensemble keeps the strength term clean; the market-implied rating is kept separately as a benchmark.",
+   "measurement": "AdjEM_fund(team, t) = w1*AdjEM_Torvik(t) + w2*AdjEM_own(t) (+ w3*AdjEM_KenPom(t) only if licensed), points per 100 possessions, weights fit by minimising out-of-sample single-game margin MSE over prior seasons and constrained to sum to 1. AdjEM_own: ridge regression of per-game efficiency margin on opponent offence/defence effects plus a home-court term, exponential time decay (half-life 30 days), shrunk toward a preseason prior (returning-minutes-weighted prior-year rating) with prior weight worth about 8 games; uses only games finished before 00:00 ET on the tip date; no line, spread or price enters any term. Predicted margin = (AdjEM_A - AdjEM_B) * expected_possessions/100 + venue term.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik T-Rank pages (SOURCE_UNVERIFIED for bulk history and as-of timestamps)",
+    "own computation from Sports-Reference / ESPN game results"
+   ],
+   "registry_ids": []
+  },
+  "cbb.possession_length_profile": {
+   "label": "Average possession length and transition share (offence and defence)",
+   "category": "pace_volume",
+   "mechanism": "Possessions in 40 minutes equal 2400 seconds divided by average possession length plus dead time; a team's offence length and its defence-forced length both matter.",
+   "rationale": "A single adjusted tempo hides the matchup: a team that attacks early facing a defence that forces shot-clock-long possessions plays slower than the average of tempos suggests; this is the first-order total driver, since a three-possession error is about three to four points of total.",
+   "measurement": "For team A vs B: APL_game = 0.5*(APL_off_A + APL_def_B) and 0.5*(APL_off_B + APL_def_A) in seconds from the season to date with half-life 6 weeks and shrinkage n/(n+10) to the league mean; expected possessions = 2400 / mean(APL_game) - dead_time adjustment (about 0.4 possessions per 5 team fouls above the mean); calibrate to realised possessions (FGA + 0.44*FTA - OREB + TO) on prior-season games, output possessions and an sd. As-of: stats published before tip.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik tempo tables",
+    "Sports-Reference team stats (possession estimates)",
+    "KenPom average possession length (paid)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.ot_period_tie_chain": {
+   "label": "Overtime reach and repeat-tie chain",
+   "category": "distribution",
+   "mechanism": "P(OT) is the probability of a tie at the end of regulation (a function of expected margin, total and variance); each additional period needs another tie, with per-period tie probability set by five-minute scoring variance and fouling.",
+   "rationale": "KXNCAAMBOT prices counts like 3+ periods, which need P(OT) times two repeat ties, a probability of order 0.1 percent that no ordinary total or margin model produces correctly. The same chain defines the right-tail mass of the points total.",
+   "measurement": "P_tie_reg = integer pmf at margin 0 from the game's margin distribution (normal with sd = sqrt(poss/68)*10.5, centred at the model expected margin, with a discrete correction for the fact that tied scores cluster at lower margins); P_tie_OT = empirical rate of tied-after-OT among all OT periods over the last 10 seasons (per period, shrunk by count), with a multiplier for two-team free-throw rate; P(N+ periods) = P_tie_reg * P_tie_OT^(N-1); extra points per OT period = empirical mean (about 10 to 12 combined) with sd. As-of: pregame expected margin and total.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference box scores with OT flag",
+    "ESPN scoreboard history"
+   ],
+   "registry_ids": []
+  },
+  "cbb.total_variance_by_style": {
+   "label": "Game-level total variance by tempo and shot mix",
+   "category": "distribution",
+   "mechanism": "Residual sd of the total grows with the number of possessions and with each team's three-point attempt share, as scoring becomes more lumpy.",
+   "rationale": "Rungs near the mean are insensitive to the mean error but sensitive to sd; asymmetry in tails (fat-right from OT) means a single sd mis-prices both the over and the under side of high and low strikes.",
+   "measurement": "Fit log(var(total - expected_total)) = a + b*log(expected_poss) + c*(3PA_share_A + 3PA_share_B) + d*(FTr sum) on at least 5 seasons, with expected_total taken from the model not the market; output sd per game, and a skew parameter for the right tail (OT-conditioned). As-of: stats available pregame; refit annually.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik game files",
+    "Sports-Reference box scores"
+   ],
+   "registry_ids": []
+  },
+  "cbb.league_scoring_baseline_drift": {
+   "label": "League-wide scoring baseline and rule-emphasis drift",
+   "category": "environment",
+   "mechanism": "The national points-per-100 baseline changes by month (non-conference to conference play) and across seasons with rule emphasis, shot clock and officiating mandates.",
+   "rationale": "Adjusted ratings are relative to an average opponent; absolute totals depend on the current league mean, which moves several points per game between November and March and between rule years, and shifts early before ratings catch up.",
+   "measurement": "league_ppp_t = EWMA over the last 14 days of league-wide points per 100 possessions across all D1 games with half-life 21 days, plus an indicator for a rule-emphasis change flagged by NCAA rules committee announcements; expected total = sum of team unit ratings (relative) + 2 * league_ppp_t * expected_poss / 100; stored with timestamp so it uses only games completed before tip.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik league averages",
+    "Sports-Reference league tables",
+    "NCAA rules committee announcements"
+   ],
+   "registry_ids": []
+  },
+  "cbb.handler_absence_pace_shift": {
+   "label": "With and without primary ball handler: pace and efficiency shift",
+   "category": "player_role",
+   "mechanism": "A team's possessions per 40 and transition share change when its lead guard is off the floor, and its offensive efficiency changes more than defence.",
+   "rationale": "Existing lineup inputs are labelled context and generic; the total contract needs the concrete delta in possessions and points per possession for the ball-handler absence scenario, weighted by the probability of that scenario.",
+   "measurement": "For each team's top two ball handlers (highest assist-rate plus usage), estimate delta_poss = poss_per_40_off - poss_per_40_on and delta_ppp from on/off lineup splits over the last two seasons with ridge shrinkage lambda equal to 300 possessions off-court; scenario-weighted total shift = sum_k P(absent_k) * (delta_poss_k * ppp + poss * delta_ppp_k); as-of: lineup data through the previous game.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Bart Torvik player on/off (SOURCE_UNVERIFIED for lineup splits)",
+    "ESPN play-by-play for custom on/off"
+   ],
+   "registry_ids": []
+  },
+  "cbb.pace_elasticity_to_opponent": {
+   "label": "Team pace elasticity to opponent tempo",
+   "category": "pace_volume",
+   "mechanism": "A team's realised possessions respond to opponent tempo with a team-specific slope: dictators hold their own pace, adapters match the opponent.",
+   "rationale": "The shared possession count is where own-team scoring volume comes from. Using the average of two tempos assumes a common 0.5 weight, which is wrong for many pairs and shifts a team's expected total by 2 to 4 points.",
+   "measurement": "For each team over the last two seasons regress game possessions on own adjusted tempo and opponent adjusted tempo (opponent-adjusted, centred on league mean): poss = a + b_own*(T_own - T_lg) + b_opp*(T_opp - T_lg); estimate b_own and b_opp per team with ridge shrinkage toward league coefficients (lambda equivalent to 12 games); expected game possessions for a matchup = league mean + b_own_A*(T_A - lg) + b_opp_A*(T_B - lg), averaged with the same computed from team B's coefficients, weights proportional to inverse variance. As-of: games completed before the prior day.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik game-level possessions",
+    "Sports-Reference team game logs"
+   ],
+   "registry_ids": []
+  },
+  "cbb.team_points_margin_coupling": {
+   "label": "Coupling of one team's points to the game margin by role and spread bucket",
+   "category": "distribution",
+   "mechanism": "Given the total, a team's points equal (total plus margin)/2, so own points covary with margin; the covariance is not constant because blowouts reduce the total and cap the favourite's scoring.",
+   "rationale": "A team total must be priced from the joint distribution of margin and total; treating team total as independent of the favourite or underdog role misstates skew and tails, and the coupling differs between favourites, underdogs and spread buckets.",
+   "measurement": "Estimate k = cov(points_A, margin_A)/var(margin_A) in standardized residual form by role (favourite, underdog) and expected-margin bucket (0-5, 5-10, 10-20, 20+) using at least 8 seasons of games with expected margins formed as (AdjEM_fund_A - AdjEM_fund_B) * expected_possessions/100 + venue term, using cbb.ratings_fundamentals and cbb.venue (not market lines); shrink k toward the pooled bucket value with weight n/(n+250); simulate own points as 0.5*(T + M) with T and M from the regime mixture and covariance, then take quantiles at the strike.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference historical scores",
+    "Bart Torvik"
+   ],
+   "registry_ids": []
+  },
+  "cbb.bench_unit_efficiency": {
+   "label": "Bench-unit and garbage-time-unit offensive efficiency",
+   "category": "player_role",
+   "mechanism": "Points per possession of units outside the top rotation (minutes below the top-6) is lower than the starters', and determines the favourite's scoring after starters sit.",
+   "rationale": "In lopsided games the final 8 to 10 minutes are played by non-starters; team total at a high strike for a favourite depends on the efficiency of those units, which differs widely between deep programmes and thin ones.",
+   "measurement": "From lineup data compute points per 100 possessions for lineups with at most 2 of the top-6 minutes players, over the last two seasons, shrunk to the team's starters-unit rating with weight n/(n+400 possessions) and to a league bench mean; stored with the share of team minutes played by such units when the team led by 15 or more (blowout minutes share). As-of: prior games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN play-by-play (derive lineups)",
+    "Bart Torvik player and lineup tables (SOURCE_UNVERIFIED)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.opp_foul_propensity_ft_points": {
+   "label": "Opponent foul propensity converted to the team's expected free-throw points",
+   "category": "matchup",
+   "mechanism": "The number of free throws the named team gets equals its drawing rate scaled by the opponent's fouls per possession and by bonus situations.",
+   "rationale": "Free-throw points are a high-leverage part of a team total because they cost no clock; the opponent's foul rate is a stable team trait (pressure man defence or hand-checking) that the existing free-throw input measures only for the named team.",
+   "measurement": "expected_FTA_team = poss * [0.5*FTr_team_off + 0.5*FTr_opp_def_allowed] adjusted to league mean, where FTr = FTA per 100 possessions and both terms are opponent-adjusted over the last 20 games (half-life 8 games) with shrinkage n/(n+10); expected FT points = expected_FTA * shrunk FT% * 1; as-of: games completed before tip, crew effect added as +/- 0.6 FTA per crew standard deviation when assigned.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik four-factor tables (FT rate offence and defence)",
+    "Sports-Reference team stats"
+   ],
+   "registry_ids": []
+  },
+  "cbb.first_half_pace_ratio": {
+   "label": "Team first-half possession share and early-game pace ratio",
+   "category": "pace_volume",
+   "mechanism": "A team's first-half possessions as a share of its regulation possessions differ from 0.5 because second halves have more fouls and stoppages, and the size of the gap is team and coach specific.",
+   "rationale": "Scaling half possessions as half of the game's tempo mis-states the half total and half margin variance; teams that start slowly then accelerate are priced as if their pace were constant.",
+   "measurement": "For each team compute r = (1H possessions)/(regulation possessions) per game from period box scores (possessions = FGA + 0.44*FTA - OREB + TO per half), averaged with half-life 15 games and shrunk to the league mean r_lg (about 0.485) with weight n/(n+12); expected 1H possessions = r_team_pair * expected regulation possessions where r_team_pair = average of the two teams' shrunk r; as-of: games before tip.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference box scores (period splits reconstructable)",
+    "ESPN play-by-play for period possession counts"
+   ],
+   "registry_ids": []
+  },
+  "cbb.coach_early_foul_bench_rule": {
+   "label": "Coach policy: benching players with early fouls in the first half",
+   "category": "player_role",
+   "mechanism": "The loss of minutes from early fouls depends on whether the coach sits a starter after two fouls before the break and for how long.",
+   "rationale": "Foul rates are stable, but minute loss is a coach decision: some coaches always sit at two fouls, others only after three or when the lead is large. Without this, 'foul trouble risk' is only half a mechanism.",
+   "measurement": "From play-by-play, for each coach (last 3 seasons) take all starter instances with 2 fouls before the 8:00 mark of the first half; compute P(sit within 2 minutes of the 2nd foul) and the mean minutes missed until return, shrinking each to the league mean with weight n/(n+8); combine with the player's per-minute foul rate (opponent-adjusted) to give expected first-half minutes lost = sum over starters P(2 fouls by time t)*P(sit)*mean_minutes_missed. As-of: through prior game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN play-by-play (foul events and substitutions)",
+    "Sports-Reference play-by-play (partial)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.half_tie_probability": {
+   "label": "Integer pmf and tie probability of the half margin",
+   "category": "distribution",
+   "mechanism": "The half margin is an integer with lumps of 1, 2 and 3 points, so its pmf has a central spike and parity structure that a normal density misses.",
+   "rationale": "KXNCAAMB1H prices a tie as an outcome, and the 1H spread rungs near zero are also affected: each rung difference near 0 equals the pmf at one integer margin; mis-estimating the central mass by half a percentage point is a large error relative to the price.",
+   "measurement": "Fit a discretized skew-normal or empirical-kernel model for the half margin with mean mu_h = 0.55*E[margin] and sd sigma_h = sqrt(poss_1H/34)*7.2, calibrated on at least 10 seasons of half margins; for tie, compute P(margin = 0) from the pmf with a correction factor c(|mu_h|) estimated from observed ties by expected-margin bucket (|mu| in 0-2, 2-5, 5-9, 9+); as-of: pregame mean and sd.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference line scores",
+    "ESPN scoreboard history with half scores"
+   ],
+   "registry_ids": []
+  },
+  "cbb.halftime_state_adjustment": {
+   "label": "Halftime state update for second-half markets",
+   "category": "game_state",
+   "mechanism": "Conditional on the first-half score, foul counts and shooting luck, the second-half margin and total have means shifted away from the pregame values by a small fraction of the first-half residual.",
+   "rationale": "The 2H series are live markets over the same game. The pregame prior plus an update on the halftime state is the correct information set, and the update is not 'trust the lead': most of a first-half lead is luck, but foul trouble and injuries are real.",
+   "measurement": "Regress second-half margin on pregame expected margin, 1H margin residual (1H margin minus 0.55*pregame expected), starters in foul trouble indicator (2+ fouls for a top-5 player), team foul counts, 1H 3P% minus expected, and an injury-in-game flag, using at least 5 seasons of halftime states; output conditional mean and sd of 2H margin and total (including OT mixture). Typical expected coefficient on the 1H residual: 0.1 to 0.25. Not available pregame; knowable at halftime.",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "ESPN live play-by-play",
+    "NCAA live stats feed"
+   ],
+   "registry_ids": []
+  },
+  "cbb.second_half_pregame_expectation": {
+   "label": "Pregame second-half expectation with late-foul and overtime terms",
+   "category": "game_state",
+   "mechanism": "A pregame 2H total or 2H margin is the full-game regulation expectation minus the first-half expectation, plus the second-half-only terms: intentional late-game fouling and overtime, which the 2H contracts include.",
+   "rationale": "Three of the six live series (KXNCAAMB2H, 2HSPREAD, 2HTOTAL) settle on second-half points including overtime. The 2H distribution is not a mirror of the 1H one: it carries the full late-game foul script and the whole overtime tail, and the halves are not independent (coaching adjustments, garbage time).",
+   "measurement": "E2H_total = E_reg_total - E1H_total + L + Q, where E_reg_total = expected regulation total from the game-total inputs (tempo, adj_off, adj_def; no market line), E1H_total from the first-half inputs, L = expected extra combined points from late-game fouling given the expected-margin bucket (|margin|<=6 at 4:00 left; estimated from play-by-play over at least 5 seasons), Q = P(tie at end of regulation) * E[overtime combined points per game that goes to overtime]. 2H margin mean = E_reg_margin - E1H_margin + OT margin term (zero mean). Variance: Var(2H) from empirical 2H line-score residuals by expected-margin bucket; estimate corr(1H residual, 2H residual) from 10 seasons of line scores without assuming its sign. As-of rule: all inputs known before tip.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference and ESPN box scores with period line scores (SOURCE_UNVERIFIED for complete period scores in all games)",
+    "ESPN play-by-play for foul and clock events (coverage uneven for small schools)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.minutes_scenario_mixture": {
+   "label": "Minutes scenario mixture by game state and foul risk",
+   "category": "player_role",
+   "mechanism": "A player's minutes are a mixture of at least three regimes (competitive full minutes, blowout truncated, foul-trouble truncated) with weights set by the spread, the coach's rotation habits and the foul propensity.",
+   "rationale": "A single expected-minutes number averages a bimodal variable; for a star on a 15-point favourite the 28-minute mode and the 34-minute mode generate very different probabilities of reaching 25 points, so the mixture matters more for high rungs than for the median.",
+   "measurement": "Fit for each player-role bucket (starter guard, starter wing, starter big, rotation) a three-component model on minutes: component weights w_k = softmax(a_k + b_k*|expected margin| + c_k*foul_rate_per_40 + d_k*back-to-back flag), with component means estimated from last two seasons of games per coach with ridge shrinkage; output the pmf over minutes in 4-minute bins; as-of: spread-free (use model expected margin, not market line).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sports-Reference player game logs",
+    "Bart Torvik player game stats",
+    "ESPN box scores"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_shot_mix_xpps": {
+   "label": "Location-based expected points per shot attempt with opponent adjustment",
+   "category": "variance_luck",
+   "mechanism": "A player's expected points per attempt equals the sum over shot locations of attempt share times league-average make rate times value, adjusted for the opponent's defence at each location.",
+   "rationale": "Observed FG% is a noisy estimate; shot location (rim, short mid-range, long two, three, catch-and-shoot versus off-dribble) predicts future efficiency better than recent results, and regression should move the observed rate toward the location-implied rate rather than toward a flat league mean.",
+   "measurement": "xPPS = sum_z share_z * (league_make_z shrunk with player make_z weight n_z/(n_z+60)) * value_z + FT component; opponent adjustment: multiply each zone's rate by (opponent allowed rate in zone / league rate)^0.5 estimated over the last 20 games with half-life 8; as-of: through prior game; units points per shot attempt.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "hoop-math.com shot-location tables (SOURCE_UNVERIFIED for current coverage)",
+    "Sports-Reference shot-type splits",
+    "ESPN shot charts (partial)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_ft_trips_xfta": {
+   "label": "Player expected free-throw attempts: drawn-foul rate and late-game ball-handling share",
+   "category": "variance_luck",
+   "mechanism": "Player FTA equal drawn fouls per 100 possessions times possessions on court times a bonus factor, plus a late-game component for ball handlers on teams likely to lead or to be fouled at the end.",
+   "rationale": "Free throws are a distinct scoring channel with its own distribution; late-game trips depend on the probability of a close game and on who handles the ball, so guards and wings differ even at equal usage.",
+   "measurement": "xFTA = (drawn-foul FTA rate per 100 on-court possessions, last 20 games, half-life 10, shrunk n/(n+8) to role mean) * expected on-court possessions + P(close at 2:00 left) * (ball-handler share of late possessions) * expected late FTA per team (about 4 in a one-possession game); FT% enters separately with shrinkage n/(n+100) to 72 percent league mean; as-of: pregame.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference player FTA and fouls drawn (derive)",
+    "Bart Torvik player FT rate"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_points_dispersion_by_role": {
+   "label": "Player points dispersion index by role",
+   "category": "distribution",
+   "mechanism": "Variance of a player's single-game points relative to his mean varies by role (high-usage guard versus low-usage big) and by shot mix.",
+   "rationale": "High rungs (25 plus) read the tail of the count distribution, and the tail width depends on role variance more than on the mean; using one dispersion for all players mis-prices the high and low rungs in opposite directions.",
+   "measurement": "For each role bucket compute phi = var(points | minutes bucket, expected usage) / mean over the last 3 seasons of player games with weight to the player's own phi_i = n/(n+25) shrinkage; use negative binomial with mean mu and size r = mu/(phi-1) conditional on playing 15+ minutes, mixed with the DNP point mass; output per-rung probabilities; as-of: pregame.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference player game logs",
+    "Bart Torvik player game stats"
+   ],
+   "registry_ids": []
+  },
+  "cbb.race_early_scoring_profile": {
+   "label": "Early-game scoring profile and opening-possession edge for race-to-N markets",
+   "category": "game_state",
+   "mechanism": "A race to N points is a first-passage problem: the leader after the opening minutes is determined by the opening lineup's scoring rate, the tip or arrow possession and early turnovers.",
+   "rationale": "The ledger classifies the only live series (Race to 10, 25, 50) in this archetype, but a first-passage event depends on points per possession in the first 8 to 12 minutes with starters, not on full-game efficiency; race to 50 additionally integrates to about the 28th to 30th minute and is affected by the substitution pattern.",
+   "measurement": "From play-by-play compute per team the time series of cumulative points in the first 10, 25 and 50 point marks (minutes to reach each), as-of prior games with half-life 12 games; model lambda_A, lambda_B as points per possession of the starters' unit in the first 8 minutes (with shrinkage n/(n+10) to full-game ppp); P(A first to N) from a Skellam-type random walk in possessions with a first-possession edge of about 0.5 possession (tip or arrow, 50 percent) added; as-of: before tip, with lineup status.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN play-by-play",
+    "NCAA live stats archive (SOURCE_UNVERIFIED for bulk)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.transfer_role_cold_start_prior": {
+   "label": "Cold-start role and rate prior for transfer and freshman players",
+   "category": "player_role",
+   "mechanism": "A player new to a team has no history in the current system; his minutes, usage and per-minute rates must be inferred from previous team production translated through quality and position gaps.",
+   "rationale": "Because a large share of D1 rotation minutes (a figure to be measured, not assumed) is carried each year by transfers and freshmen new to their team, early-season props for newcomers are priced on prior-team averages even though role and competition change; the translation is non-trivial and is the largest source of early-season error.",
+   "measurement": "For each newcomer with prior-season D1 stats: prior usage = prev_usage * (prev_team_ORtg_rank / new_team_ORtg_rank)^0.3 shrunk toward the new team's open-minutes distribution by weight depending on departures (minutes available = minutes of lost players / 200); per-minute rate prior = prev rate * conference-strength factor (from the KenPom/Torvik conference ratings gap; the per-tier discount, assumed between 3 and 8 percent, is to be calibrated) + position adjustment; replace with current-season rates as n/(n+10 games). For freshmen use recruiting rank (247 composite) mapped to expected BPM from history. As-of: portal status and roster at the decision time.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference previous seasons",
+    "247Sports composite and portal tracker (SOURCE_UNVERIFIED for bulk export)",
+    "Bart Torvik player ratings"
+   ],
+   "registry_ids": []
+  },
+  "cbb.player_stat_covariance": {
+   "label": "Cross-stat covariance of points, rebounds, assists and threes within a player",
+   "category": "distribution",
+   "mechanism": "Stats of the same player are positively correlated through minutes, pace and game state, with a residual correlation after conditioning that depends on role.",
+   "rationale": "Combination markets and parlays require the joint probability; independence overstates variance reduction and misprices points-plus-rebounds style thresholds in the tails.",
+   "measurement": "Estimate the 4x4 correlation of Pearson residuals of (points, rebounds, assists, threes) given expected minutes by role bucket using the last 3 seasons, shrink each correlation toward the role bucket pooled value with weight n/(n+40); simulate via a Gaussian copula with stat-specific NB marginals conditioned on a shared minutes draw from the minutes mixture; as-of: prior games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference player game logs",
+    "Bart Torvik player game stats"
+   ],
+   "registry_ids": []
+  },
+  "cbb.role_stable_effective_sample": {
+   "label": "Role-stable effective sample size for shrinkage",
+   "category": "distribution",
+   "mechanism": "Games played in a different role (injury return, new starter, teammate absence) carry less information about today's rate than games in the same role.",
+   "rationale": "Shrinkage constants set by raw game counts under-shrink players whose role changed and over-shrink stable ones; hierarchical estimates need the effective, not nominal, sample.",
+   "measurement": "n_eff = sum over prior games g of w_g where w_g = exp(-age_g/12 games) * (1 if |minutes_g - expected minutes now| < 6 and starter flag matches else 0.4) * (1 if teammate availability set matches within one starter else 0.7); shrinkage factor k/(n_eff + k) with k = 12 games for rebounds, 20 for points, 30 for threes made; as-of: through prior game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference player logs",
+    "ESPN box score starter flags"
+   ],
+   "registry_ids": []
+  },
+  "cbb.venue_scorekeeper_stat_bias": {
+   "label": "Home-venue scorekeeper bias in recorded assists, blocks and rebounds",
+   "category": "officiating",
+   "mechanism": "The official statistician's discretion on assists, steals and blocks varies by venue; the same player's recorded rate differs at home versus away after controlling for his true activity.",
+   "rationale": "If a home venue systematically credits more assists, an over on assists is cheaper at home than the rate suggests; the effect is stable and cheap to estimate from the difference between home and away rates of visitors.",
+   "measurement": "For each arena compute (assists per 100 team FGM recorded for the home team minus the same teams' away rate) minus league mean home gap, using 3 seasons with shrinkage n/(n+300 team games); likewise blocks per 100 opponent two-point attempts; apply as a multiplicative adjustment capped at +/-6 percent; SOURCE_UNVERIFIED that the effect exists in college data at this size.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference team game logs home/away",
+    "Bart Torvik game files"
+   ],
+   "registry_ids": []
+  },
+  "cbb.dnp_cause_taxonomy": {
+   "label": "Cause-specific non-appearance probabilities (injury, coach decision, eligibility, suspension)",
+   "category": "availability",
+   "mechanism": "Different causes of absence have different base rates, different warning signals and different timing, so a single status probability mixes unlike events.",
+   "rationale": "College players miss games for reasons that never appear in an injury list (coach's decision, academic or eligibility issues, return from injury minutes limits); treating all absences alike loses the signal that a long-listed injury is more informative than a quiet scratch.",
+   "measurement": "Classify historical non-appearances of rotation players (top-8 minutes) into causes using news and box score patterns; estimate P(appear) = 1 - sum_c P(cause_c | status label, days since status, program type) with Beta priors by cause (for example injury questionable: 0.55 play; undisclosed: 0.97 play) updated weekly; as-of: status vintage; output also restricted-minutes probability after return (minutes cap 20 in first game back).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN injuries and game recaps",
+    "team press releases",
+    "own captured posts"
+   ],
+   "registry_ids": []
+  },
+  "cbb.rebound_competition_on_floor": {
+   "label": "Rebound competition from the other four players on the floor",
+   "category": "player_role",
+   "mechanism": "A player's rebounds are his share of a pool, and that share falls with the combined rebound rates of lineup partners on the floor.",
+   "rationale": "Two good rebounders share one pool; when one is out, the other's rebounds rise by roughly the missing player's share. A per-player rate measured with a different lineup misstates tonight's rate; the effect is largest for bigs.",
+   "measurement": "For each lineup scenario k (from availability probabilities), compute share_i,k = r_i / sum_j in lineup(r_j) * team_pool_share, where r is the player's rebound rate per 100 available rebounds estimated from the last 2 seasons with shrinkage n/(n+400 minutes) toward position mean; expected rebounds = sum_k P(k) * minutes_i,k/40 * pool_per_40 * share_i,k; separate for offensive (using team ORB%) and defensive boards; as-of: prior games.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Bart Torvik player ORB% and DRB%",
+    "Sports-Reference player advanced stats",
+    "ESPN play-by-play lineups"
+   ],
+   "registry_ids": []
+  },
+  "cbb.miss_location_mix": {
+   "label": "Expected location mix of missed shots (rim, mid-range, three) and perimeter rebound share",
+   "category": "matchup",
+   "mechanism": "Long misses from three-point shots produce longer rebounds that go to guards and wings more often, while rim misses go to bigs; a team's shot mix therefore reallocates the rebound pool among positions.",
+   "rationale": "A guard's rebound line looks high in games where both teams shoot many threes and low against a rim-oriented opponent; position-blind pool totals miss this reallocation.",
+   "measurement": "For game g, expected misses by zone M_z = sum over both teams of FGA_z * (1 - make_z) using team shot mix and opponent-adjusted zone make rates; perimeter share of rebounds by position from historical play-by-play: P(guard collects | three-point miss) and P(big collects | rim miss) with shrinkage; player-level adjustment: expected rebounds = sum_z M_z * share_player,z shrunk toward the position mean with n/(n+300). As-of: shot mix over the last 15 games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "hoop-math.com team shot zones (SOURCE_UNVERIFIED)",
+    "Sports-Reference shot type splits",
+    "ESPN play-by-play shot locations (partial)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.assist_conversion_chain": {
+   "label": "Assist chain: potential assists times assisted share of teammates' shots",
+   "category": "player_role",
+   "mechanism": "Expected assists equal the player's share of team creation times the expected number of team assisted field goals, which depends on the mix of shot types (threes and dunks are mostly assisted, post-ups and isolations rarely).",
+   "rationale": "The assist line moves with the team's expected assisted made baskets, a quantity forecastable from shot mix and shot-quality, not from the player's own assist average; scorer discretion adds a venue term.",
+   "measurement": "expected team assisted FGM = sum_z FGA_z * make_z * assisted_share_z (opponent-adjusted, last 15 games with shrinkage n/(n+10)); player assists = creation_share_i (assists per team assisted FGM while on floor, last 2 seasons, shrunk to role mean with n/(n+600 minutes)) * team assisted FGM * (minutes_i/40) * on-floor adjustment for lineup partners; as-of: prior games and scenario weighting.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference team and player assist stats",
+    "hoop-math assisted shares (SOURCE_UNVERIFIED)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.ball_handler_succession_map": {
+   "label": "Ball-handler succession: who inherits creation when the primary handler is out",
+   "category": "player_role",
+   "mechanism": "When a primary creator is absent, assists redistribute to the next handler in a team-specific order and a share of creation is lost because the replacement creates less efficiently.",
+   "rationale": "Teammate absence shifts are not symmetric across the roster; some teams have a clear second handler, others spread creation, which changes the sign of the replacement's assist line and the team's total assists.",
+   "measurement": "From with/without data over the last two seasons, for each team compute the change in assists per 40 for each rotation player when the primary handler (highest assist share) is off the floor, shrinking with n/(n+250 minutes) to a role-mean redistribution (such as 55 percent to the next guard, 25 percent to wings, 20 percent lost); output the redistribution vector; as-of: prior games.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN play-by-play for custom with/without",
+    "Bart Torvik lineup data (SOURCE_UNVERIFIED)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.shooting_shock_loadings": {
+   "label": "Shared game shooting shock with opposite loadings on rebounds and assists",
+   "category": "distribution",
+   "mechanism": "Game-level team shooting luck raises assists and lowers rebounds; the loading depends on role and is the source of the negative dependence between the two stats.",
+   "rationale": "Combination props and parlays need this dependence; ignoring it overstates the variance of rebounds plus assists for guards and misprices both tails of a combined threshold.",
+   "measurement": "Estimate a one-factor model on the residuals of rebounds and assists after conditioning on minutes and team pace, with the factor proxy being the standardised team eFG residual in the game; fit loadings lambda_reb and lambda_ast by role (guard, wing, big) over 3 seasons, with shrinkage n/(n+80) to the role pooled loading; simulate stats as NB with means shifted by lambda*z where z ~ N(0,1).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference player and team game logs",
+    "Bart Torvik game files"
+   ],
+   "registry_ids": []
+  },
+  "cbb.crash_vs_get_back_scheme": {
+   "label": "Offensive-rebounding crash rate versus transition-defence tradeoff by team",
+   "category": "matchup",
+   "mechanism": "Some coaches send multiple players to the offensive glass, which raises offensive rebounds for the crashers and lowers the opponent's defensive-rebound count, while others retreat to prevent transition scoring.",
+   "rationale": "Offensive rebound totals for a big are partly a scheme choice; a high-crash team facing a low-crash opponent offers more rebounds to every big than their per-minute averages from other matchups.",
+   "measurement": "For each team compute ORB% (offensive rebounds per available) and opponent transition points per 100 over the last 20 games with half-life 10, shrunk n/(n+10) to the league mean; expected game ORB% for the pair = league mean + 0.5*(crash_A_offense_z + crash_B_defense_allow_z) in standard deviation units of 3.5 points; as-of: prior games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik four factors (ORB%, DRB%)",
+    "Sports-Reference team stats"
+   ],
+   "registry_ids": []
+  },
+  "cbb.three_shot_quality_xp": {
+   "label": "Expected make probability per three-point attempt from shot context",
+   "category": "variance_luck",
+   "mechanism": "The make probability depends on shot type (catch-and-shoot versus off the dribble), defender distance, and distance beyond the arc, so expected conversion can be built before looking at the result.",
+   "rationale": "A shooter on a 44 percent streak from mostly open looks is more likely to regress than the same percentage from contested attempts; the regression target should be quality-implied expectation, not the league mean.",
+   "measurement": "xP = sum_t share_t * (league_make_t shrunk toward the player's make_t with weight n_t/(n_t + 80)) for shot types t in {assisted catch-and-shoot, unassisted off-dribble, transition, corner vs above-the-break}; blend with skill proxy: xP_final = 0.7*xP + 0.3*(0.35 + 0.30*(FT% - 0.72)) using 2-season FT% with n/(n+120) shrinkage; as-of: through prior game; compare to observed 3P% to define a luck residual and regress it by n_attempts.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "hoop-math.com three-point splits (SOURCE_UNVERIFIED)",
+    "Sports-Reference assisted shot shares",
+    "ESPN play-by-play for assisted flag"
+   ],
+   "registry_ids": []
+  },
+  "cbb.trailing_three_attempt_lift": {
+   "label": "Three-point attempt lift when trailing and drop when leading",
+   "category": "game_state",
+   "mechanism": "The attempt rate for threes rises for a team that is behind and falls for a team that leads late, so a shooter's attempts depend on the distribution of game states his team will occupy.",
+   "rationale": "The underdog's shooter has an additional attempts source late in the game that does not exist for the favourite's shooter, and the distribution of attempts therefore depends on the pregame margin distribution, not only on his season average.",
+   "measurement": "From play-by-play estimate for each team the three-point attempt share of FGA as a function of lead (bins -15 to +15) and time remaining (bins of 5 minutes) over the last 2 seasons, shrunk to the league function with weight n/(n+120 possessions); expected attempts = sum over states of P(state | pregame margin distribution) * attempts_per_possession(state) * possessions in state; as-of: prior games; margin distribution from model not market.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ESPN play-by-play with score and clock",
+    "NCAA live stats archive (SOURCE_UNVERIFIED)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.assisted_three_dependency": {
+   "label": "Share of a shooter's threes that are assisted, and by whom",
+   "category": "player_role",
+   "mechanism": "A spot-up shooter's attempts and quality depend on one or two creators supplying catch-and-shoot passes, so the loss of that creator reduces both attempts and open-look quality.",
+   "rationale": "Assisted share varies from about 40 percent for creators to over 90 percent for stationary shooters; teammate absence shifts for creators raise the shooter's off-dribble attempts at lower quality while shooters' catch-and-shoot attempts fall, so the sign depends on dependence.",
+   "measurement": "For each shooter compute assisted_share = assisted 3PM / total 3PM and assister distribution over the last 2 seasons with shrinkage n/(n+40 makes); with/without effect: delta attempts per 40 and delta make rate when the top assister is off the floor (ridge shrinkage lambda = 150 minutes off); expected scenario shift = sum_k P(creator_k out) * delta_k; as-of: prior games.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "ESPN play-by-play assist events",
+    "Sports-Reference assisted shares"
+   ],
+   "registry_ids": []
+  },
+  "cbb.three_makes_compound_distribution": {
+   "label": "Compound distribution of threes made (minutes, attempts, Beta-uncertain make rate)",
+   "category": "distribution",
+   "mechanism": "Makes are Binomial given attempts and the make probability, attempts are Negative Binomial given minutes, and the make probability has a Beta posterior; marginalising yields the rung probabilities.",
+   "rationale": "A plain Poisson on the mean of makes understates the zero and the upper tails because it ignores uncertainty in attempts and in p; rung pricing at 0.5 and 3.5 requires the compound form.",
+   "measurement": "For each player-game draw minutes from the minute mixture, attempts ~ NB(mean = rate*minutes*pace factor, dispersion fitted from the last 3 seasons by role, typically var = 1.5*mean), p ~ Beta(a0 + makes_prior, b0 + misses_prior) with an effective prior strength of 100 attempts at xP; makes ~ Binomial(attempts, p); compute P(makes >= k) from 20,000 draws or the analytic Beta-Binomial mixture; as-of: pregame.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference player game logs",
+    "own model outputs"
+   ],
+   "registry_ids": []
+  },
+  "cbb.opp_three_defense_persistence_split": {
+   "label": "Opponent three-point defence: persistent attempts conceded versus non-persistent percentage allowed",
+   "category": "matchup",
+   "mechanism": "A defence's scheme controls the number of threes it concedes, a persistent trait, while the percentage opponents make against it is largely noise.",
+   "rationale": "Opponent allowed 3P% is routinely used as a matchup input but is mostly luck and should be shrunk almost entirely to the league mean, while the attempt-conceded rate retains most of its signal.",
+   "measurement": "att_allowed_z = (opponent 3PA allowed per 100 possessions - league mean)/sd, last 15 games half-life 8 with shrinkage n/(n+10) to prior season value; pct_allowed_z = (opponent 3P% allowed - league)/sd shrunk by weight 0.1 only (set from persistence tests); matchup adjustment to shooter's attempts = 0.6 * att_allowed_z * team-level sd of attempts effect (about 0.8 attempts) and to p = 0.1 * pct_allowed_z * 1.5 points; as-of: prior games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik team three-point rate and percentage allowed",
+    "Sports-Reference team defence stats"
+   ],
+   "registry_ids": []
+  },
+  "cbb.strength_evolution_to_march": {
+   "label": "Distribution of team strength change from pricing date to Selection Sunday",
+   "category": "team_strength",
+   "mechanism": "Team strength evolves through development, rotation settling, transfer integration and injuries; the change from a given date to March is a random variable with a team-type-dependent sd.",
+   "rationale": "A November title probability is an expectation over March strength; using today's rating as if it were March's understates tail teams and overstates favourites, and the correct sd depends on roster continuity and age.",
+   "measurement": "For each past season and each date d (weekly), compute delta = rating_March (final pre-tournament adjusted margin) - rating_d for each team; regress delta on rating_d (mean reversion), games_played_d, returning minutes share, roster age (minutes-weighted class year), and injury indicator; model delta ~ N(b*(rating_d - league_mean), sd_d) with sd_d = sqrt(a^2 + c^2*(games_remaining/30)) fitted on at least 12 seasons; output the posterior over March rating by team; as-of: rating snapshot date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik time machine",
+    "Sports-Reference historical team ratings (SRS)",
+    "own daily rating snapshots"
+   ],
+   "registry_ids": []
+  },
+  "cbb.pod_site_proximity": {
+   "label": "Distance from campus to first- and second-round site and expected crowd imbalance",
+   "category": "environment",
+   "mechanism": "The NCAA places pods across the country and seeds are matched to sites by geography, so some teams play 50 miles from home and others 2,000, with corresponding crowd and travel effects.",
+   "rationale": "A near-home team in rounds 1 and 2 gets a semi-home margin bonus of one to three points relative to a neutral model, and a distant 2-seed may be at a relative disadvantage; the effect compounds through two rounds of the path.",
+   "measurement": "For each team-seed-site combination compute great-circle distance campus to arena in miles, a binary indicator for within 250 miles, and an attendance-share proxy (school's average road attendance rank); margin adjustment = b1*I(<250 mi) + b2*log(distance) fitted on 20 tournaments of game margins vs rating-implied margins (expected b1 about 1.5 to 2.5 points, SOURCE_UNVERIFIED); applied only to rounds 1 and 2 (and regional sites if close); as-of: bracket release.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NCAA.com site assignments",
+    "Sports-Reference tournament game results with sites"
+   ],
+   "registry_ids": []
+  },
+  "cbb.conf_tournament_format_table": {
+   "label": "Conference tournament format table for 2026-27 (size, byes, hosting, seeding, tiebreakers)",
+   "category": "schedule_context",
+   "mechanism": "Each league has its own bracket: number of participants, byes for top seeds, campus versus neutral venue, reseeding, tiebreakers that set seeds, and days of rest between games.",
+   "rationale": "More than thirty ledger series settle on a conference tournament; probability for the top seed varies by format as much as by rating (a top seed with a double bye needs three wins in a 14-team field, a four-team Ivy field needs two), and some formats let the higher seed host.",
+   "measurement": "Maintain a table with fields: league, teams in field, rounds, byes by seed, hosting rule (neutral, campus, higher-seed), venue city, dates, tiebreaker order for regular-season seeding, auto-bid flag; simulate the league bracket from the current standings projection using the model's pairwise win probability with a home adjustment of 3.5 points where the format hosts; refresh when conferences announce changes (realignment, new members) before each season; as-of: announcement date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Conference websites and NCAA.com",
+    "Wikipedia conference tournament pages (cross-check)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.two_way_balance_profile": {
+   "label": "Two-way balance profile: joint offence and defence rank at the top of the rating list",
+   "category": "team_strength",
+   "mechanism": "Champions in the efficiency era have mostly been ranked highly in both offence and defence; a team strong on only one side may have a different tournament win probability than its net rating suggests because of matchup variance.",
+   "rationale": "This is a hypothesis from historical regularities, not an established causal driver; it is included as a testable signal because it could capture shot-making variance in single games (offence-dependent teams have wider outcomes).",
+   "measurement": "Compute min(off_rank, def_rank) and the absolute difference |off_rank - def_rank| in the final pre-tournament snapshot; flag balanced if both top 25 or the minimum rank 20 or better; test in historical tournaments whether the residual of advancement versus rating-implied probability (probit) is explained by the balance flag after controlling for net rating (a likelihood-ratio test across at least 20 tournaments); as-of: Selection Sunday snapshot.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik historical ratings",
+    "Sports-Reference historical team ratings"
+   ],
+   "registry_ids": []
+  },
+  "cbb.tournament_field_format": {
+   "label": "NCAA tournament field structure and seeding rules for 2027",
+   "category": "other",
+   "mechanism": "The number of teams, play-in games, at-large and automatic bids, seeding S-curve and region placement rules define which paths exist and how many rounds each team must win.",
+   "rationale": "The sampled round series refers to a 'Round of 76', which implies a field larger than the 68-team format; this changes bubble probabilities, the number of games for the lowest seeds and the title path for play-in teams, so any title model built on the 68-team structure may be wrong.",
+   "measurement": "Record for the season: field size, number of first-round or play-in games, number of automatic and at-large bids, rounds required for each seed line, S-curve rules, bracket-integrity rules (conference avoidance until a specified round) and effective dates; simulate seed to path accordingly; as-of: NCAA announcement date; verify against NCAA.com before each season.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA.com announcements",
+    "NCAA tournament selection principles PDF"
+   ],
+   "registry_ids": []
+  },
+  "cbb.committee_ordinal_seed_model": {
+   "label": "Committee ordinal seed-line model from resume metrics and fundamentals ratings (no bracketology consensus)",
+   "category": "team_strength",
+   "mechanism": "The selection committee assigns seed lines by ranking teams on results-based team-sheet metrics and consulted predictive ratings; an ordered model fitted to past committee outputs reproduces that ranking without using any outside forecast of it.",
+   "rationale": "The catalog input cbb.committee_seed_model blends an ordinal model with the Bracket Matrix consensus, which is an expert forecast and therefore a benchmark. Seed and field-membership contracts need the market-free and expert-free model so its edge over consensus can be measured.",
+   "measurement": "Ordered logit (cutpoints for seed lines 1 to 16 plus 'not in field') of final seed on NET rank, Quad 1 wins, Quad 3 and Quad 4 losses, WAB, SOR, last-10 record, conference-champion indicator and AdjEM_fund (cbb.ratings_fundamentals), fitted on Selection Sunday team sheets from 2018-19 (the first NET season) through the latest season, excluding the cancelled 2020 tournament, with leave-one-season-out validation and a protocol-vintage indicator for rule changes; to project before Selection Sunday, simulate remaining regular-season and conference-tournament games with the ratings model and re-evaluate the metrics per simulation; no Bracket Matrix or sportsbook input.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NCAA NET rankings and team sheets (ncaa.com; SOURCE_UNVERIFIED for scrape access and history)",
+    "Warren Nolan (warrennolan.com) NET, quadrant records and SOS (SOURCE_UNVERIFIED for archived sheets)",
+    "Barttorvik WAB (SOURCE_UNVERIFIED for history)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.top_n_tie_inclusive_cutoff": {
+   "label": "Tie-inclusive top-N cutoff probability from the joint conference win-total distribution",
+   "category": "distribution",
+   "mechanism": "A team finishes in the top N if its conference wins are at least the N-th highest total among all teams, with every tied team counting.",
+   "rationale": "Standings simulations that apply conference tiebreakers produce a rank, but the contract ignores tiebreakers and pays all tied teams; using tiebreaker ranks understates probabilities near the cutoff and makes team probabilities sum to exactly N when the contract's sum exceeds N.",
+   "measurement": "Simulate the conference season 20,000 times: draw each team's strength from its posterior, draw every remaining conference game with home-adjusted probit probability, tally conference wins; for each simulation compute W_N = N-th largest win total; team i hits if W_i >= W_N; probability = hit frequency; report the expected number of teams hitting (greater than N); as-of: standings and ratings snapshot with remaining games.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Conference standings and schedules (ESPN, Sports-Reference)",
+    "own simulation from ratings"
+   ],
+   "registry_ids": []
+  },
+  "cbb.strength_uncertainty_game_correlation": {
+   "label": "Shared-strength correlation among a team's game outcomes",
+   "category": "distribution",
+   "mechanism": "Because one latent strength governs all of a team's games, outcomes are positively correlated; the Poisson-binomial with independent games understates tails.",
+   "rationale": "Undefeated and 30-win series sit in the extreme upper tail, where integrating over strength uncertainty increases the probability by large factors relative to plugging in the mean; the same shared factor raises the variance of every win total.",
+   "measurement": "Draw s_i ~ N(rating_i, sd_t) with sd_t = sqrt(a^2 + b*(games_remaining/30)) calibrated so that the realised distribution of final win totals matches history (a ~ 1.5 points, b ~ 4 for new rosters); condition each game's probability on s_i and s_j; compute P(all wins) = E_s[prod_g p_g(s)] by Monte Carlo (20,000 draws); calibrate sd_t on 15 prior seasons by checking coverage of final win totals (probability integral transform uniformity); as-of: rating snapshot.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik / Sports-Reference historical ratings and results",
+    "own simulation"
+   ],
+   "registry_ids": []
+  },
+  "cbb.regular_season_game_inventory": {
+   "label": "Regular-season game inventory: number of games, sites, opponent class and which count as official",
+   "category": "schedule_context",
+   "mechanism": "The event space for win totals, undefeated and home-only series is the list of games that count, which depends on exempt events, non-D1 opponents, neutral sites and the league's definition.",
+   "rationale": "A 30-win strike on a team that plays 29 counted games is impossible, and one that plays 31 allows a loss; the home-only series has between 14 and 17 games and excludes all neutral-site games; each ambiguity changes the probability by a large factor.",
+   "measurement": "Per team and season record: scheduled games (date, opponent, site type home/away/neutral, event name, D1 flag, counts toward official record flag, conference flag) from the school and NCAA schedule; total counted games N, home counted games H; probability tables computed over counted games only; refresh when the schedule changes (cancellations, added games); as-of: schedule snapshot date.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference schedule pages",
+    "NCAA stats site schedules",
+    "School athletic sites"
+   ],
+   "registry_ids": []
+  },
+  "cbb.joint_advancement_dependence": {
+   "label": "Dependence of two teams' tournament advancement (region, pod, avoidance rules)",
+   "category": "distribution",
+   "mechanism": "Two teams' advancement probabilities are linked through the bracket: they cannot both advance if they meet, and share region and pod strength.",
+   "rationale": "KXNCAAMBBOTHQUAL asks for both teams in the Round of 16; the committee generally avoids same-conference matchups before the third round for teams of the same conference, but region and pod placement still matter and a correlation from correlated rating uncertainty exists.",
+   "measurement": "Simulate the bracket 50,000 times from the seed and region distribution (before Selection Sunday) or from the actual bracket (after): P(both reach R16) = joint frequency; also report the independence benchmark P_A*P_B and the ratio; the committee rule used is: same-conference teams avoided in rounds 1 and 2 where possible (verify yearly with the NCAA's principles and procedures document); as-of: bracket release.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NCAA.com bracket",
+    "NCAA selection principles document",
+    "Bracket Matrix for pre-bracket projections"
+   ],
+   "registry_ids": []
+  },
+  "cbb.clinch_and_elimination_effort_shift": {
+   "label": "Effort and rotation change after clinching or elimination from title races",
+   "category": "motivation",
+   "mechanism": "Teams that have clinched a seed or title, or are out of any race, may rest starters or alter intensity in the last games, which shifts win probabilities against the pure strength gap.",
+   "rationale": "Top-N and win-total contracts include the last two weeks of the conference season in which stakes differ across teams; an incentive-blind model overstates the win probability of clinched teams and understates that of teams chasing a bid or a top-four double bye.",
+   "measurement": "Define stakes_i,g = |dP(top4 finish)/d(win this game)| from the standings simulation and the bubble/seed leverage from the resume model; regress game margin residuals (actual minus rating-implied) on stakes_i - stakes_j and a clinch flag using 8 seasons of the final 6 conference games; expected effect 0.5 to 1.5 points (SOURCE_UNVERIFIED); as-of: standings before each game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference game results",
+    "own standings simulation"
+   ],
+   "registry_ids": []
+  },
+  "cbb.remaining_game_resume_leverage": {
+   "label": "Resume leverage of each remaining game (win and loss value by opponent quadrant and site)",
+   "category": "schedule_context",
+   "mechanism": "Each remaining game moves NET, quadrant records, WAB and SOR by amounts that depend on the opponent's rank and the site, so the final resume is a function of which games remain and who the team beats.",
+   "rationale": "A bubble team's field probability depends more on whether its remaining games are Q1 opportunities (large upside, small downside) or Q4 traps (small upside, large downside) than on the average strength of remaining opponents.",
+   "measurement": "For each remaining game g compute dWAB_win_g and dWAB_loss_g from the WAB formula using current opponent ranks and site; leverage_g = P(win_g) * dWAB_win + (1 - P(win_g)) * dWAB_loss; also compute dNET rank change by Monte Carlo (NET approximated by team value index and efficiency); aggregate final resume distribution by simulating all remaining games including conference tournament; as-of: current resume snapshot and schedule; recompute daily.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA NET rankings and team sheets (NCAA.com)",
+    "WarrenNolan team sheets",
+    "ESPN resume pages",
+    "Bart Torvik WAB tables"
+   ],
+   "registry_ids": []
+  },
+  "cbb.committee_metric_revealed_weights": {
+   "label": "Revealed committee weights on NET, WAB, SOR, quadrant record and predictive ratings by seed range",
+   "category": "team_strength",
+   "mechanism": "The committee's ranking behaves like a latent score over the metrics with weights that differ at the top of the field and on the bubble.",
+   "rationale": "Using KenPom or NET alone ranks teams as an analyst would, not as the committee did; an ordered-probit fit on past seeds reveals that, for instance, quality wins count more at the top and bad losses more on the bubble.",
+   "measurement": "For seasons 2018 to 2026 (post-NET) fit an ordered probit for final seed (1 to 16, plus missed) on standardised NET rank, WAB, SOR, KPI, KenPom rank, Q1 wins, Q3+Q4 losses and conference tournament result, with weights allowed to vary in three seed bands (1-4, 5-10, 11-16 and bubble) via interaction terms; regularise with ridge; output coefficient vector with standard errors and the committee noise sd; as-of: metrics at Selection Sunday and weekly in March.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA.com NET archive and team sheets",
+    "Bart Torvik/KenPom archives",
+    "Sports-Reference bracket history",
+    "Bracket Matrix archive"
+   ],
+   "registry_ids": []
+  },
+  "cbb.committee_protocol_vintage": {
+   "label": "Committee protocol vintage: metrics used, quadrant definitions, field size and bracketing rules",
+   "category": "other",
+   "mechanism": "The metrics on the team sheet, the quadrant thresholds, the number of bids and the bracketing rules change from year to year, shifting the relevant weights.",
+   "rationale": "Quadrant definitions and metric lists have been revised (for example the addition of WAB, adjustments to quadrant thresholds) and the field size may change for 2027 (SOURCE_UNVERIFIED); a model fit on earlier years can be mis-specified for the current protocol.",
+   "measurement": "Maintain a per-season record: metrics on team sheet, quadrant thresholds for home, neutral and away games, number of at-large and automatic bids, play-in structure, bracketing principle changes; indicator variables for protocol changes and a protocol-vintage weight for each historical season (1.0 for current protocol, 0.5 for one prior change, 0.25 for earlier) used in the fits; as-of: NCAA announcement dates.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA.com committee principles and procedures",
+    "NCAA news releases"
+   ],
+   "registry_ids": []
+  },
+  "cbb.recency_weighting_in_seeding": {
+   "label": "Committee weighting of recent results relative to the full season",
+   "category": "team_strength",
+   "mechanism": "Committee members may weigh the last month of results and the conference tournament more heavily than early-season results, in contrast to metrics that weigh the season equally.",
+   "rationale": "If recency is rewarded, late-season rises and falls move seed lines beyond what the cumulative metrics show; estimating it prevents using a static season-long metric when late results matter.",
+   "measurement": "From the ordered-probit residuals (actual seed minus metric-implied seed) regress on last-10-games win share relative to season win share, last-10 efficiency margin minus season efficiency margin, and conference tournament games won, using 8 seasons; as-of: Selection Sunday; report coefficient with standard errors; use a prior of zero with a ridge shrinkage that corresponds to an sd of 0.5 seed lines per standard deviation of the recency variable.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference game logs",
+    "NCAA.com seeds archive"
+   ],
+   "registry_ids": []
+  },
+  "cbb.committee_availability_treatment": {
+   "label": "Seed adjustment for key players missing at Selection Sunday",
+   "category": "availability",
+   "mechanism": "The committee takes player availability into account in some way, so a team missing a star may be placed lower (or protected) than metrics alone imply.",
+   "rationale": "An injury late in the season changes how good the team is without changing its resume; whether the committee seeds on full-strength or current-strength is a discrete, partially discretionary choice with a few lines at stake.",
+   "measurement": "From past years list teams with a rotation player (top 3 by minutes or BPM) out at Selection Sunday, compute seed residual from the revealed-preference model, estimate the mean residual by player importance (BPM share) with a prior mean of -0.5 lines and a sd of 1.0, shrinking by n/(n+10); as-of: injury status published before Selection Sunday.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "News archives and team statements",
+    "Sports-Reference rosters"
+   ],
+   "registry_ids": []
+  },
+  "cbb.number_one_transition_model": {
+   "label": "Markov model of the #1 holder and successor distribution after a loss",
+   "category": "distribution",
+   "mechanism": "The distinct-#1 count is 1 plus the number of changes at the top in which the new holder has not been #1 before; changes occur when the current #1 loses (or is leapfrogged) and the successor is drawn from the contenders.",
+   "rationale": "A threshold such as 9 distinct #1 teams is far into the tail of a process whose typical value is 3 to 6 (to be computed from AP archives, not asserted), so the tail depends on the weekly leapfrog probability and on how often the successor is a new team; neither is a function of ratings alone.",
+   "measurement": "State: current #1, set of previous #1s, week t (1 to 19). Transition: P(change in week t) = 1 - (1 - L_t) where L_t = prob #1 loses in the week plus P(leapfrog without a loss) estimated from AP archives 2000 to 2026 (leapfrog rate about 3 to 8 percent per week, to be fitted); successor chosen by softmax over the top-8 contenders with features (poll points gap, record, rating gap, unbeaten flag) fitted on past changes; count distinct holders via Monte Carlo of 20,000 seasons using game-by-game loss probabilities from the ratings of the top teams; as-of: latest poll and schedule.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "AP poll archive (apnews.com / Sports-Reference AP poll history)",
+    "ESPN poll archive",
+    "own ratings"
+   ],
+   "registry_ids": []
+  },
+  "cbb.ap_voter_ballot_panel": {
+   "label": "AP voter ballot panel: individual ballots and update rules",
+   "category": "other",
+   "mechanism": "The AP poll aggregates individual ballots published by voter; each voter's update after results has its own inertia and preferences, so the aggregate response to a loss is the sum of heterogeneous responses.",
+   "rationale": "A voter-level model captures both the average reaction to a loss and the dispersion that makes top-two ties or leapfrogs likely; aggregate-only models cannot tell whether a swing is a few extreme voters or broad movement.",
+   "measurement": "Collect each weekly ballot (voter id, ranks 1 to 25); for each voter-team-week compute rank change as a function of the team's result (win/loss, opponent rank, margin, site), prior rank and a voter fixed effect; fit a mixed model with voter random slopes using 5 seasons; simulate the poll as the sum of voter points from the fitted update rules (25 points for 1st down to 1 for 25th); as-of: previous poll plus results.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "AP Top 25 voter ballots published on apnews.com (SOURCE_UNVERIFIED for archive depth and bulk access)"
+   ],
+   "registry_ids": []
+  },
+  "cbb.final_ap_rank_mapping": {
+   "label": "Mapping from tournament outcome and pre-tournament rank to final AP rank",
+   "category": "game_state",
+   "mechanism": "The Final poll orders teams by tournament success first and pre-tournament rank second, with the champion typically placed first or near first.",
+   "rationale": "A final-rank contract equals the probability of a bracket outcome mapped through the ordering rule; without the mapping, a top 10 contract would be priced as a rank persistence question, which is wrong because many pre-tournament top-10 teams lose early and fall out.",
+   "measurement": "From 2000 to 2026 regress final AP rank on round reached (champion, runner-up, Final Four, Elite Eight, Sweet 16, earlier, missed tournament), pre-tournament AP rank, seed and margin of last game with an ordinal model; output P(final rank = k | round reached, pre rank) with noise sd about 1.5 places; combine with bracket_sim round-reached probabilities by Monte Carlo; as-of: bracket release, updated per round.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Sports-Reference AP final polls and tournament results",
+    "ESPN AP poll history"
+   ],
+   "registry_ids": []
+  },
+  "cbb.kenpom_rank_projection": {
+   "label": "Replication and projection of KenPom ratings to a timestamp",
+   "category": "team_strength",
+   "mechanism": "KenPom's rating is an opponent-adjusted efficiency margin computed from all completed games with venue and recency treatment, so the rank at a future time is a function of the results that will be counted before that time.",
+   "rationale": "KXNCAAMBKENPOMRANK and KXNCAAMBKENPOMTOP settle on a snapshot list; the uncertainty is the future results and the rating algorithm, not human opinion, so a faithful replication (with game-by-game updates) is the only way to evaluate crowded ranks.",
+   "measurement": "Compute AdjO, AdjD and tempo by iterating opponent adjustment to convergence on all D1 games with venue factor 1.4 percent per side (approximate) and a decay weighting by game recency, calibrated so replicated AdjEM matches the KenPom value on historical snapshots with RMSE below 0.3 points; project to Mar 15 12:00 by simulating each remaining game (including conference tournaments) with the pairwise win and margin model, re-running the adjustment per simulated day, and recording rank distributions; as-of: simulation start date, cutoff time of the timestamp.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Bart Torvik T-Rank (similar algorithm, free)",
+    "KenPom (paid) for calibration",
+    "Sports-Reference game results"
+   ],
+   "registry_ids": []
+  },
+  "cbb.award_selection_model": {
+   "label": "Award selection model: candidate sets, team success dependence and co-recipient probability",
+   "category": "player_role",
+   "mechanism": "Award winners come from a candidate set defined by performance and team success; the Most Outstanding Player depends on the champion, while Player of the Year awards weigh production, team rank and narrative.",
+   "rationale": "Three contract families (tournament MOP, national player of the year, conference awards) have different drivers; treating them all as 'production' misses that MOP is mostly a title contract, and a 1/N split changes the expected payout.",
+   "measurement": "For MOP: P(player) = sum over teams of P(team champion) * share_player|champion, where share is a multinomial logit on Final Four box-score points per game and star flags fitted to 1990 to 2026 MOP history (champion-conditioned) plus a 3 to 6 percent chance MOP comes from a non-champion; for POY and conference awards: multinomial logit among candidates on BPM, points per game, team rank and conference record, with year-specific fixed effects; co-recipient rate from history (about 1 to 3 percent for major awards); expected payout = P(win) * E[1/N]; as-of: vote deadline and latest stats.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sports-Reference award histories",
+    "Wikipedia award winner lists",
+    "NCAA tournament MOP records"
+   ],
+   "registry_ids": []
+  },
+  "cbb.stat_leader_race_model": {
+   "label": "Leaderboard race model for per-game statistic leaders with postseason games and thresholds",
+   "category": "distribution",
+   "mechanism": "The leader is the maximum of many noisy per-game averages; future games (including postseason) add samples, injuries remove candidates and thresholds filter qualifiers.",
+   "rationale": "Current leaders are biased upward by luck, so naive extrapolation overstates their chance; the probability that a given player ends first depends on current gap, remaining games (about 8 to 12 for a team after the point of pricing), per-game sd and the probability of missing games.",
+   "measurement": "For each candidate (top 30 by current average, qualified or near-qualified): posterior of true per-game mean mu_i with shrinkage n/(n+15 games) toward a role prior; per-game sd s_i from game logs; remaining games G_i = scheduled regular season games + P(conference tournament games) + expected NCAA, NIT, Crown, CBI and CIT games from bracket_sim (all official games count, including non-conference ones); availability probability a_i per game; simulate final average = (sum so far + sum future)/(games played) for 20,000 seasons applying the NCAA minimum threshold rule for qualification; P(leader) = frequency of max; as-of: stats through prior game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NCAA stats leaderboards (stats.ncaa.org)",
+    "Sports-Reference player season and game logs"
+   ],
+   "registry_ids": []
+  },
+  "cbb.poll_calendar_and_protocol": {
+   "label": "AP poll calendar and designation rules (number of polls, Preseason and Final labels, release timing)",
+   "category": "other",
+   "mechanism": "The number of opportunities for a change at #1 or for a team to enter the top 5 equals the number of polls, and which poll counts as 'Final' is the AP's designation.",
+   "rationale": "Settlement rules count every poll including Preseason and Final and rely on the AP's own labels; a missed week, an early holiday poll or a shifted Final release date changes the count and the resolution timing.",
+   "measurement": "Maintain per season: dates of Preseason, each weekly poll, and Final; number of polls N_polls; AP's 'expected release' date for the Final poll (Apr 6, 2027 expected); poll week labels; indicator for the year-specific schedule; used as the horizon in the transition model and the any-week model; as-of: AP schedule publication.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "AP Top 25 pages (apnews.com)",
+    "ESPN poll pages"
+   ],
+   "registry_ids": []
+  },
+  "cbb.award_candidate_profile": {
+   "label": "Award candidate profile: production, team success and voter-criteria features by award type",
+   "category": "player_role",
+   "mechanism": "Award voters (national media panels, conference coaches or media) pick from candidates by scoring and overall production, team success, role-specific criteria (defence for Defensive Player of the Year, class for freshman honours) and narrative; a per-award choice model on those features gives the winner distribution.",
+   "rationale": "The record's award stage had only cbb.news and a usage rate, which cannot separate candidates for conference awards such as Defensive Player of the Year or Newcomer awards whose criteria differ from player of the year. Voter bodies and criteria differ by award, so one pooled model is wrong.",
+   "measurement": "For each award type separately, fit a conditional (multinomial) logit across candidates within each past award-season: features are team AdjEM_fund rank and win percentage, player BPM or Torvik PRPG rank, points, rebounds, assists, steals plus blocks per game, defensive rating or block/steal rates (Defensive Player of the Year only), class (freshman or newcomer indicator for those awards), previous all-conference selection, preseason watch-list membership; train on all available seasons per award (at least 10 where history exists, otherwise pool with an award-type indicator), as-of the last games before voting closes; output candidate shares, then split payout probability for ties (1/N rule).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Sports-Reference award and all-conference pages (SOURCE_UNVERIFIED for voting totals)",
+    "conference websites for award announcements",
+    "Bart Torvik player tables (SOURCE_UNVERIFIED for history)"
+   ],
+   "registry_ids": []
   }
  },
  "blueprints": {
@@ -1948,6 +2815,36 @@
      "id": "m.lifecycle",
      "why": "Market close versus last lineup news defines the tradable information set.",
      "role": "context"
+    },
+    {
+     "id": "cbb.unrated_opponent_prior",
+     "why": "Separates the genuinely extreme-margin buy games (strikes in the 40s) from ordinary games and tells the model that variance and mean uncertainty are larger and asymmetric there.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.coach_blowout_substitution_rate",
+     "why": "Gives the compression term for large favourite spreads and winning-margin buckets that rating gaps cannot explain.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.margin_regime_mixture",
+     "why": "Specifies the shape every contract in this archetype reads: moneyline, spread tail, win-margin bucket probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.margin_total_covariance",
+     "why": "The only way to price the parlay legs coherently with the spread and the total contracts; absent from the existing list. Role is series-conditional: secondary for single-leg ML, spread and margin series; primary for KXNCAAMBSGP, where the joint margin-total law is the priced object.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.point_in_time_rating_snapshot",
+     "why": "Guards the central strength input against leakage specific to how CBB ratings are published.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.ratings_fundamentals",
+     "why": "Primary strength term for the side, spread and margin series; replaces the market-contaminated catalog cbb.ratings, which stays benchmark-only.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2121,6 +3018,31 @@
      "id": "cbb.player_impact",
      "why": "Impact values quantify how much a missing scorer shifts efficiency.",
      "role": "context"
+    },
+    {
+     "id": "cbb.possession_length_profile",
+     "why": "Totals depend on the matchup's pace, not either team's average; the existing tempo input collapses this.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.ot_period_tie_chain",
+     "why": "Both the OT-count contract and the right tail of the points total depend on it; the existing ot_model entry carries only a single OT probability.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.total_variance_by_style",
+     "why": "Specifies the width of the distribution that every total rung reads; the existing score_resid input does not condition on style.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.league_scoring_baseline_drift",
+     "why": "Keeps the absolute level of the total anchored when ratings (relative) say nothing about the national scoring trend.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.handler_absence_pace_shift",
+     "why": "Translates the injury mixture into total points through the pace channel specific to totals.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -2249,6 +3171,31 @@
      "id": "m.orderbook_depth",
      "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
      "role": "context"
+    },
+    {
+     "id": "cbb.pace_elasticity_to_opponent",
+     "why": "Allocates the shared possession count between two teams' preferences, which is what makes a team total different from a game total.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.team_points_margin_coupling",
+     "why": "Gives the role-specific skew of a single team's points that a symmetric normal around the average cannot.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.bench_unit_efficiency",
+     "why": "Needed for the favourite's capped upper tail and the underdog's garbage-time points; existing inputs treat bench play only as a probability of blowout.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.opp_foul_propensity_ft_points",
+     "why": "Gives a matchup-specific free-throw estimate for one team's points, rather than relying on a team-level rate.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.ratings_fundamentals",
+     "why": "Supplies the fundamentals-only expected margin and opponent-adjusted gap that the role split and the points-margin coupling need; no market line enters.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2363,6 +3310,31 @@
      "id": "cbb.three_pt_luck",
      "why": "In a 20-minute half a handful of threes swing the total; a team's 3P% well above its shot-quality expectation regresses, so first-half totals should be priced on shot quality, not the hot hand.",
      "role": "secondary"
+    },
+    {
+     "id": "cbb.first_half_pace_ratio",
+     "why": "Gives a half-specific possession count for 1H total and spread rungs that existing tempo (game level) does not.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.coach_early_foul_bench_rule",
+     "why": "Converts foul risk into expected first-half starter minutes, the biggest first-half-specific variance source.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.half_tie_probability",
+     "why": "Determines the tie contract and the rungs near zero in a way the existing score_resid input (generic residuals) cannot.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.halftime_state_adjustment",
+     "why": "The 2H winner, spread and total series cannot be priced from pregame inputs alone once the market trades through halftime. TIMING: live-only (known at halftime, pregame_knowable=no); used for in-play 2H pricing and excluded from the pregame input list.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.second_half_pregame_expectation",
+     "why": "The three second-half series need an explicit pregame 2H expectation including overtime; without it they would be priced as a copy of the 1H model.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2529,6 +3501,31 @@
      "id": "m.lifecycle",
      "why": "Props close before late scratches; the tradable information set ends at close.",
      "role": "context"
+    },
+    {
+     "id": "cbb.transfer_role_cold_start_prior",
+     "why": "Without it the generic props archetype has no estimate for the largest group of college players with unreliable histories.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_stat_covariance",
+     "why": "Defines how combination and multi-prop contracts are priced; absent from the marginal-only stat_dist input.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.role_stable_effective_sample",
+     "why": "Controls how much of a small-sample average is trusted for each stat for each player.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.venue_scorekeeper_stat_bias",
+     "why": "Specific to measurement of non-shooting stats; points are unaffected.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.dnp_cause_taxonomy",
+     "why": "Gives the participation probability the minutes mixture requires and keeps injury, decision and eligibility absences separate.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2655,6 +3652,31 @@
      "id": "cbb.late_game_foul_script",
      "why": "Trailing teams foul and leaders' guards shoot the resulting free throws, adding points that a per-minute rate misses; the effect depends on who handles the ball in the final minutes.",
      "role": "secondary"
+    },
+    {
+     "id": "cbb.minutes_scenario_mixture",
+     "why": "Supplies the discrete minutes distribution that determines high-rung probabilities for points; the existing player_minutes entry is a single projection.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.player_shot_mix_xpps",
+     "why": "Replaces a per-percentage regression with a model-based expectation so that hot-and-cold streaks are discounted correctly for each player's shot profile.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_ft_trips_xfta",
+     "why": "Isolates a heavy-tailed scoring channel specific to guards that the team-level free-throw input cannot represent.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_points_dispersion_by_role",
+     "why": "Provides the shape used by every points rung and the tail used by 25+ and 30+ thresholds.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.race_early_scoring_profile",
+     "why": "Primary for all four live series, which are race-to-N first-passage contracts; the player-ladder inputs of this archetype are primary only if a per-player points series appears, so this input's role is conditional on the unresolved racing entity (pp_race_who).",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2776,6 +3798,36 @@
      "id": "m.ladder_structure",
      "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
      "role": "secondary"
+    },
+    {
+     "id": "cbb.rebound_competition_on_floor",
+     "why": "Gives the substitute-and-complement structure that separates rebounds from points, where the pool is not shared.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.miss_location_mix",
+     "why": "Explains why perimeter players' rebounds respond to game shot mix, which the generic pool input does not.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.assist_conversion_chain",
+     "why": "Separates the player's creation role from teammates' conversion luck, which the assist-creation entry bundles together.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.ball_handler_succession_map",
+     "why": "Defines the successor structure behind an assist prop when a creator is in doubt.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.shooting_shock_loadings",
+     "why": "Captures the specific negative dependence between the two stats of this archetype.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.crash_vs_get_back_scheme",
+     "why": "Splits offensive from defensive rebounding supply by matchup, which the single pool input blends.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -2891,6 +3943,31 @@
     {
      "id": "m.ladder_structure",
      "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_shot_quality_xp",
+     "why": "Gives a shot-quality-based target for the three-point make rate so that streaks in 3P% are regressed correctly. History window: use seasons from 2019-20 onward for the league make-rate level because the men's three-point line moved to the international distance in 2019-20; earlier seasons inform player skill only after re-basing to the league mean.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.trailing_three_attempt_lift",
+     "why": "Connects the shooter's attempts to the pregame margin distribution, a script effect absent from the existing inputs.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.assisted_three_dependency",
+     "why": "Explains how a creator's absence changes a shooter's attempts and quality, beyond a generic teammate-absence shift.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_makes_compound_distribution",
+     "why": "Specifies how the rungs of a threes-made ladder are computed from the upstream stages.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.opp_three_defense_persistence_split",
+     "why": "Separates the persistent scheme signal from the non-persistent luck signal in the matchup variable the existing inputs mix.",
      "role": "secondary"
     }
    ],
@@ -3021,6 +4098,41 @@
      "id": "cbb.roster_minutes",
      "why": "Depth and minutes concentration bear on injury vulnerability in a single-elimination run.",
      "role": "context"
+    },
+    {
+     "id": "cbb.strength_evolution_to_march",
+     "why": "Converts a snapshot rating into the March strength distribution that title odds actually depend on.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.pod_site_proximity",
+     "why": "Adds a path-specific environment term to title odds for first-weekend games.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.conf_tournament_format_table",
+     "why": "Defines the path-length structure of 30-plus ledger series that the generic bracket simulation input does not specify.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.two_way_balance_profile",
+     "why": "Gives a specific, falsifiable top-end filter for title futures without assuming it is real. HYPOTHESIS_ONLY: one champion per year gives about 20 data points, so this input is excluded from the first-version pricing inputs and tested only out of sample; it needs no separate data pull because it reuses the offence and defence ranks already stored for the rating snapshots.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.tournament_field_format",
+     "why": "Settlement-critical structural input for both title and qualification series.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.ratings_fundamentals",
+     "why": "Primary March-dated strength term for title, qualification and conference-tournament series; replaces the market-contaminated cbb.ratings (benchmark-only).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.committee_ordinal_seed_model",
+     "why": "Market-free and consensus-free seed and field-membership model; the catalog cbb.committee_seed_model, which blends Bracket Matrix consensus, is benchmark-only.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3131,6 +4243,41 @@
     {
      "id": "m.ladder_structure",
      "why": "Rung consistency across spread/total/prop ladders flags stale or mispriced quotes.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.top_n_tie_inclusive_cutoff",
+     "why": "Aligns the standings model with the contract's tie rule, which the existing tiebreaker-based standings simulation does not.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.strength_uncertainty_game_correlation",
+     "why": "Specifies how season-long tails are generated; the existing ratings and rating uncertainty inputs are not linked to season totals.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.regular_season_game_inventory",
+     "why": "Defines which games the contract counts and how many exist, a settlement-critical input absent from the existing list.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.joint_advancement_dependence",
+     "why": "Gives the joint probability for conjunction contracts, which the marginal-only bracket simulation does not output.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.clinch_and_elimination_effort_shift",
+     "why": "A measurable replacement for the generic motivation label in the existing list, specific to season-ending leverage. HYPOTHESIS_ONLY: needs an eight-season regression of late-season margins against leverage, using the stored schedule and standings tables already required, and is not part of first-version pricing.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.ratings_fundamentals",
+     "why": "Primary shared-strength term for finish, win-total and undefeated series; replaces the market-contaminated cbb.ratings (benchmark-only).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.committee_ordinal_seed_model",
+     "why": "Market-free and consensus-free seed and field-membership model; the catalog cbb.committee_seed_model, which blends Bracket Matrix consensus, is benchmark-only.",
      "role": "secondary"
     }
    ],
@@ -3247,6 +4394,41 @@
      "id": "m.orderbook_depth",
      "why": "Depth and spread set the minimum tradable edge; CBB books are thin.",
      "role": "context"
+    },
+    {
+     "id": "cbb.remaining_game_resume_leverage",
+     "why": "Replaces a remaining-strength-of-schedule average with the quadrant-based marginal value that the committee actually uses.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.committee_metric_revealed_weights",
+     "why": "Directly estimates the function the selection process applies and its noise, which no input in the existing list gives.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.committee_protocol_vintage",
+     "why": "Makes the historical calibration data valid for the current year's rules.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.recency_weighting_in_seeding",
+     "why": "Specific to the committee's process; without it the model assumes uniform time weights.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.committee_availability_treatment",
+     "why": "Gives a data-based seed shift for the availability category, absent from the existing list.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.ratings_fundamentals",
+     "why": "Secondary strength input for committee-seed projection; fundamentals-only replacement of the market-contaminated cbb.ratings (benchmark-only).",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.committee_ordinal_seed_model",
+     "why": "Market-free and consensus-free seed and field-membership model; the catalog cbb.committee_seed_model, which blends Bracket Matrix consensus, is benchmark-only.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3337,6 +4519,51 @@
      "id": "cbb.news",
      "role": "secondary",
      "why": "Injury and eligibility news can remove an award candidate or a top team without a game being played."
+    },
+    {
+     "id": "cbb.number_one_transition_model",
+     "why": "Defines the path-dependent count that the single-game upset variance input does not.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.ap_voter_ballot_panel",
+     "why": "Allows a mechanical simulation of poll movement; the existing voter-behaviour input is a label without data or measurement.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.final_ap_rank_mapping",
+     "why": "Converts the bracket simulation into the final-rank distribution that two sampled series settle on.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.kenpom_rank_projection",
+     "why": "Targets the specific computed object the series settle on rather than a generic rating ensemble. Not settlement-accurate: replication error of several tenths of a point decides near-tied ranks, so it is a calibration aid and the exact KenPom list is required for the final days (see pa_kenpom_replication).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.award_selection_model",
+     "why": "Gives a candidate-level probability model per award type; the existing player_usage input is a statistic, not a selection process.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.stat_leader_race_model",
+     "why": "Derives the leader probability from the full structure instead of extrapolating the current top of the list.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.poll_calendar_and_protocol",
+     "why": "Specifies the horizon and the labels the contracts use.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.ratings_fundamentals",
+     "why": "Primary team-strength term for the poll and KenPom contracts; fundamentals-only replacement of the market-contaminated cbb.ratings (benchmark-only).",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.award_candidate_profile",
+     "why": "Gives KXNCAAMBAWARD and KXNCAAMBCONFAWARD an actual selection model beyond news and usage; criteria differ by award type.",
+     "role": "primary"
     }
    ],
    "interactions": [

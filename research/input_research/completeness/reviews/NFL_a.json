@@ -855,7 +855,7 @@
      ],
      "input_ids": [
       "nfl.model_team_points_mean",
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.player_stat_variance"
      ]
     },
@@ -900,7 +900,7 @@
      ],
      "input_ids": [
       "m.rules_text",
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.leg_void_push_matrix"
      ]
     },
@@ -914,9 +914,7 @@
       "efficiency_conversion"
      ],
      "input_ids": [
-      "m.combo_pricing",
-      "m.fees",
-      "m.orderbook_depth"
+      "m.fees"
      ]
     }
    ],
@@ -983,7 +981,7 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.corr",
       "nfl.team_stat_accounting_constraints"
      ],
@@ -1104,6 +1102,25 @@
     ],
     "why": "Supplies the market-free side, total and team-total marginals and their coherent joint mean that same-game combo legs inherit.",
     "role": "primary"
+   },
+   "nfl.model_margin_lattice": {
+    "label": "Model-based regulation margin lattice with mass at zero (key-number corrected, end-of-game behaviour included)",
+    "category": "distribution",
+    "mechanism": "Probability that the regulation margin equals k, especially k=0, from a drive-outcome simulation or lattice centred on the market-free team means, corrected for the excess mass that 3-point and 7-point scoring and late tie-forcing behaviour put on small margins.",
+    "rationale": "Tie, overtime and integer-spread markets are priced on atoms at specific margins, which a smooth normal density misses; a lattice centred on betting-line residuals would import the market's own view of the game. Centring on the model mean margin and total from the market-free team means keeps the input market-free and lets the line serve as a benchmark only.",
+    "measurement": "Simulate 20,000 games per matchup from per-drive outcome multinomials (TD with 94 percent extra-point conversion, FG, safety, no score) calibrated so team means equal the market-free model team means, then fit an isotonic correction of simulated P(margin=k) to empirical regulation-margin frequencies (all regular-season games since 2002, about 5,500, binned by model |mean margin| in 0-3, 3-6, 6-10, 10+ points and model total terciles) with Beta(a=2, b=30) shrinkage in each bin for k=0 and Dirichlet smoothing for key numbers 3, 6, 7, 10, 14. Add an end-of-game term for tied games where the team with the ball inside two minutes can run the clock. Output P(margin=k) for k from -30 to 30. As-of: latest model means at kickoff minus 90 minutes; no spread, total or price enters.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse schedules/results (final regulation scores by quarter)",
+     "nflverse pbp (drive outcomes)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "games: season, home/away score by quarter, overtime flag",
+     "pbp: drive result, points, game_seconds_remaining, score_differential"
+    ],
+    "why": "Key-number atoms and push probabilities for spread and total legs built around model means rather than line residuals.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -1124,8 +1141,8 @@
     "reason": "Lead-state script is the source of the sign flips in cross-leg dependence; correctly central."
    },
    "nfl.score_resid": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Key-number mass for spread and total legs (3, 7, 10) and push probability, used here only as the final-score lattice re-centred on model means from nfl.model_team_points_mean rather than on betting lines; a marginal, not a joint."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Defined around market lines; key-number mass and push probability for spread and total legs now come from the model-centred nfl.model_margin_lattice, and the line-centred residual is kept only to benchmark that lattice."
    },
    "nfl.player_stat_variance": {
     "verdict": "KEEP_SECONDARY",
@@ -1180,7 +1197,7 @@
    },
    {
     "inputs": [
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "m.rules_text",
      "nfl.leg_void_push_matrix"
     ],
@@ -1191,7 +1208,7 @@
    {
     "inputs": [
      "nfl.model_team_points_mean",
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "nfl.script"
     ],
     "form": "joint-distribution",
@@ -1206,7 +1223,7 @@
     "why": "Correlation between the favourite covering and the QB's yards is positive in close games and negative in blowouts; averaging gives near zero and misses both."
    },
    {
-    "input_id": "nfl.score_resid",
+    "input_id": "nfl.model_margin_lattice",
     "shape": "spikes at key numbers 3, 7, 10, 14",
     "why": "Margin distribution has lumps at 3 and 7, so spread legs near these numbers have jump changes in cover and push probability that a continuous model does not produce."
    },
@@ -1300,7 +1317,7 @@
     ],
     "feeds_inputs": [
      "nfl.script",
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "nfl.model_team_points_mean"
     ]
    }
@@ -2066,7 +2083,7 @@
  },
  "first_score_team_time_race": {
   "contract": {
-   "settlement_definition": "No live series is mapped to this archetype in the ledger, so there is no rules text for race-to-N-points or time-bucket markets in it. By the title, the contract asks which team first reaches a threshold (first touchdown, or N points) and in which game-clock bucket the first touchdown happens. The related first-touchdown team market, filed under the anytime/first TD archetype, counts offensive, defensive and special-teams touchdowns, overtime, and has a 'No team scores a TD' strike; bucket boundaries, the treatment of a first touchdown scored after halftime or in overtime, and whether a race-to-N counts reaching or exceeding N points are not verifiable here and are carried as CONTRACT_AMBIGUOUS.",
+   "settlement_definition": "No live series is filed under this archetype in the ledger (rules_verification stays NO_LIVE_SERIES), but its mechanism is the one that the ledger-misfiled series KXNFLFIRSTTDTEAM and KXNFLFIRSTTDTIME (filed under anytime_first_td_scorer) settle on. The sampled KXNFLFIRSTTDTEAM rules read: 'All touchdowns count for this market, including offensive, defensive, and special teams. If the first touchdown of the game is recorded in overtime, then the market for that team still resolves to Yes. If neither team scores a touchdown in the full game (including overtime), then the market titled \"No team scores a TD\" resolves to Yes.' KXNFLFIRSTTDTIME is title only. Race-to-N-points contracts have no ledger series at all; claims about them are conditional. Bucket boundaries, the clock convention, and whether a race-to-N counts reaching or exceeding N are not verifiable and are carried as CONTRACT_AMBIGUOUS.",
    "rules_verification": "NO_LIVE_SERIES",
    "rules_evidence": [],
    "variants_and_edge_cases": [
@@ -2076,7 +2093,19 @@
     "A first touchdown in overtime or none at all (the 'no TD' mass) must have a strike; the sibling first-TD team market in another archetype includes a 'No team scores a TD' strike and counts overtime.",
     "Kickoff return and defensive touchdowns can end the race before any offensive drive completes."
    ],
-   "settlement_data_source": "Not verified here; presumed the official play-by-play scoring summary with game clock, as for the sibling first-TD team market (resolved from the official final result)."
+   "settlement_data_source": "Official play-by-play scoring summary with game clock, as for the sibling KXNFLFIRSTTDTEAM market (resolved from the official final result); not verified for time buckets or race-to-N.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLFIRSTTDTEAM",
+     "issue": "Live first-team-to-score-a-TD series (rules text sampled, includes defensive/ST TDs, overtime and a 'No team scores a TD' strike) is filed under anytime_first_td_scorer by the ledger although its mechanism is the first-passage race modelled here; this archetype owns the race, no-TD and time inputs.",
+     "belongs_in": "first_score_team_time_race"
+    },
+    {
+     "ticker": "KXNFLFIRSTTDTIME",
+     "issue": "Live first-touchdown-time series (title only) is filed under anytime_first_td_scorer; it needs the drive-duration and time-to-first-TD inputs defined only in this record.",
+     "belongs_in": "first_score_team_time_race"
+    }
+   ]
   },
   "mechanism": {
    "summary": "The first score is a first-passage problem on a drive-level race. Teams alternate possessions after the kickoff; each possession ends in one of a few outcomes (touchdown, field goal, punt, turnover, turnover on downs, safety, end of half) with probabilities that depend on the team's offence, the opposing defence, starting field position and, for the first one or two drives, the coach's scripted plays. The first team to produce a TD (or reach N points) wins; the clock time of that event is the sum of the durations of the drives before it, so the time distribution depends on drive durations, which are right-skewed, and on how many drives pass before the first score. Non-offensive scores (pick-six, return TD, safety) arrive on a different, rarer hazard. Race-to-N markets add a lattice problem: points come in packages of 3, 6, 7, 8 and 2 and the first team to cross N depends on the order of TDs and FGs, not just the number of scoring drives. Because the first possession goes to one team, small advantages in first-drive TD probability compound into a first-score edge.",
@@ -2132,7 +2161,7 @@
     {
      "id": "s4",
      "name": "Non-offensive scores and turnovers",
-     "description": "Defensive and special-teams touchdowns, safeties and short fields after turnovers produce scores without an offensive drive completing. They have a low rate per game (roughly one in ten games has a defensive or ST TD) but they pre-empt the offensive race and add mass to very early times; a turnover on the first drive creates a short field for the opponent.",
+     "description": "Defensive and special-teams touchdowns, safeties and short fields after turnovers produce scores without an offensive drive completing. They have a low rate per game (roughly one in ten games has a defensive or ST TD) but they pre-empt the offensive race and add mass to very early times; a turnover on the first drive creates a short field for the opponent. The mass of 'no TD in regulation' is split by nfl.ot_model: under the sampled KXNFLFIRSTTDTEAM text a first TD scored only in overtime still resolves the team strike Yes, and 'No team scores a TD' needs a TD-less overtime too, with the overtime possession rules of the season in force.",
      "distribution": "Rare-event Poisson with low rate; turns first-score mass towards the early minutes and toward the defence",
      "categories": [
       "efficiency_conversion",
@@ -2140,13 +2169,14 @@
      ],
      "input_ids": [
       "nfl.turnovers",
-      "nfl.early_nonoffensive_score_hazard"
+      "nfl.early_nonoffensive_score_hazard",
+      "nfl.ot_model"
      ]
     },
     {
      "id": "s5",
      "name": "Race-to-N points lattice",
-     "description": "For race-to-N (for example first to 10 or 14 points), the winner depends on the sequence of scoring packages: TD (6-8 points), FG (3), safety (2). With N between 7 and 15, the number of scoring drives needed differs by sequence, so P(team A first to N) is a path probability on a lattice that depends on the TD/FG split, extra-point success and two-point tendency, not on expected points alone.",
+     "description": "For race-to-N (for example first to 10 or 14 points), the winner depends on the sequence of scoring packages: TD (6-8 points), FG (3), safety (2). With N between 7 and 15, the number of scoring drives needed differs by sequence, so P(team A first to N) is a path probability on a lattice that depends on the TD/FG split, extra-point success and two-point tendency, not on expected points alone. Package probabilities come from the model drive-outcome input, not from market lines or line residuals.",
      "distribution": "Compound renewal-reward process; discrete lattice of point totals with path dependence at 3, 6, 7, 10, 13, 14",
      "categories": [
       "distribution_variance",
@@ -2154,8 +2184,7 @@
      ],
      "input_ids": [
       "nfl.scoring_event_point_values",
-      "nfl.team_total_split",
-      "nfl.score_resid"
+      "nfl.drive_outcome_by_index"
      ]
     },
     {
@@ -2224,7 +2253,8 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.opening_possession",
-      "nfl.drive_duration_by_outcome"
+      "nfl.drive_duration_by_outcome",
+      "nfl.ot_model"
      ],
      "note": "Possession order and clock consumption define the race."
     },
@@ -2248,10 +2278,11 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.score_resid",
-      "nfl.early_nonoffensive_score_hazard"
+      "nfl.early_nonoffensive_score_hazard",
+      "nfl.scoring_event_point_values",
+      "nfl.drive_outcome_by_index"
      ],
-     "note": "Rare events and lattice atoms."
+     "note": "Rare non-offensive score atoms, scoring-package point values and model drive-outcome probabilities define the race lattice."
     },
     "situational_schedule_motivation": {
      "status": "NOT_APPLICABLE",
@@ -2389,8 +2420,8 @@
     "reason": "FG range controls how often a stalled drive ends the race at 3 points rather than continuing; relevant mainly for race-to-3/6."
    },
    "nfl.team_total_split": {
-    "verdict": "WEAK",
-    "reason": "Whole-game team means are far from a first-drive hazard; flagged primary but only a prior for early scoring hazards, and it is partly market-derived."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Whole-game implied team means are market-derived and far from a first-drive hazard; removed from stage s5, coverage and data feeds, the race lattice is built from model drive outcome probabilities (nfl.drive_outcome_by_index) instead."
    },
    "nfl.turnovers": {
     "verdict": "KEEP_CONTEXT",
@@ -2416,19 +2447,19 @@
      "nfl.opening_script",
      "nfl.drive_outcome_by_index"
     ],
-    "form": "multiplicative",
-    "mechanism": "P(team scores first) is roughly the receiver's first-drive scoring probability plus the survivors' chances; a team with a high scripted TD rate benefits double by also receiving first, because the advantage is multiplied by the probability that the opponent fails to answer.",
-    "how_to_test": "Compute first-TD rate for receivers versus deferrers conditional on team early-drive TD rate."
+    "form": "conditional",
+    "mechanism": "P(team scores the game's first TD) is the receiver's first-drive TD probability plus the survival product of both teams failing on earlier drives; receiving first and a high scripted TD rate add on drive one but their effect then compounds only through the survival product over later drives, so the gain from receiving first shrinks as the per-drive TD rate falls.",
+    "how_to_test": "Compute first-TD rate for receivers versus deferrers within bins of team early-drive TD rate and compare with the survival-product prediction from per-drive rates."
    },
    {
     "inputs": [
      "nfl.drive_duration_by_outcome",
      "nfl.pace",
-     "nfl.q_scoring"
+     "nfl.drive_outcome_by_index"
     ],
     "form": "other-nonlinear",
-    "mechanism": "Time to first TD is a sum of right-skewed durations over a random number of drives, so a fast offence moves the median earlier and fattens the early bucket more than proportionally; a slow, clock-killing team shifts mass past the first quarter.",
-    "how_to_test": "Fit the convolution to team games and compare bucket frequencies by team pace tercile."
+    "mechanism": "Time to first TD is a convolution of right-skewed drive durations over a random number of drives (a duration-and-hazard composition rather than an interaction of input levels); a fast offence with a high per-drive TD rate moves the median earlier and fattens the early bucket more than proportionally, while a clock-killing team shifts mass past the first quarter.",
+    "how_to_test": "Fit the renewal convolution from per-drive TD rates and duration distributions and compare predicted with observed bucket frequencies by team pace tercile."
    },
    {
     "inputs": [
@@ -2502,8 +2533,7 @@
      "nfl.drive_duration_by_outcome",
      "nfl.opening_script",
      "nfl.redzone",
-     "nfl.turnovers",
-     "nfl.team_total_split"
+     "nfl.turnovers"
     ]
    },
    {
@@ -2514,9 +2544,19 @@
     "history_needed": "2015-2025",
     "candidate_sources": [
      {
-      "name": "nflverse schedules + pbp",
+      "name": "nflverse pbp (kickoff receiver of each half derivable from first drive)",
       "access": "free",
-      "note": "post-game toss and kickoff; pregame toss own_capture"
+      "note": "Receiver observable; toss winner and receive/defer decision not confirmed as fields (SOURCE_UNVERIFIED)"
+     },
+     {
+      "name": "Pro-Football-Reference game pages (toss line)",
+      "access": "free_scrape",
+      "note": "Likely holds toss winner and decision; coverage and terms unverified"
+     },
+     {
+      "name": "own capture of pregame toss result",
+      "access": "own_capture",
+      "note": "Toss about 3 minutes before kickoff"
      }
     ],
     "feeds_inputs": [
@@ -2580,7 +2620,6 @@
     ],
     "feeds_inputs": [
      "nfl.q_scoring",
-     "nfl.score_resid",
      "nfl.off_epa",
      "nfl.def_epa",
      "nfl.pace",
@@ -2592,7 +2631,7 @@
    {
     "id": "u1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "No live series exists in this archetype, so race-to-N definitions, time-bucket boundaries and the handling of overtime and no-score games cannot be checked; the live first-TD team and first-TD time series sit in the anytime TD archetype.",
+    "description": "The ledger files no series under this archetype; the live first-TD team (rules text sampled) and first-TD time (title only) series sit in the anytime TD archetype and are listed in series_mapping_issues, and race-to-N points contracts have no ledger series, so race definitions, time-bucket boundaries and the reaching-versus-exceeding N rule cannot be checked.",
     "what_would_resolve": "Sample live rules for KXNFLFIRSTTDTIME and any race-to-points ticker, and decide if they should be in this archetype.",
     "category": "settlement_contract"
    },
@@ -2623,6 +2662,13 @@
     "description": "Rule-regime and officiating effects on early field position and penalty-affected opening drives are not defined into any input beyond kick-return statistics.",
     "what_would_resolve": "Quantify the effect of touchback spot changes and crew penalty rates on first-drive outcomes.",
     "category": "officiating_rules"
+   },
+   {
+    "id": "u6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Receive/defer decision and toss winner (the driver of nfl.opening_possession deferral habit) are not confirmed to exist in nflverse schedules or pbp, which expose only who received each kickoff; the stated source cannot be assumed to build the input.",
+    "what_would_resolve": "Check nflverse column lists for toss fields and test a PFR scrape; otherwise use realized kickoff receiver and treat toss as a coin flip pregame.",
+    "category": "game_context_script"
    }
   ],
   "reviewer": "NFL_a author (Claude)",
@@ -2630,7 +2676,7 @@
  },
  "game_events": {
   "contract": {
-   "settlement_definition": "Four sampled contract types settle differently. KXNFLTIE resolves YES if neither team wins and the game ends in a tie (a tie can only exist after the overtime period has also failed to produce a winner). KXNFLSFTY resolves YES if either team records a safety anywhere in the game, with overtime safeties counting (floor 0.5, 1+). KXNFLLONGRSH is a named-player market on longest single rush over a yardage threshold (floor 6.5, i.e. 7+ yards) and is voided to the pre-game fair price if the player is active but never appears in a live play. KXNFLWEEKTIE resolves YES if at least one game in the named week ends in a tie. KXNFLOT (overtime) is TITLE_ONLY. Games not started within 48 hours of the scheduled start settle at a fair price.",
+   "settlement_definition": "Four sampled contract types settle differently. KXNFLTIE resolves YES if neither team wins and the game ends in a tie (the sampled KXNFLTIE text does not say that a tie can only follow an unproductive overtime period; that is league-rule knowledge, not rules text). KXNFLSFTY resolves YES if either team records a safety anywhere in the game, with overtime safeties counting (floor 0.5, 1+). KXNFLLONGRSH is a named-player market on longest single rush over a yardage threshold (floor 6.5, i.e. 7+ yards) and is voided to the pre-game fair price if the player is active but never appears in a live play. KXNFLWEEKTIE resolves YES if at least one game in the named week ends in a tie. KXNFLOT (overtime) is TITLE_ONLY, so its settlement (presumably that the game goes to overtime, i.e. tied after regulation) is inferred from the title. Games not started within 48 hours of the scheduled start settle at a fair price.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -2655,13 +2701,20 @@
     }
    ],
    "variants_and_edge_cases": [
-    "Window differences: tie and safety markets cover the full game including overtime; the overtime market (title only) is the regulation-tie event itself, while the tie market additionally requires the overtime to end level. They are nested events with very different probabilities.",
+    "Window differences: tie and safety markets cover the full game including overtime; the overtime market (title only, so inferred) is presumably the regulation-tie event itself, while the tie market additionally requires the overtime to end level. They are nested events with very different probabilities.",
     "Longest rush strike construction: floor_strike 6.5 on a rush yardage 'over' market; with integer yardage the event is 7+ yards, so an RB with 10 carries almost always clears it; deeper rungs concentrate on explosive-run tail.",
     "KXNFLWEEKTIE depends on the week's slate size (bye weeks reduce games from 16 to as few as 13) and on whether the sampled 'Week 2' text includes games postponed beyond the week.",
     "KXNFLLONGRSH requires a named rusher; a QB's scrambles and sneaks count as rushes in the official statistics but the sampled text does not say so; fair-price rule applies to active players with no live play.",
     "KXNFLOT and KXNFLLONGRSH series vary by ticker; the sampled LONGRSH market was for one player in one game and other long-rush strikes may exist."
    ],
-   "settlement_data_source": "Official NFL scoring and play-by-play statistics (safeties and ties) and the league's rushing statistics for the longest rush; Kalshi refers to 'official final result'."
+   "settlement_data_source": "Official NFL scoring and play-by-play statistics (safeties and ties) and the league's rushing statistics for the longest rush; Kalshi refers to 'official final result'.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLLONGRSH",
+     "issue": "Named-player longest rush ladder is a player rushing prop (order statistic over carries), not a game event; filed here by the ledger, its carry-count and yardage-tail inputs are the rushing archetype's domain.",
+     "belongs_in": "rushing_yards"
+    }
+   ]
   },
   "mechanism": {
    "summary": "These markets are all rare or order-statistic events built from the same drive process, but each has its own generator. A tie requires the game to be level after regulation and then level after overtime: P(tie) = P(regulation tie) x P(overtime ends level). Regulation ties come from the margin lattice (mass at zero, boosted by the 3/7 increments and end-of-game management), while the overtime ending depends on the OT rule set, each team's scoring rate and 4th-down policy in a 10-minute period. A safety is a count of rare special events: an offence is tackled or commits a foul in its own end zone, a punt or kick leaves the end zone, a snap or fumble goes out of bounds; the rate scales with how many plays the offence runs near its own goal line, with pass rush versus pass protection, and with punting from deep. The longest rush by a named player is the maximum of N draws of a heavy-tailed per-carry yardage distribution: N is the player's carries (a role and script variable) and the tail is his explosive-run rate behind his blockers. A weekly tie is the union of independent game-level tie events over the week's slate. Void rules (no live play) convert some of these to fair-price settlements.",
@@ -2669,15 +2722,15 @@
     {
      "id": "g1",
      "name": "Regulation tie mass at zero margin",
-     "description": "P(tied after four quarters) depends on the final-margin distribution evaluated at zero, which has more mass than a smooth normal density implies because scores come in 3s and 7s and late-game kneeling or FG-for-tie decisions sit at zero. Tight spreads and low totals concentrate probability at small margins; coaches who are tied late may play for overtime.",
+     "description": "P(tied after four quarters) depends on the final-margin distribution evaluated at zero, which has more mass than a smooth normal density implies because scores come in 3s and 7s and late-game kneeling or FG-for-tie decisions sit at zero. Tight spreads and low totals concentrate probability at small margins; coaches who are tied late may play for overtime. The margin atom comes from the model-centred lattice (nfl.model_margin_lattice) built on the market-free team means, never from line residuals.",
      "distribution": "Discrete mass on the integer margin lattice; P(zero) a few percent of games with sensitivity to totals and lines",
      "categories": [
       "distribution_variance",
       "game_context_script"
      ],
      "input_ids": [
-      "nfl.score_resid",
-      "nfl.team_total_split",
+      "nfl.model_margin_lattice",
+      "nfl.model_team_points_mean",
       "nfl.script",
       "nfl.late_tie_game_management"
      ]
@@ -2718,7 +2771,7 @@
     {
      "id": "g4",
      "name": "Longest rush as an order statistic",
-     "description": "For a named player the longest rush equals the maximum over his N carries of yards per carry. N depends on role, game script (trailing teams run less) and health; the per-carry distribution is a mixture of many 2-5 yard gains and an explosive tail. The probability that the maximum exceeds a threshold rises quickly with N and with explosive-run rate, and for low thresholds like 7 yards saturates near one for lead backs.",
+     "description": "For a named player the longest rush equals the maximum over his N carries of yards per carry. N depends on role, game script (trailing teams run less) and health; the per-carry distribution is a mixture of many 2-5 yard gains and an explosive tail. The probability that the maximum exceeds a threshold rises quickly with N and with explosive-run rate, and for low thresholds like 7 yards saturates near one for lead backs. The ledger files KXNFLLONGRSH here, so the stage is kept, but the rusher inputs overlap the rushing_yards archetype and claims about the series are conditional on that record owning the carry-count model (see series_mapping_issues).",
      "distribution": "Maximum of N heavy-tailed draws; N is overdispersed count; tail is a mixture with a rare long-run component",
      "categories": [
       "role_personnel",
@@ -2745,7 +2798,7 @@
      ],
      "input_ids": [
       "nfl.ot_model",
-      "nfl.score_resid"
+      "nfl.model_margin_lattice"
      ]
     },
     {
@@ -2768,7 +2821,7 @@
     "talent_strength": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.team_total_split",
+      "nfl.model_team_points_mean",
       "nfl.rb_efficiency"
      ],
      "note": "Team scoring level (for ties) and rusher quality (for longest rush) set the rates."
@@ -2817,7 +2870,7 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.script",
-      "nfl.score_resid"
+      "nfl.model_margin_lattice"
      ],
      "note": "Closeness and script determine tie probability and carry counts."
     },
@@ -2840,7 +2893,7 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.safety_risk",
       "nfl.rush_yardage_tail"
      ],
@@ -2954,12 +3007,50 @@
     ],
     "why": "Carries are the opportunity count; existing carry-share input does not give a distribution conditional on script.",
     "role": "secondary"
+   },
+   "nfl.model_team_points_mean": {
+    "label": "Market-free team expected points and margin (drive-model mean and SD per team)",
+    "category": "team_strength",
+    "mechanism": "Each team's expected points are expected drives times points per drive, built from opponent-adjusted offence and defence efficiency, tempo, kicker and quarterback status and weather, with no betting line, price or implied total used as a feature.",
+    "rationale": "Market-derived team means (spread and total splits) are benchmarks that already contain the market's injury, weather and sharp information; feeding them into a model of the same game makes the model unable to show any independent information and hides which fundamental channels are missing. A market-free mean keeps the availability, weather, matchup and coaching channels explicit and lets the line be used only as an evaluation benchmark.",
+    "measurement": "For team i vs opponent j, expected points = E[drives_i] x E[points per drive_i]. E[drives] = 3600 / (mean seconds per drive implied by both teams' neutral-situation seconds per play and expected plays per drive), 2015+ regular-season pbp, ridge-shrunk 50/50 toward league mean at 8 games. Points per drive from a ridge regression on own opponent-adjusted offensive EPA per play (exponential half-life 8 games, prior-season carryover weight 0.3 decaying to 0 by week 10), opponent defensive EPA per play, red-zone TD rate (shrunk k=30 trips), kicker FG-range rating, starting-QB indicator, wind above 15 mph and dome flags, home indicator. Output team mean, SD (from residuals by tercile) and the margin and total means as differences and sums. As-of timestamp: after the previous game and re-run at the latest injury report. Betting lines are excluded from the feature set and used only for after-the-fact benchmarking.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp and schedules (EPA, drives, seconds per play, wind, roof)",
+     "nflverse injuries and depth charts (QB status)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, posteam, defteam, drive, play_clock seconds, epa, points scored by drive, wind, roof",
+     "team-week starting QB and injury status"
+    ],
+    "why": "Market-free team means (hence mean margin and total) that locate the regulation-tie, overtime and slate-level tie probabilities without line-implied inputs.",
+    "role": "primary"
+   },
+   "nfl.model_margin_lattice": {
+    "label": "Model-based regulation margin lattice with mass at zero (key-number corrected, end-of-game behaviour included)",
+    "category": "distribution",
+    "mechanism": "Probability that the regulation margin equals k, especially k=0, from a drive-outcome simulation or lattice centred on the market-free team means, corrected for the excess mass that 3-point and 7-point scoring and late tie-forcing behaviour put on small margins.",
+    "rationale": "Tie, overtime and integer-spread markets are priced on atoms at specific margins, which a smooth normal density misses; a lattice centred on betting-line residuals would import the market's own view of the game. Centring on the model mean margin and total from the market-free team means keeps the input market-free and lets the line serve as a benchmark only.",
+    "measurement": "Simulate 20,000 games per matchup from per-drive outcome multinomials (TD with 94 percent extra-point conversion, FG, safety, no score) calibrated so team means equal the market-free model team means, then fit an isotonic correction of simulated P(margin=k) to empirical regulation-margin frequencies (all regular-season games since 2002, about 5,500, binned by model |mean margin| in 0-3, 3-6, 6-10, 10+ points and model total terciles) with Beta(a=2, b=30) shrinkage in each bin for k=0 and Dirichlet smoothing for key numbers 3, 6, 7, 10, 14. Add an end-of-game term for tied games where the team with the ball inside two minutes can run the clock. Output P(margin=k) for k from -30 to 30. As-of: latest model means at kickoff minus 90 minutes; no spread, total or price enters.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse schedules/results (final regulation scores by quarter)",
+     "nflverse pbp (drive outcomes)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "games: season, home/away score by quarter, overtime flag",
+     "pbp: drive result, points, game_seconds_remaining, score_differential"
+    ],
+    "why": "Gives KXNFLTIE, KXNFLOT and KXNFLWEEKTIE a market-free atom-at-zero input instead of line-centred residuals.",
+    "role": "primary"
    }
   },
   "input_audit": {
    "nfl.score_resid": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Mass at zero margin and key numbers is the direct driver of OT and tie markets, but must be adjusted for end-of-game behaviour."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Defined around market lines and key numbers, so a tie model built on it imports the market's closeness view; replaced as the primary tie input by the model-centred nfl.model_margin_lattice and kept only as a benchmark of the lattice."
    },
    "nfl.ot_model": {
     "verdict": "KEEP_PRIMARY",
@@ -2970,8 +3061,8 @@
     "reason": "Appropriate but label gives only base rates; team-game safeties are mostly zero so exposure-based estimation is required."
    },
    "nfl.team_total_split": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Tie probability depends on closeness and total; here it conveys little for safeties or longest rush; downgrade for non-score events."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Implied team points from spread and total are market-derived; replaced by market-free nfl.model_team_points_mean in tie, overtime and weekly-slate stages and kept only to benchmark them."
    },
    "nfl.redzone": {
     "verdict": "WEAK",
@@ -3029,18 +3120,18 @@
   "interactions": [
    {
     "inputs": [
-     "nfl.score_resid",
-     "nfl.team_total_split",
+     "nfl.model_margin_lattice",
+     "nfl.model_team_points_mean",
      "nfl.ot_model"
     ],
     "form": "threshold",
     "mechanism": "Regulation tie probability needs the pregame margin to be small and total low, because with fewer scoring drives the probability mass at exactly zero rises; the effect is concentrated at spreads under 3 and totals under the mean.",
-    "how_to_test": "Estimate P(regulation tie) by spread and total bucket against a smooth model."
+    "how_to_test": "Estimate P(regulation tie) by model mean-margin and model-total bucket against a smooth normal model and against the lattice."
    },
    {
     "inputs": [
      "nfl.late_tie_game_management",
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "nfl.ot_model"
     ],
     "form": "conditional",
@@ -3074,7 +3165,7 @@
      "nfl.kicker"
     ],
     "form": "regime-switch",
-    "mechanism": "In cold or windy games with unreliable kickers overtime FGs fail and drives stall, raising the chance that overtime ends level; effect only in extreme weather.",
+    "mechanism": "Wind above a threshold of roughly 15 mph or very cold temperatures cut overtime FG reliability and stall drives, raising the chance that overtime ends level; below the threshold the effect is negligible, so the response is a regime switch applied to P(level | OT), not a continuous effect on regulation ties.",
     "how_to_test": "Compare OT outcomes in weather regimes using playoffs and regular season OT games."
    }
   ],
@@ -3092,7 +3183,7 @@
    {
     "input_id": "nfl.ot_model",
     "shape": "product of two small probabilities",
-    "why": "Tie = P(OT) x P(level | OT): each factor is small and uncertain; relative errors multiply, so the tie market is the most sensitive to rule changes."
+    "why": "Tie = P(OT) x P(level | OT): each factor is small and uncertain; relative errors multiply, so the tie market is the most sensitive to rule changes. Note the P(level | OT) factor is a rule-era input; the OT margin lattice is wider than 0, 3, 6 when both teams possess (a TD plus extra point can leave a 1 or 2 point margin)."
    }
   ],
   "required_data": [
@@ -3119,9 +3210,10 @@
      "nfl.ot_ending_hazard",
      "nfl.endzone_exposure_plays",
      "nfl.rush_yardage_tail",
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "nfl.safety_risk",
-     "nfl.ot_model"
+     "nfl.ot_model",
+     "nfl.model_team_points_mean"
     ]
    },
    {
@@ -3164,7 +3256,7 @@
     "feeds_inputs": [
      "nfl.ot_model",
      "nfl.ot_ending_hazard",
-     "nfl.score_resid"
+     "nfl.model_margin_lattice"
     ]
    },
    {
@@ -3183,11 +3275,44 @@
     "feeds_inputs": [
      "nfl.weather_pit",
      "nfl.injuries_pit",
-     "nfl.pass_rush",
-     "nfl.ol",
      "nfl.pace",
      "nfl.script",
-     "nfl.team_total_split"
+     "nfl.model_team_points_mean"
+    ]
+   },
+   {
+    "dataset": "Pass-rush pressure and end-zone protection charting",
+    "grain": "play-level for plays inside the offence's own 10-yard line, plus team-game pressure and sack allowed rates",
+    "fields": [
+     "pressure flag",
+     "time to throw",
+     "pass rusher win",
+     "play result",
+     "yardline_100",
+     "safety flag"
+    ],
+    "timestamp_requirement": "Charting is post-game; pregame rates are as-of previous game and must not include the target game.",
+    "history_needed": "2016-2025 for the NGS-era fields; safeties themselves are few (roughly 10 to 15 per season)",
+    "candidate_sources": [
+     {
+      "name": "nflverse pbp (safety flags, yardline_100, sacks)",
+      "access": "free",
+      "note": "Gives exposure and outcomes but no pressure charting"
+     },
+     {
+      "name": "PFF / Sports Info Solutions charting",
+      "access": "paid",
+      "note": "Pressure and blocking grades; field-level availability not verified"
+     },
+     {
+      "name": "NFL Next Gen Stats pressure/time-to-throw",
+      "access": "free_limited",
+      "note": "Public exposure of play-level pressure not verified"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.pass_rush",
+     "nfl.ol"
     ]
    }
   ],
@@ -3195,7 +3320,7 @@
    {
     "id": "u1",
     "type": "SOURCE_UNVERIFIED",
-    "description": "Whether the 2026 regular-season overtime format guarantees both teams a possession is not confirmed by the sampled rules text or by any retrieved source; the tie hazard depends heavily on it.",
+    "description": "Whether the 2026 regular-season overtime format guarantees both teams a possession is not confirmed by the sampled rules text or by any retrieved source; the tie hazard depends heavily on it. The regulation-OT margin lattice is also not limited to 0, 3 and 6: with both teams possessing, a TD plus extra point or two-point try leaves margins of 1 and 2, which changes P(level | OT).",
     "what_would_resolve": "Retrieve the 2026 NFL rulebook OT section and record the adopted format and effective season.",
     "category": "officiating_rules"
    },
@@ -3219,6 +3344,20 @@
     "description": "Safeties are rare (a few percent of games) so team-level rates have extreme sampling error; no public dataset gives pressure and exposure at team-play granularity before 2016 with tracking-quality labels.",
     "what_would_resolve": "Pool league-wide per-play safety probabilities and test whether team factors add skill.",
     "category": "distribution_variance"
+   },
+   {
+    "id": "u5",
+    "type": "OTHER",
+    "description": "The archetype is labelled for TD counts, both-teams-score, team-stat and game-stat families (NFL/TOTAL_TD, PERIOD_TD, TEAM_STAT, GAME_STAT) but no ledger series filed here belongs to them (the TD-count series KXNFLTOTALTD, KXNFLGAMETD and KXNFLTD sit in anytime_first_td_scorer) and no stage models them, so any claim of coverage for those families is withdrawn.",
+    "what_would_resolve": "Re-file the TD-count and team-stat series to this archetype and add a count-distribution stage reusing the market-free team TD mean (nfl.model_team_td_mean from the anytime TD record), or confirm via the ledger that the families have no live markets.",
+    "category": "distribution_variance"
+   },
+   {
+    "id": "u6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Per-play pressure and protection data for the safety hazard (pass-rush win rate against end-zone drop-backs) is not in nflverse pbp, which holds exposure (yardline_100 >= 95) and safety flags only; public availability of pressure charting by play is unconfirmed and charting vendors are paid.",
+    "what_would_resolve": "Check NGS/PFF/SIS pressure fields for public exposure and licensing, and test whether exposure plus team sack rate alone predicts safeties out of sample.",
+    "category": "opponent_matchup"
    }
   ],
   "reviewer": "NFL_a author (Claude)",
@@ -3255,9 +3394,81 @@
     "The plain moneyline (KXNFLGAME) has no sampled rules text: how a tied game settles (void, fair price or a Tie strike) matters, since ties are a few tenths of a percent of games; the win-margin market treats it as the 0-margin bucket.",
     "Rungs across the same spread ladder range from competitive (-3.5) to extreme (35.5), so the archetype spans the body and the far tail of the margin distribution; prices near zero depend on the tail model.",
     "Season and week aggregate series (blowout over 51.5, week highest scoring) are order statistics over many games and need game-level scoring distributions, not a single-game side model.",
-    "Many series here (division winners, viewership, location, celebrity game, Jake Paul compete) are mis-bucketed by the ledger and have distinct mechanisms."
+    "Series filed here by the ledger that are not margin events (division winners, last team to win, viewership, game location, celebrity game, Pro Bowl, Jake Paul compete) are listed in series_mapping_issues with their owning archetype; this record's claims cover only the margin, win-margin, spread and slate-extreme series and are conditional for the rest."
    ],
-   "settlement_data_source": "Official final scores of the league; Kalshi settles on the 'official final result' of each game."
+   "settlement_data_source": "Official final scores of the league; Kalshi settles on the 'official final result' of each game.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLAFCEAST",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLAFCNORTH",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLAFCSOUTH",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLAFCWEST",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLNFCEAST",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLNFCNORTH",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLNFCSOUTH",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLNFCWEST",
+     "issue": "Division-winner season future (rules text sampled for AFC East/North/South), a season-long outcome needing season simulation and tiebreak inputs, not a single-game margin.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLLASTTOWIN",
+     "issue": "Season-long 'last team to win a game' market (title only) is a season-win-race outcome.",
+     "belongs_in": "season_win_totals_and_futures"
+    },
+    {
+     "ticker": "KXNFLCOMPETE",
+     "issue": "Rules text: Jake Paul must 'record at least one snap in a Pro Football game'; a novelty participation event with no margin mechanism.",
+     "belongs_in": "off_field_events"
+    },
+    {
+     "ticker": "KXNFLVIEWERSHIP",
+     "issue": "Game viewership (title only) is a media-audience novelty outcome.",
+     "belongs_in": "off_field_events"
+    },
+    {
+     "ticker": "KXNFLGAMELOCATION",
+     "issue": "Game location (title only) is a scheduling/announcement event.",
+     "belongs_in": "off_field_events"
+    },
+    {
+     "ticker": "KXNFLCELEBRITYGAME",
+     "issue": "Celebrity flag football game (title only) is an exhibition winner market, not an NFL margin.",
+     "belongs_in": "off_field_events"
+    },
+    {
+     "ticker": "KXNFLPROBOWLWIN",
+     "issue": "Pro Bowl game winner (title only) is an exhibition of selected players with a different effort and lineup process than regular-season games.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: exhibition_and_all_star_games"
+    }
+   ]
   },
   "mechanism": {
    "summary": "The final margin M = (home points - away points) is the sum of a structural expectation and a heavy-tailed, lattice-valued noise term. The structural mean is team quality difference (offence and defence, QB-weighted, regressed from preseason priors and updated through the season) plus home-field edge plus situational shifts (rest, travel, weather, motivation), then adjusted at kickoff by the actual lineup: the QB, offensive line, pass rush and secondary starters. The noise is not Gaussian: scores come in discrete packages so the margin has spikes at 3, 6, 7, 10, 14; its variance depends on total scoring, pace, weather and QB volatility; and its tails are heavier than normal because of blowout snowballing (turnovers, garbage time) and rare events (defensive TDs). Moneyline probability is the mass above zero (with ties and overtime assigned by the wording); each spread rung is a tail probability of the same distribution, so a ladder is a monotone curve whose far rungs are determined by tail shape. Season and week aggregates (largest blowout, highest-scoring game) are maxima over many such games.",
@@ -3273,7 +3484,7 @@
      "input_ids": [
       "nfl.off_epa",
       "nfl.def_epa",
-      "nfl.ratings",
+      "nfl.model_team_points_mean",
       "nfl.pythag_luck",
       "nfl.turnovers",
       "nfl.rating_state_space"
@@ -3320,14 +3531,14 @@
     {
      "id": "m4",
      "name": "Margin distribution: lattice, variance and tails",
-     "description": "Given the mean, the margin distribution has a lattice with spikes at 3 and 7, a standard deviation of roughly 13 points that varies with the total and with the lineup state, and heavier tails than a normal. Heteroskedasticity matters: a 38-point total game has a narrower margin distribution than a 52-point one. Probabilities of covering integer lines and of exact-margin buckets are read off this lattice; deep rungs (20-35 points) depend on the tail model.",
+     "description": "Given the mean, the margin distribution has a lattice with spikes at 3 and 7, a standard deviation of roughly 13 points that varies with the total and with the lineup state, and heavier tails than a normal. Heteroskedasticity matters: a 38-point total game has a narrower margin distribution than a 52-point one. Probabilities of covering integer lines and of exact-margin buckets are read off this lattice; deep rungs (20-35 points) depend on the tail model. Atoms and tails are centred on the market-free model means (nfl.model_team_points_mean), not on line residuals.",
      "distribution": "Discrete non-Gaussian with key-number atoms; variance heteroskedastic; tail heavier than normal",
      "categories": [
       "distribution_variance",
       "game_context_script"
      ],
      "input_ids": [
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.ot_model",
       "nfl.heteroskedastic_margin_sd",
       "nfl.deep_tail_margin_model",
@@ -3338,7 +3549,7 @@
     {
      "id": "m5",
      "name": "Overtime, ties and settlement mapping",
-     "description": "The final margin includes overtime for win-margin (explicit), and a tie yields a zero margin, with the contract deciding whether the moneyline treats it as void or a separate outcome. Overtime also collapses margin to a small number (3 or 6, or 0), so OT-inclusive and regulation-only contracts differ by the OT probability mass of about 6-7% of games.",
+     "description": "The final margin includes overtime for win-margin (explicit), and a tie yields a zero margin, with the contract deciding whether the moneyline treats it as void or a separate outcome. Overtime also collapses margin to a small number (under sudden death 3, 6 or 7 or 0; with both teams possessing, a TD plus extra point can leave margins of 1 or 2 as well, and the format in force is unverified), so OT-inclusive and regulation-only contracts (only the OT-inclusive win-margin text was sampled; no regulation-only side contract is evidenced) would differ by the OT probability mass of about 6-7% of games.",
      "distribution": "Mass transfer from zero margin to +/-3 or +/-6 after OT; deterministic mapping by wording",
      "categories": [
       "settlement_contract",
@@ -3370,7 +3581,7 @@
      "input_ids": [
       "nfl.off_epa",
       "nfl.def_epa",
-      "nfl.ratings",
+      "nfl.model_team_points_mean",
       "nfl.rating_state_space"
      ],
      "note": "Opponent-adjusted team strength with a defined updating rule."
@@ -3420,7 +3631,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.heteroskedastic_margin_sd"
      ],
      "note": "Variance conditional on expected total and script."
@@ -3444,7 +3655,7 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.score_resid",
+      "nfl.model_margin_lattice",
       "nfl.deep_tail_margin_model",
       "nfl.slate_total_extremes"
      ],
@@ -3461,7 +3672,7 @@
     "officiating_rules": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "Officiating crews and rule details have small and unstable effects on margin; they are captured, to the extent measurable, in penalty and pace terms that feed the total and not separately for sides."
+     "note": "Officiating crews and rule details have small and unstable effects on margin; penalty and pace terms are not inputs of this archetype and the remaining effect is left to the total archetype, so this record claims nothing for officiating (the overtime rule format is carried under settlement_contract and u1)."
     },
     "settlement_contract": {
      "status": "COVERED",
@@ -3479,7 +3690,7 @@
     "category": "team_strength",
     "mechanism": "Team margin rating is rebuilt each week as a sum of position-weighted player values over replacement for the players expected to play, rather than a team average.",
     "rationale": "Team EPA averages blend games with and without key starters; the effective rating for a given Sunday depends on who is active, which is known (partially) at known timestamps. Position weights differ greatly: QB, OT, EDGE, CB1 matter more per player than interior positions.",
-    "measurement": "Per position slot s (QB, LT, RT, C, G, TE, WR1-3, RB, EDGE1-2, DT, LB, CB1-2, S), estimate weight w_s as the points-per-game coefficient from a ridge regression of team game margin residuals on player-availability indicators (2015+, ridge lambda chosen by cross-validation); value of a starter = w_s x (his performance index - replacement index), replacement index from the backup's snaps; sum over active starters; update at each injury report vintage and at the inactive list; as-of timestamp.",
+    "measurement": "Per position slot s (QB, LT, RT, C, G, TE, WR1-3, RB, EDGE1-2, DT, LB, CB1-2, S), estimate weight w_s as the points-per-game coefficient from a ridge regression of team game margin residuals (actual margin minus the rating_state_space expectation, not a betting line) on player-availability indicators (2015+, ridge lambda chosen by cross-validation); value of a starter = w_s x (his performance index - replacement index), replacement index from the backup's snaps; sum over active starters; update at each injury report vintage and at the inactive list; as-of timestamp.",
     "pregame_knowable": "partial",
     "free_sources": [
      "nflverse rosters, injuries, depth charts, snap_counts",
@@ -3498,14 +3709,15 @@
     "category": "distribution",
     "mechanism": "Standard deviation and shape of the final margin as a function of expected total, spread magnitude, pace, weather and QB state.",
     "rationale": "The fixed SD of 13 points misprices tails: a low-total, windy game has a narrower margin distribution than a shootout; cover probability at +/- 10 differs by regime for the same mean.",
-    "measurement": "Fit quantile regression (or location-scale model with t-distributed errors) of final margin on closing spread (as location only), total_line, wind, dome, backup-QB flag, divisional flag, with data 2010+ (about 4,500 games); report conditional SD and 5/95% tail multipliers; refit annually; as-of pregame values. Using the closing lines only to define regimes and not as a probability input.",
+    "measurement": "Fit quantile regression (or location-scale model with t-distributed errors) of final margin on the model mean margin and model total from nfl.model_team_points_mean (not betting lines), wind, dome, backup-QB flag and divisional flag, with data 2010+ (about 4,500 games); report conditional SD and 5/95% tail multipliers; refit annually; as-of pregame values. Betting lines are excluded from the feature set and used only to benchmark the fitted SD after the fact.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse schedules (spread_line, total_line, result, weather)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "game results, closing lines (regime definition only), wind, temp, roof"
+     "game results, wind, temp, roof, backup-QB flag",
+     "model mean margin and total per game (market-free)"
     ],
     "why": "Needed to convert any mean into cover and win probabilities consistently across rungs and regimes.",
     "role": "primary"
@@ -3515,14 +3727,14 @@
     "category": "distribution",
     "mechanism": "Extreme-margin probability as a function of mismatch, QB state, turnover snowballing and weather.",
     "rationale": "Deep rungs (20+) and season-maximum blowout contracts are priced on the tail and a normal fit materially understates them; the distribution of margins above 28 across 2000+ is thick.",
-    "measurement": "Fit generalized Pareto (threshold 21) to |margin| for 2000+ games with covariates: |expected margin| bucket, backup QB, total; estimate shape xi with bootstrap CI; expected number of games above k in a season = sum over games of P(|M|>k); for season max compute 1 - prod(1 - p_g); as-of start of week.",
+    "measurement": "Fit generalized Pareto (threshold 21) to |margin| for 2000+ games with covariates: |model expected margin| bucket from nfl.model_team_points_mean, backup QB, model total; estimate shape xi with bootstrap CI; expected number of games above k in a season = sum over games of P(|M|>k); for season max compute 1 - prod(1 - p_g); as-of start of week.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse schedules/results"
     ],
     "registry_ids": [],
     "raw_data": [
-     "final scores 2000-2025, spread/total regime"
+     "final scores 2000-2025, model mean margin and total regime (market-free)"
     ],
     "why": "Prices KXNFLSPREAD at 35.5 and KXNFLBLOWOUT 51.5 type markets that live entirely in the tail.",
     "role": "secondary"
@@ -3560,12 +3772,50 @@
     ],
     "why": "Defines how ratings stay current and carries rating uncertainty into the margin variance.",
     "role": "secondary"
+   },
+   "nfl.model_team_points_mean": {
+    "label": "Market-free team expected points and margin (drive-model mean and SD per team)",
+    "category": "team_strength",
+    "mechanism": "Each team's expected points are expected drives times points per drive, built from opponent-adjusted offence and defence efficiency, tempo, kicker and quarterback status and weather, with no betting line, price or implied total used as a feature.",
+    "rationale": "Market-derived team means (spread and total splits) are benchmarks that already contain the market's injury, weather and sharp information; feeding them into a model of the same game makes the model unable to show any independent information and hides which fundamental channels are missing. A market-free mean keeps the availability, weather, matchup and coaching channels explicit and lets the line be used only as an evaluation benchmark.",
+    "measurement": "For team i vs opponent j, expected points = E[drives_i] x E[points per drive_i]. E[drives] = 3600 / (mean seconds per drive implied by both teams' neutral-situation seconds per play and expected plays per drive), 2015+ regular-season pbp, ridge-shrunk 50/50 toward league mean at 8 games. Points per drive from a ridge regression on own opponent-adjusted offensive EPA per play (exponential half-life 8 games, prior-season carryover weight 0.3 decaying to 0 by week 10), opponent defensive EPA per play, red-zone TD rate (shrunk k=30 trips), kicker FG-range rating, starting-QB indicator, wind above 15 mph and dome flags, home indicator. Output team mean, SD (from residuals by tercile) and the margin and total means as differences and sums. As-of timestamp: after the previous game and re-run at the latest injury report. Betting lines are excluded from the feature set and used only for after-the-fact benchmarking.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp and schedules (EPA, drives, seconds per play, wind, roof)",
+     "nflverse injuries and depth charts (QB status)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, posteam, defteam, drive, play_clock seconds, epa, points scored by drive, wind, roof",
+     "team-week starting QB and injury status"
+    ],
+    "why": "Market-free team means (and hence mean margin and total) that locate the margin distribution and ladder rungs without line-implied inputs.",
+    "role": "primary"
+   },
+   "nfl.model_margin_lattice": {
+    "label": "Model-based regulation margin lattice with mass at zero (key-number corrected, end-of-game behaviour included)",
+    "category": "distribution",
+    "mechanism": "Probability that the regulation margin equals k, especially k=0, from a drive-outcome simulation or lattice centred on the market-free team means, corrected for the excess mass that 3-point and 7-point scoring and late tie-forcing behaviour put on small margins.",
+    "rationale": "Tie, overtime and integer-spread markets are priced on atoms at specific margins, which a smooth normal density misses; a lattice centred on betting-line residuals would import the market's own view of the game. Centring on the model mean margin and total from the market-free team means keeps the input market-free and lets the line serve as a benchmark only.",
+    "measurement": "Simulate 20,000 games per matchup from per-drive outcome multinomials (TD with 94 percent extra-point conversion, FG, safety, no score) calibrated so team means equal the market-free model team means, then fit an isotonic correction of simulated P(margin=k) to empirical regulation-margin frequencies (all regular-season games since 2002, about 5,500, binned by model |mean margin| in 0-3, 3-6, 6-10, 10+ points and model total terciles) with Beta(a=2, b=30) shrinkage in each bin for k=0 and Dirichlet smoothing for key numbers 3, 6, 7, 10, 14. Add an end-of-game term for tied games where the team with the ball inside two minutes can run the clock. Output P(margin=k) for k from -30 to 30. As-of: latest model means at kickoff minus 90 minutes; no spread, total or price enters.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse schedules/results (final regulation scores by quarter)",
+     "nflverse pbp (drive outcomes)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "games: season, home/away score by quarter, overtime flag",
+     "pbp: drive result, points, game_seconds_remaining, score_differential"
+    ],
+    "why": "Margin atoms at 3, 7 and zero for integer rungs, ties and win-margin buckets built around model means, not line residuals.",
+    "role": "primary"
    }
   },
   "input_audit": {
    "nfl.ratings": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Useful as a prior only if built from non-market data; the market-implied history component makes it a benchmark and would leak the line into the probability."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "The catalog definition is power ratings and market-implied strength history; the market component makes it a benchmark that leaks the closing line into a model of the same game, so it is removed from stages, coverage and interactions in favour of nfl.model_team_points_mean and nfl.rating_state_space."
    },
    "nfl.qb": {
     "verdict": "KEEP_PRIMARY",
@@ -3616,8 +3866,8 @@
     "reason": "Relevant in weeks 17-18 only; inapplicable earlier, so a small share of games."
    },
    "nfl.score_resid": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Key-number lattice is essential for integer rungs, but residuals around market lines must be re-expressed around model means."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Defined around market lines and key numbers; key-number mass is re-built around model means as nfl.model_margin_lattice, and the line-centred version is kept only to benchmark that lattice."
    },
    "nfl.ot_model": {
     "verdict": "KEEP_PRIMARY",
@@ -3656,8 +3906,8 @@
     "reason": "Pass-rush against pass-block is the largest unit matchup but needs interaction with OL and QB sack avoidance."
    },
    "nfl.coverage_scheme": {
-    "verdict": "DUPLICATE_OF:nfl.def_personnel",
-    "reason": "Coverage shell concerns are already in the defensive personnel/scheme input; as a standalone team average it adds little to margin."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Coverage shell and man/zone rates are not the same as defensive injury timing; the 'defensive scheme' wording overlapped but the QB and receiver archetypes use it as a distinct matchup input, so it is kept here as a secondary opponent-matchup input and the DUPLICATE_OF verdict withdrawn."
    },
    "nfl.run_defense": {
     "verdict": "KEEP_SECONDARY",
@@ -3692,7 +3942,7 @@
    {
     "inputs": [
      "nfl.weather_pit",
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "nfl.coaching"
     ],
     "form": "regime-switch",
@@ -3703,7 +3953,7 @@
     "inputs": [
      "nfl.rest_travel",
      "nfl.venue",
-     "nfl.ratings"
+     "nfl.model_team_points_mean"
     ],
     "form": "conditional",
     "mechanism": "A west-coast team travelling east for an early kickoff on short rest loses a fraction of a point, but the effect is offset in domes and for teams used to travel; it is conditional on kickoff time and venue.",
@@ -3722,14 +3972,14 @@
   ],
   "nonlinearities": [
    {
-    "input_id": "nfl.score_resid",
+    "input_id": "nfl.model_margin_lattice",
     "shape": "spikes at 3, 6, 7, 10, 14",
     "why": "Probability of covering a half-point line jumps when the line moves across a key number; the body of the margin distribution is lumpy, so linear rating-to-probability maps misprice rungs next to 3 and 7."
    },
    {
-    "input_id": "nfl.ratings",
+    "input_id": "nfl.model_team_points_mean",
     "shape": "S-shaped (normal CDF) rating-to-win probability",
-    "why": "Win probability is a normal-CDF-like function of expected margin with SD around 13 points; the slope at a pick'em is far larger than at -10, so equal rating errors cost much more near zero."
+    "why": "Win probability is a normal-CDF-like function of the model expected margin with SD around 13 points; the slope at a pick'em is far larger than at -10, so equal margin-mean errors cost much more near zero."
    },
    {
     "input_id": "nfl.qb",
@@ -3739,36 +3989,32 @@
   ],
   "required_data": [
    {
-    "dataset": "Game results, closing lines and weather",
+    "dataset": "Game results and weather (market lines excluded from features)",
     "grain": "game",
-    "fields": "season, week, teams, final score, OT flag, closing spread/total (regime definition only), roof, wind, temperature, rest days, kickoff time",
+    "fields": "season, week, teams, final score, OT flag, roof, wind, temperature, rest days, kickoff time; closing spread and total retained only as evaluation benchmarks",
     "timestamp_requirement": "As-of previous week; weather forecast vintages for pregame",
     "history_needed": "2000-2025",
     "candidate_sources": [
      {
       "name": "nflverse schedules",
       "access": "free",
-      "note": "includes lines, rest and roof; line vintages not preserved"
+      "note": "includes lines, rest and roof; line vintages not preserved; lines used for benchmarking only"
      },
      {
       "name": "Sportsbook odds history (Sportsbook Review, Odds Portal)",
       "access": "free_scrape",
-      "note": "closing and opening only"
-     },
-     {
-      "name": "Kalshi API trade history",
-      "access": "free",
-      "note": "own market history; benchmark only"
+      "note": "closing and opening only; benchmark use only"
      }
     ],
     "feeds_inputs": [
      "nfl.heteroskedastic_margin_sd",
      "nfl.deep_tail_margin_model",
-     "nfl.score_resid",
+     "nfl.model_margin_lattice",
      "nfl.ot_model",
      "nfl.venue",
      "nfl.rest_travel",
-     "nfl.weather_pit"
+     "nfl.weather_pit",
+     "nfl.model_team_points_mean"
     ]
    },
    {
@@ -3799,25 +4045,26 @@
      "nfl.pass_rush",
      "nfl.ol",
      "nfl.run_defense",
-     "nfl.coaching"
+     "nfl.coaching",
+     "nfl.model_team_points_mean"
     ]
    },
    {
     "dataset": "Rosters, depth charts, injuries and snap counts with vintages",
     "grain": "player-week",
     "fields": "status, practice participation, depth slot, snaps, position, report timestamp",
-    "timestamp_requirement": "Per report vintage (Wed, Thu, Fri, inactive list at 90 minutes)",
+    "timestamp_requirement": "Per report vintage (Wed, Thu, Fri, inactive list at 90 minutes); vintage depth is limited, so the pregame-known label is optimistic until capture exists",
     "history_needed": "2015-2025",
     "candidate_sources": [
      {
       "name": "nflverse injuries, depth_charts, snap_counts",
       "access": "free",
-      "note": "weekly final status; intraweek vintages need own_capture"
+      "note": "weekly final-status injuries, not daily vintages; practice-day vintages are not archived"
      },
      {
       "name": "NFL official injury reports and inactives",
       "access": "own_capture",
-      "note": "captured at report times"
+      "note": "daily vintages exist only from capture start"
      }
     ],
     "feeds_inputs": [
@@ -3873,14 +4120,14 @@
    {
     "id": "u1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "The moneyline (KXNFLGAME) is TITLE_ONLY and the sampled spread text does not say whether overtime counts or how a tied game affects a winner market; the zero-margin mass and OT inclusion therefore cannot be mapped to YES/NO for these two most liquid series.",
+    "description": "The moneyline (KXNFLGAME) is TITLE_ONLY and the sampled spread text does not say whether overtime counts or how a tied game affects a winner market; the zero-margin mass and OT inclusion therefore cannot be mapped to YES/NO for these two most liquid series. The OT margin lattice is wider than 3, 6 and 0 when both teams possess.",
     "what_would_resolve": "Sample the rules_primary/secondary of live KXNFLGAME and a KXNFLSPREAD market with a typical rung.",
     "category": "settlement_contract"
    },
    {
     "id": "u2",
     "type": "OTHER",
-    "description": "Division winner, viewership, game location, celebrity game, last team to win and 'will a player compete' series are mis-bucketed here and need season-futures, ratings-for-viewership or novelty mechanisms.",
+    "description": "Division winner, viewership, game location, celebrity game, last team to win and 'will a player compete' series are mis-bucketed here and need season-futures, ratings-for-viewership or novelty mechanisms. Their owning archetypes are recorded in series_mapping_issues; this record makes no coverage claim for them.",
     "what_would_resolve": "Reclassify those series in the ledger and author separate mechanisms."
    },
    {
@@ -3896,6 +4143,13 @@
     "description": "Position-level point weights for the lineup-adjusted rating depend on player grades or win-rate metrics (PFF, ESPN), whose public availability and licence terms are not verified.",
     "what_would_resolve": "Confirm access and licence for the player performance indices, or build in-house EPA-on-field versions.",
     "category": "role_personnel"
+   },
+   {
+    "id": "u5",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Fitting position-slot weights by ridge on availability indicators needs consistent historical injury-report and inactive vintages; nflverse holds weekly final injury statuses only, so historical weights are fitted on realised availability while pregame use depends on forecast designations, a mismatch of unknown size.",
+    "what_would_resolve": "Capture daily injury-report vintages for a season and compare weights from realised availability with weights from Friday designations.",
+    "category": "availability_news"
    }
   ],
   "reviewer": "NFL_a author (Claude)",
@@ -3925,11 +4179,18 @@
    "variants_and_edge_cases": [
     "Overtime is not stated for the full-game total or TOTALPRECISE text: if OT counts, a regulation tie adds about a field goal or touchdown to the total; if not, the OT game's total is capped at the regulation score. This changes any rung near the realized total.",
     "Rungs span an extraordinary range: the sampled ladders include 24.5 and 98.5 for a single game, versus a typical central total near 44; rungs far from the center are tail events priced almost entirely by the tail shape of a heavy-tailed, lattice-valued distribution.",
-    "The first-half total (floor 7.5) is a very different object from the full-game total: period-level discreteness dominates, and halftime state is irrelevant before the game; it overlaps with the quarter/half archetype.",
+    "The first-half total (floor 7.5) is filed here by the ledger but belongs to first_half_and_quarter_totals (see series_mapping_issues); period-level discreteness dominates it and this record's inputs apply to it only through the whole-game mean.",
     "Half-point strikes eliminate pushes, but key numbers still matter: totals of 37, 41, 43, 44, 47 and 51 recur because of 3/7 packages, so the probability over x.5 is a step function of the integer score distribution.",
-    "Both-teams-to-score (needs each team >= N points) is in the archetype description but no live series is mapped, so contract wording is unknown."
+    "Both-teams-to-score and BOTH_TEAMS_SCORE_N appear in the archetype label and families but no live series is filed for them, so no mechanism stage or input here claims coverage of them; any claim about those contracts is conditional on a future series."
    ],
-   "settlement_data_source": "Official final scores of the league; Kalshi uses the 'official final result' of the game."
+   "settlement_data_source": "Official final scores of the league; Kalshi uses the 'official final result' of the game.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFL1HTOTAL",
+     "issue": "First-half total (rules sampled: 'Only points scored during the 1st half of play count') is a period contract whose mechanism is allocation of scoring across drives in a half, owned by the period archetype.",
+     "belongs_in": "first_half_and_quarter_totals"
+    }
+   ]
   },
   "mechanism": {
    "summary": "The total is the sum of points from about 22 to 26 possessions. Think of it as plays times points per play, split into how many snaps the game contains and how many points each snap yields. The number of snaps is set by clock consumption: each play burns 5-7 seconds if inbounds and a few if incomplete, passing rates and incompletions stop the clock, timeouts and penalties shape late-half tempo, so the total plays are determined by both offences' pace and run rates and by the lead (a leader runs the clock). Points per snap depend on efficiency and field position, with TD/FG conversion near the goal line and turnovers that both end drives and shorten fields. Environment multiplies efficiency: wind, cold and precipitation reduce passing and kicking beyond thresholds, domes and altitude shift it the other way. The two teams' scores are positively correlated through shared pace and weather but negatively through clock-killing leaders. The result is a lattice-valued, right-skewed distribution with a mean near 44 points and heavy tails: some games score under 25 and some over 70, and ladders reaching 98.5 are priced almost entirely by the tail. Settlement wording (overtime included or not) shifts the distribution by the 6-7 percent mass of games that go to overtime.",
@@ -3937,7 +4198,7 @@
     {
      "id": "t1",
      "name": "Number of plays and possessions from clock consumption",
-     "description": "The number of plays is determined by clock time: seconds per play depends on run/pass mix, incompletion rate, no-huddle use, timeouts and penalties; both teams' paces combine toward a mutual tempo, and the leading team slows the game. Possessions follow from plays per drive (drive length depends on efficiency) and from scoring/turnover frequency. This stage fixes the opportunity count for points.",
+     "description": "The number of plays is determined by clock time: seconds per play depends on run/pass mix, incompletion rate, no-huddle use, timeouts and penalties; both teams' paces combine toward a mutual tempo, and the leading team slows the game. Possessions follow from plays per drive (drive length depends on efficiency) and from scoring/turnover frequency. This stage fixes the opportunity count for points. Coach and coordinator tempo and 4th-down policy (nfl.coaching) shift seconds per play, no-huddle use and the TD-versus-FG outcome of stalled drives, so they enter as a secondary plays-and-drive-ending input.",
      "distribution": "Count of plays about 125 +/- 10; possessions 22-26; both right-skewed in shootouts; tempo mutual rather than additive",
      "categories": [
       "pace_volume",
@@ -3949,7 +4210,8 @@
       "nfl.proe",
       "nfl.two_minute_tempo",
       "nfl.run_defense",
-      "nfl.total_plays_state_model"
+      "nfl.total_plays_state_model",
+      "nfl.coaching"
      ]
     },
     {
@@ -3991,7 +4253,7 @@
     {
      "id": "t4",
      "name": "Lineup state and unit matchups",
-     "description": "QB status is a mixture that shifts both teams' points and pace; offensive line and pass-rush availability change sack rates, drive failures and pressure-driven turnovers; coverage injuries change completion efficiency. The total is therefore a mixture over lineup states until inactives.",
+     "description": "QB status is a mixture that shifts both teams' points and pace; offensive line and pass-rush availability change sack rates, drive failures and pressure-driven turnovers; coverage injuries change completion efficiency. The total is therefore a mixture over lineup states until inactives. Short-week and post-bye rest (nfl.rest_travel) and late-season clinched or eliminated starter rest (nfl.motivation_seeding) change effective lineups and tempo.",
      "distribution": "Discrete mixture over QB/line states; each component with its own mean and variance",
      "categories": [
       "availability_news",
@@ -4003,7 +4265,9 @@
       "nfl.pass_rush",
       "nfl.coverage_scheme",
       "nfl.penalties",
-      "nfl.officials_crew"
+      "nfl.officials_crew",
+      "nfl.rest_travel",
+      "nfl.motivation_seeding"
      ]
     },
     {
@@ -4015,11 +4279,9 @@
       "distribution_variance"
      ],
      "input_ids": [
-      "nfl.score_resid",
       "nfl.corr",
       "nfl.total_distribution_tail",
-      "nfl.team_total_split",
-      "nfl.divisional_familiarity"
+      "nfl.model_team_points_mean"
      ]
     },
     {
@@ -4074,9 +4336,12 @@
      "note": "QB status and forecast vintages decide the lineup and environment mixture."
     },
     "coaching_scheme": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Coach tempo and 4th-down aggression change plays and drive endings, but the archetype's inputs do not include a coach-level tempo or aggression measure; the catalog's coaching id is not attached here."
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.coaching",
+      "nfl.two_minute_tempo"
+     ],
+     "note": "Coach-level tempo and 4th-down aggression from the attached nfl.coaching input, plus two-minute tempo for end-of-half clock use; whether coach tempo adds beyond team neutral pace remains open (u3)."
     },
     "environment": {
      "status": "COVERED",
@@ -4119,7 +4384,6 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.score_resid",
       "nfl.total_distribution_tail",
       "nfl.corr"
      ],
@@ -4128,9 +4392,10 @@
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.divisional_familiarity"
+      "nfl.rest_travel",
+      "nfl.motivation_seeding"
      ],
-     "note": "Division rematches may lower scoring; effect weak (see audit)."
+     "note": "Rest, travel and seeding-linked starter rest enter through existing inputs; division-rematch familiarity is audited WEAK and no longer counted as coverage."
     },
     "officiating_rules": {
      "status": "COVERED",
@@ -4173,15 +4438,15 @@
     "label": "Both-tail model of game total points",
     "category": "distribution",
     "mechanism": "Tail probabilities of the combined score beyond about 1.8 SD in each direction conditional on expected total and environment.",
-    "rationale": "TOTALPRECISE ladders extend to 98.5 and TOTAL to 24.5; these rungs are priced on tails, which a normal approximation gets wrong because totals are right-skewed with heavy upper tail from blowout cascades and short-field TDs.",
-    "measurement": "Fit a skewed distribution (shifted lognormal or discrete mixture of negative-binomial team scores) to 2000+ game totals conditioned on expected total in terciles and weather regime; estimate P(total >= 70), P(<=24) with bootstrap CI (about 5,000 games); validate calibration by decile of expected total; as-of start of season.",
+    "rationale": "TOTALPRECISE ladders extend to 98.5 and TOTAL to 24.5; these rungs are priced on tails, which a normal approximation gets wrong because totals are right-skewed with heavy upper tail from blowout cascades and short-field TDs. The expected total it conditions on is the market-free model total, so the tail does not inherit the line.",
+    "measurement": "Fit a skewed distribution (shifted lognormal or discrete mixture of negative-binomial team scores) to 2000+ game totals conditioned on the model expected total (sum of the market-free team means from nfl.model_team_points_mean, not a betting total) in terciles and weather regime; add empirical atoms at key totals (37, 41, 43, 44, 47, 51) as residuals of a smoothed fit with Dirichlet smoothing; estimate P(total >= 70), P(<=24) with bootstrap CI (about 5,000 games); validate calibration by decile of model expected total; as-of start of season and each week.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse schedules/results"
     ],
     "registry_ids": [],
     "raw_data": [
-     "final scores since 2000, wind, roof, expected total regime"
+     "final scores since 2000, wind, roof, model expected-total regime (market-free)"
     ],
     "why": "Deep rungs are tail events; the existing key-number input does not define tails.",
     "role": "secondary"
@@ -4190,7 +4455,7 @@
     "label": "Weather dose-response function for totals (wind, cold, precipitation, roof)",
     "category": "environment",
     "mechanism": "Estimated effect on expected total points of wind speed, temperature and precipitation categories with roof interactions.",
-    "rationale": "Weather effects are strongly nonlinear: below 10 mph wind is negligible, above 15-20 mph reduces totals by several points; forecast error needs to be handled at the pregame time.",
+    "rationale": "Weather effects are strongly nonlinear: below 10 mph wind is negligible, above 15-20 mph reduces totals by several points; forecast error needs to be handled at the pregame time. Historical fits use observed (not forecast) conditions until a season of forecast capture exists.",
     "measurement": "Hierarchical regression of total points residual (game total minus team-baseline expectation from EPA model) on wind (piecewise linear with knots 10, 15, 20 mph), temperature (knots 32, 50), precipitation flag, dome flag; 2010+ games; shrink with k=100 games per bin; use forecast vintages 24 and 3 hours pregame and propagate forecast error as measurement noise; as-of pregame forecast.",
     "pregame_knowable": "partial",
     "free_sources": [
@@ -4222,6 +4487,25 @@
     ],
     "why": "Contract text for full-game totals is silent on OT; this quantifies the effect of either reading.",
     "role": "context"
+   },
+   "nfl.model_team_points_mean": {
+    "label": "Market-free team expected points and margin (drive-model mean and SD per team)",
+    "category": "team_strength",
+    "mechanism": "Each team's expected points are expected drives times points per drive, built from opponent-adjusted offence and defence efficiency, tempo, kicker and quarterback status and weather, with no betting line, price or implied total used as a feature.",
+    "rationale": "Market-derived team means (spread and total splits) are benchmarks that already contain the market's injury, weather and sharp information; feeding them into a model of the same game makes the model unable to show any independent information and hides which fundamental channels are missing. A market-free mean keeps the availability, weather, matchup and coaching channels explicit and lets the line be used only as an evaluation benchmark.",
+    "measurement": "For team i vs opponent j, expected points = E[drives_i] x E[points per drive_i]. E[drives] = 3600 / (mean seconds per drive implied by both teams' neutral-situation seconds per play and expected plays per drive), 2015+ regular-season pbp, ridge-shrunk 50/50 toward league mean at 8 games. Points per drive from a ridge regression on own opponent-adjusted offensive EPA per play (exponential half-life 8 games, prior-season carryover weight 0.3 decaying to 0 by week 10), opponent defensive EPA per play, red-zone TD rate (shrunk k=30 trips), kicker FG-range rating, starting-QB indicator, wind above 15 mph and dome flags, home indicator. Output team mean, SD (from residuals by tercile) and the margin and total means as differences and sums. As-of timestamp: after the previous game and re-run at the latest injury report. Betting lines are excluded from the feature set and used only for after-the-fact benchmarking.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp and schedules (EPA, drives, seconds per play, wind, roof)",
+     "nflverse injuries and depth charts (QB status)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, posteam, defteam, drive, play_clock seconds, epa, points scored by drive, wind, roof",
+     "team-week starting QB and injury status"
+    ],
+    "why": "Market-free expected total (sum of both team means) and its drivers; the source of the 'expected total' that tail and joint-distribution inputs condition on.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -4298,8 +4582,8 @@
     "reason": "Finishing-luck regression for recent scoring; overlaps with td_luck in other archetypes but needed here."
    },
    "nfl.score_resid": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Key numbers and residual distribution; must be re-expressed around model means, not market lines."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Defined around market lines; the key-total atoms (37, 41, 44, 47) are now estimated inside nfl.total_distribution_tail around the market-free model total, so the line-centred version is kept only as a benchmark and removed from stages, coverage and interactions."
    },
    "nfl.corr": {
     "verdict": "KEEP_SECONDARY",
@@ -4372,7 +4656,7 @@
    {
     "inputs": [
      "nfl.corr",
-     "nfl.score_resid",
+     "nfl.model_team_points_mean",
      "nfl.total_distribution_tail"
     ],
     "form": "joint-distribution",
@@ -4402,9 +4686,9 @@
     "why": "The total distribution is right-skewed: games over 65 are much more frequent than a normal with SD 10 implies, and TOTALPRECISE-type rungs near 98.5 are far-tail events."
    },
    {
-    "input_id": "nfl.score_resid",
-    "shape": "spikes at key totals",
-    "why": "Because scores come in 3s and 7s, the distribution of totals has local peaks at values like 37, 41, 44 and 47; the probability over x.5 changes in jumps as x crosses these."
+    "input_id": "nfl.total_distribution_tail",
+    "shape": "spikes at key totals (37, 41, 44, 47) on top of a right-skewed tail",
+    "why": "Probability of exceeding a half-point strike jumps when the strike crosses a key total, because 3- and 7-point packages concentrate mass on particular integer sums; smooth totals models misprice rungs adjacent to those integers."
    },
    {
     "input_id": "nfl.pace",
@@ -4449,7 +4733,9 @@
      "nfl.two_minute_tempo",
      "nfl.run_defense",
      "nfl.pass_rush",
-     "nfl.penalties"
+     "nfl.penalties",
+     "nfl.coaching",
+     "nfl.model_team_points_mean"
     ]
    },
    {
@@ -4457,7 +4743,7 @@
     "grain": "game",
     "fields": "wind, temp, precipitation, roof, observation at kickoff, forecast at 24h and 3h",
     "timestamp_requirement": "Forecast vintage timestamp",
-    "history_needed": "2010-2025 observations; forecasts need capture",
+    "history_needed": "2010-2025 observed conditions for dose-response fitting; forecast vintages exist only from own-capture start and at least one full regular season (about 270 games) of capture is a blocking requirement before the forecast-error component of nfl.weather_total_response can be estimated",
     "candidate_sources": [
      {
       "name": "nflverse schedules (observed weather)",
@@ -4500,12 +4786,11 @@
      }
     ],
     "feeds_inputs": [
-     "nfl.score_resid",
      "nfl.corr",
      "nfl.total_distribution_tail",
      "nfl.officials_crew",
-     "nfl.divisional_familiarity",
-     "nfl.venue"
+     "nfl.venue",
+     "nfl.rest_travel"
     ]
    },
    {
@@ -4524,7 +4809,8 @@
     "feeds_inputs": [
      "nfl.qb",
      "nfl.ol",
-     "nfl.coverage_scheme"
+     "nfl.coverage_scheme",
+     "nfl.motivation_seeding"
     ]
    },
    {
@@ -4557,7 +4843,7 @@
    {
     "id": "u2",
     "type": "DATA_UNAVAILABLE",
-    "description": "Pregame weather forecast vintages are not archived publicly, so the forecast-error component of the weather effect cannot be estimated historically without own capture or a paid archive.",
+    "description": "Pregame weather forecast vintages are not archived publicly, so the forecast-error component of the weather effect cannot be estimated historically without own capture or a paid archive. Until capture exists the dose-response is fitted on observed wind and temperature, so measurement error from forecast uncertainty is not estimable and the pregame_knowable label for the weather response stays partial.",
     "what_would_resolve": "Start capture of forecast vintages for each game at 24h and 3h, or purchase an archive from a weather vendor.",
     "category": "environment"
    },
@@ -4571,8 +4857,8 @@
    {
     "id": "u4",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Heavy-tail behaviour near 98.5 points (a record-scale total) is barely estimable from data, since by recollection only a single NFL game (1966) has exceeded that level; ladder rungs there are dominated by model form.",
-    "what_would_resolve": "Treat the extreme rungs as probability floors from a conservative tail form and check against realized maxima.",
+    "description": "Heavy-tail behaviour near 98.5 points (a record-scale total) is barely estimable from data: by unverified recollection only a very few NFL games (e.g. the 1966 Washington-Giants game and a 2018 Rams-Chiefs game) have exceeded that level, and the count has not been checked against nflverse results; ladder rungs there are dominated by model form.",
+    "what_would_resolve": "Count games with total > 98.5 and the upper-tail frequencies directly from nflverse results since 1999 and older records, then treat extreme rungs as probability floors from a conservative tail form.",
     "category": "distribution_variance"
    }
   ],
@@ -4620,9 +4906,17 @@
     "Strike construction is per-candidate for awards and ranks (a #3 position on a list); for division/conference specials, co-winners spread payout 1/N; for coach-out, the date horizon is a hazard window (before Mar 1, 2027).",
     "The 53-man market depends on the roster list after cutdown, so a player on IR at cutdown day resolves NO even if he is a star; a later release does not undo YES.",
     "Retirement and coach events have an 'announces' clause: an announced future exit counts today, which front-loads resolution relative to the actual departure date.",
-    "Series such as TRADE, SELLOUT, DELAY, STADIUM, REDZONEADS, OWNERSTAKE, CONTRACTSIZE, TSPEC and GAMESPECIALS are TITLE_ONLY, so their counting rules cannot be checked."
+    "Series such as TRADE, SELLOUT, DELAY, STADIUM, REDZONEADS, OWNERSTAKE, CONTRACTSIZE, TSPEC and GAMESPECIALS are TITLE_ONLY, so their counting rules cannot be checked.",
+    "Draft position markets settle on position as classified by the league ('If a player's position differs across source agencies, the position used by The Governing League will be used to determine settlement.', KXNFLDRAFTQB sampled in the first_half_and_quarter_totals record); the no-drafted, trade and positional-reclassification edge cases are not visible in the sampled text."
    ],
-   "settlement_data_source": "Official league and team announcements, the league's published rosters/transaction wire, and published award or list results; each series names its own source (e.g. the Pro Football Writers of America for Executive of the Year, the league for T100)."
+   "settlement_data_source": "Official league and team announcements, the league's published rosters/transaction wire, and published award or list results; each series names its own source (e.g. the Pro Football Writers of America for Executive of the Year, the league for T100).",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLDRAFTQB",
+     "issue": "Live draft market ('3rd Quarterback drafted in the 2027 Pro Football Draft', rules text sampled) is filed by the ledger under first_half_and_quarter_totals because the title contains 'Quarter'; it belongs to the draft family of this archetype and is modelled in stage o7.",
+     "belongs_in": "off_field_events"
+    }
+   ]
   },
   "mechanism": {
    "summary": "Off-field outcomes are generated by organisations and electorates, not by plays. The process has four layers. (1) Who decides: an owner and general manager (coach exits, signings, trades, cuts), a league office (rules, calendars), a voter panel (writers for awards, players for the T100), or a physical occurrence (weather). (2) What constrains them: contract terms and guarantee dates, the salary cap, roster limits and designation rules, the calendar (Black Monday firings, trade deadline, cut-down day, award announcement dates) and the standings. (3) How information leaks: insiders report intentions before announcements, with reporter-specific reliability and a lag from report to official confirmation, and the contract usually requires the official act. (4) Selection among candidates: a vote with a leader, a narrative and ballot structure (awards) or a roster-battle among players for 53 slots. Probabilities therefore come from calibrated hazards with calendar structure, reference-class base rates, conditional conversion of reports to events, and vote-share models, and the edge is mostly in timing and in resolution wording (what counts as an announcement, which roster list counts).",
@@ -4676,7 +4970,7 @@
     {
      "id": "o4",
      "name": "Selection and voting mechanics (awards, T100)",
-     "description": "Award outcomes are vote-share races among a short candidate list; the winner depends on the ballot rules, electorate composition, timing (before or after the playoffs), the narrative and past voting patterns, and co-winner rules. The T100 position depends on the previous year's rank, performance change and position bias in player voting. Probabilities follow a softmax-like share with a leading candidate.",
+     "description": "Award outcomes are vote-share races among a short candidate list; the winner depends on the ballot rules, electorate composition, timing (before or after the playoffs), the narrative and past voting patterns, and co-winner rules. The T100 position depends on the previous year's rank, performance change and position bias in player voting. Probabilities follow a softmax-like share with a leading candidate. Group-level contracts (division or conference of the winner, a 'Tie/Co-Winners' strike, a specific rank #N on the Top 100) are aggregations or ordered-rank events rather than a single softmax winner: the specials sum candidate win probabilities by the team of record at announcement, the tie strike needs its own base rate, and a Top 100 rank uses an ordered model anchored on the prior-year rank.",
      "distribution": "Winner-take-all categorical with leader advantage; co-winner ties create fractional payouts",
      "categories": [
       "talent_strength",
@@ -4706,7 +5000,7 @@
     {
      "id": "o6",
      "name": "Settlement wording and novelty events",
-     "description": "Official announcement vs report, effective date clauses for retirement, 1/N splitting, practice-squad exclusion and unknown wording for novelty events decide the label. Novelty events (ads, sellouts, weather delays, stadium completion) follow historical frequencies or scheduled facts, and some depend on weather and attendance data from outside football.",
+     "description": "Official announcement vs report, effective date clauses for retirement, 1/N splitting, practice-squad exclusion and unknown wording for novelty events decide the label. Novelty events (ads, sellouts, weather delays, stadium completion) follow historical frequencies or scheduled facts, and some depend on weather and attendance data from outside football. The on-air role contract (KXNFLROLE) is a staffing event settled on appearance in a named network's broadcast and uses a separate assignment model.",
      "distribution": "Deterministic rule application; novelty events are Poisson or Bernoulli with reference-class base rates",
      "categories": [
       "settlement_contract",
@@ -4715,7 +5009,22 @@
      "input_ids": [
       "m.rules_text",
       "nfl.novelty_prop_priors",
-      "m.quote_history"
+      "nfl.broadcast_role_assignment"
+     ]
+    },
+    {
+     "id": "o7",
+     "name": "Draft order and positional selection (draft family)",
+     "description": "Draft contracts settle on who is selected in which order: for 'the k-th quarterback drafted' the outcome is the ranked order of QB selections across 32 teams, determined by consensus prospect rank, the pick positions of quarterback-needy teams, and trades up. The ledger files the live draft series (KXNFLDRAFTQB, rules: 'If a player's position differs across source agencies, the position used by The Governing League will be used to determine settlement.') under first_half_and_quarter_totals by a title mistake, so this record owns the mechanism and claims coverage conditionally on the series being re-filed here.",
+     "distribution": "Ordered selection over about 8 to 14 drafted quarterbacks with strong early-pick concentration; discrete rank positions and trade-up jumps",
+     "categories": [
+      "role_personnel",
+      "availability_news",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nfl.draft_board",
+      "nfl.draft_qb_class_model"
      ]
     }
    ],
@@ -4737,7 +5046,9 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.initial_roster_cut_model",
-      "nfl.cap_and_contract"
+      "nfl.cap_and_contract",
+      "nfl.draft_qb_class_model",
+      "nfl.broadcast_role_assignment"
      ],
      "note": "Roster slots, positional depth and guarantee structure define who stays."
     },
@@ -4855,7 +5166,7 @@
     "category": "player_role",
     "mechanism": "Probability that a player is on the initial 53-man active roster given draft round, guarantees, preseason usage, position depth and injury status.",
     "rationale": "Inclusion is a constrained selection with an explicit IR/PUP exclusion; stars on IR resolve NO, while fringe players depend on dead-cap cost and roster composition.",
-    "measurement": "Logistic regression on 2010-2025 cut-down histories: draft round, years of service, fully guaranteed salary share, dead-cap cost of release, preseason snaps share, position group count vs slot count, injury designation at cut-down (IR/PUP/NFI flags as hard exclusion), special-teams snaps; shrink by team random effect (k=5 players per team); as-of cut-down eve.",
+    "measurement": "Logistic regression on 2010-2025 cut-down histories: draft round, years of service, fully-secured (non-releasable) salary share, dead-cap cost of release, preseason snaps share, position group count vs slot count, injury designation at cut-down (IR/PUP/NFI flags as hard exclusion), special-teams snaps; shrink by team random effect (k=5 players per team); as-of cut-down eve.",
     "pregame_knowable": "partial",
     "free_sources": [
      "nflverse rosters weekly status (ACT/RES/DEV)",
@@ -4892,7 +5203,7 @@
     "category": "distribution",
     "mechanism": "Winner or rank probability from candidate quality, narrative, previous votes, timing and electorate composition.",
     "rationale": "Awards and ranks are decided by a small electorate with identifiable biases (position, team success, prior awards); the leader's share is concentrated.",
-    "measurement": "Multinomial logit of historical winner on candidate features (team win%, individual statistical rank, prior award wins, position, narrative flags) for each award 2000-2025 with k=3 pseudo-observations shrinkage; for T100, ordered logit on previous rank, change in production, position group and age; compute P(candidate=winner) and P(rank=#r); as-of announcement date.",
+    "measurement": "Multinomial logit of historical winner on candidate features (team win%, individual statistical rank, prior award wins, position, narrative flags) for each award 2000-2025 with k=3 pseudo-observations shrinkage; for T100, ordered logit on previous rank, change in production, position group and age; compute P(candidate=winner) and P(rank=#r); as-of announcement date. Aggregation layer: for division or conference specials (KXNFLMVPSPECIALS, KXNFLOPOYSPECIALS, DPOY specials) P(group) = sum over candidates of P(win) by the team of record at announcement time, with the sampled 1/N co-winner payout rule; for Executive of the Year the 'Tie/Co-Winners' strike gets P(tie) = historical co-winner frequency in the award's own history (to be counted from its published list) shrunk toward the pooled frequency across comparable awards with k=10 awards.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Pro Football Reference awards and voting (free_scrape)",
@@ -4904,6 +5215,46 @@
     ],
     "why": "Provides a calibrated selection model; existing catalog inputs list data but no vote model.",
     "role": "secondary"
+   },
+   "nfl.draft_qb_class_model": {
+    "label": "Draft positional-selection model (QB class order, draft order, team need and trade-up)",
+    "category": "other",
+    "mechanism": "The k-th quarterback drafted is determined by the ranked order in which teams on the clock select QBs, which depends on consensus prospect rank, the order of picks of QB-needy teams, and trades that move teams up.",
+    "rationale": "Draft contracts such as 'player X is the 3rd quarterback drafted' are order statistics over a small class (about 8 to 14 QBs drafted per year), where a single early-round team's need and a trade-up change the rank of all later QBs. The generic consensus-board input gives one prospect's rank but not the joint ordering that the count-based contract settles on.",
+    "measurement": "Plackett-Luce ordering model over the QBs in the class: utility_j = -beta*ln(consensus_rank_j) + gamma*need(team on the clock) with consensus_rank an average of at least 5 public big boards (time-stamped; weights proportional to each board's historical rank-correlation with actual draft order), beta and gamma fit by maximum likelihood on 2010-2025 drafts (about 180 QBs), team need = 1 if the current starter contract expires within one year or the starter's EPA per play is below the league 25th percentile; draft order from the final standings and traded picks. Simulate 20,000 drafts including a trade-up probability for QB-needy teams outside the top 5 (estimated from the 2010-2025 share of QBs taken before their consensus slot, shrunk with k=5). Report P(QB j is the k-th QB selected) and P(QB j drafted in the top n). As-of: refreshed after the combine, pro days, and each time a credible insider reports intentions; final run at draft start. Betting or market odds are excluded and used as benchmarks only.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse draft_picks (historical picks and positions)",
+     "public big-board and mock draft aggregator pages",
+     "team standings and traded-pick lists (nflverse, league site)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "draft_picks: season, round, pick, team, player, position",
+     "consensus big boards with timestamps",
+     "team QB contract and starter performance"
+    ],
+    "why": "Gives draft-position-count contracts a joint ordering model, which the single-prospect consensus board in the catalog does not provide.",
+    "role": "primary"
+   },
+   "nfl.broadcast_role_assignment": {
+    "label": "Broadcast and event role assignment model (announced crews, contracts and appearance history)",
+    "category": "other",
+    "mechanism": "A named person performs a role in a named network's broadcast only if the network assigns them to that event and they appear, which follows announced crew sheets, multi-year talent contracts and prior appearance frequency.",
+    "rationale": "KXNFLROLE settles on whether a person performs as an on-air analyst in a specific network broadcast in a window; this is a staffing decision with a mostly public paper trail (crew announcements, contract news), not an athletic outcome, and it needs base rates by role type rather than a vote or a season model.",
+    "measurement": "P(role) = P(person on the network's announced crew for at least one qualifying event in the window) x P(appears given assigned). Crew assignment is estimated by logistic regression on the person's number of qualifying events in each of the previous 3 seasons (with weights 0.5, 0.3, 0.2), contract end year, the network's announced lead-crew roster (binary), and whether the event is the network's lead broadcast; P(appears | assigned) = 1 minus the withdrawal rate (illness, conflicts) from the past 5 seasons, shrunk with k=10 events toward 0.97. As-of: each network crew press release and contract report, stamped to the hour; before an announcement the prior-season frequency is used.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "network press releases and crew announcements (free)",
+     "Pro-Football-Reference or Wikipedia broadcaster history (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "network broadcast crew sheets by event and season",
+     "talent contract announcements with dates"
+    ],
+    "why": "Supplies a staffing-event model for the on-air role series that no award or hazard input covers.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -4912,12 +5263,12 @@
     "reason": "Timestamped reports are the main early signal, but its value depends on reporter credibility and wording, which the label does not define."
    },
    "nfl.cap_and_contract": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Decisive for cuts, signings and trades; irrelevant to award and vote markets, so role is series-specific."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Role is series-specific: primary for the 53-man roster, trades, signings and contract-size series where guarantees and dead cap decide actions, and irrelevant for award, vote and Top 100 series; it is therefore secondary for the archetype as a whole."
    },
    "nfl.draft_board": {
-    "verdict": "WEAK",
-    "reason": "No draft market is in the sampled series of this archetype; draft board is relevant only for draft contracts filed elsewhere."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The draft family (NFL/DRAFT) belongs to this archetype and the live KXNFLDRAFTQB series is mis-filed under first_half_and_quarter_totals; the board supplies consensus ranks and order, but alone it gives single-prospect rank, so it is paired with nfl.draft_qb_class_model for count-based contracts. No draft series is among this archetype's own ledger rows."
    },
    "nfl.coach_hot_seat": {
     "verdict": "KEEP_PRIMARY",
@@ -4929,7 +5280,7 @@
    },
    "nfl.standings_sim": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Season outcomes feed coach hazard and award narratives, but the link is indirect and noisy."
+    "reason": "Feeds coach-exit hazard and award narratives through team win totals; it must be built from market-free ratings (opponent-adjusted EPA state-space ratings, 10,000 season simulations with tiebreakers), not from market win totals, and for awards it is only one of several candidate-level inputs."
    },
    "nfl.award_voting_mechanics": {
     "verdict": "KEEP_PRIMARY",
@@ -5032,17 +5383,17 @@
      {
       "name": "Pro Football Reference transactions and coaches",
       "access": "free_scrape",
-      "note": "manual scrape; terms of use"
+      "note": "Scrape terms and structure not verified"
      },
      {
       "name": "nflverse rosters/players",
       "access": "free",
-      "note": "weekly roster status"
+      "note": "Rosters and player attributes; a transactions wire is not confirmed here (SOURCE_UNVERIFIED)"
      },
      {
       "name": "Spotrac/OverTheCap",
       "access": "free_scrape",
-      "note": "contract guarantee data; cap tables"
+      "note": "Terms-of-service restrictions on scraping contract data are likely"
      }
     ],
     "feeds_inputs": [
@@ -5064,12 +5415,12 @@
      {
       "name": "X/Twitter archives and NFL Network",
       "access": "own_capture",
-      "note": "no complete public archive; paid social-listening vendors (Brandwatch) are an option"
+      "note": "Platform terms and API access limit archiving; coverage depends on real-time capture"
      },
      {
       "name": "Google News archive",
       "access": "free_limited",
-      "note": "coarse timing"
+      "note": "Timestamps are coarse"
      }
     ],
     "feeds_inputs": [
@@ -5135,13 +5486,80 @@
      "m.lifecycle",
      "m.quote_history"
     ]
+   },
+   {
+    "dataset": "Draft history, prospect boards and draft order",
+    "grain": "draft pick; board snapshot by date",
+    "fields": [
+     "season",
+     "round",
+     "pick",
+     "team",
+     "player",
+     "position",
+     "consensus_rank",
+     "board_timestamp",
+     "traded_pick_owner"
+    ],
+    "timestamp_requirement": "Board snapshots stamped before each decision window; the final pre-draft board must precede the first pick.",
+    "history_needed": "2010-2025 drafts (about 180 drafted quarterbacks) and board snapshots from capture start",
+    "candidate_sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free",
+      "note": "Historical results and positions; no board snapshots"
+     },
+     {
+      "name": "public big-board and mock draft aggregator pages",
+      "access": "free_scrape",
+      "note": "Historical snapshots usually unavailable, so capture is needed"
+     },
+     {
+      "name": "ESPN/NFL draft site JSON",
+      "access": "free_limited",
+      "note": "Endpoint stability not verified"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.draft_board",
+     "nfl.draft_qb_class_model"
+    ]
+   },
+   {
+    "dataset": "Network broadcast crew assignments",
+    "grain": "event-network-person",
+    "fields": [
+     "event",
+     "network",
+     "person",
+     "role",
+     "announcement_date",
+     "contract_end_year"
+    ],
+    "timestamp_requirement": "Crew announcement timestamp; only information published before the market close is allowed.",
+    "history_needed": "2015-2025 seasons of crew sheets",
+    "candidate_sources": [
+     {
+      "name": "network press releases and crew announcements",
+      "access": "own_capture",
+      "note": "No structured public archive; capture needed"
+     },
+     {
+      "name": "Wikipedia and broadcaster history pages",
+      "access": "free_scrape",
+      "note": "Coverage varies by network"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.broadcast_role_assignment"
+    ]
    }
   ],
   "unresolved": [
    {
     "id": "u1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Ten or more series (TRADE, SELLOUT, DELAY, STADIUM, REDZONEADS, REDZONEBRANDADS, OWNERSTAKE, CONTRACTSIZE, TSPEC, GAMESPECIALS, NEXTCOACHOUT, SFPRACFIELD, DPOYSPECIALS) are TITLE_ONLY; their counting rules and resolution sources are unknown.",
+    "description": "Ten or more series (TRADE, SELLOUT, DELAY, STADIUM, REDZONEADS, REDZONEBRANDADS, OWNERSTAKE, CONTRACTSIZE, TSPEC, GAMESPECIALS, NEXTCOACHOUT, SFPRACFIELD, DPOYSPECIALS) are TITLE_ONLY; their counting rules and resolution sources are unknown. The NFL/SUPER_BOWL_EVENT family has no live series in the ledger, so no claim about Super Bowl novelty contracts is made; roughly half of the live series here are title only and carry only base-rate treatment.",
     "what_would_resolve": "Sample rules_primary/secondary for one live market per TITLE_ONLY series.",
     "category": "settlement_contract"
    },
@@ -5165,6 +5583,13 @@
     "description": "Weather-delay, sellout and stadium series depend on physical drivers (lightning rules, dome status, attendance trends, construction milestones) that are outside any input listed; there is no model for them.",
     "what_would_resolve": "Add per-series domain inputs (lightning-delay frequency by venue, ticket sales data, construction schedule filings).",
     "category": "environment"
+   },
+   {
+    "id": "u7",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "A structured transactions wire (signings, trades, cuts, retirements with timestamps) is not confirmed to exist in nflverse, and scraped sources (Pro-Football-Reference, Spotrac/OverTheCap) and social archives carry terms-of-service and coverage risk, so the history behind the event hazard inputs may not be reproducible.",
+    "what_would_resolve": "Inspect nflverse loaders for a transactions table and test the legal and technical access of PFR, Spotrac and an official league transaction page; record coverage by season.",
+    "category": "availability_news"
    }
   ],
   "reviewer": "NFL_a author (Claude)",
@@ -5256,14 +5681,13 @@
      "input_ids": [
       "nfl.motivation_seeding",
       "nfl.coaching",
-      "nfl.healthy_inactive_base_rate",
-      "nfl.rest_travel"
+      "nfl.healthy_inactive_base_rate"
      ]
     },
     {
      "id": "a4",
      "name": "Depth-chart ordering and QB-change hazard",
-     "description": "For first-start contracts the question is whether and when the depth chart lists the player first. A QB gets promoted when the incumbent is injured, benched (performance relative to expectation, team record, a bye week as a natural reset point) or when development timelines force a change. The hazard per week depends on incumbent performance, the challenger's draft capital and contract, and the coach's patience; the contract's window turns this into a probability over about 3-4 charts.",
+     "description": "For first-start contracts the question is whether and when the depth chart lists the player first. A QB gets promoted when the incumbent is injured, benched (performance relative to expectation, team record, a bye week as a natural reset point) or when development timelines force a change. The hazard per week depends on incumbent performance, the challenger's draft capital and contract, and the coach's patience; the contract's window turns this into a probability over about 3-4 charts. The incumbent-versus-challenger gap is measured by nfl.qb_challenger_prior, which uses a draft-slot prior when the challenger has few dropbacks.",
      "distribution": "Discrete-time hazard per published chart; event probability 1 - product of (1 - h_week); rare but front-loaded after bye weeks",
      "categories": [
       "role_personnel",
@@ -5275,7 +5699,7 @@
       "nfl.depth_chart_pit",
       "nfl.depth_chart_publication_lag",
       "nfl.qb",
-      "nfl.snaps"
+      "nfl.qb_challenger_prior"
      ]
     },
     {
@@ -5289,8 +5713,7 @@
      ],
      "input_ids": [
       "nfl.snap_appearance_given_active",
-      "nfl.snaps",
-      "nfl.in_game_exit_risk"
+      "nfl.snaps"
      ]
     },
     {
@@ -5307,13 +5730,31 @@
       "m.rules_text",
       "m.settlement_truth"
      ]
+    },
+    {
+     "id": "a7",
+     "name": "Roster-status transitions for non-roster players",
+     "description": "For a retired, unsigned or suspended player the chain is not injury then designation then inactive list but a status transition: a decision to un-retire or to sign, a contract signed before the roster deadline, a physical and activation, and then a snap in the stated week. The sampled KXNFLWEEKCOMPETE subject is a player outside any current roster, and KXNFLNEXTTEAM and KXNFLRETURN settle on signing, retirement or comeback events, so the probabilities come from comeback reference classes, insider-reported interest and transaction timing rather than practice participation.",
+     "distribution": "Rare-event discrete-time hazards with long periods of near-zero probability and jumps at reported interest; binary outcomes after a multi-step funnel",
+     "categories": [
+      "availability_news",
+      "role_personnel",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "nfl.non_roster_return_status",
+      "nfl.news",
+      "nfl.roster_designation_constraints"
+     ]
     }
    ],
    "category_coverage": {
     "talent_strength": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "For first-start contracts the benching hazard depends on the incumbent's and challenger's quality relative to expectation, but no input here supplies a QB-performance gap measure beyond the generic QB id."
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb_challenger_prior"
+     ],
+     "note": "For first-start contracts the incumbent-versus-challenger EPA gap with a draft-capital prior for unproven QBs is defined in nfl.qb_challenger_prior; its calibration for rookies remains open in u3."
     },
     "opponent_matchup": {
      "status": "NOT_APPLICABLE",
@@ -5325,7 +5766,8 @@
      "input_ids": [
       "nfl.depth_chart_pit",
       "nfl.snaps",
-      "nfl.snap_appearance_given_active"
+      "nfl.snap_appearance_given_active",
+      "nfl.non_roster_return_status"
      ],
      "note": "Depth slot and role determine snap exposure and first-start eligibility."
     },
@@ -5335,7 +5777,8 @@
       "nfl.injuries_pit",
       "nfl.inactives_pit",
       "nfl.news",
-      "nfl.injury_return_timeline"
+      "nfl.injury_return_timeline",
+      "nfl.non_roster_return_status"
      ],
      "note": "Timestamped injury, designation and news data."
     },
@@ -5383,7 +5826,6 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.motivation_seeding",
-      "nfl.rest_travel",
       "nfl.healthy_inactive_base_rate"
      ],
      "note": "Stakes, short weeks and rest policy."
@@ -5530,6 +5972,46 @@
     ],
     "why": "Hard rules truncate the distribution of return dates and are missing from the existing list.",
     "role": "secondary"
+   },
+   "nfl.non_roster_return_status": {
+    "label": "Non-roster status transition model (retired, free agent, suspended or unsigned player returning to play)",
+    "category": "availability",
+    "mechanism": "A player who is not on an active roster can only take a snap after a chain of discrete events: ending retirement or suspension, signing with a team, passing a physical, and being activated, each with its own timing and decision-maker.",
+    "rationale": "The injury-report-to-inactive-list mechanism does not apply to a retired or unsigned player such as the sampled KXNFLWEEKCOMPETE subject (a player outside any current roster); the live contracts KXNFLRETURN and KXNFLNEXTTEAM are also status-transition events, so a separate model with reference classes for comebacks is required.",
+    "measurement": "P(plays in week w) = P(contract signed by the week-w roster deadline) x P(activated and takes a snap | signed). Estimate the first factor as a discrete-time hazard on retired and unsigned veterans 2000-2025 (age, years since last game, Pro Bowl count, stated intent in the previous 12 months as a binary flag, team contract interest reported by named insiders as a binary flag with a timestamp, days to the target week), with ridge shrinkage and a Beta(1, 19) prior for the base comeback rate; estimate the second from signing-to-first-snap lags of mid-season veteran signings (median lag in weeks, shrunk with k=8 signings). For NEXTTEAM contracts output P(team k) by multinomial logit on prior-team cap space, position need and reported interest, with a 'retires or no team' category. As-of: each transaction-wire timestamp and insider report time.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "league transactions page and Pro-Football-Reference transactions (free_scrape)",
+     "insider reports (own_capture)",
+     "nflverse rosters (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "transaction wire: player, event type, date, team",
+     "player status history: retired flag, last game date, age",
+     "insider report log with timestamps"
+    ],
+    "why": "Covers WEEKCOMPETE for retired or unsigned players, NEXTTEAM and RETURN, which the injury-report chain cannot model.",
+    "role": "primary"
+   },
+   "nfl.qb_challenger_prior": {
+    "label": "Incumbent-versus-challenger quarterback value gap (draft-capital prior for unproven QBs)",
+    "category": "player_role",
+    "mechanism": "The expected performance gap between the incumbent starter and a challenger drives benching and promotion decisions; for rookies and players with few dropbacks the challenger's value rests on a prior built from draft position.",
+    "rationale": "The first-start contracts (KXNFLFIRSTSTART, KXNFLDEBUT) are about a named unproven QB overtaking an incumbent, and the incumbent's in-season EPA alone ignores how good the challenger is expected to be; teams that spent a high pick tolerate a shorter leash for the incumbent.",
+    "measurement": "gap_w = EPA_incumbent_w - EPA_challenger_prior_w where EPA_incumbent_w is the incumbent's opponent-adjusted EPA per dropback over the last 8 games with a prior of league-average QB EPA at weight 150 dropbacks, and EPA_challenger_prior_w = a regression of first-3-season EPA per dropback on log draft pick (2000-2025 QBs with at least 150 dropbacks) blended with the challenger's own preseason and in-game dropbacks using weight n/(n+150). Pick number enters as a continuous slope, undrafted as pick 260. Output the gap and its SD for the discrete-time logistic hazard in nfl.qb_change_hazard. As-of: after each game, with bye weeks excluded from the exposure count.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp (EPA per dropback)",
+     "nflverse draft_picks (draft slot)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: passer id, epa, qb_dropback, week",
+     "draft_picks: player, pick, position"
+    ],
+    "why": "Defines the measurable QB gap the benching hazard needs, including for rookies with no NFL sample.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -5559,7 +6041,7 @@
    },
    "nfl.snaps": {
     "verdict": "WEAK",
-    "reason": "Snap share trend informs role but the sampled contracts need a single snap or a chart listing; usable mainly for the snap-given-active input."
+    "reason": "Snap share trend informs role but the sampled contracts need a single snap or a chart listing; usable mainly for the snap-given-active input. Kept only in stage a5 (snap given active); removed from the depth-chart stage a4."
    },
    "nfl.coaching": {
     "verdict": "KEEP_CONTEXT",
@@ -5698,14 +6180,14 @@
     "history_needed": "2016-2025",
     "candidate_sources": [
      {
-      "name": "nflverse load_snap_counts and inactives",
+      "name": "nflverse load_snap_counts",
       "access": "free",
-      "note": "snap counts by unit"
+      "note": "Snap counts by unit; an inactives loader is not confirmed (SOURCE_UNVERIFIED)"
      },
      {
       "name": "NFL game-day inactive lists",
       "access": "free_scrape",
-      "note": "official page"
+      "note": "Official page; archive depth and scrape terms not verified"
      }
     ],
     "feeds_inputs": [
@@ -5724,19 +6206,20 @@
      {
       "name": "nflverse depth_charts",
       "access": "free",
-      "note": "weekly snapshots, timing limited"
+      "note": "Weekly snapshots; publication timestamp within the week not preserved"
      },
      {
-      "name": "team websites",
-      "access": "free_scrape",
-      "note": "own_capture needed for history"
+      "name": "team websites and own capture",
+      "access": "own_capture",
+      "note": "Needed for chart-publication timing"
      }
     ],
     "feeds_inputs": [
      "nfl.qb_change_hazard",
      "nfl.depth_chart_pit",
      "nfl.depth_chart_publication_lag",
-     "nfl.qb"
+     "nfl.qb",
+     "nfl.qb_challenger_prior"
     ]
    },
    {
@@ -5747,19 +6230,20 @@
     "history_needed": "2009-2025",
     "candidate_sources": [
      {
-      "name": "nflverse rosters/transactions",
+      "name": "nflverse rosters (weekly status)",
       "access": "free",
-      "note": "weekly status"
+      "note": "Weekly roster status; a transactions table is not confirmed (SOURCE_UNVERIFIED)"
      },
      {
       "name": "NFL transactions page and Pro Football Reference",
       "access": "free_scrape",
-      "note": "official dates"
+      "note": "Official dates; scrape coverage unverified"
      }
     ],
     "feeds_inputs": [
      "nfl.roster_designation_constraints",
-     "nfl.news"
+     "nfl.news",
+     "nfl.non_roster_return_status"
     ]
    },
    {
@@ -5779,6 +6263,29 @@
      "m.lifecycle",
      "m.rules_text",
      "m.settlement_truth"
+    ]
+   },
+   {
+    "dataset": "Draft capital and QB dropback history",
+    "grain": "player-season",
+    "fields": [
+     "draft_pick",
+     "dropbacks",
+     "epa_per_dropback",
+     "cpoe",
+     "season"
+    ],
+    "timestamp_requirement": "Performance as-of previous game; draft slot fixed at draft.",
+    "history_needed": "2000-2025 QBs with at least 150 dropbacks for the draft-slot prior",
+    "candidate_sources": [
+     {
+      "name": "nflverse draft_picks and pbp",
+      "access": "free",
+      "note": "Draft slot and per-dropback EPA are derivable"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.qb_challenger_prior"
     ]
    }
   ],
@@ -5807,9 +6314,23 @@
    {
     "id": "u4",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "NEXTTEAM and RETURN markets depend on free agency, trade and retirement decisions that have no model in this archetype; rough rates may be needed from reference classes.",
-    "what_would_resolve": "Define a reference class for veteran QB moves and retirement; test the base rate.",
+    "description": "NEXTTEAM, RETURN and WEEKCOMPETE for a retired or unsigned player depend on retirement, free agency and signing decisions; nfl.non_roster_return_status defines the transition model but its comeback base rate rests on a small reference class and no verified source of retirement-intent signals.",
+    "what_would_resolve": "Count comebacks and signings of retired or unsigned veterans from the transactions wire since 2000 to fix the base rate, and validate the insider-interest flag on past cases.",
     "category": "distribution_variance"
+   },
+   {
+    "id": "u5",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNFLDEBUT is titled 'Player to Make Debut' but its sampled rules use the first-start-as-QB wording; other strikes of the same series (a true first appearance or snap) may exist with a different settlement and are not visible in the single sample.",
+    "what_would_resolve": "Sample several KXNFLDEBUT markets and confirm whether any use a participation definition of debut.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "A nflverse game-day inactives loader and a nflverse transactions table were not confirmed; depth-chart publication timing within the week is not preserved in weekly depth-chart snapshots, and official practice-day injury vintages are unarchived.",
+    "what_would_resolve": "Check nflverse loader lists for inactives and transactions, scrape the official inactive page for a test season, and begin timestamped depth-chart and injury-report capture.",
+    "category": "availability_news"
    }
   ],
   "reviewer": "NFL_a author (Claude)",
@@ -5817,8 +6338,8 @@
  },
  "qb_passing_tds_and_ints": {
   "contract": {
-   "settlement_definition": "Single-game quarterback count markets (KXNFLPASSTDS, PASSINT, PASSCOMP, PASSATT) resolve YES if the named QB records at least N of the statistic (strike floor 3.5 means 4+) in the game as officially scored; if he is active but never appears in a live play the market settles to the pre-game fair price, and once he appears in one live play, even one nullified by penalty, it settles on the recorded stat. The protected variant (KXNFLPASSTDSPROT) additionally settles at the pre-kickoff fair price if the QB plays in the first half but not after halftime (including overtime), unless he already reached the required count. Season-long (SEASONPASSTDS, 40+ for a named QB in the regular season) and career milestone markets (CAREERPASSTDS) are accumulation contracts over many games. Postponed games starting within 48 hours remain open.",
-   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "settlement_definition": "Rules text was sampled for KXNFLPASSTDS, KXNFLPASSTDSPROT and KXNFLPASSCOMP (single-game count markets: the named QB records at least N of the statistic, floor strike 3.5 meaning 4+; if he is active but never appears in a live play the market settles to the pre-game fair price, and once he appears in one live play, even one nullified by penalty, it settles on the recorded stat) and a season strike for KXNFLSEASONPASSTDS (40+ regular-season passing TDs, strike text only). KXNFLPASSINT, KXNFLPASSATT and KXNFLCAREERPASSTDS are TITLE_ONLY: their strike construction (1+ versus 2+ interceptions), pick-six and nullified-play handling and the career counting window are inferred from sibling wording and the official stat sheet, not seen. The protected variant (KXNFLPASSTDSPROT) additionally settles at the pre-kickoff fair price if the QB plays in the first half but not after halftime (including overtime), unless he already reached the required count. Postponed games starting within 48 hours remain open.",
+   "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
      "ticker": "KXNFLPASSTDS",
@@ -5847,7 +6368,7 @@
     }
    ],
    "variants_and_edge_cases": [
-    "Strike construction: floor_strike 3.5 for TDs with the label '4+', i.e. 'greater than 3.5' on an integer; rungs are nested events P(>=1) >= P(>=2) >= P(>=3) >= P(>=4) and a ladder must be monotone; INT strikes are 1+ and 2+ typically.",
+    "Strike construction: floor_strike 3.5 for TDs with the label '4+', i.e. 'greater than 3.5' on an integer; rungs are nested events P(>=1) >= P(>=2) >= P(>=3) >= P(>=4) and a ladder must be monotone; interception strikes are assumed (not seen) to be 1+ and 2+.",
     "Standard versus protected contracts differ for a QB pulled in a blowout: standard markets stay live with a truncated count; protected markets void to a pre-kickoff fair price unless the count is already reached; the same game therefore has two different effective distributions.",
     "Interceptions count as official interceptions thrown (including pick-sixes); whether a QB's interception on a play nullified by penalty counts is not stated in the sampled text and follows the official stat sheet.",
     "Season and career series (SEASONPASSTDS, CAREERPASSTDS) cover games played over a season or career and depend on injury attrition and age, not just single-game rates; they are title-only for career and sampled only for the season text.",
@@ -5871,7 +6392,8 @@
       "nfl.qb",
       "nfl.injuries_pit",
       "nfl.qb_blowout_pull_hazard",
-      "nfl.in_game_exit_risk"
+      "nfl.in_game_exit_risk",
+      "nfl.motivation_seeding"
      ]
     },
     {
@@ -5894,7 +6416,7 @@
     {
      "id": "q3",
      "name": "Per-attempt TD probability and goal-line allocation",
-     "description": "Per-attempt TD probability is the sum of long completions (low probability, any field position) and short-yardage red-zone throws. The team's goal-to-go pass rate, the quality of red-zone targets (TE/WR availability), defensive red-zone performance and the QB's own rushing at the goal line determine how many team TDs are passes. TD luck regresses hard: a QB's season TD rate over expectation is mostly noise.",
+     "description": "Per-attempt TD probability is the sum of long completions (low probability, any field position) and short-yardage red-zone throws. The team's goal-to-go pass rate, the quality of red-zone targets (TE/WR availability), defensive red-zone performance and the QB's own rushing at the goal line determine how many team TDs are passes. TD luck regresses hard: a QB's season TD rate over expectation is mostly noise. Red-zone catcher quality (nfl.red_zone_target_quality) lifts or lowers the per-attempt TD rate for the same QB.",
      "distribution": "Binomial thinning of attempts; heavy dependence on red-zone dropback count (about 4 to 6 per game); strong regression to expectation",
      "categories": [
       "efficiency_conversion",
@@ -5908,7 +6430,8 @@
       "nfl.qb_rushing",
       "nfl.skill_avail",
       "nfl.qb_expected_pass_td",
-      "nfl.goal_to_go_pass_rate"
+      "nfl.goal_to_go_pass_rate",
+      "nfl.red_zone_target_quality"
      ]
     },
     {
@@ -5939,7 +6462,7 @@
      "input_ids": [
       "nfl.player_stat_variance",
       "m.ladder_structure",
-      "nfl.team_total_split"
+      "nfl.model_team_td_mean"
      ]
     },
     {
@@ -5993,7 +6516,8 @@
      "input_ids": [
       "nfl.skill_avail",
       "nfl.rz_share",
-      "nfl.qb_rushing"
+      "nfl.qb_rushing",
+      "nfl.red_zone_target_quality"
      ],
      "note": "Receiver quality and goal-line usage allocate TDs between pass and run."
     },
@@ -6055,14 +6579,16 @@
      "note": "Overdispersion and monotone ladders."
     },
     "situational_schedule_motivation": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Rest or starter-benching incentives in meaningless late games and rookie development plans can reduce a QB's playing time, but no input captures motivation-linked pulls of QBs beyond the blowout-pull hazard."
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.motivation_seeding"
+     ],
+     "note": "The existing seeding and starter-rest input (clinched or eliminated teams resting a QB in weeks 17-18) covers motivation-linked pulls; its size for QBs is not measured (u4)."
     },
     "officiating_rules": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "Officiating crews affect passing yardage only marginally via defensive pass-interference calls, which convert to goal-line spot fouls and sometimes TDs, but the effect is small relative to targets and script and no input is needed."
+     "note": "A defensive pass-interference penalty gives the offence the ball at the spot of the foul and creates a goal-to-go play, but the penalty itself credits no passing TD to the QB; its effect runs only through extra goal-to-go dropbacks, which are already counted in nfl.goal_to_go_pass_rate, so no separate officiating input is carried and the size of the DPI effect is not quantified here."
     },
     "settlement_contract": {
      "status": "COVERED",
@@ -6079,7 +6605,7 @@
     "category": "team_strength",
     "mechanism": "Sum over a QB's dropbacks of the probability that the attempt becomes a TD given field position, down, distance, target type and defensive look.",
     "rationale": "Realized TD counts are noisy; a location-based expectation separates opportunity from finishing luck and gives the per-attempt TD rate that actually predicts forward counts.",
-    "measurement": "Fit a logistic model P(pass TD | yardline_100, down, ydstogo, air_yards bucket, pass_location, offense_personnel, defenders_in_box) on 2006+ pass attempts; for each QB, expected TDs per attempt = average over his attempts last 700 attempts (half-life 350 attempts); shrink to team-level rate with k=300 attempts; ratio of actual to expected regressed 70% to 1.0; as-of previous game.",
+    "measurement": "Fit a logistic model P(pass TD | yardline_100, down, ydstogo, air_yards bucket, pass_location, offense_personnel, defenders_in_box) on 2006+ pass attempts using pbp-only fields (yardline_100, down, ydstogo, air_yards bucket, pass_location) and, as an upgrade fitted only on the participation era (about 2016+), offense_personnel and defenders_in_box, which are not available for earlier seasons; for each QB, expected TDs per attempt = average over his attempts last 700 attempts (half-life 350 attempts); shrink to team-level rate with k=300 attempts; ratio of actual to expected regressed 70% to 1.0; as-of previous game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse pbp",
@@ -6178,12 +6704,51 @@
     ],
     "why": "Season and career series are not single-game events; the aging and games-played component is a separate mechanism.",
     "role": "secondary"
+   },
+   "nfl.model_team_td_mean": {
+    "label": "Market-free team touchdown mean (drives times TD-per-drive, with FG-vs-TD split)",
+    "category": "team_strength",
+    "mechanism": "A team's expected touchdowns are expected drives times the per-drive probability of ending in a touchdown rather than a field goal or no score, estimated from opponent-adjusted offence and defence and red-zone conversion, with no spread, total or price as a feature.",
+    "rationale": "Every scorer market is a share of the team's touchdown pool. A points-based implied team total is market-derived and is not touchdown-specific (24 points can be 3 TD + FG or 2 TD + 3 FG). A model-derived TD mean keeps wind, availability and matchup visible and gives P(team scores at least one TD), the quantity the team-own first-TD contract depends on.",
+    "measurement": "lambda_TD(team i vs j) = E[drives_i] x P(TD | drive). E[drives] from both teams' neutral seconds per play and expected plays (2015+ pbp, shrink 50/50 to league at 8 games). P(TD|drive) = logistic ridge on own opponent-adjusted offensive EPA per play (half-life 8 games, prior-season weight 0.3 fading to 0 by week 10), opponent defensive EPA per play, red-zone trips per drive and red-zone TD rate (shrunk k=30 trips), 4th-and-goal go-for-it rate (k=12), wind>15 mph and dome flags, starting-QB indicator. Output mean, variance (overdispersion from tercile residuals) and P(N>=1)=1-exp(-lambda_TD) with a negative-binomial correction. As-of: after the previous game, refreshed at the final injury report. Spreads, totals and prices excluded; used only afterwards as a benchmark.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp (drive results, redzone, td flags)",
+     "nflverse schedules (wind, roof)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, drive, posteam, drive_end_transition, touchdown, epa, yardline_100, fourth_down_converted",
+     "schedules: wind, roof, starting QBs"
+    ],
+    "why": "Supplies the team TD pool from which the pass-versus-run split near the goal line yields the QB's passing TDs, without a market-implied total.",
+    "role": "primary"
+   },
+   "nfl.red_zone_target_quality": {
+    "label": "Red-zone catcher quality and availability (contested-catch and size-weighted target value)",
+    "category": "player_role",
+    "mechanism": "The probability that a red-zone or goal-to-go throw becomes a touchdown depends on who is the target: tall, contested-catch receivers and tight ends convert short throws at higher rates than slot receivers, so QB touchdown counts depend on the supporting cast.",
+    "rationale": "nfl.skill_avail captures absences but not the quality level of red-zone catchers; a QB with a dominant red-zone target has a higher per-attempt TD rate independent of his own skill, and a team's passing-TD count is lost when that player is out or replaced.",
+    "measurement": "For each team-week, rz_target_quality = sum over players of (share of team targets inside the opponent 20 over the last 12 games, half-life 6 games) x (player's red-zone catch rate over expected, shrunk to the league mean with k=20 red-zone targets) x (availability weight from the active/inactive status at the as-of time); standardise across teams within season; output the team value and the value lost when the top red-zone target is replaced by the next on the chart. As-of: after the previous game and updated at the inactive list.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse pbp (targets, yardline_100, receiver_id, complete_pass)",
+     "nflverse rosters and depth charts"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: receiver_id, yardline_100, complete_pass, pass_touchdown, air_yards",
+     "roster: height, weight, position",
+     "inactives at the as-of time"
+    ],
+    "why": "Adds receiver and tight-end quality to the passing-TD chain, which was represented only by availability.",
+    "role": "secondary"
    }
   },
   "input_audit": {
    "nfl.team_total_split": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Team points include field goals and rushing TDs; for passing TDs it is only a prior and is largely market-derived, so it overstates information about pass TDs."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Implied team points are market-derived and include field goals and rushing TDs, so they are a benchmark for the market-free nfl.model_team_td_mean that now supplies the TD pool in stage q5, interaction 0 and data feeds."
    },
    "nfl.rz_share": {
     "verdict": "KEEP_SECONDARY",
@@ -6207,7 +6772,7 @@
    },
    "nfl.int_rate": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Decomposition into turnover-worthy throw rate and luck is the right frame; needs opponent adjustment."
+    "reason": "Decomposition into turnover-worthy throw rate and luck is the right frame and needs opponent adjustment; the turnover-worthy-throw field is vendor charting (PFF/SIS), so the public build is a proxy: INT per attempt regressed on air_yards, pass_location, qb_hit and sack rate from nflverse pbp with k=300 attempts shrinkage, with charting as an upgrade if licensed (u2)."
    },
    "nfl.pressure_qb": {
     "verdict": "KEEP_SECONDARY",
@@ -6250,12 +6815,12 @@
    {
     "inputs": [
      "nfl.goal_to_go_pass_rate",
-     "nfl.team_total_split",
+     "nfl.model_team_td_mean",
      "nfl.redzone"
     ],
     "form": "multiplicative",
     "mechanism": "Passing TDs equal the team's TD count times the pass fraction near the goal line; a team that scores mostly through field goals and long runs, or that runs the ball inside the 5, converts a high total into few passing TDs; the product of TD pool and pass share matters, not either one.",
-    "how_to_test": "Regress QB TDs on team TD pool, goal-to-go pass rate and their product."
+    "how_to_test": "Regress QB TDs on the model team TD mean, goal-to-go pass rate and their product."
    },
    {
     "inputs": [
@@ -6357,7 +6922,11 @@
      "nfl.proe",
      "nfl.script",
      "nfl.pace",
-     "nfl.rz_share"
+     "nfl.rz_share",
+     "nfl.qb_rushing",
+     "nfl.coverage_scheme",
+     "nfl.model_team_td_mean",
+     "nfl.red_zone_target_quality"
     ]
    },
    {
@@ -6408,7 +6977,8 @@
      "nfl.qb",
      "nfl.injuries_pit",
      "nfl.skill_avail",
-     "nfl.in_game_exit_risk"
+     "nfl.in_game_exit_risk",
+     "nfl.motivation_seeding"
     ]
    },
    {
@@ -6436,7 +7006,7 @@
    {
     "dataset": "Kalshi ladders and rules",
     "grain": "market",
-    "fields": "rungs, prices, rules text",
+    "fields": "rungs, prices, rules text (rules text and ladder structure only; no model inputs are fed from Kalshi data)",
     "timestamp_requirement": "Snapshot",
     "history_needed": "from first listing",
     "candidate_sources": [
@@ -6448,10 +7018,7 @@
     ],
     "feeds_inputs": [
      "m.rules_text",
-     "m.ladder_structure",
-     "nfl.team_total_split",
-     "nfl.qb_rushing",
-     "nfl.coverage_scheme"
+     "m.ladder_structure"
     ]
    }
   ],
@@ -6466,7 +7033,7 @@
    {
     "id": "u2",
     "type": "SOURCE_UNVERIFIED",
-    "description": "Turnover-worthy throw rate and pressure-to-throw detail come from PFF or Sports Info Solutions charting and Next Gen Stats; their licences, history length and field definitions are not verified here, and public nflverse lacks them.",
+    "description": "Turnover-worthy throw rate and pressure-to-throw detail come from PFF or Sports Info Solutions charting and Next Gen Stats; their licences, history length and field definitions are not verified here, and public nflverse lacks them. The nflverse ff_opportunity expected-pass-TD columns used as an alternative source for xPassTD are also not confirmed field by field.",
     "what_would_resolve": "Confirm the data vendor, licence terms and available fields, or construct in-house proxies.",
     "category": "efficiency_conversion"
    },

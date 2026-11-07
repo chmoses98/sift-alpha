@@ -336,6 +336,23 @@ def independent_state(ind: dict | None, rec: dict | None = None) -> tuple[str, l
     return ("OPEN_FINDINGS" if openf else "CLEAR"), openf
 
 
+def series_remap_proposals() -> dict:
+    """Misfiled-series findings recorded in the reviews (contract.series_mapping_issues). PROPOSALS ONLY: the PR #62 series ledger is preserved and not rewritten."""
+    out: dict = {"schema_version": "series-remap-proposals-1.0", "status": "PROPOSALS_PENDING_APPROVAL", "note": "Collected from reviewer/resolver findings; the committed series ledger is unchanged.", "by_sport": {}, "rows": []}
+    for s in SPORTS:
+        n = 0
+        for k, rec in load_reviews(s).items():
+            for x in (rec.get("contract") or {}).get("series_mapping_issues") or []:
+                out["rows"].append({"sport": s, "filed_under": k, "ticker": x.get("ticker"), "issue": x.get("issue"), "belongs_in": x.get("belongs_in")}); n += 1
+        out["by_sport"][s] = n
+    seen = collections.defaultdict(set)
+    for r in out["rows"]:
+        seen[(r["sport"], r["ticker"])].add(r["belongs_in"])
+    out["distinct_series"] = len(seen)
+    out["new_archetype_needed"] = sorted({str(b) for v in seen.values() for b in v if str(b).startswith("NEW_ARCHETYPE_NEEDED")})
+    return out
+
+
 def merge_new_inputs(write: bool = True) -> dict[str, int]:
     """Add reviewer-discovered inputs to the catalog (idempotent; never edits or removes an existing input) and attach each to the archetype that discovered it."""
     added = {}
@@ -406,7 +423,7 @@ def compute_gate() -> dict:
 def summarize(gate: dict) -> dict:
     """Small dashboard summary: no per-archetype problem text, just counts."""
     keep = ("sport", "archetype", "label", "registered", "live_series", "rules_text_series", "status", "stages", "new_inputs", "existing_inputs_audited", "interactions", "nonlinearities", "datasets", "unresolved", "gaps", "rules_verification", "independent", "open_findings", "independent_findings", "n_problems")
-    return {**{k: gate[k] for k in ("schema_version", "status", "phase", "totals", "by_sport", "contract_universe", "approval", "criteria")}, "rows": [{k: r.get(k) for k in keep} for r in gate["rows"]]}
+    return {**{k: gate[k] for k in ("schema_version", "status", "phase", "totals", "by_sport", "contract_universe", "approval", "criteria", "series_mapping_proposals") if k in gate}, "rows": [{k: r.get(k) for k in keep} for r in gate["rows"]]}
 
 
 def main():
@@ -415,6 +432,11 @@ def main():
     if "--evidence" in sys.argv:   # evidence packs describe the PRE-review catalog; regenerate only before a review round, never after merge_new_inputs
         build_evidence()
     g = compute_gate()
+    (CD / "gate.json").write_text(json.dumps(g, indent=1, sort_keys=True))
+    (CD / "summary.json").write_text(json.dumps(summarize(g), indent=0, sort_keys=True))
+    rp = series_remap_proposals()
+    (CD / "series_remap_proposals.json").write_text(json.dumps(rp, indent=0, sort_keys=True))
+    g["series_mapping_proposals"] = {"total_entries": len(rp["rows"]), "distinct_series": rp["distinct_series"], "by_sport": rp["by_sport"], "new_archetypes_needed": len(rp["new_archetype_needed"])}
     (CD / "gate.json").write_text(json.dumps(g, indent=1, sort_keys=True))
     (CD / "summary.json").write_text(json.dumps(summarize(g), indent=0, sort_keys=True))
     print(json.dumps(g["totals"], indent=1))

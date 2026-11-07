@@ -1177,6 +1177,741 @@
     "FBref goalkeeper tables"
    ],
    "registry_ids": []
+  },
+  "soc.team_fail_to_score_propensity": {
+   "label": "Excess failed-to-score rate (zero-inflation) per team",
+   "category": "distribution",
+   "mechanism": "Teams differ in how often they draw a blank beyond what their mean chance quality implies.",
+   "rationale": "A Poisson-from-xG model understates blank frequency for teams whose chance creation is concentrated in one striker or a few counters, and overstates it for diffuse attacks; BTTS-No is mostly the weaker side blanking, so this is the term that mis-prices the favourite-vs-low-block fixtures.",
+   "measurement": "Per team over the last 38 league matches (half-life ~19 matches): excess_FTS = observed share of matches with 0 goals minus mean over matches of exp(-lambda_match) where lambda_match is the opponent-adjusted non-penalty xG of that match; shrink to zero with k=15 matches; separate home/away; as-of = kickoff-1h. Use alongside the xG rating, never instead.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Understat match xG + scores (free)",
+    "football-data.co.uk results (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.trailing_team_response_hazard": {
+   "label": "Conditional scoring hazard of the side that conceded first",
+   "category": "game_state",
+   "mechanism": "Intensity of a scoreless team after conceding, and of the leader after scoring, by minute bucket.",
+   "rationale": "BTTS completion usually happens after the first goal; whether the conceding side then pushes up (and gets chances) or the leader sits deep determines the second scorer, and managers differ markedly. Dixon-Coles rho cannot express this.",
+   "measurement": "From event-level goals and shots with minute: for each team, rate of its goals per 90 in states 'trailing by 1' and 'level' for minutes 20-80, split by pre-match favourite/underdog role, exponential decay half-life 2 seasons, shrink to league mean with k=300 minutes in-state; output the ratio hazard_trailing/hazard_level as a multiplier on lambda after the first goal.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat shot minutes (free)",
+    "FBref match logs (SOURCE_UNVERIFIED after Opta change)"
+   ],
+   "registry_ids": []
+  },
+  "soc.weaker_side_big_chance_creation": {
+   "label": "Weaker side's big-chance and box-entry creation vs this opponent's defence",
+   "category": "matchup",
+   "mechanism": "Counts of high-xG chances the likely lower-lambda side generates against opponents of this defensive profile.",
+   "rationale": "P(score>=1) for the weaker side depends on tail events (big chances, counters, set pieces) rather than on its average xG; a team with 0.8 xG/match from two 0.4-xG chances differs from 0.8 from eight 0.1 shots.",
+   "measurement": "For the side with lower pre-match lambda: per-match number of shots with xG>=0.25 (excluding penalties) opponent-adjusted by the opponent's big-chances-conceded rate, 20-match window half-life 10, shrink k=10; also open-play-only vs set-piece split. Label which side is weaker by the ratings difference at as-of time.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Understat xG per shot (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.points_gap_state": {
+   "label": "Points, goal-difference gap and games in hand as of the as-of date",
+   "category": "other",
+   "mechanism": "Exact standings state of the two teams including postponed fixtures and deductions.",
+   "rationale": "Season-outcome probabilities are path-dependent: the variance to be overcome shrinks with remaining fixtures, and games-in-hand and goal difference matter for ties; this state is the starting condition of every simulation and is not a stored input in the catalog.",
+   "measurement": "At each as-of date T-1h: points_A - points_B, GD_A - GD_B, GF_A - GF_B, matches_left_A, matches_left_B, matches_left_both (direct meetings), and any announced deduction applied to the table; recompute after every matchday; units in points and goals.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk results (free)",
+    "API-Football standings (paid)",
+    "league official tables (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.h2h_zero_sum_fixtures": {
+   "label": "Remaining direct meetings and venue between the two teams",
+   "category": "matchup",
+   "mechanism": "Direct fixtures transfer points between the two teams one-for-one.",
+   "rationale": "A direct meeting is a 6-point swing between the teams, not a 3-point addition to both, and the venue asymmetry (who hosts the last meeting) changes the variance of the gap; ignoring it mis-states the correlation structure.",
+   "measurement": "Count remaining direct fixtures with date and venue; for each compute P(win_A), P(draw), P(win_B) from the goal model and the expected gap shift; weight by remaining horizon and by home advantage (league-season HFA); store as vector for the simulator.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Official league fixture list (free)",
+    "football-data.co.uk (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.shared_shock_overlap": {
+   "label": "Overlap of fixture load and injury exposure between the two teams",
+   "category": "schedule_context",
+   "mechanism": "Shared congestion (same European competition, same international call-ups) correlates strength shocks.",
+   "rationale": "If both teams play in the same continental tournament their rest and rotation shocks move together, which raises correlation of their league results and shrinks the variance of the gap; separate-schedule teams have independent shocks.",
+   "measurement": "For each team: set of competitions, match-count and travel in the next 8 weeks and international call-ups; overlap = Jaccard of competitions and the correlation of the schedule load series across the last 3 seasons of pairs of similar teams; used to set the shock-correlation parameter in the joint simulation.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Fixture list (free)",
+    "Transfermarkt national-team call-ups (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.bracket_path_difficulty": {
+   "label": "Knockout bracket path difficulty and seeding",
+   "category": "matchup",
+   "mechanism": "Opponent sequence and tie format a team faces from the current round to the final.",
+   "rationale": "A cup outright price is the product of round-by-round win probabilities; two teams of equal strength differ materially if one has a bracket with a top-ranked opponent in the quarter-final, and the draw, seeding and one-leg vs two-leg format change per-round variance.",
+   "measurement": "From the official draw: list each possible opponent path with its probability given seeding constraints; P(path) times round win probability w_r = P(win 90) + P(draw) * 0.5 (extra time/penalties, slightly tilted to the stronger side by 0.52-0.55); for two-leg ties compute via aggregate simulation; as-of = after the draw or last completed round.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "UEFA/FIFA/League draw announcements (free)",
+    "ClubElo for opponent strength (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.playoff_format_conversion": {
+   "label": "Table-position to title conversion for split-season and playoff formats",
+   "category": "game_state",
+   "mechanism": "Probability of winning the title given final-table place under the competition's playoff structure.",
+   "rationale": "In Liga MX, MLS, the Clausura/Apertura leagues and some Argentine/Paraguayan formats the champion emerges from a playoff, so a team ranked first after the regular season has a title probability of maybe 25-35% rather than the 80%+ a pure league implies.",
+   "measurement": "For each competition-format: historical P(champion | seed rank) estimated over 10+ seasons with Wilson intervals and shrunk to a strength-based model prediction (k=10 seasons); combine with simulated regular-season rank distribution to give P(title) = sum_rank P(rank) * P(champion | rank).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Official format rules (free)",
+    "Wikipedia/RSSSF historical playoff results (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.top_two_order_statistics": {
+   "label": "Order-statistic distribution of first and second place points",
+   "category": "distribution",
+   "mechanism": "Joint distribution of the top two points totals and the leader's margin.",
+   "rationale": "The champion's margin is a property of the best two of ~20 noisy totals; a dominant favourite has a long right tail, an open title race has a near-zero mode, and because it is bounded below by 0 the shape is not symmetric.",
+   "measurement": "From the posterior-sampled season simulation compute (P1 - P2) over 20k sims per as-of date, recalculate per matchday; report the survival function at integer strikes S(15) etc; calibrate to historical leader margins by league (shrunk to league mean margin with k=5 seasons).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk historical tables (free)",
+    "own simulation"
+   ],
+   "registry_ids": []
+  },
+  "soc.uefa_league_phase_simulation": {
+   "label": "UEFA 36-team league-phase simulation: finishing-rank distribution, top-8 / 9-24 / 25+ outcomes and tiebreakers",
+   "category": "game_state",
+   "mechanism": "Monte Carlo of the 8 league-phase matches per club against four-pot-drawn opponents, giving the distribution of final rank, points and goal difference and hence direct R16 entry, playoff or elimination.",
+   "rationale": "The UCL/UEL league phase (36 teams, 8 unequal fixtures, rank 1-8 direct, 9-24 playoff, 25+ out, goal-difference and goals-scored tiebreakers) replaced the group stage from 2024-25, so there is no long history of P(advance | rank); the rank distribution has to be simulated from team strengths and the actual fixed opponent list.",
+   "measurement": "From the official draw list the eight opponents and venues per club; per match win/draw/loss from the opponent- and venue-adjusted goal model (soc.ratings, Dixon-Coles) with team strength sampled from its posterior; 20,000 simulated league phases using UEFA tiebreak order (points, goal difference, goals scored, away goals, wins, away wins, opponents points, disciplinary). Output P(rank r) and P(top8), P(9-24), P(25+) per club, as-of after the last played matchday, recomputed after each result.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "UEFA.com fixtures and standings (free_scrape)",
+    "football-data.co.uk results for domestic strength (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.seeded_bracket_path_given_finish": {
+   "label": "Seeded bracket path and opponent set conditional on league-phase finishing rank",
+   "category": "matchup",
+   "mechanism": "Maps each league-phase finishing rank (or 9-24 playoff pairing) to the possible playoff, R16, quarter and semi opponents, bracket side and tie venues, so P(reach stage) is a product of path probabilities conditional on rank.",
+   "rationale": "In the new UEFA format rank 1-8 avoid the playoff and sit on fixed bracket lines while 9-24 face a seeded two-leg playoff; the opponent a club can meet in the R16 depends on its finish, so the same strength gives different stage-reach probabilities by finish and stage-markets cannot be priced from a strength rating alone.",
+   "measurement": "For each simulated final rank, apply the published bracket lines and seeding rules to enumerate opponent sets; per tie compute P(advance) by two-leg aggregate simulation from the match-level goal model (home advantage in each leg, extra time and penalties tilted to the stronger side from historical shootout rates, to be estimated); multiply along the path; as-of after each draw.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "UEFA regulations and draw procedure (free)",
+    "UEFA.com draw results (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.club_multi_competition_dependence": {
+   "label": "Dependence of one club's league, cup and Champions League title events",
+   "category": "distribution",
+   "mechanism": "Joint distribution of a club winning the league, domestic cup(s), Supercopa and the Champions League, driven by shared squad strength, a shared injury/fatigue shock and the schedule trade-off between competitions.",
+   "rationale": "KXSOCCERTROPHIES counts trophies across La Liga, Copa del Rey, Supercopa de Espana and the Champions League, so its price is a sum of correlated Bernoulli events; treating them as independent misprices count thresholds, and the sign of the correlation is mixed (shared strength positive, fixture overload negative).",
+   "measurement": "Simulate the four competitions jointly with a common latent club strength draw and a shared availability shock (sample injury days from squad-level history); estimate the pairwise correlation of title indicators from simulated paths and compare with historical co-occurrence of league-plus-cup and league-plus-UCL doubles over 20 seasons (small sample, shrink toward independence with k=10 seasons). As-of after each round.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Wikipedia/RSSSF historical trophy tables (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.half_specific_xg_ratings": {
+   "label": "Half-specific attack and defence ratings",
+   "category": "team_strength",
+   "mechanism": "Separate xG creation and concession rates for the first and second half.",
+   "rationale": "A single full-match rating hides that some teams are strong starters (high press early, fresh legs) and weak finishers, and vice versa; first-half markets need first-half strengths, which differ from full-match by up to 20% for extreme styles. It overlaps soc.period_split and soc.first_goal_hazard (all three describe how scoring is spread over the match); the team-level deviation from the league 1H share is small, so this input is a shrunk correction, not a standalone primary.",
+   "measurement": "For each team: xG for/against in minutes 1-45+ and 46-90+ per 45 minutes, opponent-adjusted with a ridge regression log(xG_half) ~ attack_i + defence_j + home + half, 30-match window half-life 15, shrink half-effect to the league 1H/2H ratio with k=20 matches; output a 1H multiplier m_1H_team in [0.7,1.3].",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Understat shots with minute (free)",
+    "Opta event data (paid)"
+   ],
+   "registry_ids": []
+  },
+  "soc.second_half_state_multiplier": {
+   "label": "Second-half scoring multipliers conditional on half-time score and cards",
+   "category": "game_state",
+   "mechanism": "Multipliers on each side's second-half goal rate given the half-time margin and numerical parity.",
+   "rationale": "Second-half markets are state-conditional: teams trailing by one raise output by 20-30% and leaders drop 10-20%, and a red card swings rates by roughly 30%; the 2H total depends on how the first half unfolded.",
+   "measurement": "From league event data: for margin m in {-2,-1,0,+1,+2}, estimate goals per 45 for each side in the second half relative to expectation from pre-match lambda (Poisson regression with offset log(lambda_match*share_2H)), by favourite/underdog; shrink to league effect with k=200 half-minutes; include 10-man indicator at halftime.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat match and shot data (free)",
+    "football-data.co.uk HT scores (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.half_level_dependence_rho": {
+   "label": "Half-level Dixon-Coles dependence and draw inflation",
+   "category": "distribution",
+   "mechanism": "Dependence parameters fitted on half-time scores rather than full-time scores.",
+   "rationale": "Full-match rho does not carry over to half scores, where 0-0 and 1-1 cells are heavy; using the full-time rho misprices the half draw and half exact-score ladder.",
+   "measurement": "Fit a bivariate Poisson/Dixon-Coles with draw-inflation parameter (and separate rho_1H, rho_2H) to half scores per league on 5 seasons (weights exp(-0.002 per day)); report profile-likelihood intervals; as-of = prior matches only.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk half-time scores (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.knockout_cagey_factor": {
+   "label": "Knockout-stage goal-rate and draw-rate multiplier",
+   "category": "game_state",
+   "mechanism": "Competition-and-stage multiplier on goals and draws relative to league baselines.",
+   "rationale": "Cup knockouts reduce goals and favourite win rates, and the effect varies by round, tie format and leg; a league-fitted draw probability underestimates the ET/penalty mass that Method contracts sell.",
+   "measurement": "For each competition (domestic cup, Champions League knockouts, supercups, tournaments) and stage: ratio R_goals = observed goals/90 divided by model-expected goals from ratings, and draw uplift = observed draw rate minus model draw rate; estimate over 10 seasons, shrink to pooled knockout mean with k=40 matches; separate single-leg, first-leg, second-leg; as-of = previous seasons only.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk cup results (free_limited)",
+    "RSSSF/Wikipedia (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.method_path_tree_calibration": {
+   "label": "Empirical regulation/ET/penalties conversion tree by competition",
+   "category": "distribution",
+   "mechanism": "Historical frequencies of ties decided in 90 minutes, extra time and penalties.",
+   "rationale": "Whatever the match model says, the Method contract's mass is the product of three conditional probabilities; calibrating the tree against history guards against a model that over-differentiates in ET and shootout.",
+   "measurement": "From a table of knockout matches: n90_win, n_ET_win, n_pens_win by competition and favourite/underdog (by pre-match rating gap); estimate P(draw at 90), P(win in ET | draw), P(win on pens | ET draw) with beta-binomial shrinkage (k=30 matches each node) and compare to the model; as-of prior seasons only.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "RSSSF (free_scrape)",
+    "football-data.co.uk (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.first_goal_route_mix": {
+   "label": "Route mix of first goals: open play, set piece, penalty, own goal",
+   "category": "matchup",
+   "mechanism": "Share of a team's first goals by route and the opponent's concession share.",
+   "rationale": "The first goal is disproportionately a set piece or penalty (about 30-35% of first goals combined), so a team that scores first through dead balls differs from one that does so in open play, and referees who give early penalties matter.",
+   "measurement": "For each team over last 40 matches: share of first goals scored/conceded via open play, set pieces, penalties, own goals; shrink to league shares with k=10; combine with expected numbers of corner/free kick/penalty events in this fixture to give each side's first-goal intensity decomposed by route.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat shot situations (free)",
+    "FBref scores and fixtures (SOURCE_UNVERIFIED after 2026)"
+   ],
+   "registry_ids": []
+  },
+  "soc.winning_margin_distribution": {
+   "label": "Winning goal-margin distribution from the joint goal model (league Method-of-Victory alternative reading)",
+   "category": "distribution",
+   "mechanism": "Distribution of the signed goal margin H-A (and its absolute value) in regulation from the joint count model, used if league KX*MOV series settle on margin of victory instead of regulation/ET/penalties.",
+   "rationale": "League fixtures cannot reach extra time or penalties, so for KXLALIGAMOV, KXSERIEAMOV, KXBUNDESLIGAMOV, KXLIGUE1MOV, KXBRASILEIROMOV and KXLIGAMXMOV the only coherent reading with a non-trivial outcome set is a margin or draw bucket; its probabilities come from the goal-difference distribution (Skellam-like with Dixon-Coles correction and over-dispersion), not from a knockout path tree.",
+   "measurement": "Fit opponent- and venue-adjusted attack/defence strengths (soc.xg_adjusted_ratings, 30-match half-life, shrink k=8 matches) to give lambda_H and lambda_A; compute P(H-A=m) for m=-4..+4 with the Dixon-Coles tau correction (rho from the league-season fit) and a negative-binomial dispersion check; aggregate to the bucket scheme once the rules text is read (win by 1, by 2, by 3+, draw). As-of: confirmed lineups, recompute at each lineup update.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk results (free)",
+    "Understat for xG (free, six leagues)"
+   ],
+   "registry_ids": []
+  },
+  "soc.cross_tier_strength_link": {
+   "label": "Cross-division bridge rating for cup mismatches",
+   "category": "team_strength",
+   "mechanism": "Estimated strength difference between divisions or leagues from cup ties and European fixtures.",
+   "rationale": "In Coupe de France, Copa del Rey or FA Cup rounds there are no common opponents; ratings estimated within leagues are on different scales, and the bridge parameter drives the expected margin and so the spread ladder.",
+   "measurement": "Fit a joint rating model across divisions/leagues using all inter-division matches (cups, European club competitions, friendlies): rating_i = league_effect(L_i) + team_effect_i with a random-walk-on-season; league effect posterior with sd; update weekly; shrink team effects to division mean with k=12 matches; as-of = prior to kickoff.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "ClubElo (free)",
+    "football-data.co.uk cup results (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.favourite_rotation_in_mismatch": {
+   "label": "Favourite's rotation intensity in mismatch fixtures",
+   "category": "availability",
+   "mechanism": "Predicted number and quality of changed starters for a big club facing a lower-ranked side.",
+   "rationale": "A rotated favourite loses 15-30% of attacking output but a full-strength one may win by five; the spread ladder swings between regimes, and the rotation is partly predictable from the cup, midweek schedule and manager history.",
+   "measurement": "Ordinal logit of starters changed (0, 1-3, 4-6, 7+) on: days since last match, days to next major match, competition type, rating gap, manager rotation propensity (past 30 matches); output expected lambda multiplier = sum_k P(k) * m_k, with m_k estimated by regressing xG on number of rotated starters (with player-quality weights); re-evaluate at lineup release. Backtests are restricted to point-in-time proxies that are verifiable historically (previous-match XI changes, days since last match, fixture density, competition type); press-conference and training signals are excluded because no timestamped history exists (rotation_ground_truth).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Transfermarkt lineups (free_scrape)",
+    "press conference news (own capture)"
+   ],
+   "registry_ids": []
+  },
+  "soc.blowout_tail_inflation": {
+   "label": "Empirical tail of goal difference relative to Skellam, by gap quantile",
+   "category": "distribution",
+   "mechanism": "Excess or deficit of large margins compared with the independent-Poisson prediction.",
+   "rationale": "At strikes 3.5-5.5 the model's tail fraction is wrong by tens of percent when game-state (garbage time, collapse) is ignored; calibrating on history is the only way to price the deep tail.",
+   "measurement": "Pool 10 seasons of matches; bin by pre-match expected goal difference; compute observed P(margin >= m) / model P(margin >= m) for m in {2,3,4,5} per league group; smoothed with isotonic regression and hierarchical shrinkage across leagues (k=100 matches per bin); output multiplicative tail correction factors.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.league_strength_dispersion": {
+   "label": "League competitive balance: sd of team strengths",
+   "category": "distribution",
+   "mechanism": "Dispersion of ratings within a league-season.",
+   "rationale": "A league with one dominant club (Scotland, Women's Première Ligue, Turkish and Greek top halves) generates many 4+ goal margins compared with a balanced league; the base rate of mismatches differs by league and the model should reflect it.",
+   "measurement": "Per league-season: sd of team rating (attack-defence) from the ratings model, plus P(expected margin > 1.5) share of fixtures; compute rolling 3-season values with shrinkage to a global value (k=2 seasons).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "own ratings"
+   ],
+   "registry_ids": []
+  },
+  "soc.lineup_surprise_vs_predicted": {
+   "label": "Deviation of the actual XI from the predicted XI",
+   "category": "availability",
+   "mechanism": "Value difference between the lineup announced at about T-60 and the lineup forecast from the previous day.",
+   "rationale": "For outcome prediction what matters is the quality of the XI that plays (soc.xi_strength_delta); the surprise relative to a predicted XI is a timing and edge-detection construct that says when the information is new, and it cannot be backtested without archived predicted lineups (rotation_timing).",
+   "measurement": "Predict starters via a logistic model on last-5 starts, minutes, injury flags, rest, press-conference status (calibrated start probability p_i); expected lineup value E[V]=sum p_i * v_i; surprise = V_actual - E[V] in expected goals (v_i from ridge on team xG-diff). Compute at lineup release; as-of strictly the announced lineup timestamp.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Transfermarkt/club lineups (free_scrape)",
+    "Own capture"
+   ],
+   "registry_ids": []
+  },
+  "soc.altitude_acclimatization_gap": {
+   "label": "Altitude difference between home venue and visitor's habitual altitude",
+   "category": "environment",
+   "mechanism": "Home altitude minus the visitor's mean altitude over recent matches, with recency of exposure.",
+   "rationale": "Bolivia, Ecuador, Colombia and Mexico City host matches above 2,000-3,600 m; visiting teams from sea level lose 0.3-0.6 goals of expected margin, the effect is nonlinear in altitude and decays with acclimatisation days, and is outside the usual home-advantage parameter.",
+   "measurement": "alt_gap = altitude(venue) - weighted mean altitude of visitor's matches in the last 60 days (weights half-life 20 days), set to 0 below 500 m gap; effect = max(0, alt_gap - 500)/1000 as piecewise; fit beta on historical results with team home advantage included; separate for first and second half if data permits.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Open-Elevation / geonames (free)",
+    "football-data results (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.friendly_match_intensity": {
+   "label": "Friendly-match rotation and effort index",
+   "category": "motivation",
+   "mechanism": "Competitive-intent indicator for friendlies and pre-season matches.",
+   "rationale": "Club friendlies settle like league games but are played with rotated squads, 60-minute starters and mass substitutions, so ratings fitted to competitive matches overstate team quality and understate randomness.",
+   "measurement": "Binary and ordinal: match type (friendly/ pre-season/ derby friendly), days to season start, tournament context; estimate effect on |goal difference| and draw rate relative to league matches with team fixed effects over 8 seasons; shrink to competitive baseline with k=30 matches; apply a variance multiplier and a compressed rating gap.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk (free_limited)",
+    "Club friendly results (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.trophy_event_weight_by_year": {
+   "label": "Trophy weighting by year and competition for voters",
+   "category": "game_state",
+   "mechanism": "Estimated vote weight for Champions League, World Cup, continental championships and league titles in each award year.",
+   "rationale": "A Women's Ballon d'Or in a tournament year behaves differently from a non-tournament year; the weight a Champions League final carries versus a World Cup depends on the year, which a pooled model would blur.",
+   "measurement": "From historical winners and top-5 results (2018-2025 Ballon d'Or male and female, plus Super Ballon d'Or), fit a conditional-logit with features: team won UCL, won World Cup/Euros/Copa/AFCON, won league, reached final, interaction with tournament-year dummy; regularised with ridge and cross-validated by leave-one-year-out; output feature weights with sd. Identifiability limit: with about 7 women's ceremonies (pooled with men's and Super Ballon d'Or via shared coefficients) a year-interaction model is under-identified; fit main effects plus a single tournament-year dummy, shrink strongly (ridge), and report intervals; points-scale and panel changes by year are covariates, not ignored.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Wikipedia / RSSSF award tables (free_scrape)",
+    "France Football publications (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.panel_vote_aggregation_model": {
+   "label": "Voter panel aggregation and tie simulation",
+   "category": "distribution",
+   "mechanism": "Monte Carlo of ballots with a points scale, voter nationality bias and noise, giving winner and tie probabilities.",
+   "rationale": "Close races among two or three candidates are decided by ballots drawn from a distribution; the probability of a tie and the payoff split depends on the scale, voter count and variance.",
+   "measurement": "Simulate N voters (about 100 for the men's award; the women's panel is smaller and its size is unverified) each drawing a top-10 ranking from a Plackett-Luce model with candidate utilities u_i + voter noise; points scale believed to be 15,12,10,8,7,6,5,4,3,1 for ten places (unverified); add a home-nation bias term b for voters from the candidate's country (b about 0.3 in utility); run 10k draws; report P(win), P(tie). Parameters fitted to the historical distribution of winning margins.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Historical vote tables (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.pre_ceremony_leak_signal": {
+   "label": "Pre-announcement leak and credible-report signal",
+   "category": "other",
+   "mechanism": "Reliability-weighted indicator that the winner has been leaked ahead of the ceremony.",
+   "rationale": "Previous awards have been leaked days ahead by outlets and club staff; a credible leak moves probability to near certainty and is the most informative late input, but a false leak is also possible.",
+   "measurement": "Event log of statements and reports about the winner with source tier (club/federation official, established journalist, aggregator), timestamp and content; estimate P(true | tier) from past award leaks with Beta prior (alpha=2,beta=1); update posterior odds by the likelihood ratio at each report; as-of strictly report time.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Social media and news monitoring (own_capture)",
+    "press/newswire (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.prior_award_momentum": {
+   "label": "Momentum from precursor awards and shortlists",
+   "category": "other",
+   "mechanism": "Results of precursor awards (UEFA Player of the Year, PFA, national awards) and shortlists as predictors.",
+   "rationale": "Precursor awards share voters or taste with the target award and are announced earlier, so they are cheap pre-ceremony information.",
+   "measurement": "Binary and rank features: won/placed in UEFA Women's Player of the Year, FIFA Best, PFA/WSL awards, league MVP; fit to historical winners with leave-one-out CV; weight by correlation of voter bodies.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Awards pages (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.team_goal_share_competition": {
+   "label": "Player's share of team npxG and competition for it",
+   "category": "player_role",
+   "mechanism": "Share of team non-penalty xG taken by the player and how it changes with teammates.",
+   "rationale": "A player's goal rate equals team chance volume times his share; new signings, injuries to teammates and system changes redistribute shares in ways that per-90 averages miss, and a shared striker role halves volume in expectation.",
+   "measurement": "share_i = player npxG / team npxG over the last 20 matches (half-life 10) with shrinkage to position-role mean at k=8 matches; projected share = share adjusted by indicator of teammate arrivals/departures and rotation (regress change in share on competitor strength); expected goals = team npxG projection x share x P(playing).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Understat player and team xG (free)",
+    "Opta (paid)"
+   ],
+   "registry_ids": []
+  },
+  "soc.season_minutes_survival_curve": {
+   "label": "Remaining-season minutes survival curve",
+   "category": "availability",
+   "mechanism": "Survival function of availability over the remaining matches including recurrence.",
+   "rationale": "Minutes are the multiplier on every per-90 rate and are far from deterministic; injury recurrence, age and load create a left-skewed distribution; the cumulative effect over 25+ matches is what the season total needs.",
+   "measurement": "Cox / discrete-time hazard model for injury onset per match with covariates age, previous injuries in 24 months, minutes last 28 days, position; plus duration model for time-out; simulate remaining season for each candidate; expected minutes and its quantiles; shrink the baseline hazard to the position mean with k=30 player-seasons.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Transfermarkt injury history (free_scrape)",
+    "PhysioRoom (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.leader_tiebreak_and_scope": {
+   "label": "Leader tie rule and counting scope flags",
+   "category": "other",
+   "mechanism": "Contract-level flags for tie handling and which competitions count.",
+   "rationale": "Leader prices are sensitive to whether a tie pays 1/n, goes to assists or minutes, or resolves No for all; and 'all games' versus 'league games' changes the tally by cup goals.",
+   "measurement": "Parse and version rules_primary/secondary of each leader and season-stat series into flags: scope {league_only, all_competitions}, tie_rule {split, tiebreak_assists, tiebreak_minutes, official_source}, own_goal handling; resolution source; store with version hash and timestamp; for unsampled series mark UNKNOWN and require manual confirmation before use.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi API market rules (free)",
+    "Official stats sites (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.european_slot_spillover": {
+   "label": "European slot spillover and variable cut line",
+   "category": "other",
+   "mechanism": "Probability distribution of the number of European places a league gets and how many reach the table.",
+   "rationale": "A top-4 or qualification contract refers to a cut line that moves: the UEFA coefficient determines league allocation, and a domestic cup winner already qualified through the league moves the places down the table; so a 'top 4' price for fifth place is a function of cup results. Applicable only if a series settles on European qualification; the live titles (KXEPLTOP4, KXLIGUE1TOP4, KXEPLTOP2, KXEPLTOP6, KXUCLTOP8) read as table-rank cut lines and are TITLE_ONLY, so this input is context until a qualification-based series is confirmed.",
+   "measurement": "For each league-season: baseline number of UCL/UEL/UECL places by coefficient (UEFA published), plus P(cup winner already in higher slot) from the cup simulation, plus UCL/UEL title-holder entry path; effective cut line L = base - E where E in {0,1} with probability from simulation; recompute after each cup round; as-of date stamped.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "UEFA association coefficients (free)",
+    "cup bracket simulation (derived)"
+   ],
+   "registry_ids": []
+  },
+  "soc.last_place_extreme_value": {
+   "label": "Bottom-of-table extreme-value distribution",
+   "category": "distribution",
+   "mechanism": "Probability each team ends with the lowest points total, and the gap structure at the bottom.",
+   "rationale": "Last place is the minimum of correlated points totals; the favourite for last place often has only 25-40% because others are within a few points, and the shape is not a simple function of a team's own rating.",
+   "measurement": "From the posterior-sampled season simulation: for each team compute P(rank=N), P(rank in bottom 3), gap to 3rd bottom and to 4th bottom at each as-of date; calibrate with historical bottom-team final points (shrunk league mean with k=5 seasons); correct tie rules in the minimum.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "own simulation",
+    "football-data.co.uk historical tables (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.tie_advancement_state_tree": {
+   "label": "Advancement tree for single-leg and two-leg ties",
+   "category": "game_state",
+   "mechanism": "Round-by-round conditional probabilities given the legs, the first-leg score and the tie rules.",
+   "rationale": "Advancement is a state-dependent tree: after a first-leg win by 1-0, the second leg's draw/win probabilities differ from a pre-leg symmetrical model; format rules (ET, penalties, away goals) then determine the remaining branch.",
+   "measurement": "State = (leg, aggregate before, venue). For second legs: simulate goals with team lambdas multiplied by state multipliers (placeholders such as trailing +20% and leader -10%, to be estimated from European and cup second legs once a history of that length is assembled, availability unverified), shrunk with k=40 matches; P(advance) = P(agg win in 90) + P(agg level) * (P(ET win) + P(pens win)); P(pens win)=0.5 + small skill adjustments.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "RSSSF (free_scrape)",
+    "football-data.co.uk (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.contract_expiry_release_state": {
+   "label": "Contract expiry, release clause and renewal-talk state",
+   "category": "player_role",
+   "mechanism": "Months to contract end, release clause and wage structure, and reported renewal status.",
+   "rationale": "A transfer or release hazard is steeply nonlinear in months to contract end: under 12 months the selling club sells or the player leaves free; above 36 months only a release clause or a rebellion moves the player.",
+   "measurement": "For each player: months_to_expiry at as-of; indicator and amount of a release clause (if public) relative to market value; wage as % of club wage bill; renewal status {talks, agreed, stalled}; build hazard model h(months, status) fitted to 15 years of top-league transfers (discrete-time logit) with club-type effects; shrink to league rates with k=20 cases.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Transfermarkt contract dates (free_scrape)",
+    "Capology wage data (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.transfer_window_calendar_hazard": {
+   "label": "Window calendar and deadline-clustering hazard",
+   "category": "schedule_context",
+   "mechanism": "Timing of open and closed windows and the daily hazard within them.",
+   "rationale": "Contracts ending before the window opens (e.g. 'before Jan 1, 2027' with a winter window opening only on 1 January) give a different probability than the same question in summer; deals cluster in the last days of a window.",
+   "measurement": "Build calendar of windows by league and country (summer, winter, extended Saudi/Turkish windows); estimate daily hazard share = fraction of deals by days-to-deadline from 10 years of data; probability a deal occurs before date D = integral of window-open days times hazard; adjust for emergency loans and free-agent signings outside windows.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "FIFA/league window dates (free)",
+    "Transfermarkt transfer history (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.manager_dismissal_hazard": {
+   "label": "Manager dismissal and appointment hazard",
+   "category": "game_state",
+   "mechanism": "Hazard of leaving a role given results, expectations and board context.",
+   "rationale": "Managers are dismissed after results fall below expectation, with a spike after 4-6 game winless runs, and the 'next manager' contracts depend on the shortlist; national-team coaches depend on tournament cycle.",
+   "measurement": "Cox model: hazard of leaving per matchweek on points-per-game minus expected points-per-game from ratings, league position relative to preseason rank, run of winless games, tenure, owner change; fit to 20 seasons of top-5 league managerial changes; shrink team-specific frailty with k=3 seasons; for national teams use cycle stage and tournament result.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Transfermarkt manager histories (free_scrape)",
+    "Wikipedia lists (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.governance_procedure_stage": {
+   "label": "Stage and expected timeline of governance procedures",
+   "category": "other",
+   "mechanism": "Procedural stage of a sanction or bid process with historical stage durations.",
+   "rationale": "A sanction or host decision resolves only after a sequence of steps; the stated deadline can lapse during a hearing, so timeline and stage durations determine the probability more than the merits.",
+   "measurement": "Record procedure stage (allegation, hearing scheduled, hearing concluded, ruling, appeal) with dates; fit stage-duration distributions (log-normal) from comparable cases (financial fair play, UEFA sanctions, FIFA bids) and compute P(final decision before deadline) and the distribution of outcomes (e.g. number of titles stripped) by case type; as-of date stamped.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Governing-body press releases (free)",
+    "court/CAS databases (free_limited)"
+   ],
+   "registry_ids": []
+  },
+  "soc.destination_club_feasibility": {
+   "label": "Buyer-side destination feasibility for next-club and join-league markets",
+   "category": "other",
+   "mechanism": "For each candidate destination club or league, whether it can afford the fee and wages, needs the position, offers the sporting project and is a stated or reported preference of the player; normalised across candidates and the no-change outcome.",
+   "rationale": "KXJOINCLUB, KXJOINRONALDO, KXJOINSALAH, KXJOINMBAPPE, KXJOINSANE, KXJOINDAVID, KXMLSJOIN and KXJOINLEAGUE are multi-outcome which-club sets; seller-side hazard (contract expiry, window) says when a player moves but not where, and the where is decided by the buyer's financial room, positional need and the player's preference, none of which the seller-side inputs measure.",
+   "measurement": "Per candidate club c and player p at the as-of date: wage_room = club wage-bill ceiling (PSR/FFP or league cap headroom from latest published accounts, in euros) minus (p expected wage + amortised fee); need = 1 if the club's expected starter at p's position is rated below p by more than a threshold on the club squad ratings, else 0; route = league-level flag (Saudi Pro League, MLS designated player, Premier League); pref = indicator that a tier-1 source reported p-club interest within the last 30 days. Combine as a logistic score with a shrunk prior from past destination choices of comparable players (k=20 transfers), softmax-normalised over the candidate set plus a no-change outcome whose weight comes from the seller-side hazard.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Transfermarkt squad values and rumour tables (free_scrape)",
+    "Capology wage data (free_limited)",
+    "Club annual accounts (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.fixture_sequence_win_vector": {
+   "label": "Ordered vector of per-match win probabilities with cup survival",
+   "category": "matchup",
+   "mechanism": "Match-by-match P(win) for all scheduled and possible future fixtures in the contract window.",
+   "rationale": "A streak is a property of the ordered sequence, not of the average opponent strength; two seasons with the same average p can differ by factor 2-3 in P(5-run), and cup rounds introduce randomness in which matches exist.",
+   "measurement": "For each scheduled league/cup/European fixture: p_t = P(win in 90 min [+ ET/pens per rule]) from the goal model with venue, rest and lineup scenario; for future cup rounds weight by survival probability s_t; compute vector with dates; P(run>=5) by dynamic programming on the run-length Markov chain, including the current streak count c0; as-of = prior to the next match.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Official fixture lists (free)",
+    "own goal model"
+   ],
+   "registry_ids": []
+  },
+  "soc.competition_scope_and_win_definition": {
+   "label": "Scope flags: competitions counted and what counts as a win",
+   "category": "other",
+   "mechanism": "Parsed contract flags for which fixtures count and how extra-time or penalty wins are treated.",
+   "rationale": "The same team and schedule gives different probabilities if friendlies and the Community Shield count, or if shootout wins count as wins; scope can change the probability by 20% or more.",
+   "measurement": "Parse rules text for flags: competitions_all vs league_only, friendlies_count (bool), shootout_win_counts (bool), men_only, calendar window; store as version-hashed record per series; unknown flags remain UNKNOWN and require manual check; the sequence builder filters fixtures accordingly.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi API rules text (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.latent_form_persistence": {
+   "label": "Latent form persistence (serial correlation of match residuals)",
+   "category": "variance_luck",
+   "mechanism": "Autocorrelation of match outcome residuals beyond ratings and strength drift.",
+   "rationale": "If outcomes carry positive serial correlation after controlling for strength, runs are more likely than the independent calculation; if it is zero, ratings with drift suffice. Estimating it matters because the streak is a run statistic.",
+   "measurement": "Fit a state-space model: match residual e_t = result - expected from ratings; AR(1) coefficient phi estimated across all clubs in top-5 leagues over 10 seasons with club random effects and drift variance; report phi with interval; use phi to generate correlated Bernoulli via a latent Gaussian copula; as-of prior matches only.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk results (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.total_goal_tail_dispersion": {
+   "label": "Calibrated tail dispersion of match totals by league and mismatch bucket",
+   "category": "distribution",
+   "mechanism": "Excess probability of 5+ and 6+ goal matches relative to independent Poisson, by league and expected-total bucket.",
+   "rationale": "High strikes (5.5-7.5) are tail contracts: Poisson with league-average mean misses by factors of two, and the tail multiplier depends on mismatch size and league defending quality.",
+   "measurement": "Pool 10 seasons per league; bin matches by model expected total (deciles) and expected absolute goal difference; compute observed P(total>=k)/model P for k=4,5,6,7; isotonic smoothing; hierarchical shrinkage across leagues with k=150 matches per bin; output tail multiplier function m(league,bucket,k); as-of prior matches only.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk (free)",
+    "Understat (free, six leagues)"
+   ],
+   "registry_ids": []
+  },
+  "soc.shared_openness_latent_factor": {
+   "label": "Match-level shared openness factor",
+   "category": "distribution",
+   "mechanism": "Latent factor that moves both teams' scoring rates together, estimated from residual correlation.",
+   "rationale": "Totals are controlled by how open the match is for both sides, which is more than the sum of two independent rates; ignoring it understates both 0-0 and 5-goal frequencies.",
+   "measurement": "Fit a bivariate model with a shared log-normal factor: log lambda_home = a_h - d_a + gamma*z, log lambda_away = a_a - d_h + gamma*z, z~N(0,1); estimate gamma per league by marginal likelihood over 5 seasons; also the team-pair covariates: both teams' PPDA and line height difference; shrink gamma toward the league value with k=30 matches per team-pair class.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk (free)",
+    "Understat (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.xi_attack_defence_split": {
+   "label": "Lineup attack and defence value split",
+   "category": "availability",
+   "mechanism": "Separate expected-goals deltas for the attacking and defending halves of the confirmed XI.",
+   "rationale": "A scalar lineup-strength delta cannot say whether goals will rise or fall: a missing centre-back raises the total while a missing striker lowers it, and these may cancel in a scalar.",
+   "measurement": "From a ridge regression on team xG for and against per match on minutes-weighted player indicators (separate models for xG_for and xG_against), compute attack_delta = sum over starters of player_attack_value minus season-average XI value, and defence_delta likewise (including the keeper); expected total change = attack_delta_h + attack_delta_a + defence_delta_h + defence_delta_a (signs per convention); evaluate at lineup release.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat player xG (free)",
+    "Opta (paid)",
+    "Transfermarkt lineups (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.corner_generation_by_shot_outcome": {
+   "label": "Corners generated per attack by shot outcome (blocked, saved, deflected)",
+   "category": "pace_volume",
+   "mechanism": "Expected corners from the counts of blocked, saved-and-parried, and deflected attempts and crosses.",
+   "rationale": "Corners are a by-product of how attacks end; two teams with equal shots differ in corners according to the share of blocked shots and crosses; shot-based expected corners provide a more accurate estimate than past corner counts.",
+   "measurement": "For each team over the last 25 matches (half-life 12): corners per blocked shot, per saved shot, per cross attempted; expected corners = sum over expected shots by type for this match (opponent block rate and own shot-type mix) times coefficients; shrink coefficients to league with k=40 attempts; as-of previous matches.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "football-data.co.uk corners and shots (free)",
+    "FBref/Opta shot outcomes (SOURCE_UNVERIFIED availability)"
+   ],
+   "registry_ids": []
+  },
+  "soc.corner_state_multiplier": {
+   "label": "Score-state multipliers on corner rate by team role",
+   "category": "game_state",
+   "mechanism": "Corner rate multiplier for the trailing and leading team by minute bucket and goal margin.",
+   "rationale": "Totals and team counts depend on when goals happen: an early goal by the favourite reduces its corners, a late equaliser chase increases the trailer's, so unconditional averages mis-state the favourite's team threshold.",
+   "measurement": "From event data with minute and score: corners per 10 minutes for trailing, level and leading states by pre-match favourite/underdog; estimate multiplier m_state relative to level state with Poisson regression, 8 seasons; shrink per team with k=300 minutes; combine with simulation of goal timing to get distribution of corners.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat/Opta events (free/paid)"
+   ],
+   "registry_ids": []
+  },
+  "soc.cross_and_wide_play_share": {
+   "label": "Share of attacks through wide areas and crosses",
+   "category": "matchup",
+   "mechanism": "Crosses and wide-zone entries per 90 for the team and the opponent's concession of them.",
+   "rationale": "Crossing teams generate blocked crosses and corners at much higher rates than central combination teams; the opponent's wide defending determines conversion.",
+   "measurement": "Per team: crosses attempted per 90 and share of final-third entries via wide zones (last 25 matches, opponent-adjusted by regression with defence effects, shrink k=8 matches) and opponent's crosses conceded; the product (attack share × opponent concession relative to league mean) gives a matchup multiplier on expected corners.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "FBref/Opta crosses (SOURCE_UNVERIFIED)",
+    "WhoScored (free_scrape)"
+   ],
+   "registry_ids": []
+  },
+  "soc.corner_taken_definition_flag": {
+   "label": "Taken-versus-awarded and extra-time inclusion flags",
+   "category": "other",
+   "mechanism": "Per-series contract flags describing counting definition and the data provider's corner event type.",
+   "rationale": "Provider event definitions differ (awarded vs taken) and the sampled rules contain the 'actually taken' clause in some series only; wrong definition adds a systematic count error of a few percent.",
+   "measurement": "Parse rules into flags: taken_only, includes_ET, team vs combined; map provider field (e.g. corner taken event); measure the ratio taken/awarded in a historical sample from a provider with both (an unsourced guess of 0.97-1.0, to be measured) per league; store with version hash and timestamp.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Kalshi API rules text (free)",
+    "Provider documentation (free)"
+   ],
+   "registry_ids": []
+  },
+  "soc.dnp_and_sub_entry_settlement": {
+   "label": "Starter/substitute/DNP mixture and settlement-adjusted probability",
+   "category": "availability",
+   "mechanism": "Probabilities of starting, entering as a substitute at each minute, and not playing, with the contract's fair-price rule applied.",
+   "rationale": "Because a DNP settles at the fair price and a pre-first-goal substitution voids first-goalscorer contracts, the effective probability must be computed as a conditional on playing; mixing in a DNP loss biases prices of bench players downward.",
+   "measurement": "p_start from a logistic model on prior 5 starts, minutes, injury flags and rest (calibrated), p_sub|bench from historical sub rates by position and score state; substitution minute distribution from league data (median about 65 for attackers); P(plays) = p_start + (1-p_start)*p_sub; effective price probability P_eff = P(goal|plays) with the refund rule; for first goalscorer also P(on pitch at first goal); as-of strictly lineup release.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Transfermarkt lineups (free_scrape)",
+    "own capture of confirmed lineups"
+   ],
+   "registry_ids": []
+  },
+  "soc.assist_set_piece_role": {
+   "label": "Assist share by set-piece delivery and open-play creation",
+   "category": "player_role",
+   "mechanism": "Player's share of team assists and key passes split by route (set-piece delivery, crosses, through balls).",
+   "rationale": "Assists are concentrated in a few creators and in the corner/free-kick taker, whose assist rate per 90 is 2-3 times that of a typical midfielder; the provider's definition of assist also matters.",
+   "measurement": "Over the last 40 matches (half-life 20): assists, key passes and xA per 90 split by set-piece vs open play; set-piece taker flags (corners, free kicks) from event data; expected assists = team expected goals × share of team goals assisted (about 70%) × player's share of assists (shrunk to position mean with k=10 matches); adjust for teammates' finishing (xG-to-goal conversion of recipients).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Understat xA (free)",
+    "FBref/Opta key passes (SOURCE_UNVERIFIED)"
+   ],
+   "registry_ids": []
+  },
+  "soc.first_goalscorer_race_model": {
+   "label": "First goalscorer allocation model with competing risks and sub timing",
+   "category": "game_state",
+   "mechanism": "Joint probability that the player's team scores first and that he is the scorer, including time-varying intensity and substitution.",
+   "rationale": "P(first goalscorer) = integral over time of team first-goal intensity × player's share of that team's goals at that time × P(on pitch at t), which is not equal to team probability × season goal share, especially for early set-piece takers and substitutes.",
+   "measurement": "Combine first_goal_hazard per team with the player's share of team goals by minute bucket (open play, set piece, penalty) from last 40 matches (shrink k=10) and P(on pitch at t) from the substitution model; P_first = ∫ h_team(t)·S(t)·share_i(t)·P_on(t) dt; also P(no goal) from joint survival; Monte Carlo 20k per match; as-of lineup release.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat goal minutes (free)",
+    "Opta events (paid)"
+   ],
+   "registry_ids": []
+  },
+  "soc.player_shot_volume_state_response": {
+   "label": "Player shot rate multiplier by team score state",
+   "category": "game_state",
+   "mechanism": "Multipliers on a player's shots per 90 when his team is trailing, level or leading.",
+   "rationale": "Strikers on trailing teams shoot more, and role-dependent: a poacher's share rises when his team chases while a creator's rises less, so state-conditional rates are needed in addition to season averages.",
+   "measurement": "From events: player shots per 90 in each state by minute bucket relative to level; Poisson regression with offset log(minutes) and player random effect, 4 seasons; shrink to position mean with k=400 minutes in-state; combine with pregame team win probability to compute expected state mixture of shots.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "Understat shot minutes and scores (free)",
+    "Opta (paid)"
+   ],
+   "registry_ids": []
+  },
+  "soc.keeper_saves_from_sot_and_psxg": {
+   "label": "Expected saves from opponent SOT and shot quality",
+   "category": "pace_volume",
+   "mechanism": "Expected saves = expected opponent SOT minus expected goals conceded, using shot quality.",
+   "rationale": "Keeper saves are a difference of two counts: high SOT volume with many easy shots gives many saves, while the same volume of high-quality shots gives goals, so two matches with equal SOT can differ by two saves.",
+   "measurement": "E[saves] = E[SOT faced] - E[goals conceded]; E[SOT faced] = opponent expected shots × SOT rate (opponent-adjusted, last 25 matches, half-life 12); E[goals] = E[SOT] × mean(PSxG per SOT) × keeper adjustment (shrunk PSxG-GA/SOT with k=60 SOT); includes penalty probability; variance via compound negative binomial; as-of lineup release.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Understat team shots (free)",
+    "FBref/Opta PSxG (SOURCE_UNVERIFIED)",
+    "StatsBomb (paid)"
+   ],
+   "registry_ids": []
+  },
+  "soc.shot_event_definition_mapping": {
+   "label": "Provider shot, shot-on-target and save definition mapping",
+   "category": "other",
+   "mechanism": "Flags and conversion ratios between provider definitions of shots, on-target shots and saves.",
+   "rationale": "Different providers count blocked shots, headers and penalties differently, changing shot counts by 10-20%; calibrating on a different definition than the settlement feed produces systematic bias.",
+   "measurement": "For a sample of 200+ matches with two providers, estimate ratio r = shots_settlement / shots_training by player position, blocked-share and penalty treatment; store mapping per league; apply multiplicative correction and widen variance; version-hash the definitions. Practical caveat: this needs shot counts from two providers for the same 200+ matches, which the free sources listed cannot supply, so the mapping is likely undefined in practice until a contract names its provider.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Provider documentation (free)",
+    "football-data.co.uk shots (free)"
+   ],
+   "registry_ids": []
   }
  },
  "blueprints": {
@@ -2257,6 +2992,21 @@
      "id": "soc.rivalry_intensity",
      "why": "Derby compression of margins - the channel through which it moves the Match result (3-way / two-way winner) price.",
      "role": "context"
+    },
+    {
+     "id": "soc.lineup_surprise_vs_predicted",
+     "why": "Marks when lineup information is new relative to an expectation formed hours earlier; the outcome effect itself is carried by soc.xi_strength_delta.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.altitude_acclimatization_gap",
+     "why": "A first-order home advantage driver in the Bolivian, Ecuadorian and Colombian leagues in this ledger bucket.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.friendly_match_intensity",
+     "why": "Friendlies appear in the ledger bucket (KXCLUBFGAME) with settlement identical to competitive matches but a distinct data-generating process.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -2404,6 +3154,21 @@
      "id": "soc.keeper_shot_stopping_regression",
      "why": "Goalkeeper save luck regresses.",
      "role": "secondary"
+    },
+    {
+     "id": "soc.total_goal_tail_dispersion",
+     "why": "The sampled strikes of 5.5 to 7.5 make tail multipliers the first-order calibration term.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.shared_openness_latent_factor",
+     "why": "Directly models correlation between the team counts that drives the tails of totals.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.xi_attack_defence_split",
+     "why": "Totals respond to the sum of attack and defence changes with different signs for each side.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -2521,6 +3286,26 @@
      "id": "soc.fouls_cards",
      "why": "Red-card risk fattens margin tails.",
      "role": "context"
+    },
+    {
+     "id": "soc.cross_tier_strength_link",
+     "why": "Large cup mismatches are the main source of high spread and exact-score rungs and need explicit division bridging.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.favourite_rotation_in_mismatch",
+     "why": "Dominant spread driver in cup fixtures that no strength rating captures.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.blowout_tail_inflation",
+     "why": "Mismatch-driven spreads depend more on tail calibration than on mean strength.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.league_strength_dispersion",
+     "why": "Calibrates base rates of lopsided games by league, where sampled spreads reach 5.5 goals.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -2631,6 +3416,21 @@
      "id": "soc.set_piece_matchup",
      "why": "Set-piece route for the weaker team to score.",
      "role": "context"
+    },
+    {
+     "id": "soc.team_fail_to_score_propensity",
+     "why": "BTTS-No wins are blanks by one side; excess zero mass is the direct driver and is not in any existing input.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.trailing_team_response_hazard",
+     "why": "Turns static lambdas into the sequential process that BTTS actually follows.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.weaker_side_big_chance_creation",
+     "why": "Gives the minimum-lambda channel a quality-weighted measurement instead of a mean.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -2743,6 +3543,21 @@
     {
      "id": "soc.finishing_regression",
      "why": "First-half goals are rare events; finishing luck dominates.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.half_specific_xg_ratings",
+     "why": "Gives the first-half and second-half lambdas their own team-level scaling rather than a fixed league 45/55 split.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.second_half_state_multiplier",
+     "why": "Provides the conditional structure for 2H markets and for combining first-half simulations with second-half rates.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.half_level_dependence_rho",
+     "why": "The Tie and exact-score ladders for halves are controlled by these parameters.",
      "role": "secondary"
     }
    ],
@@ -2861,6 +3676,36 @@
      "id": "soc.abandonment_risk",
      "why": "Schedule disruption - the channel through which it moves the Competition winner, top-N and trophies price.",
      "role": "context"
+    },
+    {
+     "id": "soc.bracket_path_difficulty",
+     "why": "Cup and tournament outrights are determined by path, which no existing input in the archetype captures.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.playoff_format_conversion",
+     "why": "Converts a table simulation to a champion probability in about a third of the leagues in this ledger bucket.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.top_two_order_statistics",
+     "why": "Directly the random variable of the point-margin series, and it is not the same as the title-winner probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.uefa_league_phase_simulation",
+     "why": "Supplies the seeding and bracket side for KXUCL16*, KXUEL16*, KXUCL8, KXUCLTOP, KXUCLBOTTOM, KXUCLLEAGUE-type series where table position, not strength alone, decides the stage reached.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.seeded_bracket_path_given_finish",
+     "why": "Needed because UEFA stage-reach series (R16, R8, finalist, advance) are settled by bracket position determined by the league-phase finish.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.club_multi_competition_dependence",
+     "why": "Provides the dependence structure the trophy-count series needs and which no independent per-competition probability can deliver.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -2979,6 +3824,21 @@
      "id": "soc.press_conference_news",
      "why": "Late squad news in decisive matches.",
      "role": "context"
+    },
+    {
+     "id": "soc.european_slot_spillover",
+     "why": "Makes the qualification threshold a random variable rather than a constant, which the table simulation alone omits.",
+     "role": "context"
+    },
+    {
+     "id": "soc.last_place_extreme_value",
+     "why": "Last-place contracts are minimum order statistics and are not equal to relegation odds.",
+     "role": "context"
+    },
+    {
+     "id": "soc.tie_advancement_state_tree",
+     "why": "Provides the structured tree the existing inputs (aggregate state, ET model, shootout skill) only describe separately.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -3090,6 +3950,21 @@
      "id": "soc.press_conference_news",
      "why": "Injury and role news - the channel through which it moves the Player season leaders, totals and awards price.",
      "role": "context"
+    },
+    {
+     "id": "soc.team_goal_share_competition",
+     "why": "Separates team volume from role share, the quantity that changes when squads change.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.season_minutes_survival_curve",
+     "why": "Gives tails (long-term injury) that a mean minutes input misses.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.leader_tiebreak_and_scope",
+     "why": "Without it the same player goal tally is labelled differently across leader markets.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3184,6 +4059,26 @@
      "id": "soc.shots",
      "why": "Early shot volume - the channel through which it moves the First team to score price.",
      "role": "context"
+    },
+    {
+     "id": "soc.knockout_cagey_factor",
+     "why": "Directly sets the gate P(draw at 90) of the method path tree.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.method_path_tree_calibration",
+     "why": "Calibrates every node of the Method path tree against history rather than an assumed 50%.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.first_goal_route_mix",
+     "why": "Turns a lump first-goal hazard into route-specific intensities that respond to referee and set-piece news.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.winning_margin_distribution",
+     "why": "Provides the actual drivers for league MOV series, whose outcome set cannot be the knockout path tree; shared in definition with handicap_and_exact_score margin inputs.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3279,6 +4174,21 @@
      "id": "soc.abandonment_risk",
      "why": "Fixture disruption - the channel through which it moves the Team season points and points margin price.",
      "role": "context"
+    },
+    {
+     "id": "soc.fixture_sequence_win_vector",
+     "why": "The exact object of the streak contract; none of the existing inputs defines the ordered sequence.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.competition_scope_and_win_definition",
+     "why": "Removes label ambiguity before any probability is computed.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.latent_form_persistence",
+     "why": "Calibrates streak odds to empirical clustering; the hot-hand effect is small, but multiplies the run probability.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -3369,6 +4279,31 @@
      "id": "soc.offfield_base_rate",
      "why": "Appointment, transfer and host markets are priced from historical frequency by calendar window.",
      "role": "primary"
+    },
+    {
+     "id": "soc.contract_expiry_release_state",
+     "why": "Directly drives KXLAMINEYAMAL-style leave-club contracts and next-club sets.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.transfer_window_calendar_hazard",
+     "why": "Prevents time-window errors that dominate short-dated transfer contracts.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.manager_dismissal_hazard",
+     "why": "Needed for KXPOCHETTINOOUT and Next Manager series with no existing input.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.governance_procedure_stage",
+     "why": "Provides the timing probability that dominates Man City-type and host-selection contracts.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.destination_club_feasibility",
+     "why": "Supplies the destination model that the seller-side inputs lack for the which-club series and ensures the outcome set is normalised including no change.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3458,6 +4393,21 @@
      "id": "soc.motivation",
      "why": "Late-season incentives - the channel through which it moves the Head-to-head competition markets price.",
      "role": "context"
+    },
+    {
+     "id": "soc.points_gap_state",
+     "why": "The race outcome is a function of the gap relative to what remains, so this is the primary state variable.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.h2h_zero_sum_fixtures",
+     "why": "Directly sets negative correlation between the two points totals.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.shared_shock_overlap",
+     "why": "Provides the cross-team shock correlation the pairwise comparison is sensitive to.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3552,6 +4502,26 @@
      "id": "soc.award_vote_distribution",
      "why": "Panel awards are decided by vote shares; narrative and team success set the distribution.",
      "role": "primary"
+    },
+    {
+     "id": "soc.trophy_event_weight_by_year",
+     "why": "Isolates the dominant coefficient of the voting model and lets the model switch regimes by year.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.panel_vote_aggregation_model",
+     "why": "Provides winner and tie probabilities and the 1/n split payoff that the contract specifies.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.pre_ceremony_leak_signal",
+     "why": "The decisive late-moving information for voted awards; absent from the existing list.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.prior_award_momentum",
+     "why": "Adds the predictability of taste before the target award.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3647,6 +4617,21 @@
      "id": "soc.rotation_index",
      "role": "secondary",
      "why": "Predicted rotation changes starter probability before lineups are published."
+    },
+    {
+     "id": "soc.dnp_and_sub_entry_settlement",
+     "why": "Embedded refund rule is peculiar to this contract and changes the correct probability for every non-starter.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.assist_set_piece_role",
+     "why": "Needed because assist props are driven by creators and set-piece takers, not by xG/90.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.first_goalscorer_race_model",
+     "why": "Provides coherent probabilities for the first-goal and first-goal-win contracts.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3733,6 +4718,21 @@
      "id": "soc.formation",
      "role": "secondary",
      "why": "Formation changes who takes shots."
+    },
+    {
+     "id": "soc.player_shot_volume_state_response",
+     "why": "Allows a pregame forecast that reflects the favourite or underdog role of the player's team.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.keeper_saves_from_sot_and_psxg",
+     "why": "Extends soc.keeper_workload (whose catalog measurement already multiplies expected SOT by a shrunk PSxG-based save probability): it adds only the goals-conceded subtraction and a compound-count variance, and is not independent of it.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.shot_event_definition_mapping",
+     "why": "Label consistency is a prerequisite for calibration given no rules text exists.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -3825,6 +4825,26 @@
      "id": "soc.added_time",
      "role": "secondary",
      "why": "Added time lengthens the window for corners and cards."
+    },
+    {
+     "id": "soc.corner_generation_by_shot_outcome",
+     "why": "Moves from historic corner counts to a causal expectation based on how attacks end.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.corner_state_multiplier",
+     "why": "Provides the dynamic structure behind team-corner thresholds that static team averages cannot.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.cross_and_wide_play_share",
+     "why": "Captures matchup in how teams attack, which total corner counts depend on.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.corner_taken_definition_flag",
+     "why": "Settlement-definition input needed to label training data consistently.",
+     "role": "context"
     }
    ],
    "interactions": [

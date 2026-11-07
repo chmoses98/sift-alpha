@@ -1638,6 +1638,45 @@
    "registry_ids": [
     "m.trade_tape"
    ]
+  },
+  "mlb.season_sim_distribution": {
+   "label": "Season simulation distribution (division, wildcard, win totals)",
+   "category": "distribution",
+   "mechanism": "Playoff and win-total markets are tails of a 162-game simulation with rating and injury uncertainty.",
+   "rationale": "A team's rating gives a mean win total; the market asks for tail probabilities that depend on schedule, correlation within divisions and injury attrition. Subtle: late-season motivation and resting change the last games.",
+   "measurement": "Monte Carlo of remaining games from own run-differential ratings (Pythagorean/BaseRuns shrunk), home advantage, starting-pitcher rotation uncertainty and tiebreaker rules; output win-total and playoff probabilities.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "MLB StatsAPI schedule and standings (statsapi.mlb.com)",
+    "Baseball-Reference standings"
+   ],
+   "registry_ids": []
+  },
+  "mlb.leader_order_statistic": {
+   "label": "Leader-race order statistic (home runs, strikeouts, batting titles)",
+   "category": "distribution",
+   "mechanism": "The probability of leading is the chance a player's final total exceeds every rival's.",
+   "rationale": "Season-leader markets are max-of-N problems; to-date totals, games remaining, per-game rate variance and rival correlations (same park/schedule) set the probability. A projection of the mean is not enough: variance and the gap to the second place decide.",
+   "measurement": "Simulate each contender's remaining games from rate × playing-time distributions with injury hazards; compute the share of simulations in which he finishes first including ties.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "MLB StatsAPI leaderboards and game logs",
+    "Baseball-Reference/FanGraphs splits"
+   ],
+   "registry_ids": []
+  },
+  "mlb.clinched_rest_policy": {
+   "label": "Clinched/eliminated rest and call-up policy",
+   "category": "motivation",
+   "mechanism": "Teams with nothing to play for rest regulars and give opportunities to prospects.",
+   "rationale": "Participation and counting-stat markets for regulars in the final weeks depend on the manager's historical behaviour once seeding is decided. The announcement is timestamped by lineup posting. Subtle: policy varies by manager and by whether a bye is at stake.",
+   "measurement": "Per manager and season-state: share of regular starters sitting after clinch/elimination, by days remaining and bye status; compare with the lineup posted at decision time.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "MLB StatsAPI lineups and standings",
+    "Baseball-Reference game logs by manager"
+   ],
+   "registry_ids": []
   }
  },
  "blueprints": {
@@ -3481,7 +3520,7 @@
     {
      "id": "mlb.leash",
      "role": "primary",
-     "why": "Manager/team hook patterns determine the exit distribution and the probability of a third trip through the order."
+     "why": "Run differential and pitch count drive the early hook that truncates strikeout opportunity."
     },
     {
      "id": "mlb.pitch_count_limit",
@@ -3779,7 +3818,7 @@
     {
      "id": "mlb.leash",
      "role": "primary",
-     "why": "Hook truncates accumulation of runs, hits and walks."
+     "why": "Exit time bounds the number of batters faced and therefore every count stat."
     },
     {
      "id": "mlb.contact_defense",
@@ -3865,6 +3904,16 @@
      "id": "m.ladder_structure",
      "role": "context",
      "why": "Threshold rungs for the three stats are internally nested."
+    },
+    {
+     "id": "mlb.pa_sim",
+     "why": "A plate-appearance simulation produces the full distribution of hits, walks and earned runs from matchup probabilities.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.contact_dist",
+     "why": "Counts are over-dispersed; ignoring that mis-prices the tails of ladder thresholds.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -3916,7 +3965,7 @@
     {
      "id": "mlb.expected_pa",
      "role": "primary",
-     "why": "PA volume by lineup slot and team total multiplies per-PA probabilities."
+     "why": "Lineup slot and game script set plate appearances; pinch-hitting and blowout substitution cut them."
     },
     {
      "id": "mlb.lineup_pit",
@@ -4127,6 +4176,16 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "Appearance requirement and settlement for postponed/shortened games."
+    },
+    {
+     "id": "mlb.pa_sim",
+     "why": "Per-PA home-run probability, compounded over expected PAs, gives the any-HR probability; park, wind and pitcher enter per PA.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.contact_dist",
+     "why": "Barrel-driven hitters have heavier tails than a constant per-PA rate implies.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -4182,7 +4241,7 @@
     {
      "id": "mlb.expected_pa",
      "role": "primary",
-     "why": "PA multiplier and slot effects."
+     "why": "Slot, teammates on base and score state set the opportunity count."
     },
     {
      "id": "mlb.lineup_pit",
@@ -4400,6 +4459,21 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "Postponement, suspended game and extras settlement."
+    },
+    {
+     "id": "mlb.platoon",
+     "why": "The lineup's handedness mix against the starter shifts run expectancy by several percent.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.pitch_mix",
+     "why": "Starter pitch mix against the lineup's pitch-type weaknesses changes strikeout and contact quality.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.lineup_k_platoon",
+     "why": "Confirmed-lineup strikeout rate by handedness is the market-free matchup summary available after lineups post.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -4602,7 +4676,7 @@
     {
      "id": "mlb.first_inning_splits",
      "role": "primary",
-     "why": "Top-of-order quality and starter first-inning profile."
+     "why": "The first three batters, not the whole lineup, decide the first inning."
     },
     {
      "id": "mlb.lineup_pit",
@@ -4668,6 +4742,11 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "Rules for shortened/postponed games and extra innings in inning markets."
+    },
+    {
+     "id": "mlb.babip_luck",
+     "why": "BABIP luck in the starter's recent first innings regresses; raw first-inning ERA overstates persistent skill.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -4725,7 +4804,7 @@
     {
      "id": "mlb.tto",
      "role": "secondary",
-     "why": "Penalty on the third trip, which often occurs in innings 5-6."
+     "why": "Third time through the order raises run expectancy materially, so the starter's expected depth sets the first-five mean."
     },
     {
      "id": "mlb.team_wrc_vs_hand",
@@ -4776,6 +4855,11 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "Tie/push treatment and shortened-game rule for F5 markets."
+    },
+    {
+     "id": "mlb.lob_strand_luck",
+     "why": "ERA-minus-FIP gaps from stranding luck regress and mis-price first-five runs.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -4986,6 +5070,11 @@
      "id": "m.external_lines",
      "role": "secondary",
      "why": "Futures benchmark: sharp sportsbook and exchange lines are a competing aggregation of information and the standard benchmark for fair probability."
+    },
+    {
+     "id": "mlb.season_sim_distribution",
+     "why": "Division, wildcard and win-total markets are tails of a schedule simulation with injury and rating uncertainty.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -5090,6 +5179,11 @@
      "id": "m.rules_text",
      "role": "primary",
      "why": "Stat source and settlement date."
+    },
+    {
+     "id": "mlb.leader_order_statistic",
+     "why": "The probability a player finishes first is the probability his final total exceeds every rival's; correlations and games remaining set it.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -5177,6 +5271,11 @@
      "id": "m.lifecycle",
      "role": "context",
      "why": "Lineup posting vs market close."
+    },
+    {
+     "id": "mlb.clinched_rest_policy",
+     "why": "Clinched or eliminated teams rest regulars and call up prospects; the policy is manager-specific and timestamped by announcement.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -5457,6 +5556,108 @@
       "mlb.news"
      ],
      "hypothesis": "Thin liquidity x price moves: sparse trading makes quotes noisy, so volume interacts with moves to separate information from noise."
+    }
+   ]
+  }
+ },
+ "unregistered_archetypes": {
+  "player_and_team_counting_specials": {
+   "label": "MLB player/team counting specials (stolen bases, walks, outs recorded, earned runs, next home run)",
+   "blueprint": "player_hit",
+   "contract_types": [
+    "Stolen bases",
+    "Walks",
+    "Outs recorded",
+    "Earned runs",
+    "Games played",
+    "Next homerun",
+    "Team stats"
+   ],
+   "target": "A counting stat for a player or team over a game or season relative to a threshold, or which player does an event next.",
+   "mechanism": "Counts are plate appearances (or batters faced) times per-PA probabilities with matchup adjustments; stolen bases add catcher and pitcher hold-time effects, walks add umpire zone and plate discipline, outs recorded depends on the starter's hook. Season-level counts add playing-time and availability risk.",
+   "inputs": [
+    {
+     "id": "mlb.expected_pa",
+     "role": "primary",
+     "why": "Plate appearances by slot and script."
+    },
+    {
+     "id": "mlb.plate_discipline",
+     "role": "primary",
+     "why": "Walk rate depends on the hitter's patience and the pitcher's control; both set the per-PA walk probability."
+    },
+    {
+     "id": "mlb.sb_context",
+     "role": "primary",
+     "why": "Steal attempt rate, pitcher hold time and catcher arm."
+    },
+    {
+     "id": "mlb.baserunning",
+     "role": "secondary",
+     "why": "Sprint speed and baserunning aggressiveness set the steal attempt rate and success probability."
+    },
+    {
+     "id": "mlb.sp_workload",
+     "role": "primary",
+     "why": "Expected innings and batters faced."
+    },
+    {
+     "id": "mlb.leash",
+     "role": "primary",
+     "why": "Manager hook rules (pitch counts, times through the order) determine how many outs the starter records."
+    },
+    {
+     "id": "mlb.run_dist",
+     "role": "secondary",
+     "why": "The run-scoring distribution gives the tail probabilities for earned runs and team-count thresholds."
+    },
+    {
+     "id": "mlb.bullpen",
+     "role": "secondary",
+     "why": "Bullpen availability decides outs after the starter."
+    },
+    {
+     "id": "mlb.lineup_pit",
+     "role": "primary",
+     "why": "Confirmed batting order timestamped."
+    },
+    {
+     "id": "mlb.playing_time_role",
+     "role": "secondary",
+     "why": "Starter versus platoon role sets plate appearances and games played over a season."
+    },
+    {
+     "id": "mlb.umpire",
+     "role": "secondary",
+     "why": "Umpire strike-zone size changes walk and strikeout rates and therefore walks and outs recorded."
+    },
+    {
+     "id": "mlb.pa_sim",
+     "role": "secondary",
+     "why": "PA simulation gives count distributions."
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "mlb.sb_context",
+      "mlb.lineup_pit"
+     ],
+     "hypothesis": "A speedster's steal probability depends on batting slot and the hitters behind him."
+    },
+    {
+     "inputs": [
+      "mlb.plate_discipline",
+      "mlb.umpire"
+     ],
+     "hypothesis": "A tight zone inflates walks most for patient hitters."
+    },
+    {
+     "inputs": [
+      "mlb.sp_workload",
+      "mlb.leash"
+     ],
+     "hypothesis": "Outs recorded is the starter's pitch efficiency times the hook rule."
     }
    ]
   }

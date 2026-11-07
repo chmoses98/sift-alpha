@@ -125,3 +125,15 @@ test("soccer shows the market-free search with an explicit no-Kalshi-comparison 
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test("reconciliation, adjudication and measured source findings are shown; unregistered contract types are listed for soccer", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/contract-type reconciliation/)).toBeVisible();
+  await expect(ir.getByText(/Measured source findings/)).toBeVisible();
+  await page.locator(".ir-sport", { hasText: /^SOCCER/ }).click();
+  await expect(ir.getByText(/Kalshi contract types listed but not in the registry/)).toBeVisible();
+  await ir.getByText(/Kalshi contract types listed but not in the registry/).click();
+  await expect(ir.getByText(/Soccer player goals, assists, hat tricks/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});

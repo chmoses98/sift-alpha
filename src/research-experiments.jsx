@@ -4,6 +4,10 @@ import gexp from "../research/audit/input_research/experiments/nfl_game_kalshi_v
 import audit from "../research/audit/input_research/coverage_audit.json";
 import srch from "../research/audit/input_research/experiments/search_nfl_qb_passing_v1.json";
 import soc from "../research/audit/input_research/experiments/search_soccer_v1.json";
+import prog from "../research/audit/input_research/progress.json";
+import recon from "../research/input_research/market_universe/reconciliation.json";
+import adjud from "../research/input_research/gap_adjudication.json";
+import srcv from "../research/input_research/source_verification.json";
 import exp from "../research/audit/input_research/experiments/nfl_passyds_kalshi_v1.json";
 
 // Rendered only from committed JSON artifacts (alpha_engine.input_research.market_universe / prop_experiment). Nothing hand-typed.
@@ -81,6 +85,27 @@ export function FoundationAudit() {
       <tbody>{sports.map(sp => { const r = audit.readiness[sp].primary_model_eligible_inputs; const rows = audit.mechanism_matrix[sp]; const gaps = rows.filter(x => x.required_categories_missing.length).length;
         return <tr key={sp}><td>{sp}</td><td>{sum(audit.readiness[sp].all_inputs)}</td><td>{audit.market_derived_inputs[sp].market_derived_benchmark_only}</td><td>{r.collected_pit || 0}</td><td>{(r.partial || 0) + (r.derived || 0)}</td>
           <td>{(r.missing_source_exists || 0) + (r.missing_no_free_source || 0)}</td><td>{(r.unverified_not_in_registry || 0) + (r.unverified_code_only || 0) + (r.unverified || 0)}</td><td>{gaps} of {rows.length}</td></tr>; })}</tbody></table></div>
+    <div className="ir-cards">
+      <div><b>{prog.catalog.inputs_total} inputs · {prog.catalog.archetypes_total + prog.catalog.unregistered_archetypes_total} archetypes</b><small>{prog.catalog.unregistered_archetypes_total} cover Kalshi contract types the registry lacks. Not claimed complete.</small></div>
+      <div><b>{prog.mechanism_audit.checklist_flags} flags, {prog.mechanism_audit.unadjudicated_archetypes} unresolved</b><small>{Object.entries(prog.mechanism_audit.verdicts).map(([k, v]) => `${v} ${k.toLowerCase().replaceAll("_", " ")}`).join(", ")}</small></div>
+      <div><b>{prog.data_readiness.inputs_with_measured_free_source} of {prog.data_readiness.inputs_total}</b><small>inputs with a free source measured reachable and populated; 0 for NBA, CBB, CFB and tennis from this runner</small></div>
+      <div><b>{prog.market_dependency.benchmark_only_inputs} benchmark-only · {prog.market_dependency.hybrid_rebuild_required} rebuild</b><small>market-derived catalog inputs excluded from, or rebuilt market-free for, primary models</small></div>
+    </div>
+    <h4>Kalshi series vs catalog archetypes (contract-type reconciliation)</h4>
+    <div className="ir-scroll"><table className="ir-table" style={{minWidth: 520}}>
+      <thead><tr><th>Sport</th><th>In-scope series</th><th>Registered archetype</th><th>Unregistered-contract archetype</th><th>No archetype / unclassified</th><th>Series absent from registry</th></tr></thead>
+      <tbody>{Object.entries(prog.market_universe.in_scope_reconciliation).map(([sp, r]) => <tr key={sp}><td>{sp}</td><td>{r.in_scope_series}</td><td>{r.covered_by_registered_archetype}</td><td>{r.covered_only_by_unregistered_archetype}</td><td><b>{r.no_archetype_or_unclassified}</b></td><td>{r.unregistered_series}</td></tr>)}</tbody></table></div>
+    <details><summary>Largest contract types with no archetype</summary>
+      <ul>{Object.entries(recon.sports).flatMap(([sp, rows]) => rows.filter(r => r.archetype === null || r.archetype === "UNAUTHORED").map(r => ({sp, ...r}))).sort((a, b) => b.series - a.series).slice(0, 14).map(r => <li key={r.sp + r.type_period}><b>{r.sp}</b> {r.type_period.replace("|full", "").replaceAll("_", " ")}: {r.series} series (e.g. {r.examples.slice(0, 2).join("; ")})</li>)}</ul></details>
+    <details><summary>How the mechanism-checklist flags were resolved ({adjud.n_flags} flags)</summary>
+      <p>Each flag is one (sport, archetype, mechanism category) the checklist said was missing. Verdicts: attached an existing input that was not linked, added a new input, noted the mechanism lives under another category, or judged the flag inapplicable (with a reason). Examples of inapplicable: {adjud.adjudications.filter(a => a.verdict === "FALSE_POSITIVE").slice(0, 3).map(a => `${a.sport} ${a.archetype.replaceAll("_", " ")} (${a.category.replaceAll("_", " ")}): ${a.reason}`).join(" | ")}</p></details>
+    <details><summary>Measured source findings</summary>
+      <ul><li>nflverse: participation {srcv.nflverse.pbp_participation.earliest_ok_probed}+, FTN charting {srcv.nflverse.ftn_charting.earliest_ok_probed}+, PFR advanced {srcv.nflverse.pfr_advstats.earliest_ok_probed}+, Next Gen {srcv.nflverse.nextgen_stats.earliest_ok_probed}+, snap counts {srcv.nflverse.snap_counts.earliest_ok_probed}+, injuries {srcv.nflverse.injuries.earliest_ok_probed}+, depth charts {srcv.nflverse.depth_charts.earliest_ok_probed}+ (probed years; 404 before).</li>
+        <li>MLB StatsAPI: pitch-level pitchData and hitData, lineups, umpires and observed weather present in sampled games from 2008 onward (observed weather, not a forecast vintage).</li>
+        <li>NHL API: play-by-play with coordinates in sampled games from 2015; shift charts and goalie starts are on hosts not reachable here.</li>
+        <li>football-data.co.uk: team shots, corners, fouls and cards are 99.9–100% complete for five leagues 2015/16–2025/26; <b>referee name only for the Premier League</b> (E0 {Math.round(100 * srcv.football_data.referee_name_completeness_by_league.E0)}%, other four leagues {Math.round(100 * srcv.football_data.referee_name_completeness_by_league.SP1)}%).</li>
+        <li>ESPN injuries: live snapshot only — no history, so injury-timing research needs prospective archiving.</li>
+        <li>Not reachable from this runner: {prog.data_readiness.sources_blocked_from_runner.map(u => u.replace("https://", "").split("/")[0]).join(", ")}.</li></ul></details>
     <p><b>Source reachability:</b> {probe.reachable_2xx_3xx} of {probe.n_urls} free-source hosts named in the catalogs were reachable from the research runner. The rest returned errors because the runner's network policy blocks them (not evidence the data is unavailable). Six free public hosts (MLB, NHL, NBA, ESPN, football-data, tennis-data) were added to the allowlist; re-run <code>coverage_audit --probe</code> next session. “Collected” means present in the registry with point-in-time archiving; it does not certify licence or accuracy.</p>
   </details>;
 }
@@ -105,5 +130,18 @@ export function SoccerSearch() {
       <tbody>{Object.values(soc.studies).map(t => <tr key={t.target}><td>{t.target.replaceAll("_", " ")} ({t.baseline})</td><td>{t.nested_gain.pct_gain.toFixed(2)}%</td><td>{t.nested_gain.seasons_positive}/{t.nested_gain.seasons.length}</td><td>{t.permutation_null.map(x => x.pct_gain.toFixed(2) + "%").join(", ")}</td>
         <td>{Object.entries(t.group_importance_leave_one_group_out_inner).filter(([, v]) => v.folds_where_dropping_hurts === v.folds).map(([k]) => k.replaceAll("_", " ")).join("; ") || "none"}</td></tr>)}</tbody></table></div>
     <p>Total goals: league scoring context and attack form carry the small, stable gain (~2%). Goal difference: team strength (Elo), defensive form and tempo/set-piece volume are needed in every fold, but the baseline contains no team information, so that large gain shows the inputs matter, not that the model is accurate enough to price a market.</p>
+  </details>;
+}
+
+export function UnregisteredArchetypes({doc, sport}) {
+  const items = Object.entries(doc.unregistered_archetypes || {});
+  if (!items.length) return null;
+  return <details className="ir-fine">
+    <summary><b>Kalshi contract types listed but not in the registry ({items.length})</b> — hypothesis inputs for {sport}</summary>
+    <p className="ir-warn">These contract titles exist in the live listing but the registry has no family for them, so they cannot yet be collected, verified or tested. Inputs below are candidates only.</p>
+    {items.map(([k, a]) => <div key={k} className="ir-path"><h4>{a.label}</h4>
+      <p><b>Contract titles:</b> {a.contract_types.join("; ")}</p><p><b>Settles on:</b> {a.target}</p><p className="ir-mech">{a.mechanism}</p>
+      <ul>{a.inputs.map(i => <li key={i.id}><b>{doc.inputs[i.id]?.label || i.id}</b> ({i.role}; {String(doc.inputs[i.id]?.availability?.overall || "").toLowerCase().replaceAll("_", " ")}): {i.why}</li>)}</ul>
+      <p><b>Interactions:</b> {a.interactions.map(x => `${x.inputs.join(" × ")}: ${x.hypothesis}`).join(" | ")}</p></div>)}
   </details>;
 }

@@ -208,7 +208,7 @@ GENERIC_WHY_MARKERS = ("channel through which it moves", "moves the ", " price."
 
 def catalog_quality(cat: dict) -> dict:
     """Disclose how many per-market `why` strings look machine-padded (formulaic tails) instead of market-specific prose."""
-    whys = [i["why"] for sec in ("blueprints", "archetypes") for rec in cat.get(sec, {}).values() for i in rec["inputs"]]
+    whys = [i["why"] for sec in ("blueprints", "archetypes", "unregistered_archetypes") for rec in cat.get(sec, {}).values() for i in rec["inputs"]]
     tails: dict[str, int] = {}
     for w in whys:
         tails[w[-40:]] = tails.get(w[-40:], 0) + 1
@@ -277,6 +277,11 @@ def build_sport(sport: str, paths: dict, ver: dict, vintage: dict) -> dict:
                          "inputs": [input_card(i["id"], i.get("role"), i.get("why"), a) for i in rec["inputs"]],
                          "interactions": [{"inputs": ix["inputs"], "hypothesis": ix["hypothesis"]} for ix in rec["interactions"]], "paths": pids,
                          "level": max([paths[p]["level"] for p in pids], key=LEVELS.index) if pids else LEVELS[0]}
+    unregistered = {}
+    for a, rec in (cat.get("unregistered_archetypes") or {}).items():
+        unregistered[a] = {"label": rec["label"], "blueprint": rec["blueprint"], "contract_types": rec["contract_types"], "target": rec["target"], "mechanism": rec["mechanism"],
+                           "inputs": [input_card(i["id"], i.get("role"), i.get("why"), None) for i in rec["inputs"]],
+                           "interactions": [{"inputs": ix["inputs"], "hypothesis": ix["hypothesis"]} for ix in rec["interactions"]], "level": LEVELS[0]}
     blueprints = {}
     for b, rec in cat["blueprints"].items():
         blueprints[b] = {"mechanism": rec["mechanism"], "target": rec["target"], "families": reg.get(b, []),
@@ -293,11 +298,11 @@ def build_sport(sport: str, paths: dict, ver: dict, vintage: dict) -> dict:
         n_inputs = len(archetypes[a]["inputs"]) if a else (len(blueprints[bp]["inputs"]) if bp else 0)
         families[f] = {"blueprint": bp, "archetype": a, "archetypes": archs_of.get(f, []), "unclassified": bp is None, "markets_now": v.get("markets_now"), "level": level, "evidence_paths": pids, "n_candidate_inputs": n_inputs,
                        "registry_essential_verified": v.get("essential_verified"), "registry_essential_total": v.get("essential_total"), "projection": (v.get("projection") or {}).get("status") if isinstance(v.get("projection"), dict) else None}
-    used = {i["id"] for a in archetypes.values() for i in a["inputs"]} | {i["id"] for b in cat["blueprints"].values() for i in b["inputs"]}
+    used = {i["id"] for a in list(archetypes.values()) + list(unregistered.values()) for i in a["inputs"]} | {i["id"] for b in cat["blueprints"].values() for i in b["inputs"]}
     quality = catalog_quality(cat)
-    return {"sport": sport, "catalog_quality": quality, "inputs": {i: input_def(i) for i in sorted(used)}, "families": families, "archetypes": archetypes, "blueprints": blueprints,
+    return {"sport": sport, "catalog_quality": quality, "inputs": {i: input_def(i) for i in sorted(used)}, "families": families, "archetypes": archetypes, "unregistered_archetypes": unregistered, "blueprints": blueprints,
             "paths": {pid: {k: v for k, v in p.items() if k != "result"} | {"result": p["result"]} for pid, p in paths.items() if p["sport"] == sport},
-            "catalog_stats": {"inputs": len(cat["inputs"]), "blueprints": len(cat["blueprints"]), "archetypes": len(cat.get("archetypes") or {})}}
+            "catalog_stats": {"inputs": len(cat["inputs"]), "blueprints": len(cat["blueprints"]), "archetypes": len(cat.get("archetypes") or {}), "unregistered_archetypes": len(unregistered)}}
 
 
 def build_index(sport_docs: dict, ver: dict, vintage: dict) -> dict:

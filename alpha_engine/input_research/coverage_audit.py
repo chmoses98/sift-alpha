@@ -21,41 +21,62 @@ IR = ROOT / "research/audit/input_research"
 OUT = ROOT / "research/audit/input_research/coverage_audit.json"
 SPORTS = ["NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "SOCCER", "TENNIS"]
 
-# What a predictive model of each market kind must account for. Categories are the catalog's own `category` values.
+# What a predictive model of each market kind must account for. Categories are the catalog's own `category` values. This is a REVIEW CHECKLIST: a missing category is a
+# prompt to adjudicate (genuine gap vs inapplicable), recorded in research/input_research/gap_adjudication.json, never an automatic verdict.
 REQUIRED = {
-    "winner": {"team_strength", "availability", "matchup", "schedule_context", "game_state"},
-    "spread": {"team_strength", "availability", "matchup", "distribution", "schedule_context"},
-    "total": {"pace_volume", "team_strength", "environment", "variance_luck", "distribution", "availability"},
+    "game_winner": {"team_strength", "availability", "matchup", "schedule_context", "game_state"},
+    "game_spread": {"team_strength", "availability", "matchup", "distribution", "schedule_context"},
+    "game_total": {"pace_volume", "team_strength", "environment", "variance_luck", "availability", "matchup"},
     "team_total": {"pace_volume", "team_strength", "matchup", "availability", "distribution"},
-    "player_stat": {"player_role", "availability", "pace_volume", "matchup", "game_state", "distribution"},
-    "player_scorer": {"player_role", "availability", "pace_volume", "matchup", "game_state"},
-    "period": {"pace_volume", "team_strength", "game_state", "distribution"},
-    "season": {"team_strength", "availability", "schedule_context", "distribution", "motivation"},
-    "other": {"distribution"},
+    "period": {"pace_volume", "team_strength", "game_state", "availability", "variance_luck"},
+    "player_game_stat": {"player_role", "availability", "pace_volume", "matchup", "game_state", "distribution"},
+    "player_scorer": {"player_role", "availability", "pace_volume", "matchup", "distribution"},
+    "availability_event": {"availability", "schedule_context", "player_role", "motivation"},
+    "season_team": {"team_strength", "availability", "schedule_context", "distribution"},
+    "season_player": {"player_role", "availability", "team_strength", "distribution"},
+    "in_game_event": {"game_state", "variance_luck", "team_strength"},
+    "special_event": {"distribution"},
 }
-KIND_BY_BLUEPRINT = [(r"player|prop|scorer|stat", "player_stat"), (r"team_total", "team_total"), (r"total|ou|over", "total"), (r"spread|handicap|margin", "spread"),
-                     (r"half|quarter|period|inning|first", "period"), (r"season|futures|award|outright|champion|draft|mvp", "season"), (r"win|moneyline|match|game", "winner")]
+# ordered: first matching token wins
+KIND_TOKENS = [("availability_event", {"availability", "participation"}),
+               ("season_team", {"futures", "champion", "conference", "seed", "relegation", "advancement", "qualification", "winner_and_top", "series_and_cup", "competition_winner", "win_totals", "points_and_margin"}),
+               ("season_player", {"awards", "award", "leaders", "leader", "draft", "escalator", "ranking", "majors", "season_stat_markets", "season_stats"}),
+               ("special_event", {"mentions", "transactions", "off_field", "off_court", "announcer", "host", "special", "retirement", "walkover", "nationality", "combo"}),
+               ("in_game_event", {"overtime", "events", "tiebreak", "sweep", "delay", "extras", "game_events"}),
+               ("team_total", {"team_total"}),
+               ("period", {"first_half", "half", "quarter", "inning", "period", "periods", "first5", "set_winner", "exact_set_score"}),
+               ("player_scorer", {"scorer", "td_scorer", "home_runs", "anytime"}),
+               ("player_game_stat", {"props", "points", "rebounds", "assists", "threes", "steals", "yards", "receptions", "strikeouts", "hits", "rbis", "aces", "free_throws", "milestones", "h2h", "stat", "stats", "earned_runs", "passing", "rushing", "receiving", "player"}),
+               ("game_spread", {"spread", "spreads", "margin", "moneyline_spread"}),
+               ("game_total", {"total", "totals", "goals"}),
+               ("game_winner", {"moneyline", "winner", "match", "result", "3way"})]
 MARKET_WORDS = re.compile(r"(\bodds\b|\bprices?\b|moneyline|\bvig\b|devig|closing (line|price)|kalshi|sportsbook|bookmaker|market[- ]implied|market lines?|implied prob|reference prices?)", re.I)
 # m.* ids are "market structure" inputs. Price/quote/depth-derived ones are BENCHMARK-ONLY; contract definitions and realised-outcome frequencies are not price-derived.
 PRICE_M = re.compile(r"^m\.(external_lines|quote_history|orderbook_depth|trade_tape|volume_oi|ladder_structure|combo_pricing|fees)$")
 
 
 def kind_of(name: str, rec: dict) -> str:
-    t = f"{name} {rec.get('label', '')} {rec.get('blueprint', '')}".lower()
-    for rx, k in KIND_BY_BLUEPRINT:
-        if re.search(rx, t):
-            return k
-    return "other"
+    toks = set(name.lower().split("_"))
+    joined = name.lower()
+    for kind, words in KIND_TOKENS:
+        if any((w in toks) if "_" not in w else (w in joined) for w in words):
+            return kind
+    return "special_event"
 
 
 def is_market_derived(iid: str, rec: dict) -> bool:
-    """True = derived from lines/prices/quotes/depth: usable only to benchmark a finished model, never as a predictor."""
-    if iid.startswith("m."):
-        return bool(PRICE_M.match(iid))
-    return bool(MARKET_WORDS.search(rec["label"]))
+    """True = BENCHMARK-ONLY (price/line-derived): never a predictor. Hybrids are separate (market_dependency.HYBRID_REBUILD: usable only after a market-free rebuild)."""
+    from . import market_dependency as MD
+    return MD.kind(iid) == "benchmark_only"
+
+
+def adjudications() -> dict:
+    f = ROOT / "research/input_research/gap_adjudication.json"
+    return {(a["sport"], a["archetype"], a["category"]): a["verdict"] for a in json.loads(f.read_text())["adjudications"]} if f.exists() else {}
 
 
 def mechanism_matrix() -> dict:
+    adj = adjudications()
     out = {}
     for s in SPORTS:
         c = json.loads((CAT / f"{s}.json").read_text())
@@ -66,7 +87,8 @@ def mechanism_matrix() -> dict:
             cats = collections.Counter(c["inputs"][i]["category"] for i in ids if not is_market_derived(i, c["inputs"][i]))
             k = kind_of(a, rec)
             miss = sorted(REQUIRED[k] - set(cats))
-            rows.append({"archetype": a, "kind": k, "n_inputs": len(rec["inputs"]), "n_market_derived": sum(is_market_derived(i, c["inputs"][i]) for i in ids),
+            unresolved = [c for c in miss if (s, a, c) not in adj]
+            rows.append({"archetype": a, "kind": k, "checklist_missing_adjudicated": {c: adj[(s, a, c)] for c in miss if (s, a, c) in adj}, "unadjudicated_missing": unresolved, "n_inputs": len(rec["inputs"]), "n_market_derived": sum(is_market_derived(i, c["inputs"][i]) for i in ids),
                          "categories_present": dict(cats), "required_categories_missing": miss})
         out[s] = rows
     return out
@@ -76,8 +98,10 @@ def market_derived() -> dict:
     out = {}
     for s in SPORTS:
         c = json.loads((CAT / f"{s}.json").read_text())
+        from . import market_dependency as MD
         md = sorted(i for i, r in c["inputs"].items() if is_market_derived(i, r))
-        out[s] = {"inputs_total": len(c["inputs"]), "market_derived_benchmark_only": len(md), "ids": md}
+        hy = sorted(i for i in c["inputs"] if MD.kind(i) == "hybrid_rebuild")
+        out[s] = {"inputs_total": len(c["inputs"]), "market_derived_benchmark_only": len(md), "ids": md, "hybrid_rebuild_required": len(hy), "hybrid_ids": hy}
     return out
 
 
@@ -97,8 +121,34 @@ def readiness() -> dict:
             cnt[cls] += 1
             if not md:
                 usable[cls] += 1
-        out[s] = {"all_inputs": dict(cnt), "primary_model_eligible_inputs": dict(usable)}
+        vs = verified_sources()
+        ids = set(d["inputs"])
+        out[s] = {"all_inputs": dict(cnt), "primary_model_eligible_inputs": dict(usable), "with_measured_free_source": sorted(i for i in ids if i in vs["verified"]),
+                  "snapshot_only_source": sorted(i for i in ids if i in vs["snapshot_only"])}
     return out
+
+
+def verified_sources() -> dict:
+    """Inputs served by a free source MEASURED reachable and populated (source_verify.py): {'verified': {id: [sources]}, 'snapshot_only': [ids]}."""
+    f = ROOT / "research/input_research/source_verification.json"
+    if not f.exists():
+        return {"verified": {}, "snapshot_only": []}
+    v = json.loads(f.read_text())
+    ver: dict[str, list[str]] = {}
+    def add(ids, src):
+        for i in ids:
+            ver.setdefault(i, []).append(src)
+    for tag, rec in v["nflverse"].items():
+        if rec.get("earliest_ok_probed") or rec.get("status") == 200:
+            add(rec["serves_catalog_inputs"], f"nflverse/{tag}" + (f" {rec['earliest_ok_probed']}-{rec['latest_ok_probed']}" if rec.get("earliest_ok_probed") else ""))
+    if any(g.get("pitches_with_pitchData") for g in v["mlb_statsapi"]["sampled_games"].values()):
+        add(v["mlb_statsapi"]["serves_catalog_inputs"], "MLB StatsAPI (pitch/hit data 2008+, lineups, umpires, observed weather)")
+    if any(g.get("plays") for g in v["nhl_api"]["sampled_games"].values()):
+        add(v["nhl_api"]["serves_catalog_inputs"], "NHL API play-by-play (2015+ sampled)")
+    if v["football_data"].get("files"):
+        add([i for i in v["football_data"]["serves_catalog_inputs"] if i != "soc.referee"], "football-data.co.uk 2015/16-2025/26 (5 leagues, team level)")
+        add(["soc.referee"], "football-data.co.uk (Premier League only)")
+    return {"verified": ver, "snapshot_only": v["espn"]["serves_catalog_inputs"]}
 
 
 def probe_sources(timeout=12) -> dict:
@@ -132,9 +182,9 @@ def main():
         if "source_probe" in prev:
             out["source_probe"] = prev["source_probe"]
     OUT.write_text(json.dumps(out, indent=0, sort_keys=True))
-    gaps = sum(len(r["required_categories_missing"]) > 0 for rows in out["mechanism_matrix"].values() for r in rows)
+    gaps = sum(len(r["unadjudicated_missing"]) > 0 for rows in out["mechanism_matrix"].values() for r in rows)
     tot = sum(len(rows) for rows in out["mechanism_matrix"].values())
-    print(f"archetypes with a missing required mechanism category: {gaps}/{tot}")
+    print(f"archetypes with an UNADJUDICATED missing mechanism category: {gaps}/{tot}")
     print({s: v["market_derived_benchmark_only"] for s, v in out["market_derived_inputs"].items()})
 
 

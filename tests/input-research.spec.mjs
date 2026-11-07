@@ -128,12 +128,25 @@ test("soccer shows the market-free search with an explicit no-Kalshi-comparison 
 
 test("reconciliation, adjudication and measured source findings are shown; unregistered contract types are listed for soccer", async ({ page }) => {
   const ir = page.locator("section.ir");
-  await expect(ir.getByText(/contract-type reconciliation/)).toBeVisible();
+  await expect(ir.getByText(/Kalshi series ledger/)).toBeVisible();
   await expect(ir.getByText(/Measured source findings/)).toBeVisible();
   await page.locator(".ir-sport", { hasText: /^SOCCER/ }).click();
   await expect(ir.getByText(/Kalshi contract types listed but not in the registry/)).toBeVisible();
   await ir.getByText(/Kalshi contract types listed but not in the registry/).click();
   await expect(ir.getByText(/Soccer player goals, assists, hat tricks/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});
+
+test("data coverage panel shows the measured class matrix, per-sport archetype readiness and the exact series ledger", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Data coverage and research readiness/)).toBeVisible();
+  await expect(ir.getByText(/Raw data class × sport/)).toBeVisible();
+  await expect(ir.getByText(/archetype readiness/).first()).toBeVisible();
+  await page.locator(".ir-sport", { hasText: /^NBA/ }).click();
+  await expect(ir.getByText(/NBA: archetype readiness/)).toBeVisible();
+  await ir.getByText(/Series ledger by sport/).click();
+  await expect(ir.getByText(/rules-text series were read from actual Kalshi contract rules/i)).toBeVisible();
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });

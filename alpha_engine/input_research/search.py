@@ -143,6 +143,8 @@ def nested_search(d: pd.DataFrame, r: np.ndarray, groups: dict[str, list[str]], 
 
 def summarize_gain(d, r, pred, cluster_keys, n_boot=2000) -> dict:
     ok = ~np.isnan(pred)
+    if not ok.any():
+        return {"mean": None, "n": 0, "pct_gain": float("nan"), "seasons": [], "pct_gain_by_season": {}, "seasons_positive": 0, "error": "no outer fold had enough earlier history"}
     e0 = r[ok] ** 2
     e1 = (r[ok] - pred[ok]) ** 2
     diff = e0 - e1

@@ -5,9 +5,9 @@ import audit from "../research/audit/input_research/coverage_audit.json";
 import srch from "../research/audit/input_research/experiments/search_nfl_qb_passing_v1.json";
 import soc from "../research/audit/input_research/experiments/search_soccer_v1.json";
 import prog from "../research/audit/input_research/progress.json";
-import recon from "../research/input_research/market_universe/reconciliation.json";
 import adjud from "../research/input_research/gap_adjudication.json";
 import srcv from "../research/input_research/source_verification.json";
+import dr from "../research/input_research/data_readiness_summary.json";
 import exp from "../research/audit/input_research/experiments/nfl_passyds_kalshi_v1.json";
 
 // Rendered only from committed JSON artifacts (alpha_engine.input_research.market_universe / prop_experiment). Nothing hand-typed.
@@ -91,12 +91,10 @@ export function FoundationAudit() {
       <div><b>{prog.data_readiness.inputs_with_measured_free_source} of {prog.data_readiness.inputs_total}</b><small>inputs with a free source measured reachable and populated; 0 for NBA, CBB, CFB and tennis from this runner</small></div>
       <div><b>{prog.market_dependency.benchmark_only_inputs} benchmark-only · {prog.market_dependency.hybrid_rebuild_required} rebuild</b><small>market-derived catalog inputs excluded from, or rebuilt market-free for, primary models</small></div>
     </div>
-    <h4>Kalshi series vs catalog archetypes (contract-type reconciliation)</h4>
-    <div className="ir-scroll"><table className="ir-table" style={{minWidth: 520}}>
-      <thead><tr><th>Sport</th><th>In-scope series</th><th>Registered archetype</th><th>Unregistered-contract archetype</th><th>No archetype / unclassified</th><th>Series absent from registry</th></tr></thead>
-      <tbody>{Object.entries(prog.market_universe.in_scope_reconciliation).map(([sp, r]) => <tr key={sp}><td>{sp}</td><td>{r.in_scope_series}</td><td>{r.covered_by_registered_archetype}</td><td>{r.covered_only_by_unregistered_archetype}</td><td><b>{r.no_archetype_or_unclassified}</b></td><td>{r.unregistered_series}</td></tr>)}</tbody></table></div>
-    <details><summary>Largest contract types with no archetype</summary>
-      <ul>{Object.entries(recon.sports).flatMap(([sp, rows]) => rows.filter(r => r.archetype === null || r.archetype === "UNAUTHORED").map(r => ({sp, ...r}))).sort((a, b) => b.series - a.series).slice(0, 14).map(r => <li key={r.sp + r.type_period}><b>{r.sp}</b> {r.type_period.replace("|full", "").replaceAll("_", " ")}: {r.series} series (e.g. {r.examples.slice(0, 2).join("; ")})</li>)}</ul></details>
+    <h4>Kalshi series ledger (every series has exactly one status; rows sum to the total)</h4>
+    <div className="ir-scroll"><table className="ir-table" style={{minWidth: 560}}>
+      <thead><tr><th>Sport</th><th>Series</th><th>Covered (registered)</th><th>Covered (unregistered contract)</th><th>No listed market</th><th>Excluded</th><th>Classified, no archetype</th><th>Unclassified</th></tr></thead>
+      <tbody>{Object.entries(prog.series_ledger.by_sport).map(([sp, v]) => <tr key={sp}><td>{sp}</td><td>{v.total}</td><td>{v.COVERED_REGISTERED || 0}</td><td>{v.COVERED_UNREGISTERED || 0}</td><td>{v.NO_LISTED_MARKETS || 0}</td><td>{(v.EXCLUDED_TEST || 0) + (v.EXCLUDED_NONSPORT || 0) + (v.EXCLUDED_COMBO || 0)}</td><td>{v.CLASSIFIED_NO_ARCHETYPE || 0}</td><td>{v.UNCLASSIFIED || 0}</td></tr>)}</tbody></table></div>
     <details><summary>How the mechanism-checklist flags were resolved ({adjud.n_flags} flags)</summary>
       <p>Each flag is one (sport, archetype, mechanism category) the checklist said was missing. Verdicts: attached an existing input that was not linked, added a new input, noted the mechanism lives under another category, or judged the flag inapplicable (with a reason). Examples of inapplicable: {adjud.adjudications.filter(a => a.verdict === "FALSE_POSITIVE").slice(0, 3).map(a => `${a.sport} ${a.archetype.replaceAll("_", " ")} (${a.category.replaceAll("_", " ")}): ${a.reason}`).join(" | ")}</p></details>
     <details><summary>Measured source findings</summary>
@@ -143,5 +141,42 @@ export function UnregisteredArchetypes({doc, sport}) {
       <p><b>Contract titles:</b> {a.contract_types.join("; ")}</p><p><b>Settles on:</b> {a.target}</p><p className="ir-mech">{a.mechanism}</p>
       <ul>{a.inputs.map(i => <li key={i.id}><b>{doc.inputs[i.id]?.label || i.id}</b> ({i.role}; {String(doc.inputs[i.id]?.availability?.overall || "").toLowerCase().replaceAll("_", " ")}): {i.why}</li>)}</ul>
       <p><b>Interactions:</b> {a.interactions.map(x => `${x.inputs.join(" × ")}: ${x.hypothesis}`).join(" | ")}</p></div>)}
+  </details>;
+}
+
+const LVL = ["○ missing", "◐ partial", "● full"];
+export function DataReadinessPanel({sport}) {
+  const b = dr.before_after, t = dr.totals, sl = prog.series_ledger, dc = prog.data_collected, cs = prog.search_experiments_cross_sport || {};
+  const archs = Object.values(dr.archetype_readiness).filter(a => a.sport === sport).sort((a, b2) => b2.primary_available_share - a.primary_available_share);
+  const sports = Object.keys(dr.matrix);
+  return <details className="ir-fine" open>
+    <summary><b>Data coverage and research readiness</b> — measured raw data, input availability, series reconciliation, cross-sport market-free search</summary>
+    <p className="ir-warn">Availability is graded from raw data classes actually in hand (collected or pulled from our own repositories), not from source names. It is an estimate from keyword rules: an input is not “computed” until a feature builder uses it. Benchmark-only (price-derived) inputs are excluded, never counted.</p>
+    <div className="ir-cards">
+      <div><b>{b.before_inputs_with_measured_free_source} → {b.after_available_or_partial}</b><small>inputs with verified source (before) → raw data in hand, available or partial (after); {b.after_available} fully available; {b.newly_unlocked_inputs} newly unlocked</small></div>
+      <div><b>{t.MISSING} missing · {t.EXCLUDED_BENCHMARK_ONLY} benchmark-only</b><small>of {t.inputs} candidate inputs; blocked mostly by tracking, scheme-charting, point-in-time availability and news data</small></div>
+      <div><b>{sl.total} = {sl.in_scope} + {sl.out_of_scope}</b><small>live series = in-scope + out-of-scope sports; every series has exactly one status (ledger reconciles: {String(sl.reconciles)})</small></div>
+      <div><b>{Object.values(dr.archetype_readiness).filter(a => a.readiness === "FULL" || a.readiness === "EXPERIMENTABLE").length} of {Object.keys(dr.archetype_readiness).length}</b><small>archetypes full or experimentable (≥40% of primary inputs available)</small></div>
+    </div>
+    <h4>Raw data class × sport (measured)</h4>
+    <div className="ir-scroll"><table className="ir-table" style={{minWidth: 560}}><thead><tr><th>Class</th>{sports.map(sp => <th key={sp}>{sp}</th>)}</tr></thead>
+      <tbody>{dr.classes.map(c => <tr key={c}><td>{c.replaceAll("_", " ").toLowerCase()}</td>{sports.map(sp => { const m = dr.matrix[sp][c]; return <td key={sp} title={m.note}>{LVL[m.level].split(" ")[0]}</td>; })}</tr>)}</tbody></table></div>
+    <p>● full  ◐ partial (short depth, final-only, aggregate-only or reachable but not collected)  ○ missing. Hover a cell for the evidence note.</p>
+    <h4>{sport}: archetype readiness</h4>
+    <div className="ir-scroll"><table className="ir-table" style={{minWidth: 560}}><thead><tr><th>Archetype</th><th>Primary inputs available</th><th>Readiness</th><th>Blocked by</th></tr></thead>
+      <tbody>{archs.map(a => <tr key={a.archetype}><td>{a.archetype.replaceAll("_", " ")}{a.kind === "unregistered" ? " (unregistered contract)" : ""}</td><td>{Math.round(100 * a.primary_available_share)}% of {a.primary_inputs} ({Math.round(100 * a.primary_available_or_partial_share)}% incl. partial)</td><td><b>{a.readiness.toLowerCase()}</b></td><td>{a.blocking_missing_classes.map(x => x.replaceAll("_", " ").toLowerCase()).join(", ") || "–"}</td></tr>)}</tbody></table></div>
+    <details><summary>Highest-value raw data to acquire next (inputs unlocked if the class reaches full coverage)</summary>
+      <ol>{dr.unlock_ranking.slice(0, 12).map(u => <li key={u.sport + u.class}><b>{u.sport} {u.class.replaceAll("_", " ").toLowerCase()}</b>: +{u.inputs_unlocked_by_upgrading_to_full} inputs ({u.archetype_links} archetype links). Now: {u.current_note}.</li>)}</ol></details>
+    <details><summary>Raw data in hand ({Object.keys(dc.repo_archives).length} datasets from our own repositories, {Object.keys(dc.api_collectors).length} API collections)</summary>
+      <ul>{Object.entries(dc.repo_archives).filter(([, v]) => v.rows).map(([k, v]) => <li key={k}><b>{k.replaceAll("_", " ")}</b>: {v.rows.toLocaleString()} rows, {v.date_min ? `${v.date_min} to ${v.date_max}` : "dates in file"} ({v.source_repo}{v.branch !== "main" ? `, branch ${v.branch}` : ""})</li>)}
+        {Object.entries(dc.api_collectors).filter(([, v]) => v.rows).map(([k, v]) => <li key={k}><b>{k.replaceAll("_", " ")}</b>: {v.rows.toLocaleString()} rows, seasons {(v.seasons || []).join(", ")}; {v.timestamp_reliability}</li>)}</ul></details>
+    <details><summary>Series ledger by sport (exact)</summary>
+      <div className="ir-scroll"><table className="ir-table" style={{minWidth: 640}}><thead><tr><th>Sport</th><th>Series</th><th>Covered (registered)</th><th>Covered (unregistered contract)</th><th>No listed market</th><th>Excluded</th><th>Unresolved</th></tr></thead>
+        <tbody>{Object.entries(sl.by_sport).map(([sp, v]) => <tr key={sp}><td>{sp}</td><td>{v.total}</td><td>{v.COVERED_REGISTERED || 0}</td><td>{v.COVERED_UNREGISTERED || 0}</td><td>{v.NO_LISTED_MARKETS || 0}</td><td>{(v.EXCLUDED_TEST || 0) + (v.EXCLUDED_NONSPORT || 0) + (v.EXCLUDED_COMBO || 0)}</td><td>{(v.UNCLASSIFIED || 0) + (v.CLASSIFIED_NO_ARCHETYPE || 0)}</td></tr>)}</tbody></table></div>
+      <p>Evidence: {Object.entries(sl.evidence_totals || {}).map(([k, v]) => `${v} ${k.toLowerCase().replaceAll("_", " ")}`).join(", ")}. Rules-text series were read from actual Kalshi contract rules; title-only series are classified from the title/ticker and not yet verified against rules.</p></details>
+    {Object.keys(cs).length > 0 && <details open><summary>Cross-sport market-free search (same nested chronological harness, permutation null)</summary>
+      <div className="ir-scroll"><table className="ir-table" style={{minWidth: 520}}><thead><tr><th>Market</th><th>Rows</th><th>Gain vs baseline</th><th>Blocks positive</th><th>Null gain</th></tr></thead>
+        <tbody>{Object.entries(cs).map(([k, v]) => <tr key={k}><td>{v.market}</td><td>{(v.n || 0).toLocaleString()}</td><td>{v.gain_pct == null ? "–" : v.gain_pct.toFixed(2) + "%"}</td><td>{v.seasons_positive}/{v.seasons}</td><td>{(v.null_pct || []).map(x => x.toFixed(2) + "%").join(", ")}</td></tr>)}</tbody></table></div>
+      <p>Baselines are weak (running league mean or the model's own Elo), so a gain shows information in the inputs, not an economically useful price edge; none of this has been compared with Kalshi prices yet.</p></details>}
   </details>;
 }

@@ -31,9 +31,11 @@ def many(sport, archs, cat, verdict, reason, attach):
 
 # ---------------------------------------------------------------- CBB
 adj("CBB", "first_half", "variance_luck", A, "A 20-minute sample is dominated by three-point shooting variance.", [("cbb.three_pt_luck", "secondary", "In a 20-minute half a handful of threes swing the total; a team's 3P% well above its shot-quality expectation regresses, so first-half totals should be priced on shot quality, not the hot hand.")])
-many("CBB", ["player_props", "player_points", "player_rebounds_assists", "player_threes"], "game_state", A, "Blowouts and foul-and-free-throw endgames change a player's minutes and shot volume; the blowout input existed but was not linked.",
+many("CBB", ["player_props", "player_rebounds_assists", "player_threes"], "game_state", A, "Blowouts and foul-and-free-throw endgames change a player's minutes and shot volume; the blowout input existed but was not linked.",
      [("cbb.blowout_garbage", "secondary", "Lopsided games empty the starters' minutes early; rebuilt from the model's OWN margin forecast (never the spread), blowout probability is the main downside branch of every player counting stat.")])
-adj("CBB", "player_points", "game_state", A, "Late-game fouling inflates free-throw points for ball handlers.", [("cbb.late_game_foul_script", "secondary", "Trailing teams foul and leaders' guards shoot the resulting free throws, adding points that a per-minute rate misses; the effect depends on who handles the ball in the final minutes.")])
+adj("CBB", "player_points", "game_state", A, "Blowouts and late-game fouling both change a guard's minutes and free-throw points; both inputs existed but were not linked.",
+    [("cbb.blowout_garbage", "secondary", "Lopsided games empty the starters' minutes early; rebuilt from the model's OWN margin forecast (never the spread), blowout probability is the main downside branch of every player counting stat."),
+     ("cbb.late_game_foul_script", "secondary", "Trailing teams foul and leaders' guards shoot the resulting free throws, adding points that a per-minute rate misses; the effect depends on who handles the ball in the final minutes.")])
 # ---------------------------------------------------------------- CFB
 adj("CFB", "game_moneyline_spread", "matchup", A, "Scheme-versus-scheme matchups were modelled at sport level but not attached to the side markets.",
     [("cfb.pass_rush", "secondary", "A dominant pass rush against a weak line ends drives and shortens the favourite's margin; the matchup term is the rush rate for versus the line's sack rate allowed."), ("cfb.secondary_coverage", "secondary", "Explosive pass offences against thin secondaries produce large margins that efficiency averages understate."),
@@ -177,7 +179,7 @@ def apply() -> dict:
                 fs = d["inputs"][iid]["free_sources"]
                 d["inputs"][iid]["free_sources"] = [new if x.startswith(prefix) else x for x in fs] if any(x.startswith(prefix) for x in fs) else [new] + fs
         _save(sp, d)
-    OUT.write_text(json.dumps({"schema_version": "gap-adjudication-1.0", "status": "RESEARCH_ONLY", "n_flags": len({(a["sport"], a["archetype"], a["category"]) for a in ADJ}), "n_adjudications": len(ADJ), "adjudications": ADJ}, indent=0))
+    OUT.write_text(json.dumps({"schema_version": "gap-adjudication-1.0", "status": "RESEARCH_ONLY", "n_flags": len({(a["sport"], a["archetype"], a["category"]) for a in ADJ}), "n_adjudications": len(ADJ), "note": "one adjudication per flag; an earlier version recorded the CBB player_points game_state flag twice (once in a bulk rule, once on its own), giving 86 records for 85 flags", "adjudications": ADJ}, indent=0))
     return {"inputs_added": added_inputs, "links_added": added_links, "flags": len(ADJ)}
 
 

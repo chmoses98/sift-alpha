@@ -1,66 +1,60 @@
-name: NFL totals prospective cycle (research-only, no orders)
+name: NFL prospective refresh + capture backstop (research-only, no orders)
 
-# Frozen nfl_totals_v1 experiment.  One cycle = refresh free nflverse data -> verify the frozen model still reproduces its 2014-2025 predictions -> append new time-stamped
-# predictions -> ingest the verified Kalshi collector's snapshots from `market-data` (read-only) -> evaluate with the pre-registered claim gate -> publish APPEND-ONLY to the
-# `prospective-data` branch (a push is refused if any existing ledger line would change).  A fail-closed public-REST capture runs first as a second, independent quote source.
-# No credentials, no order endpoints, no trading authority.  Missed captures are reported as gaps; they are never reconstructed.
-#
-# IMPORTANT: GitHub starts cron runs hours late under load and only runs schedules from the DEFAULT branch, so this workflow is inert until merged and its freshness is whatever the
-# collector achieves.  Every decision's actual observation age is recorded and enforced (<= 30 min) -- a late run costs eligibility, never validity.
+# BACKSTOP ONLY.  The primary capture path is the kickoff-aware `capture-window` sessions (see docs/PROSPECTIVE_NFL.md): GitHub starts scheduled runs hours late under load and runs schedules only
+# from the DEFAULT branch, so this workflow is inert until merged and can never be the sole capture guarantee.
+#   capture : cheap, every 30 min, ticks only when a pre-registered decision window is open; writes immutable shards to `prospective-data` (new files only)
+#   refresh : expensive, once a day, SINGLE WRITER: fetch published state, ingest shards into the hash-chained ledgers, verify the frozen model, append new predictions, evaluate, publish append-only
+# No credentials, no order endpoints, no trading authority.  Missed captures are reported, never reconstructed.
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '*/30 * * * *'      # capture backstop
+    - cron: '7 8 * * *'         # daily refresh
   workflow_dispatch:
+    inputs:
+      job:
+        description: capture or refresh
+        default: capture
 
 permissions:
-  contents: write          # ONLY to append to the prospective-data branch (publish refuses non-append-only changes)
+  contents: write              # ONLY to add files / append to the prospective-data branch
 
 concurrency:
-  group: nfl-prospective-cycle
+  group: nfl-prospective-${{ github.event.schedule || github.event.inputs.job || 'capture' }}
   cancel-in-progress: false
 
 jobs:
-  cycle:
+  capture:
+    if: ${{ github.event.schedule == '*/30 * * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.job != 'refresh') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 62
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install the complete dependency set
-        run: pip install numpy pandas scipy scikit-learn pyarrow pytest pyyaml
-      - name: Offline tests (includes the capture CLI against a mocked API, ingestion, gate, append-only publish)
-        run: python -m pytest tests/test_prospective.py -q
-      - name: Fetch the verified collector's data (read-only, blobs on demand) and the ledgers already published
-        run: |
-          git fetch --depth=1 --filter=blob:none origin market-data
-          git branch -f market-data FETCH_HEAD
-          mkdir -p "$RUNNER_TEMP/pv"
-          cp research/prospective/nfl_totals_v1/FREEZE.json research/prospective/nfl_totals_v1/FREEZE_DIGEST.json "$RUNNER_TEMP/pv/"
-          if git fetch --depth=1 origin prospective-data; then
-            for f in predictions quotes observations capture_failures; do git show "FETCH_HEAD:nfl_totals_v1/$f.jsonl" > "$RUNNER_TEMP/pv/$f.jsonl" 2>/dev/null || rm -f "$RUNNER_TEMP/pv/$f.jsonl"; done
-          else
-            cp research/prospective/nfl_totals_v1/*.jsonl "$RUNNER_TEMP/pv/"      # first run seeds the branch from the frozen ledgers committed with the PR
-          fi
-      - name: Fail-closed public-REST capture (second quote source; failure is recorded, never fatal to the cycle)
-        continue-on-error: true
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/games.csv" https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv
-          python -m alpha_engine.lab.prospective capture --games "$RUNNER_TEMP/games.csv" --dir "$RUNNER_TEMP/pv"
-      - name: Cycle (refresh, frozen-model check, predict, ingest, evaluate)
-        run: |
-          python -m alpha_engine.lab.prospective cycle --data-dir "$RUNNER_TEMP/nflverse" --md-repo "$GITHUB_WORKSPACE" --md-ref market-data --dir "$RUNNER_TEMP/pv" --work "$RUNNER_TEMP/work"
-      - name: Publish append-only
-        run: |
-          python -m alpha_engine.lab.prospective publish --repo "$GITHUB_WORKSPACE" --dir "$RUNNER_TEMP/pv"
+      - run: pip install numpy pandas scipy scikit-learn pyarrow pytest
+      - name: Offline tests (mock-API capture, shards, publication)
+        run: python -m pytest tests/test_capture_window.py tests/test_prospective.py -q
+      - name: Capture inside decision windows only
+        env:
+          CAPTURE_RUN_ID: gha-${{ github.run_id }}
+        run: python -m alpha_engine.lab.prospective capture-window --stage "$RUNNER_TEMP/stage" --repo "$GITHUB_WORKSPACE" --span 28 --interval 300
+
+  refresh:
+    if: ${{ github.event.schedule == '7 8 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'refresh') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn pyarrow pytest
+      - run: python -m pytest tests/test_prospective.py tests/test_capture_window.py -q
+      - run: python -m alpha_engine.lab.prospective refresh --repo "$GITHUB_WORKSPACE" --work "$RUNNER_TEMP/work" --data-dir "$RUNNER_TEMP/nflverse"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nfl-prospective-report-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/pv/REPORT.json
-            ${{ runner.temp }}/pv/decision_audit.json
+          name: nfl-prospective-refresh-${{ github.run_id }}
+          path: ${{ runner.temp }}/work/pv/REPORT.json
           retention-days: 30

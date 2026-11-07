@@ -29,6 +29,7 @@ def build_predictions(data_dir: Path, work: Path, download: bool, season: int = 
     view = repair.normalized_data_dir(data_dir, work / "view", fill_weather=True)
     gt = nf.add_matchup_features(nf.build_game_table(view, 2010, season))
     tg = nf.team_games_from_pbp(nf.load_pbp(view / "pbp", sorted(gt["season"].unique())))
+    (work / "lab").mkdir(parents=True, exist_ok=True); gt.to_parquet(work / "lab" / "game_table.parquet"); tg.to_parquet(work / "lab" / "tg.parquet")
     cfg = {k: PP.FROZEN[k] for k in ("model", "dist", "rating", "groups")}
     lab = GL.GameLab(gt, tg, work / "ledger_tmp.jsonl", work / "cache")
     P = lab.final_predictions("total", cfg, last=season)
@@ -147,3 +148,88 @@ def run_player_report(player_dir: Path, quotes_dir: Path, data_dir: Path, now: p
     rep = {"cycle_utc": now.isoformat(), "label": PPR.LABEL, "experiment": "nfl_player_v3_listed_emp", "predictions": len(preds), "contracts": int(len(contracts)), "audit_by_horizon": by, "gate": gate}
     (player_dir / "REPORT.json").write_text(json.dumps(rep, indent=1, default=float))
     return rep
+
+
+# ------------------------------------------------------------------ capture shards: new-files-only publication and retrieval
+def publish_captures(repo: Path, stage: Path, branch: str = BRANCH, remote: str = "origin", rel: str = "captures", message: str = "capture shards") -> dict:
+    """Publish immutable capture shards as NEW files on `branch` (never overwrites a different file at an existing path; identical re-publication is a no-op).  Safe for concurrent capture
+    sessions: shards have unique names, so a lost push race is simply retried against the fresh branch head."""
+    stage = Path(stage)
+    files = sorted(p for p in stage.rglob("*.json.gz"))
+    if not files:
+        return {"pushed": False, "unchanged": True}
+    for attempt in range(5):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            have = _run(repo, "fetch", "--depth=1", remote, branch, check=False).returncode == 0
+            _run(repo, "worktree", "prune", check=False)
+            if have:
+                _run(repo, "worktree", "add", "-f", "--detach", str(tmp / "wt"), "FETCH_HEAD")
+            else:
+                _run(repo, "worktree", "add", "-f", "--detach", str(tmp / "wt"), "HEAD"); _run(tmp / "wt", "checkout", "--orphan", branch); _run(tmp / "wt", "rm", "-rf", "--quiet", ".", check=False)
+            wt = tmp / "wt"; added = 0
+            for f in files:
+                dst = wt / rel / f.relative_to(stage)
+                if dst.exists():
+                    if dst.read_bytes() != f.read_bytes():
+                        return {"pushed": False, "error": f"append-only violation: {dst.relative_to(wt)} exists with different content"}
+                    continue
+                dst.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(f, dst); added += 1
+            if not added:
+                return {"pushed": False, "unchanged": True}
+            _run(wt, "add", "-A")
+            _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", f"{message} (+{added})")
+            if _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False).returncode == 0:
+                return {"pushed": True, "added": added, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip(), "attempt": attempt + 1}
+        finally:
+            _run(repo, "worktree", "remove", "--force", str(tmp / "wt"), check=False); shutil.rmtree(tmp, ignore_errors=True)
+    return {"pushed": False, "error": "push failed after retries"}
+
+
+def fetch_branch_tree(repo: Path, branch: str, rel: str, dest: Path, remote: str = "origin") -> int:
+    """Extract `rel/` from the branch head into dest (read-only retrieval for the single-writer ingester).  Returns the number of files."""
+    if _run(repo, "fetch", "--depth=1", remote, branch, check=False).returncode != 0:
+        return 0
+    Path(dest).mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(f"git -C {repo} archive FETCH_HEAD {rel} | tar -x -C {dest}", shell=True, capture_output=True)
+    return sum(1 for _ in Path(dest).rglob("*.json.gz")) if r.returncode == 0 else 0
+
+
+# ------------------------------------------------------------------ the single-writer refresh (expensive, run rarely) -- capture itself lives in capture_window
+def run_refresh(repo: Path, work: Path, data_dir: Path, player: bool = True, now: pd.Timestamp | None = None, season: int = 2026) -> dict:
+    """fetch published state -> refresh nflverse -> ingest new capture shards -> frozen-model check + new predictions -> evaluate -> (player predictions + report) -> append-only publish."""
+    from . import capture_window as CW
+    from ..input_research import refresh as RF
+    repo, work, data_dir = Path(repo), Path(work), Path(data_dir)
+    now = now or pd.Timestamp.now(tz="UTC"); out = {"refresh_utc": now.isoformat(), "mode": "RESEARCH_ONLY", "steps": {}}
+    seed = repo / "research" / "prospective"
+    pv, pp = work / "pv", work / "pv_player"
+    for rel, d, seeddir in (("nfl_totals_v1", pv, seed / "nfl_totals_v1"), ("nfl_player_v3", pp, seed / "nfl_player_v3")):
+        d.mkdir(parents=True, exist_ok=True)
+        got = fetch_branch_files(repo, BRANCH, rel, d) if _run(repo, "ls-remote", "--exit-code", "origin", BRANCH, check=False).returncode == 0 else []
+        if "predictions.jsonl" not in got:                                      # first run seeds the branch from the frozen ledgers committed with the PR
+            for f in seeddir.glob("*"):
+                if f.is_file():
+                    shutil.copyfile(f, d / f.name)
+        for f in ("FREEZE.json", "FREEZE_DIGEST.json"):                         # the frozen declarations always come from the committed PR, never from a mutable place
+            if (seeddir / f).exists():
+                shutil.copyfile(seeddir / f, d / f)
+        out["steps"][f"state_{rel}"] = {"from_branch": got}
+    RF.download(data_dir, season)
+    games = pd.read_csv(data_dir / "games.csv")
+    shards = work / "shards"; out["steps"]["shards_fetched"] = fetch_branch_tree(repo, BRANCH, "captures", shards)
+    out["steps"]["shard_ingest"] = CW.ingest_shards(shards, pv, games, now=now)
+    rep = run_cycle(data_dir, None, pv, work / "cyc", now=now, download=False)
+    out["steps"]["cycle"] = {k: rep.get(k) for k in ("steps", "counts", "eligible_decision_games", "aborted")}
+    if rep.get("aborted"):
+        out["aborted"] = rep["aborted"]; return out
+    if player:
+        from . import player_prospective as PPR
+        try:
+            out["steps"]["player_predict"] = PPR.run_predict(data_dir, work / "player", repo / "research" / "audit" / "lab", pp, work / "cyc" / "lab" / "game_table.parquet", now)
+            out["steps"]["player_gate"] = run_player_report(pp, pv, data_dir, now)["gate"]
+            out["steps"]["publish_player"] = publish(repo, pp, rel="nfl_player_v3", message="prospective player refresh")
+        except Exception as e:                                                     # a failed player refresh never blocks the totals experiment
+            out["steps"]["player_predict"] = {"error": repr(e)[:300]}
+    out["steps"]["publish_totals"] = publish(repo, pv, rel="nfl_totals_v1", message="prospective refresh")
+    return out

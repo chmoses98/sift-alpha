@@ -13,7 +13,7 @@ Protocol (pre-registered in research/prospective/nfl_totals_v1/FREEZE.json befor
   * claim gate (`claim_gate`): >= MIN_GAMES independent games with bets AND scored, Holm over {primary, secondary}, Bonferroni over the pre-registered looks LOOKS, positive lower bound of the
     one-sided 95% interval on the primary, chains verified, and no data-quality flags.  Output is PASS_PROVISIONAL / FAIL / INSUFFICIENT_N, never "profitable"; interim output is descriptive."""
 from __future__ import annotations
-import hashlib, json, time, urllib.request
+import hashlib, json, os, time, urllib.request
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -168,7 +168,7 @@ def _last_state(out_dir: Path) -> dict:
     return _LAST[k]
 
 
-def record_quotes(book: dict, games: pd.DataFrame, out_dir: Path) -> int:
+def record_quotes(book: dict, games: pd.DataFrame, out_dir: Path, run_id: str | None = None) -> int:
     """Append a COMPLETE fallback book: one `series_observation` (observed_at = the LAST page's fetched time, so every quote was already known then) and a `quote` row for every usable market
     whose bid/ask/status CHANGED since its last recorded row (same convention as the verified collector: an unchanged contract is covered by the observation, so volume stays bounded).
     Each quote carries its own page time.  Quotes without a verifiable bid and ask, or that cannot be tied to a game, are skipped (counted in the observation), never repaired."""
@@ -185,7 +185,7 @@ def record_quotes(book: dict, games: pd.DataFrame, out_dir: Path) -> int:
             rows.append(({"kind": "quote", "source": SOURCE_FALLBACK, "observed_at": pg["fetched_utc"], "ticker": m["ticker"], "game_id": rec["game_id"], "floor": m.get("floor_strike"),
                           "bid": key[0], "ask": key[1], "status": m.get("status"), "result": m.get("result") or "", "series": book["series"]}, key))
     last_t = book["pages"][-1]["fetched_utc"]
-    append(out_dir / "observations.jsonl", {"kind": "series_observation", "source": SOURCE_FALLBACK, "run_id": "fb-" + book["series"] + "-" + last_t, "series": book["series"], "observed_at": last_t, "complete": True,
+    append(out_dir / "observations.jsonl", {"kind": "series_observation", "source": SOURCE_FALLBACK, "run_id": run_id or ("fb-" + book["series"] + "-" + last_t), "series": book["series"], "observed_at": last_t, "complete": True,
                                             "n": book["n"], "pages": len(book["pages"]), "tier": "PUBLIC_REST", "skipped_markets": skipped, "unchanged_rows_not_rewritten": unchanged})
     for r, key in rows:
         append(out_dir / "quotes.jsonl", r); last[r["ticker"]] = key; n += 1
@@ -350,6 +350,11 @@ def main(argv=None):
     i.add_argument("--md-repo", required=True); i.add_argument("--dir", required=True)
     y = sub.add_parser("cycle", help="refresh nflverse, append predictions, ingest, evaluate")
     y.add_argument("--data-dir", required=True); y.add_argument("--md-repo", required=True); y.add_argument("--dir", required=True); y.add_argument("--work", required=True); y.add_argument("--no-download", action="store_true"); y.add_argument("--md-ref", default="origin/market-data"); y.add_argument("--player-dir")
+    w = sub.add_parser("capture-window", help="kickoff-aware capture: ticks only inside decision windows, writes immutable shards, publishes each tick (new files only)")
+    w.add_argument("--stage", required=True); w.add_argument("--repo", required=True); w.add_argument("--span", type=float, default=58.0); w.add_argument("--interval", type=float, default=300.0)
+    w.add_argument("--games", help="schedule CSV (default: download the free nflverse schedule)"); w.add_argument("--no-publish", action="store_true"); w.add_argument("--force", action="store_true", help="capture outside decision windows (proof runs); the shard is marked forced")
+    r = sub.add_parser("refresh", help="single writer: fetch published state, ingest shards, frozen-model check, predictions, report, append-only publish")
+    r.add_argument("--repo", required=True); r.add_argument("--work", required=True); r.add_argument("--data-dir", required=True)
     q = sub.add_parser("publish", help="append-only push of the ledgers to the data branch")
     q.add_argument("--repo", required=True); q.add_argument("--dir", required=True)
     a = ap.parse_args(argv)
@@ -370,6 +375,21 @@ def main(argv=None):
             time.sleep(max(0.0, a.interval - (time.time() - t0)))
         if fails and a.loop_minutes > 0:
             print(f"{fails} failed capture(s) recorded in capture_failures.jsonl")
+    elif a.cmd == "capture-window":
+        from . import capture_window as CW, prospective_cycle as PC
+        gp = a.games
+        if not gp:
+            import urllib.request as U
+            gp = str(Path(a.stage) / "_games.csv"); Path(a.stage).mkdir(parents=True, exist_ok=True)
+            Path(gp).write_bytes(U.urlopen(U.Request("https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv", headers={"User-Agent": "sift-alpha-research"}), timeout=60).read())
+        res = CW.run_window_capture(pd.read_csv(gp), Path(a.stage), span_min=a.span, interval_s=a.interval, run_id=os.environ.get("CAPTURE_RUN_ID", ""), force=a.force,
+                                    publish=None if a.no_publish else (lambda st: PC.publish_captures(Path(a.repo), st)))
+        print(json.dumps(res, default=str))
+        if res["ticks"] and (res["publish_errors"] or res["published"] == 0) and not a.no_publish:
+            raise SystemExit(4)
+    elif a.cmd == "refresh":
+        from . import prospective_cycle as PC
+        print(json.dumps(PC.run_refresh(Path(a.repo), Path(a.work), Path(a.data_dir)), indent=1, default=str))
     elif a.cmd == "ingest":
         from . import capture_ingest as CI
         print(json.dumps(CI.ingest(CI.GitSource(Path(a.md_repo)), Path(a.dir)), indent=1))

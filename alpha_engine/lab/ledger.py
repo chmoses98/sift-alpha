@@ -20,6 +20,13 @@ class Ledger:
     def __init__(self, path):
         self.path = Path(path)
         self.rows: dict[str, dict] = {}
+        gz = Path(str(self.path) + ".gz")
+        if not self.path.exists() and gz.exists():          # fresh checkouts carry only the gzipped ledgers: read them (reading only; new records still go to self.path)
+            import gzip
+            for l in gzip.decompress(gz.read_bytes()).decode().splitlines():
+                if l.strip():
+                    r = json.loads(l)
+                    self.rows[r["id"]] = r
         if self.path.exists():
             for l in self.path.read_text().splitlines():
                 if l.strip():

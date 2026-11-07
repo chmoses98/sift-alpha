@@ -11,14 +11,14 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 
 | Sport | Archetypes | Not started | Structure incomplete | Authored, awaiting independent review | Independent review: open findings | Ready for your approval | Inputs in catalog |
 |---|---|---|---|---|---|---|---|
-| CBB | 12 | 11 | 0 | 1 | 0 | 0 | 79 |
-| CFB | 13 | 12 | 0 | 1 | 0 | 0 | 77 |
-| MLB | 18 | 17 | 0 | 1 | 0 | 0 | 107 |
-| NBA | 27 | 24 | 0 | 3 | 0 | 0 | 88 |
-| NFL | 19 | 15 | 0 | 4 | 0 | 0 | 99 |
-| NHL | 13 | 12 | 0 | 1 | 0 | 0 | 77 |
-| SOCCER | 16 | 13 | 0 | 3 | 0 | 0 | 82 |
-| TENNIS | 13 | 11 | 0 | 2 | 0 | 0 | 82 |
+| CBB | 12 | 0 | 0 | 12 | 0 | 0 | 79 |
+| CFB | 13 | 0 | 0 | 13 | 0 | 0 | 77 |
+| MLB | 18 | 0 | 0 | 18 | 0 | 0 | 107 |
+| NBA | 27 | 0 | 0 | 27 | 0 | 0 | 88 |
+| NFL | 19 | 0 | 0 | 19 | 0 | 0 | 99 |
+| NHL | 13 | 0 | 0 | 13 | 0 | 0 | 77 |
+| SOCCER | 16 | 0 | 0 | 16 | 0 | 0 | 82 |
+| TENNIS | 13 | 0 | 0 | 13 | 0 | 0 | 82 |
 
 ### Per-archetype status
 Stages = mechanism stages; New = inputs discovered by this review; Audit = existing inputs individually judged; Ix/NL = interactions / non-linearities; Data = required datasets; Open = unresolved gaps declared; Rules = contract text verification; Ind = independent review.
@@ -26,136 +26,136 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | Sport | Archetype | Status | Live series (rules read) | Stages | New | Audit | Ix/NL | Data | Open | Rules | Ind (open findings) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | NFL | qb_passing_yards | authored, awaiting independent review | 7 (5) | 7 | 4 | 27 | 6/4 | 4 | 4 | partially verified | NONE (0) |
-| NFL | qb_passing_tds_and_ints | not started | 7 (4) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | rushing_yards | not started | 10 (5) | None | None | None | None/None | None | None | – | None (None) |
+| NFL | qb_passing_tds_and_ints | authored, awaiting independent review | 7 (4) | 7 | 6 | 16 | 5/4 | 5 | 4 | verified from rules text | NONE (0) |
+| NFL | rushing_yards | authored, awaiting independent review | 10 (5) | 7 | 4 | 20 | 6/4 | 4 | 4 | partially verified | NONE (0) |
 | NFL | receiving_yards_and_receptions | authored, awaiting independent review | 18 (8) | 7 | 4 | 22 | 6/4 | 4 | 4 | partially verified | NONE (0) |
 | NFL | anytime_first_td_scorer | authored, awaiting independent review | 20 (6) | 6 | 7 | 21 | 5/3 | 4 | 4 | partially verified | NONE (0) |
-| NFL | game_moneyline_spread | not started | 21 (8) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | game_total | not started | 3 (3) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | team_total | not started | 2 (2) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | first_half_and_quarter_totals | not started | 27 (19) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | player_availability | not started | 8 (4) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | season_win_totals_and_futures | not started | 88 (8) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | season_awards | not started | 40 (2) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | game_events | not started | 5 (4) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | first_score_team_time_race | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | season_player_stats_and_leaders | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | off_field_events | not started | 24 (11) | None | None | None | None/None | None | None | – | None (None) |
+| NFL | game_moneyline_spread | authored, awaiting independent review | 21 (8) | 6 | 5 | 26 | 5/3 | 5 | 4 | partially verified | NONE (0) |
+| NFL | game_total | authored, awaiting independent review | 3 (3) | 6 | 4 | 28 | 5/4 | 5 | 4 | partially verified | NONE (0) |
+| NFL | team_total | authored, awaiting independent review | 2 (2) | 7 | 4 | 21 | 6/4 | 4 | 4 | partially verified | NONE (0) |
+| NFL | first_half_and_quarter_totals | authored, awaiting independent review | 27 (19) | 6 | 6 | 18 | 5/3 | 4 | 5 | verified from rules text | NONE (0) |
+| NFL | player_availability | authored, awaiting independent review | 8 (4) | 6 | 7 | 14 | 5/3 | 5 | 4 | partially verified | NONE (0) |
+| NFL | season_win_totals_and_futures | authored, awaiting independent review | 88 (8) | 7 | 5 | 19 | 6/4 | 4 | 5 | partially verified | NONE (0) |
+| NFL | season_awards | authored, awaiting independent review | 40 (2) | 7 | 6 | 14 | 6/4 | 4 | 4 | partially verified | NONE (0) |
+| NFL | game_events | authored, awaiting independent review | 5 (4) | 6 | 5 | 17 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NFL | first_score_team_time_race | authored, awaiting independent review | 0 (0) | 6 | 5 | 12 | 5/3 | 5 | 5 | no live series | NONE (0) |
+| NFL | season_player_stats_and_leaders | authored, awaiting independent review | 0 (0) | 7 | 5 | 13 | 6/4 | 3 | 4 | no live series | NONE (0) |
+| NFL | off_field_events | authored, awaiting independent review | 24 (11) | 6 | 5 | 11 | 5/3 | 5 | 4 | partially verified | NONE (0) |
 | NFL | combos_and_parlays | authored, awaiting independent review | 0 (0) | 5 | 4 | 10 | 5/3 | 4 | 4 | no live series | NONE (0) |
-| NFL | unreg:team_and_event_counting_specials | not started | 19 (19) | None | None | None | None/None | None | None | – | None (None) |
-| NFL | unreg:fantasy_points_markets | not started | 11 (11) | None | None | None | None/None | None | None | – | None (None) |
+| NFL | unreg:team_and_event_counting_specials | authored, awaiting independent review | 19 (19) | 7 | 5 | 15 | 6/4 | 4 | 4 | verified from rules text | NONE (0) |
+| NFL | unreg:fantasy_points_markets | authored, awaiting independent review | 11 (11) | 8 | 5 | 14 | 6/4 | 4 | 4 | verified from rules text | NONE (0) |
 | CFB | game_moneyline_spread | authored, awaiting independent review | 9 (6) | 6 | 5 | 32 | 5/3 | 4 | 4 | partially verified | NONE (0) |
-| CFB | game_total | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | team_total | not started | 2 (1) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | quarter_and_half_totals | not started | 7 (7) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | quarter_and_half_sides | not started | 18 (13) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | game_stat_props | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | overtime | not started | 2 (2) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | touchdown_scorer | not started | 6 (5) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | season_futures | not started | 49 (13) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | unreg:awards_and_honors | not started | 13 (13) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | unreg:polls_and_cfp_rankings | not started | 6 (6) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | unreg:team_event_counting_specials | not started | 8 (8) | None | None | None | None/None | None | None | – | None (None) |
-| CFB | unreg:coaching_and_governance_events | not started | 7 (7) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_points | not started | 19 (3) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_rebounds | not started | 3 (2) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_assists | not started | 2 (2) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_threes | not started | 5 (2) | None | None | None | None/None | None | None | – | None (None) |
+| CFB | game_total | authored, awaiting independent review | 1 (1) | 5 | 4 | 28 | 5/3 | 5 | 4 | verified from rules text | NONE (0) |
+| CFB | team_total | authored, awaiting independent review | 2 (1) | 5 | 4 | 22 | 5/3 | 3 | 4 | partially verified | NONE (0) |
+| CFB | quarter_and_half_totals | authored, awaiting independent review | 7 (7) | 5 | 4 | 17 | 4/3 | 3 | 4 | verified from rules text | NONE (0) |
+| CFB | quarter_and_half_sides | authored, awaiting independent review | 18 (13) | 5 | 4 | 15 | 5/3 | 3 | 4 | partially verified | NONE (0) |
+| CFB | game_stat_props | authored, awaiting independent review | 1 (1) | 6 | 4 | 19 | 4/3 | 4 | 4 | verified from rules text | NONE (0) |
+| CFB | overtime | authored, awaiting independent review | 2 (2) | 5 | 5 | 11 | 4/3 | 3 | 4 | verified from rules text | NONE (0) |
+| CFB | touchdown_scorer | authored, awaiting independent review | 6 (5) | 5 | 5 | 20 | 4/3 | 3 | 4 | verified from rules text | NONE (0) |
+| CFB | season_futures | authored, awaiting independent review | 49 (13) | 6 | 6 | 22 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| CFB | unreg:awards_and_honors | authored, awaiting independent review | 13 (13) | 5 | 5 | 9 | 5/3 | 5 | 4 | verified from rules text | NONE (0) |
+| CFB | unreg:polls_and_cfp_rankings | authored, awaiting independent review | 6 (6) | 5 | 6 | 10 | 5/3 | 3 | 4 | verified from rules text | NONE (0) |
+| CFB | unreg:team_event_counting_specials | authored, awaiting independent review | 8 (8) | 5 | 7 | 12 | 5/3 | 3 | 4 | verified from rules text | NONE (0) |
+| CFB | unreg:coaching_and_governance_events | authored, awaiting independent review | 7 (7) | 5 | 6 | 9 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
+| NBA | player_points | authored, awaiting independent review | 19 (3) | 6 | 5 | 29 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| NBA | player_rebounds | authored, awaiting independent review | 3 (2) | 5 | 4 | 27 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NBA | player_assists | authored, awaiting independent review | 2 (2) | 5 | 3 | 28 | 5/4 | 5 | 4 | verified from rules text | NONE (0) |
+| NBA | player_threes | authored, awaiting independent review | 5 (2) | 6 | 4 | 26 | 5/3 | 4 | 4 | partially verified | NONE (0) |
 | NBA | combo_props | authored, awaiting independent review | 1 (1) | 5 | 4 | 22 | 5/4 | 5 | 6 | partially verified | NONE (0) |
-| NBA | steals_blocks_turnovers | not started | 3 (3) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_free_throws | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
+| NBA | steals_blocks_turnovers | authored, awaiting independent review | 3 (3) | 5 | 4 | 23 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
+| NBA | player_free_throws | authored, awaiting independent review | 0 (0) | 5 | 4 | 19 | 5/4 | 4 | 4 | no live series | NONE (0) |
 | NBA | player_milestones | authored, awaiting independent review | 2 (2) | 5 | 4 | 16 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
-| NBA | player_h2h_series_stats | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | game_moneyline_spread | not started | 14 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | game_win_margin | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | game_total | not started | 3 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | team_total | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | quarter_and_half_markets | not started | 24 (15) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | game_overtime_and_team_events | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | race_to_and_points_leader | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | first_basket | not started | 2 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | parlay_combo | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_availability | not started | 7 (3) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | season_futures_team | not started | 31 (5) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | series_and_cup | not started | 20 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | season_stat_markets | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
+| NBA | player_h2h_series_stats | authored, awaiting independent review | 0 (0) | 5 | 4 | 13 | 5/4 | 4 | 4 | no live series | NONE (0) |
+| NBA | game_moneyline_spread | authored, awaiting independent review | 14 (1) | 5 | 5 | 29 | 5/4 | 5 | 4 | partially verified | NONE (0) |
+| NBA | game_win_margin | authored, awaiting independent review | 0 (0) | 5 | 4 | 15 | 5/3 | 3 | 4 | no live series | NONE (0) |
+| NBA | game_total | authored, awaiting independent review | 3 (1) | 5 | 4 | 25 | 5/4 | 5 | 5 | partially verified | NONE (0) |
+| NBA | team_total | authored, awaiting independent review | 1 (1) | 6 | 4 | 20 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
+| NBA | quarter_and_half_markets | authored, awaiting independent review | 24 (15) | 6 | 5 | 16 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| NBA | game_overtime_and_team_events | authored, awaiting independent review | 0 (0) | 5 | 6 | 18 | 5/3 | 4 | 5 | no live series | NONE (0) |
+| NBA | race_to_and_points_leader | authored, awaiting independent review | 0 (0) | 5 | 4 | 15 | 5/3 | 3 | 4 | no live series | NONE (0) |
+| NBA | first_basket | authored, awaiting independent review | 2 (1) | 5 | 4 | 13 | 4/3 | 4 | 4 | partially verified | NONE (0) |
+| NBA | parlay_combo | authored, awaiting independent review | 0 (0) | 5 | 3 | 12 | 5/3 | 4 | 4 | no live series | NONE (0) |
+| NBA | player_availability | authored, awaiting independent review | 7 (3) | 5 | 5 | 12 | 5/4 | 5 | 5 | partially verified | NONE (0) |
+| NBA | season_futures_team | authored, awaiting independent review | 31 (5) | 7 | 6 | 22 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NBA | series_and_cup | authored, awaiting independent review | 20 (1) | 5 | 6 | 15 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NBA | season_stat_markets | authored, awaiting independent review | 0 (0) | 5 | 4 | 13 | 5/3 | 3 | 3 | no live series | NONE (0) |
 | NBA | awards_draft | authored, awaiting independent review | 55 (3) | 5 | 7 | 13 | 5/4 | 5 | 4 | partially verified | NONE (0) |
-| NBA | off_court_events | not started | 22 (7) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | summer_league_games | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | player_escalator_payout | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NBA | unreg:team_and_player_counting_specials | not started | 11 (11) | None | None | None | None/None | None | None | – | None (None) |
+| NBA | off_court_events | authored, awaiting independent review | 22 (7) | 5 | 5 | 12 | 5/4 | 5 | 5 | verified from rules text | NONE (0) |
+| NBA | summer_league_games | authored, awaiting independent review | 0 (0) | 5 | 4 | 11 | 4/3 | 4 | 5 | no live series | NONE (0) |
+| NBA | player_escalator_payout | authored, awaiting independent review | 0 (0) | 5 | 4 | 13 | 5/4 | 4 | 4 | no live series | NONE (0) |
+| NBA | unreg:team_and_player_counting_specials | authored, awaiting independent review | 11 (11) | 6 | 6 | 12 | 5/4 | 4 | 4 | verified from rules text | NONE (0) |
 | CBB | game_moneyline_spread | authored, awaiting independent review | 8 (3) | 6 | 5 | 33 | 5/3 | 4 | 4 | partially verified | NONE (0) |
-| CBB | game_total | not started | 2 (2) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | team_total | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | first_half | not started | 6 (6) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | player_props | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | player_points | not started | 4 (0) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | player_rebounds_assists | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | player_threes | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | futures_champion | not started | 53 (5) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | futures_conference | not started | 16 (6) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | futures_seed_other | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| CBB | unreg:polls_and_awards | not started | 10 (10) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | player_points_goals_assists | not started | 7 (6) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | player_shots_on_goal | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | goalie_saves | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | game_moneyline_puckline | not started | 5 (3) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | game_total_and_team_total | not started | 3 (2) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | period_markets | not started | 10 (9) | None | None | None | None/None | None | None | – | None (None) |
+| CBB | game_total | authored, awaiting independent review | 2 (2) | 6 | 5 | 25 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
+| CBB | team_total | authored, awaiting independent review | 1 (1) | 6 | 4 | 16 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
+| CBB | first_half | authored, awaiting independent review | 6 (6) | 6 | 4 | 16 | 5/3 | 3 | 4 | verified from rules text | NONE (0) |
+| CBB | player_props | authored, awaiting independent review | 0 (0) | 6 | 5 | 25 | 5/3 | 4 | 4 | no live series | NONE (0) |
+| CBB | player_points | authored, awaiting independent review | 4 (0) | 6 | 5 | 17 | 5/3 | 4 | 4 | not verified no rules text | NONE (0) |
+| CBB | player_rebounds_assists | authored, awaiting independent review | 0 (0) | 6 | 6 | 16 | 5/3 | 4 | 4 | no live series | NONE (0) |
+| CBB | player_threes | authored, awaiting independent review | 0 (0) | 6 | 5 | 15 | 5/3 | 4 | 4 | no live series | NONE (0) |
+| CBB | futures_champion | authored, awaiting independent review | 53 (5) | 6 | 5 | 19 | 5/3 | 4 | 5 | verified from rules text | NONE (0) |
+| CBB | futures_conference | authored, awaiting independent review | 16 (6) | 6 | 5 | 14 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| CBB | futures_seed_other | authored, awaiting independent review | 0 (0) | 6 | 5 | 16 | 5/3 | 4 | 4 | no live series | NONE (0) |
+| CBB | unreg:polls_and_awards | authored, awaiting independent review | 10 (10) | 6 | 7 | 9 | 5/3 | 4 | 5 | verified from rules text | NONE (0) |
+| NHL | player_points_goals_assists | authored, awaiting independent review | 7 (6) | 5 | 6 | 18 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NHL | player_shots_on_goal | authored, awaiting independent review | 0 (0) | 4 | 5 | 18 | 6/3 | 3 | 4 | no live series | NONE (0) |
+| NHL | goalie_saves | authored, awaiting independent review | 1 (1) | 4 | 4 | 16 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NHL | game_moneyline_puckline | authored, awaiting independent review | 5 (3) | 4 | 4 | 17 | 6/3 | 4 | 4 | partially verified | NONE (0) |
+| NHL | game_total_and_team_total | authored, awaiting independent review | 3 (2) | 4 | 3 | 20 | 5/3 | 4 | 4 | partially verified | NONE (0) |
+| NHL | period_markets | authored, awaiting independent review | 10 (9) | 5 | 4 | 16 | 5/3 | 4 | 4 | partially verified | NONE (0) |
 | NHL | game_events | authored, awaiting independent review | 3 (1) | 4 | 4 | 18 | 5/3 | 4 | 4 | partially verified | NONE (0) |
-| NHL | season_futures | not started | 12 (6) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | season_awards_and_stats | not started | 3 (1) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | player_h2h | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | parlay_combo | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | offfield_markets | not started | 3 (3) | None | None | None | None/None | None | None | – | None (None) |
-| NHL | unreg:team_and_player_season_counting | not started | 8 (8) | None | None | None | None/None | None | None | – | None (None) |
+| NHL | season_futures | authored, awaiting independent review | 12 (6) | 5 | 7 | 14 | 6/3 | 4 | 5 | partially verified | NONE (0) |
+| NHL | season_awards_and_stats | authored, awaiting independent review | 3 (1) | 4 | 4 | 13 | 5/3 | 4 | 5 | partially verified | NONE (0) |
+| NHL | player_h2h | authored, awaiting independent review | 0 (0) | 4 | 6 | 13 | 5/3 | 4 | 4 | no live series | NONE (0) |
+| NHL | parlay_combo | authored, awaiting independent review | 0 (0) | 4 | 5 | 11 | 6/3 | 4 | 4 | no live series | NONE (0) |
+| NHL | offfield_markets | authored, awaiting independent review | 3 (3) | 4 | 5 | 9 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
+| NHL | unreg:team_and_player_season_counting | authored, awaiting independent review | 8 (8) | 5 | 5 | 9 | 6/3 | 4 | 5 | verified from rules text | NONE (0) |
 | MLB | pitcher_strikeouts | authored, awaiting independent review | 1 (1) | 5 | 4 | 24 | 5/4 | 5 | 4 | verified from rules text | NONE (0) |
-| MLB | pitcher_outs | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | pitcher_earned_runs_hits_walks | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | hitter_hits_and_total_bases | not started | 6 (3) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | hitter_home_runs | not started | 16 (3) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | hitter_rbis_runs_sb | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | game_moneyline | not started | 12 (5) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | game_total_and_team_total | not started | 4 (3) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | first_inning_and_inning_markets | not started | 10 (10) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | first5_markets | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | extras_and_delay | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | season_futures | not started | 53 (10) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | season_leaders_and_awards | not started | 19 (2) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | player_participation | not started | 6 (3) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | announcer_mentions | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | transactions | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | offfield_markets | not started | 7 (5) | None | None | None | None/None | None | None | – | None (None) |
-| MLB | unreg:player_and_team_counting_specials | not started | 15 (15) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | match_result_3way | not started | 185 (12) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | total_goals | not started | 202 (4) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | handicap_and_exact_score | not started | 177 (7) | None | None | None | None/None | None | None | – | None (None) |
+| MLB | pitcher_outs | authored, awaiting independent review | 0 (0) | 5 | 3 | 19 | 5/4 | 4 | 3 | no live series | NONE (0) |
+| MLB | pitcher_earned_runs_hits_walks | authored, awaiting independent review | 0 (0) | 5 | 4 | 21 | 5/4 | 4 | 3 | no live series | NONE (0) |
+| MLB | hitter_hits_and_total_bases | authored, awaiting independent review | 6 (3) | 5 | 3 | 19 | 5/4 | 4 | 4 | verified from rules text | NONE (0) |
+| MLB | hitter_home_runs | authored, awaiting independent review | 16 (3) | 5 | 4 | 17 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| MLB | hitter_rbis_runs_sb | authored, awaiting independent review | 1 (1) | 5 | 3 | 17 | 5/4 | 4 | 3 | partially verified | NONE (0) |
+| MLB | game_moneyline | authored, awaiting independent review | 12 (5) | 5 | 3 | 22 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| MLB | game_total_and_team_total | authored, awaiting independent review | 4 (3) | 5 | 3 | 20 | 5/4 | 4 | 4 | verified from rules text | NONE (0) |
+| MLB | first_inning_and_inning_markets | authored, awaiting independent review | 10 (10) | 5 | 4 | 16 | 5/4 | 4 | 4 | verified from rules text | NONE (0) |
+| MLB | first5_markets | authored, awaiting independent review | 0 (0) | 5 | 3 | 15 | 5/4 | 5 | 4 | no live series | NONE (0) |
+| MLB | extras_and_delay | authored, awaiting independent review | 0 (0) | 5 | 4 | 13 | 5/4 | 3 | 4 | no live series | NONE (0) |
+| MLB | season_futures | authored, awaiting independent review | 53 (10) | 5 | 4 | 14 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| MLB | season_leaders_and_awards | authored, awaiting independent review | 19 (2) | 5 | 5 | 14 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| MLB | player_participation | authored, awaiting independent review | 6 (3) | 5 | 3 | 11 | 5/4 | 4 | 4 | partially verified | NONE (0) |
+| MLB | announcer_mentions | authored, awaiting independent review | 0 (0) | 5 | 4 | 10 | 5/4 | 4 | 3 | no live series | NONE (0) |
+| MLB | transactions | authored, awaiting independent review | 0 (0) | 5 | 5 | 9 | 5/4 | 4 | 3 | no live series | NONE (0) |
+| MLB | offfield_markets | authored, awaiting independent review | 7 (5) | 5 | 3 | 9 | 5/4 | 5 | 4 | partially verified | NONE (0) |
+| MLB | unreg:player_and_team_counting_specials | authored, awaiting independent review | 15 (15) | 5 | 4 | 12 | 5/4 | 4 | 4 | verified from rules text | NONE (0) |
+| SOCCER | match_result_3way | authored, awaiting independent review | 185 (12) | 6 | 3 | 19 | 5/3 | 4 | 3 | verified from rules text | NONE (0) |
+| SOCCER | total_goals | authored, awaiting independent review | 202 (4) | 5 | 3 | 21 | 5/3 | 3 | 4 | partially verified | NONE (0) |
+| SOCCER | handicap_and_exact_score | authored, awaiting independent review | 177 (7) | 5 | 4 | 15 | 5/3 | 3 | 4 | partially verified | NONE (0) |
 | SOCCER | btts_and_clean_sheet | authored, awaiting independent review | 146 (4) | 5 | 3 | 15 | 5/3 | 4 | 4 | partially verified | NONE (0) |
-| SOCCER | first_half_and_period | not started | 268 (18) | None | None | None | None/None | None | None | – | None (None) |
+| SOCCER | first_half_and_period | authored, awaiting independent review | 268 (18) | 5 | 3 | 15 | 5/3 | 4 | 4 | verified from rules text | NONE (0) |
 | SOCCER | competition_winner_and_top_n | authored, awaiting independent review | 124 (23) | 6 | 3 | 16 | 5/3 | 3 | 4 | partially verified | NONE (0) |
-| SOCCER | relegation_qualification_advancement | not started | 168 (7) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | player_season_leader_and_awards | not started | 46 (2) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | first_to_score_event | not started | 42 (0) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | team_points_and_margin | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | soccer_special_and_host | not started | 41 (7) | None | None | None | None/None | None | None | – | None (None) |
+| SOCCER | relegation_qualification_advancement | authored, awaiting independent review | 168 (7) | 6 | 3 | 16 | 5/3 | 3 | 4 | partially verified | NONE (0) |
+| SOCCER | player_season_leader_and_awards | authored, awaiting independent review | 46 (2) | 6 | 3 | 15 | 4/3 | 3 | 4 | partially verified | NONE (0) |
+| SOCCER | first_to_score_event | authored, awaiting independent review | 42 (0) | 6 | 3 | 12 | 5/3 | 3 | 4 | not verified no rules text | NONE (0) |
+| SOCCER | team_points_and_margin | authored, awaiting independent review | 1 (1) | 5 | 3 | 12 | 4/2 | 3 | 4 | partially verified | NONE (0) |
+| SOCCER | soccer_special_and_host | authored, awaiting independent review | 41 (7) | 6 | 4 | 11 | 5/3 | 4 | 3 | partially verified | NONE (0) |
 | SOCCER | competition_head_to_head | authored, awaiting independent review | 0 (0) | 5 | 3 | 11 | 5/2 | 3 | 3 | no live series | NONE (0) |
-| SOCCER | player_award | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | unreg:player_goal_assist_props | not started | 25 (25) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | unreg:player_shots_saves_props | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| SOCCER | unreg:corners_and_cards_team_events | not started | 6 (6) | None | None | None | None/None | None | None | – | None (None) |
+| SOCCER | player_award | authored, awaiting independent review | 1 (1) | 5 | 4 | 12 | 4/2 | 3 | 3 | partially verified | NONE (0) |
+| SOCCER | unreg:player_goal_assist_props | authored, awaiting independent review | 25 (25) | 6 | 3 | 11 | 5/3 | 3 | 4 | verified from rules text | NONE (0) |
+| SOCCER | unreg:player_shots_saves_props | authored, awaiting independent review | 0 (0) | 5 | 3 | 10 | 4/3 | 3 | 5 | no live series | NONE (0) |
+| SOCCER | unreg:corners_and_cards_team_events | authored, awaiting independent review | 6 (6) | 5 | 4 | 11 | 4/3 | 3 | 3 | partially verified | NONE (0) |
 | TENNIS | match_winner | authored, awaiting independent review | 18 (5) | 6 | 5 | 19 | 5/3 | 3 | 4 | partially verified | NONE (0) |
-| TENNIS | set_and_game_spreads | not started | 1 (1) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | set_winner_and_any_set | not started | 10 (4) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | total_games_and_sets | not started | 3 (3) | None | None | None | None/None | None | None | – | None (None) |
+| TENNIS | set_and_game_spreads | authored, awaiting independent review | 1 (1) | 6 | 5 | 13 | 5/3 | 3 | 3 | partially verified | NONE (0) |
+| TENNIS | set_winner_and_any_set | authored, awaiting independent review | 10 (4) | 6 | 4 | 13 | 5/3 | 3 | 3 | partially verified | NONE (0) |
+| TENNIS | total_games_and_sets | authored, awaiting independent review | 3 (3) | 6 | 4 | 18 | 5/3 | 2 | 3 | partially verified | NONE (0) |
 | TENNIS | exact_set_score | authored, awaiting independent review | 2 (2) | 6 | 3 | 12 | 5/3 | 3 | 3 | partially verified | NONE (0) |
-| TENNIS | set_sweep_and_tiebreak_events | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | game_winner_inplay | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | player_aces_and_double_faults | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | tournament_winner_futures | not started | 16 (3) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | nationality_and_team_futures | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | season_ranking_and_majors | not started | 6 (6) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | combo_tournament_winners | not started | 0 (0) | None | None | None | None/None | None | None | – | None (None) |
-| TENNIS | retirement_walkover_participation | not started | 3 (3) | None | None | None | None/None | None | None | – | None (None) |
+| TENNIS | set_sweep_and_tiebreak_events | authored, awaiting independent review | 0 (0) | 6 | 4 | 12 | 5/3 | 3 | 3 | no live series | NONE (0) |
+| TENNIS | game_winner_inplay | authored, awaiting independent review | 0 (0) | 6 | 4 | 11 | 5/3 | 4 | 3 | no live series | NONE (0) |
+| TENNIS | player_aces_and_double_faults | authored, awaiting independent review | 0 (0) | 6 | 5 | 14 | 5/3 | 3 | 3 | no live series | NONE (0) |
+| TENNIS | tournament_winner_futures | authored, awaiting independent review | 16 (3) | 6 | 5 | 16 | 5/3 | 4 | 3 | partially verified | NONE (0) |
+| TENNIS | nationality_and_team_futures | authored, awaiting independent review | 0 (0) | 6 | 6 | 11 | 5/3 | 3 | 3 | no live series | NONE (0) |
+| TENNIS | season_ranking_and_majors | authored, awaiting independent review | 6 (6) | 6 | 6 | 12 | 5/3 | 3 | 3 | verified from rules text | NONE (0) |
+| TENNIS | combo_tournament_winners | authored, awaiting independent review | 0 (0) | 6 | 4 | 11 | 5/3 | 3 | 3 | no live series | NONE (0) |
+| TENNIS | retirement_walkover_participation | authored, awaiting independent review | 3 (3) | 6 | 5 | 15 | 5/3 | 3 | 4 | verified from rules text | NONE (0) |
 
 ### Contract universe behind the review (exact ledger; the review cannot cover what has no readable contract)
 | Sport | Series | Covered (registered) | Covered (unregistered type) | No listed market (contract unreadable, unresolved) | Classified, no archetype | Evidence (rules text / title only) |

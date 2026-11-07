@@ -113,8 +113,10 @@ def load_reviews(sport: str) -> dict[str, dict]:
 
 
 def load_independent(sport: str) -> dict[str, dict]:
-    f = CD / "independent" / f"{sport}.json"
-    return rd(f) if f.exists() else {}
+    out: dict[str, dict] = {}
+    for f in sorted((CD / "independent").glob(f"{sport}*.json")) if (CD / "independent").exists() else []:
+        out.update(rd(f))
+    return out
 
 
 def _shingles(text: str, n: int = 5) -> set[str]:
@@ -206,7 +208,10 @@ def validate_review(sport: str, key: str, rec: dict, c: dict, rules: dict, led_r
     for iid, ni in (rec.get("new_inputs") or {}).items():
         p = f"new_input {iid}"
         if iid in c["inputs"]:
-            e.append(f"{p}: already exists in the catalog; reference it instead"); continue
+            # idempotent after merge_new_inputs: allowed only if the catalog definition is exactly the one this review wrote
+            if any(c["inputs"][iid].get(x) != ni.get(x) for x in ("label", "category", "mechanism", "rationale", "measurement", "pregame_knowable", "free_sources", "registry_ids")):
+                e.append(f"{p}: id already exists in the catalog with a different definition; reference it or pick a new id")
+            continue
         if not iid.islower() or "." not in iid or iid.split(".")[0] not in {i.split(".")[0] for i in c["inputs"] if not i.startswith("m.")}:
             e.append(f"{p}: id must be lowercase '<sport prefix>.<name>' using the sport's existing prefix")
         for k in NEW_INPUT_REQUIRED:
@@ -226,7 +231,7 @@ def validate_review(sport: str, key: str, rec: dict, c: dict, rules: dict, led_r
             e.append(f"{p}: registry_ids contains ids not in the registry")
     # --- audit of the existing inputs -----------------------------------------------------------------------------------------------------------------------
     ia = rec["input_audit"]
-    existing = [i["id"] for i in a["inputs"]]
+    existing = [i["id"] for i in a["inputs"] if i["id"] not in (rec.get("new_inputs") or {})]   # inputs this review itself added (and merged) are not "pre-existing"
     for i in existing:
         r = ia.get(i)
         if not r:
@@ -315,6 +320,8 @@ def similarity_flags(sport: str, reviews: dict[str, dict], threshold: float = 0.
 def independent_state(ind: dict | None) -> tuple[str, list[dict]]:
     if not ind:
         return "NONE", []
+    if ind.get("verdict") not in ("PASS_WITH_OPEN_GAPS", "REVISE") or len(str(ind.get("rederivation_notes", "")).strip()) < 200 or not ind.get("reviewer"):
+        return "NONE", []   # a review without the reviewer's own re-derivation does not count
     f = ind.get("findings") or []
     openf = [x for x in f if x.get("severity") in ("BLOCKER", "MAJOR") and not str(x.get("resolution", "OPEN")).startswith("RESOLVED")]
     return ("OPEN_FINDINGS" if openf else "CLEAR"), openf
@@ -394,8 +401,10 @@ def summarize(gate: dict) -> dict:
 
 
 def main():
+    import sys
     CD.mkdir(parents=True, exist_ok=True)
-    build_evidence()
+    if "--evidence" in sys.argv:   # evidence packs describe the PRE-review catalog; regenerate only before a review round, never after merge_new_inputs
+        build_evidence()
     g = compute_gate()
     (CD / "gate.json").write_text(json.dumps(g, indent=1, sort_keys=True))
     (CD / "summary.json").write_text(json.dumps(summarize(g), indent=0, sort_keys=True))

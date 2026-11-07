@@ -44,8 +44,7 @@
      ],
      "input_ids": [
       "nba.injuries_pit",
-      "nba.midgame_exit_hazard",
-      "nba.status_resolution_prob"
+      "nba.midgame_exit_hazard"
      ]
     },
     {
@@ -60,7 +59,7 @@
      ],
      "input_ids": [
       "nba.minutes",
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.late_threshold_assist_rebound_gifting"
      ]
     },
@@ -166,7 +165,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.minutes"
      ],
      "note": "Blowout and close-game minutes truncation and OT extension of the count window."
@@ -273,8 +272,8 @@
      "PBP event stream with score margin and player counts",
      "coach tenure table"
     ],
-    "why": "Corrects the mechanical over-penalty of blowout branches for near-threshold players; sign is opposite to the naive minutes-cut story.",
-    "role": "secondary"
+    "why": "HYPOTHESIS ONLY, not a required input (see unresolved pm-stat-chase-size): Corrects the mechanical over-penalty of blowout branches for near-threshold players; sign is opposite to the naive minutes-cut story.",
+    "role": "context"
    },
    "nba.dd_center_swap_share": {
     "label": "Rebound/assist share conditional on which co-big or creator shares the floor",
@@ -295,6 +294,28 @@
     ],
     "why": "A DD for a center is gated by whether the second big plays beside or behind him; the existing frontcourt competition input is not attached to this archetype.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Double and triple doubles need 10+ in two or three categories, so minutes lost to a lead entering Q4 removes the final rebounds and assists; this is the market-free minutes-loss driver.",
+    "role": "secondary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -327,8 +348,8 @@
     "reason": "Usage explains the points component only; for the dominant DD path of a rebounding big (pts+reb) it adds little beyond minutes, and for assist-first guards it moves inversely with the ast component, so as a lone scalar it is mislabelled secondary signal."
    },
    "nba.garbage": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Blowout minute loss is the dominant reason favorites' stars miss DD; but the label says 'from spread' which is a market-derived quantity, so the input must be rebuilt from team ratings and rotation history, with the spread only as a benchmark."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowout minute loss is the dominant reason favorites' stars miss DD; but the label says 'from spread' which is a market-derived quantity, so the input must be rebuilt from team ratings and rotation hi"
    },
    "nba.teammate_absence_shift": {
     "verdict": "KEEP_PRIMARY",
@@ -367,7 +388,7 @@
    {
     "inputs": [
      "nba.minutes",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ],
     "form": "threshold",
     "mechanism": "DD probability is nearly flat above ~34 minutes and falls steeply below ~26, so a blowout that trims a starter from 35 to 28 minutes costs far more than one trimming 38 to 33; the effect is largest for players whose second category is marginal (rebounds around 8).",
@@ -403,7 +424,7 @@
    {
     "inputs": [
      "nba.late_threshold_assist_rebound_gifting",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ],
     "form": "conditional",
     "mechanism": "Inside the blowout branch, a player at 9 in a category late is more likely than his per-minute rate implies to finish, because teammates funnel the last opportunity; this partially offsets the minutes loss, in the direction opposite to the naive blowout penalty.",
@@ -422,7 +443,7 @@
     "why": "A per-minute rebound rate that implies a mean of 8.5 versus 10.5 in 34 minutes changes P(>=10) from ~35% to ~60%; conjunction of two such events makes the DD probability convex in each category mean."
    },
    {
-    "input_id": "nba.garbage",
+    "input_id": "nba.rating_blowout_minutes_curve",
     "shape": "threshold: little effect below ~15% blowout probability, steep above ~35%",
     "why": "Starters' minutes are cut only when the margin crosses ~15-20 with a few minutes left, so blowout probability matters mostly in the tail; the effect is non-linear in the team-rating gap."
    }
@@ -453,7 +474,7 @@
      {
       "name": "nba_api (stats.nba.com boxscoretraditionalv2)",
       "access": "free_scrape",
-      "note": "Public endpoints, rate limited; field list believed correct but not re-verified here"
+      "note": "Public endpoints, rate limited; field list believed correct but not re-verified here; SOURCE_UNVERIFIED for 2026-27, v3 endpoint or cdn.nba.com liveData may be needed (pm-boxscore-endpoint-source)"
      },
      {
       "name": "Basketball-Reference game logs",
@@ -514,7 +535,7 @@
      "nba.midgame_exit_hazard",
      "nba.late_threshold_assist_rebound_gifting",
      "nba.dd_center_swap_share",
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.reb_chances",
      "nba.pot_ast"
     ]
@@ -552,7 +573,6 @@
     "feeds_inputs": [
      "nba.injuries_pit",
      "nba.teammate_absence_shift",
-     "nba.status_resolution_prob",
      "nba.midgame_exit_hazard"
     ]
    },
@@ -576,6 +596,47 @@
     ],
     "feeds_inputs": [
      "m.rules_text"
+    ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
     ]
    }
   ],
@@ -605,6 +666,19 @@
     "type": "DATA_UNAVAILABLE",
     "description": "Rebound chances, contested boards and potential assists come from tracking data (Second Spectrum / NBA tracking) that is only partly public; the free endpoints expose aggregates, not event-level chances with timestamps.",
     "what_would_resolve": "Confirm which hustle/tracking dashboards are queryable per game; otherwise buy a licensed feed."
+   },
+   {
+    "id": "pm-fair-price-definition",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled KXNBA2D/KXNBA3D rules say an inactive or never-entered player settles 'to a fair price' without defining it. Only the protected rebound contract (KXNBAREBPROT) ties it to 'the fair price prior to the opening tip', which would already embed P(inactive). So the refund payout may not equal par, and whether any value is lost or gained on a void is not stated.",
+    "what_would_resolve": "Pull the full Kalshi rulebook definition of 'fair price' and settle history for a voided DD/TD market to see the realised payout relative to the pre-tip price.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "pm-boxscore-endpoint-source",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The player-game box-score dataset names nba_api boxscoretraditionalv2 as free_scrape. This resolver could not confirm that V2 box-score endpoints stay populated for 2026-27 (v3 successors exist), so the endpoint name and field list are unverified.",
+    "what_would_resolve": "Call boxscoretraditionalv3 and the cdn.nba.com liveData boxscore for one completed 2026-27 game and confirm minutes and the five category fields."
    }
   ]
  },
@@ -640,9 +714,83 @@
     "Scalar escalator (KXNBAESCALATORPTS): payout floor(10000 x (y / 50)^3) / 10000 with y = min(50, max(0, 2 x floor(s / 2))); value is E[(y/50)^3], so the quantity needed is the whole points distribution, in particular the tail above 30, not a threshold probability.",
     "Head-to-head (KXNBAH2HPRA): resolves on the difference of two players' combined counts; ties pay 50/50 and neither-enters or beyond-two-week postponement gives a fair price; requires joint distribution of two players.",
     "Protected (KXNBAPTSPROT) and leader/race series (KXNBAPTSLEADER, KXNBARACE, KXNBAFIRST50PTS), season-long (KXNBAPTSALLGAMES) and the all-star 3-point contest (KXNBA3PTCONTEST) are filed here but are TITLE_ONLY and follow different mechanics; their rules are not verified.",
-    "Standard ladders void inactive or never-entering players at a fair price but not players who exit early, so a first-quarter injury settles NO."
+    "Standard ladders void inactive or never-entering players at a fair price but not players who exit early, so a first-quarter injury settles NO.",
+    "Overtime treatment is not stated in the sampled KXNBAPRA, KXNBAH2HPRA or escalator text; only KXNBAPLAYERHIGHSCORE (unregistered archetype) says 'including overtime'. Treat OT inclusion as unconfirmed for every ladder here.",
+    "Scope of this record: it prices only single-game player points ladders and the playoff, bench and protected variants that share them. The series listed in contract.series_mapping_issues are filed here but are priced from other mechanisms; this record's input list is not claimed to cover them."
    ],
-   "settlement_data_source": "Official box score points / combined statistics as named in the full Kalshi rules; sampled secondary text for PRA is truncated before naming the source agencies, so the exact sources are unverified."
+   "settlement_data_source": "Official box score points / combined statistics as named in the full Kalshi rules; sampled secondary text for PRA is truncated before naming the source agencies, so the exact sources are unverified.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNBAPRA",
+     "issue": "Combined points+rebounds+assists ladder (rules sampled); the mechanism is a sum of three components, not a points count.",
+     "belongs_in": "combo_props"
+    },
+    {
+     "ticker": "KXNBAPR",
+     "issue": "Combined points+rebounds ladder; TITLE_ONLY here, same sum-of-components mechanism as KXNBAPRA.",
+     "belongs_in": "combo_props"
+    },
+    {
+     "ticker": "KXNBAPA",
+     "issue": "Combined points+assists ladder; TITLE_ONLY, same sum-of-components mechanism.",
+     "belongs_in": "combo_props"
+    },
+    {
+     "ticker": "KXNBAH2HPRA",
+     "issue": "Two-player head-to-head on combined PRA (rules sampled, ties 50/50, two-week postponement window).",
+     "belongs_in": "player_h2h_series_stats"
+    },
+    {
+     "ticker": "KXNBAH2HPTS",
+     "issue": "Two-player head-to-head on points; resolves on a difference of two players' counts.",
+     "belongs_in": "player_h2h_series_stats"
+    },
+    {
+     "ticker": "KXNBAH2HBENCHPTS",
+     "issue": "Two-player head-to-head on bench points.",
+     "belongs_in": "player_h2h_series_stats"
+    },
+    {
+     "ticker": "KXNBAESCALATORPTS",
+     "issue": "Scalar cubic-payout escalator (rules sampled), a distribution-expectation contract and not a threshold ladder.",
+     "belongs_in": "player_escalator_payout"
+    },
+    {
+     "ticker": "KXNBAPTSLEADER",
+     "issue": "Points-leader (argmax over players) contract; TITLE_ONLY.",
+     "belongs_in": "race_to_and_points_leader"
+    },
+    {
+     "ticker": "KXNBARACE",
+     "issue": "Race-to-N contract; TITLE_ONLY, scope (single game or season) unknown.",
+     "belongs_in": "race_to_and_points_leader"
+    },
+    {
+     "ticker": "KXNBAFIRST50PTS",
+     "issue": "First player to score 50 points; likely a season-long first-passage event across all players.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: season_long_player_first_to_threshold"
+    },
+    {
+     "ticker": "KXNBASERIESPTSLEADER",
+     "issue": "Series-level points leader (argmax over several games).",
+     "belongs_in": "race_to_and_points_leader"
+    },
+    {
+     "ticker": "KXNBAPTSALLGAMES",
+     "issue": "Multi-game conjunction (all games in a span) and not a single-game ladder.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: player_multi_game_conjunction"
+    },
+    {
+     "ticker": "KXNBA3PTCONTEST",
+     "issue": "All-Star three-point shooting contest, a skills event with no minutes or game script.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: all_star_event_props"
+    },
+    {
+     "ticker": "KXNBASUMMERPTS",
+     "issue": "Summer League player points; minutes plans and format differ from regular-season games.",
+     "belongs_in": "summer_league_games"
+    }
+   ]
   },
   "mechanism": {
    "summary": "Points are minutes times a possession-and-usage-driven attempt rate times conversion, with free throws added. The causal chain is: availability and minutes scenario (a mixture, not a mean), team possessions available while he is on court (matchup pace and game script), his share of those possessions given the specific five-man unit on the floor, shot mix and shot quality against this defense, free-throw trips from foul drawing and the opponent's foul rate, game-script truncation or extension (blowout rest, late intentional fouling, overtime), and finally the settlement form, which differs across the series in this archetype (threshold ladders, combined-stat ladders, head-to-head with 50/50 ties, a cubic scalar payout). Each stage adds variance of a different shape: discrete mixture for minutes, overdispersed count for attempts, Bernoulli noise with heavy shrinkage for makes, so the upper rungs are governed by scenario weights and tails rather than by the mean.",
@@ -650,7 +798,7 @@
     {
      "id": "s1",
      "name": "Availability and minutes scenario mixture",
-     "description": "The scorer either enters the game or is voided; conditional on entering he plays under one of several scenarios: a normal starter workload of 32-36 minutes, a blowout trim to 26-30, foul-trouble stretches, a minutes restriction, an early exit, or overtime adding about five. The 30+ and 40+ rungs are reachable only in the full-load branch, so scenario weights set rung probabilities more than the player's mean points do. Status vintages and the calibrated probability that a questionable player plays feed this stage.",
+     "description": "The scorer either enters the game or is voided; conditional on entering he plays under one of several scenarios: a normal starter workload of 32-36 minutes, a blowout trim to 26-30, foul-trouble stretches, a minutes restriction, an early exit, or overtime adding about five minutes if the contract counts it (the sampled ladder text does not say). The 30+ and 40+ rungs are reachable only in the full-load branch, so scenario weights set rung probabilities more than the player's mean points do. Status vintages and the calibrated probability that a questionable player plays feed this stage.",
      "distribution": "Discrete mixture with a long left tail and an OT bump; weights depend jointly on status, margin and fouls; not unimodal.",
      "categories": [
       "availability_news",
@@ -662,7 +810,7 @@
       "nba.injuries_pit",
       "nba.status_resolution_prob",
       "nba.pts_exit_foulout_hazard",
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.starters_pit"
      ]
     },
@@ -743,7 +891,8 @@
       "nba.stat_dist",
       "nba.cross_player_points_dependence",
       "nba.points_upper_tail_rate",
-      "m.rules_text"
+      "m.rules_text",
+      "nba.combo_component_marginals"
      ]
     }
    ],
@@ -804,7 +953,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.late_game_script",
       "nba.ot_model"
      ],
@@ -832,9 +981,10 @@
      "input_ids": [
       "nba.stat_dist",
       "nba.points_upper_tail_rate",
-      "nba.cross_player_points_dependence"
+      "nba.cross_player_points_dependence",
+      "nba.combo_component_marginals"
      ],
-     "note": "Minutes-conditional overdispersion, heavy tail for the cubic scalar and cross-player dependence for H2H/combined products."
+     "note": "Minutes-conditional overdispersion, heavy tail for the cubic scalar and cross-player dependence for H2H/combined products. Combined-stat ladders add rebound and assist component marginals via nba.combo_component_marginals; its drivers nba.reb_chances and nba.pot_ast are defined in the player_rebounds and player_milestones records."
     },
     "situational_schedule_motivation": {
      "status": "GAP",
@@ -937,21 +1087,64 @@
    "nba.player_xpts_per_shot": {
     "label": "Shot-level expected points per attempt for the player vs tonight's defense",
     "category": "matchup",
-    "mechanism": "Points per attempt is a function of shot type (rim, midrange, catch-and-shoot three), defender proximity and the shooter's finishing talent, so team zone averages mix very different shooters.",
+    "mechanism": "Points per attempt is a function of shot type and location (rim, midrange, corner and above-the-break three, action type) and the shooter's finishing talent, so team zone averages mix very different shooters.",
     "rationale": "Opponent zone-allowed tables ignore who takes the shots; a pull-up scorer vs drop coverage and a roll man vs switching differ by large amounts and these are mostly knowable pregame.",
-    "measurement": "From shot-level data estimate a hierarchical model of make probability by player x shot type x defender-distance bin with beta priors (rim prior weight 150 FGA, three prior weight 750 FGA, midrange 300); multiply by opponent's allowed frequency/quality for each shot type (opponent-adjusted by league mean) to get predicted points per shot; sum over projected attempts by type. As-of: shots finished before tip-off.",
+    "measurement": "From shot-level data estimate a hierarchical model of make probability by player x shot zone x action type (shotchartdetail location, ACTION_TYPE, SHOT_TYPE and SHOT_DISTANCE fields) with beta priors (rim prior weight 150 FGA, three prior weight 750 FGA, midrange 300); multiply by opponent's allowed frequency/quality for each shot type (opponent-adjusted by league mean) to get predicted points per shot; sum over projected attempts by type. As-of: shots finished before tip-off. Closest-defender distance is not part of the base model; an optional season-level adjustment may use aggregate defender-distance bins from the tracking dashboards (not crossed with location), pending pp-defender-distance.",
     "pregame_knowable": "yes",
     "free_sources": [
-     "nba_api shotchartdetail and tracking shot dashboards",
+     "nba_api shotchartdetail (location, zone, action type; no per-shot defender distance to this resolver's knowledge)",
+     "nba_api tracking shot dashboards (aggregate closest-defender bins, SOURCE_UNVERIFIED)",
      "Cleaning the Glass"
     ],
     "registry_ids": [],
     "raw_data": [
-     "shot chart: loc_x, loc_y, shot_type, result",
-     "closest-defender-distance tracking (SOURCE_UNVERIFIED for public completeness)"
+     "shot chart: loc_x, loc_y, shot_zone, action_type, shot_type, shot_distance, result",
+     "optional aggregate closest-defender-distance bins per player (SOURCE_UNVERIFIED)"
     ],
     "why": "Separates shot-making skill from volume for 20+ rungs and makes opponent scheme matter only where the scorer's shot types intersect it.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Star point ladders are most sensitive to Q4 minutes lost in lopsided games; the curve gives expected minutes and a lower-minutes tail for each player without using the spread.",
+    "role": "primary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
+   },
+   "nba.combo_component_marginals": {
+    "label": "Rebound and assist component marginals and their dependence with points (for PRA, PR, PA contracts)",
+    "category": "distribution",
+    "mechanism": "A combined points+rebounds+assists count is the sum of three correlated components, each with its own minutes-scaled rate, so the ladder probability needs marginal rebound and assist models and their residual dependence with points, not the points model alone.",
+    "rationale": "KXNBAPRA, KXNBAPR, KXNBAPA and KXNBAH2HPRA settle on sums of components. For a big man the rebound share is worth as much as the scoring, for a guard the assist share is, and the variance of the sum depends on whether components are positively tied through minutes or traded off through usage (a ball-dominant guard scoring more usually assists less). Modelling only points and adding a constant for the other components understates the spread of the sum, which moves high rungs the most.",
+    "measurement": "For each player build minutes-scaled rates for rebounds and assists: rate_k = (sum_over_games w_g * k_g + 500 * prior_rate_k) / (sum_over_games w_g * min_g + 500), with exponential game weights w_g (half-life 40 games) and a position-group prior rate (500 minutes of prior weight is a placeholder to be fitted). Component counts given minutes are negative binomial with dispersion fitted by position group. Dependence: residuals (actual minus minutes-conditional expectation) for points, rebounds and assists over a 2-season window, correlation matrix shrunk by Fisher-z toward the position-group prior (weight 40 games), joined with a Gaussian copula over the three marginals. Output is the distribution of P+R+A, P+R and P+A in each minutes scenario, mixed by the minutes scenario weights. Tonight's rebound and assist drivers (nba.reb_chances, nba.pot_ast, nba.rebound_pool, teammate absences) enter as multipliers on rate_k and are defined in the player_rebounds and player_milestones records of this file. As-of: games completed before tipoff.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api boxscore endpoints (player-game rebounds, assists, minutes)",
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "Player-game box score: min, pts, reb, oreb, dreb, ast",
+     "Position group and starter flag per game",
+     "Tonight's availability of teammates (injury report vintage)"
+    ],
+    "why": "Four of the verified series in this archetype (PRA, PR, PA, H2H PRA) are sums of components; without component marginals and their dependence the contracts cannot be priced from the points inputs alone.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -972,8 +1165,8 @@
     "reason": "Derived from the sportsbook spread and total, so it is a market price repackaged as a variable; it should be a benchmark for a ratings-built team total, not a model input."
    },
    "nba.garbage": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Blowout-driven minute loss shrinks upper-rung probability disproportionately; needs rebuilding from ratings and rotation history instead of the spread, which is a market observable."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowout-driven minute loss shrinks upper-rung probability disproportionately; needs rebuilding from ratings and rotation history instead of the spread, which is a market observable."
    },
    "nba.shot_profile": {
     "verdict": "KEEP_SECONDARY",
@@ -1084,7 +1277,7 @@
    },
    {
     "inputs": [
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.minutes",
      "nba.points_upper_tail_rate"
     ],
@@ -1118,6 +1311,15 @@
     "form": "regime-switch",
     "mechanism": "A player flagged questionable or just back from injury lives in a different minutes regime where the early-exit hazard rises several fold; the standard ladders refund only inactive players, so exits in the active state settle NO.",
     "how_to_test": "Compare the fraction of early-exit games across status vintages and check the calibration of the mixture weights against realised short-minute rates."
+   },
+   {
+    "inputs": [
+     "nba.combo_component_marginals",
+     "nba.cross_player_points_dependence"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Points, rebounds and assists of one player are tied through minutes (positive) and through possession use (a ball-dominant guard who scores more assists less; a big man's putback points come from his own rebounds), so the variance of PRA is not the sum of component variances and the sign of the cross term differs by position.",
+    "how_to_test": "On held-out player games compare the observed frequency of PRA and PR rungs above the 75th percentile with predictions from independent components versus the fitted copula, split by guard and big."
    }
   ],
   "nonlinearities": [
@@ -1137,7 +1339,7 @@
     "why": "Per-minute scoring is roughly constant for starters, but rungs above 30 points need >34 minutes in most cases; OT creates a step increase that matters for the tail."
    },
    {
-    "input_id": "nba.garbage",
+    "input_id": "nba.rating_blowout_minutes_curve",
     "shape": "threshold at margin about 18-20 with 6-8 minutes left",
     "why": "Starters are pulled only after a decisive margin, so the minutes effect is small until blowout probability exceeds roughly one-third and then steep."
    }
@@ -1161,7 +1363,10 @@
      "pf",
      "starter",
      "ot",
-     "team_margin"
+     "team_margin",
+     "reb",
+     "oreb",
+     "dreb"
     ],
     "timestamp_requirement": "As-of tip-off; only completed games; corrections applied after settlement lag",
     "history_needed": "4 seasons",
@@ -1190,11 +1395,12 @@
      "nba.cross_player_points_dependence",
      "nba.pace",
      "nba.ft_attempts",
-     "nba.pts_exit_foulout_hazard"
+     "nba.pts_exit_foulout_hazard",
+     "nba.combo_component_marginals"
     ]
    },
    {
-    "dataset": "Shot-level data with location, type and defender distance",
+    "dataset": "Shot-level data with location, zone and action type (defender distance only as optional aggregate bins)",
     "grain": "shot",
     "fields": [
      "game_id",
@@ -1204,8 +1410,8 @@
      "shot_zone",
      "shot_type",
      "action_type",
-     "closest_defender_distance",
-     "made"
+     "made",
+     "shot_distance"
     ],
     "timestamp_requirement": "As-of tip-off; only completed games",
     "history_needed": "3 seasons",
@@ -1213,7 +1419,7 @@
      {
       "name": "nba_api shotchartdetail",
       "access": "free_scrape",
-      "note": "Location and zone available; defender-distance availability per shot is SOURCE_UNVERIFIED"
+      "note": "Location, zone, action type and shot distance are returned; per-shot closest-defender distance is not, to this resolver's knowledge (not re-verified live)"
      },
      {
       "name": "Second Spectrum / Synergy play types",
@@ -1224,6 +1430,11 @@
       "name": "Cleaning the Glass",
       "access": "free_limited",
       "note": "Aggregated shot quality"
+     },
+     {
+      "name": "nba_api tracking shot dashboards (closest-defender bins)",
+      "access": "free_limited",
+      "note": "Aggregate by shot type and distance bin, not per shot and not crossed with location; availability SOURCE_UNVERIFIED"
      }
     ],
     "feeds_inputs": [
@@ -1273,7 +1484,7 @@
      "nba.teammate_absence_shift",
      "nba.player_role_position",
      "nba.late_game_script",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ]
    },
    {
@@ -1313,6 +1524,47 @@
      "nba.referee_crew",
      "nba.rest_travel"
     ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
+    ]
    }
   ],
   "unresolved": [
@@ -1331,8 +1583,8 @@
    {
     "id": "pp-defender-distance",
     "type": "SOURCE_UNVERIFIED",
-    "description": "Closest-defender distance per shot used for the shot-quality input is exposed through NBA tracking dashboards, but whether per-shot rows are public via stats.nba.com endpoints (versus aggregated bins) is not verified here.",
-    "what_would_resolve": "Query the shot dashboard and shotchartdetail endpoints for one game and list returned fields."
+    "description": "The shot-quality input no longer needs per-shot closest-defender distance: shotchartdetail returns location, zone, action type and distance, not defender distance. Whether the tracking dashboards expose aggregate closest-defender bins by shot type for 2026-27 is unverified here, and a defender-distance-by-location cross may require paid tracking data.",
+    "what_would_resolve": "Query shotchartdetail and the player tracking shot dashboards for one player-season and list the fields; if defender bins are absent, price a licensed tracking feed."
    },
    {
     "id": "pp-situational",
@@ -1340,6 +1592,13 @@
     "description": "No input models stars' rest-for-seeding and minutes-restriction behaviour that is not in the injury report, yet it changes minute scenarios in late regular season.",
     "what_would_resolve": "Back-test minutes error by clinch status and rest days to see if a dedicated variable is needed.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "pp-ot-inclusion",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "None of the sampled ladder, combined-stat or escalator texts (KXNBAPRA, KXNBAH2HPRA, KXNBAESCALATORPTS) states whether overtime points count. Stage s1 and the ot_model input assume official final box-score stats, which usually include OT, but the contract wording is silent.",
+    "what_would_resolve": "Read the full rulebook for the points ladders and check a settled overtime game to see whether overtime points were included.",
+    "category": "settlement_contract"
    }
   ]
  },
@@ -1370,9 +1629,17 @@
     "Protected (KXNBAREBPROT) vs standard (KXNBAREB) on the same player and strike have different payoffs for the same early-exit event; a model must carry both forms.",
     "Sampled strikes include 10+ for a wing (Mario Hezonja, floor_strike 9.5) which is a far-tail rung; ladder rungs span the tail and low-probability rungs are dominated by pool variance not talent.",
     "Overtime is not addressed in the sampled standard text; official box score rebounds normally include OT, adding five minutes of pool in about 6% of games.",
-    "Series rebounds leader (KXNBASERIESREBLEADER) is a multi-game argmax with TITLE_ONLY rules; mechanism and tie handling unverified."
+    "Series rebounds leader (KXNBASERIESREBLEADER) is a multi-game argmax with TITLE_ONLY rules; mechanism and tie handling unverified.",
+    "Scope: this record's inputs price single-game rebound ladders (KXNBAREB, KXNBAREBPROT). KXNBASERIESREBLEADER is a different contract form (see contract.series_mapping_issues) and is not claimed as covered."
    ],
-   "settlement_data_source": "Official box-score rebounds as named in the full rules (the sampled secondary text is cut before listing source agencies, so the exact source and correction policy are unverified)."
+   "settlement_data_source": "Official box-score rebounds as named in the full rules (the sampled secondary text is cut before listing source agencies, so the exact source and correction policy are unverified).",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNBASERIESREBLEADER",
+     "issue": "Series-level rebounds leader (argmax over several games), not a single-game rebounds threshold; no mechanism or input in this record covers it.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: series_stat_leader"
+    }
+   ]
   },
   "mechanism": {
    "summary": "Rebounds are minutes times the rate at which missed shots (both teams') land within reach times the share of those the player secures. The chain is: participation and minutes (bigs are foul- and blowout-sensitive), the supply of creditable misses given pace, both teams' shot quality and the free-throw and team-rebound leakage, how that supply splits between offensive and defensive boards given each coach's crash policy, the player's share given which other rebounders are on the floor and where he stands (rim vs perimeter), conversion of chances to rebounds (contested vs uncontested, deferrals), and the distributional consequences: counts are overdispersed because the supply itself varies with shooting luck of both teams, and the shared supply makes teammates' rebound counts negatively dependent. The existing catalog captures supply and share conceptually but not the credit leakage, the lineup-pairing arithmetic or the protected-contract state.",
@@ -1390,7 +1657,7 @@
      "input_ids": [
       "nba.minutes",
       "nba.foul_rates",
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.injuries_pit",
       "nba.big_exit_protection_state"
      ]
@@ -1516,7 +1783,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.late_game_script"
      ],
      "note": "Blowout minutes loss and late-game foul sequences."
@@ -1573,7 +1840,7 @@
     "label": "Player-creditable rebound pool: misses net of team rebounds and dead-ball leakage",
     "category": "pace_volume",
     "mechanism": "Official player rebounds exclude team rebounds (shot-clock violations, balls out of bounds, first free-throw misses of a pair), so the pool a player can be credited from is smaller than total misses and varies by game flow.",
-    "rationale": "A pool built from field-goal misses alone overstates supply when games have many foul-heavy trips, where missed first free throws and dead-ball team rebounds produce no player rebound; the leakage is about 6-10% of misses and varies with foul rate.",
+    "rationale": "A pool built from field-goal misses alone overstates supply when games have many foul-heavy trips, where missed first free throws and dead-ball team rebounds produce no player rebound; the leakage share is hypothesised to be of the order of 6-10% of misses (unverified, to be estimated from team rebound counts; see pr-leakage-source) and should vary with foul rate.",
     "measurement": "For each team-game: creditable_pool = FG misses + live FT misses (last free throw of a trip) - (team rebounds + out-of-bounds recoveries); estimate team-level leakage ratio by regressing team rebounds on FG misses, FT trips and out-of-bounds counts over 2 seasons with 80-game half-life; project tonight's pool as projected combined misses (ratings and shot-quality based, not market totals) times (1 - projected leakage). Leakage uses opponent foul rate and arena (scorer) effect.",
     "pregame_knowable": "yes",
     "free_sources": [
@@ -1628,9 +1895,9 @@
    "nba.big_exit_protection_state": {
     "label": "Big-man early-exit and first-half-only participation hazard, mapped to protected-contract voiding",
     "category": "availability",
-    "mechanism": "Bigs foul out and tweak ankles at higher rates, and protected rebound contracts refund players who play only the first half unless the threshold is already reached.",
-    "rationale": "In standard contracts an early exit settles NO; in protected series the same event refunds at a pre-tip fair price, so the same underlying hazard has opposite market consequences and must be tracked separately for the two forms.",
-    "measurement": "Per player-season, estimate P(minutes in 2H+OT = 0 | entered 1H) and P(exit before 12 total minutes) from play-by-play with beta(2,40) shrinkage and a status multiplier; output separately: hazard of 'plays only first half' (protected refund branch) and 'exits early without refund'. As-of: injury report vintage.",
+    "mechanism": "Protected rebound contracts refund any player who enters in the first half but does not enter after halftime (including overtime), whatever the cause: injury or foul-out, ejection, or a coach resting him for the whole second half of a lopsided game.",
+    "rationale": "In standard contracts an early exit settles NO; in protected series the same event refunds at a pre-tip fair price, so the same underlying hazard has opposite market consequences and must be tracked separately for the two forms. Blowout-driven second-half rest is the cause most likely to be missed: a bench big who played 6 first-half minutes in a game that is 25 points at halftime is refunded, so the refund branch also depends on the margin path.",
+    "measurement": "Per player-season, estimate P(minutes in 2H+OT = 0 | entered 1H) and P(exit before 12 total minutes) from play-by-play with beta(2,40) shrinkage and a status multiplier; output separately, by cause (injury or ejection, foul-out, blowout rest of the whole second half): hazard of 'plays only first half' (protected refund branch) and 'exits early without refund'. The blowout-rest cause is estimated as P(no second-half minutes | entered 1H, halftime margin bin) and is driven by nba.rating_blowout_minutes_curve (rare for starters, common for deep-bench bigs). As-of: injury report vintage.",
     "pregame_knowable": "partial",
     "free_sources": [
      "nba_api playbyplayv3",
@@ -1641,8 +1908,30 @@
      "PBP substitutions by half",
      "injury vintages"
     ],
-    "why": "Needed to price KXNBAREBPROT correctly versus KXNBAREB for the same player and strike.",
+    "why": "Needed to price KXNBAREBPROT correctly versus KXNBAREB for the same player and strike. Cause split includes whole-second-half blowout rest, which interacts with the ratings-based blowout curve.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Big men are often pulled early in lopsided games, and the second-half-entry rule of the protected variant depends on the same blowout path.",
+    "role": "primary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -1687,8 +1976,8 @@
     "reason": "Foul-trouble benching truncates a big's minutes and is a major left-tail driver; the per-minute foul rate needs combining with referee crew and opponent drive rate."
    },
    "nba.garbage": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Blowouts take starters off the floor; the rebound ladder is hit hard because bench bigs are not simple replacements. Must be rebuilt from ratings, not the spread."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowouts take starters off the floor; the rebound ladder is hit hard because bench bigs are not simple replacements. Must be rebuilt from ratings, not the spread."
    },
    "nba.injuries_pit": {
     "verdict": "KEEP_PRIMARY",
@@ -1785,7 +2074,7 @@
    },
    {
     "inputs": [
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.foul_rates"
     ],
     "form": "joint-distribution",
@@ -1800,6 +2089,15 @@
     "form": "regime-switch",
     "mechanism": "A designated or returning big carries a first-half-only appearance hazard; protected contracts refund this branch while standard contracts settle NO, so identical status information has opposite value in the two series.",
     "how_to_test": "Compare realised first-half-only appearances by status vintage and test the resulting price gap between KXNBAREBPROT and KXNBAREB for the same strike."
+   },
+   {
+    "inputs": [
+     "nba.big_exit_protection_state",
+     "nba.rating_blowout_minutes_curve"
+    ],
+    "form": "conditional",
+    "mechanism": "For protected rebound contracts a halftime margin beyond about 20 points makes a no-second-half appearance likely for bench bigs but not for starters, so the refund branch probability and the value of the protection depend on the margin path and the player's rotation slot, in opposite directions for the two groups.",
+    "how_to_test": "From play-by-play compute P(no second-half minutes | entered first half) by halftime margin bin and by starter or bench status, and compare with the injury-only hazard."
    }
   ],
   "nonlinearities": [
@@ -1983,19 +2281,60 @@
      "m.rules_text",
      "nba.big_exit_protection_state"
     ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
+    ]
    }
   ],
   "unresolved": [
    {
     "id": "pr-tracking-access",
     "type": "DATA_UNAVAILABLE",
-    "description": "Rebound chances, contested-board fractions and box-out counts come from optical tracking that is licensed (Second Spectrum) and only partly exposed in public dashboards; the existing reb_chances and tracking inputs may therefore be unmeasurable without payment.",
+    "description": "Rebound chances, contested-board fractions and box-out counts come from optical tracking that is licensed (Second Spectrum) and only partly exposed in public dashboards; the existing reb_chances and tracking inputs may therefore be unmeasurable without payment. Even where public tracking dashboards exist they are season or split aggregates, not per-game rows with as-of timestamps, and per-game vintages are SOURCE_UNVERIFIED; reb_chances may therefore exist only at season grain, in which case rebound-chance share must fall back to box-score rebounds per minute and nba.rebound_pool.",
     "what_would_resolve": "List which hustle/tracking endpoints return per-game player rows; otherwise price a licensed feed."
    },
    {
     "id": "pr-leakage-source",
     "type": "SOURCE_UNVERIFIED",
-    "description": "The team-rebound count per game is assumed to be available in team box scores; whether player-credited versus team rebounds can be separated from public play-by-play is not verified here.",
+    "description": "The team-rebound count per game is assumed to be available in team box scores; whether player-credited versus team rebounds can be separated from public play-by-play is not verified here. The 6-10% leakage figure used in the creditable-pool rationale is a hypothesis with no source and must be estimated, not assumed.",
     "what_would_resolve": "Pull one game from the play-by-play and box-score endpoints and reconcile team rebounds."
    },
    {
@@ -2037,10 +2376,11 @@
     }
    ],
    "variants_and_edge_cases": [
-    "Ladder rungs run 1+ to 7+; low rungs depend mostly on attempts>=1 and minutes, high rungs depend on the attempt tail and shooting luck, so the same player has different key drivers at different rungs.",
+    "Ladder rungs: only 5+ (KXNBA3PT, floor_strike N-0.5) is sampled; a 1+ to 7+ span is assumed from the ladder titles and is not verified from rules text. Low rungs would depend mostly on attempts>=1 and minutes, high rungs on the attempt tail and shooting luck, so key drivers would differ by rung.",
     "Scalar escalator caps at 10 and weights counts cubically, so a 6-make night pays $0.2160 and 4 pays $0.0640; the expected value depends on the whole distribution between 3 and 8.",
     "Protected (KXNBA3PTPROT) and every-game (KXNBA3PTALLGAMES) series are TITLE_ONLY: the protected refund branch and the multi-game conjunction cannot be specified from the sample.",
-    "Overtime is not addressed in the sampled text; official box score made threes normally include OT, adding about five minutes of attempts in about 6% of games."
+    "Overtime is not addressed in the sampled text; official box score made threes normally include OT, adding about five minutes of attempts in about 6% of games.",
+    "KXNBAESCALATOR3PT primary text ends 'Then the market resolves to Yes.' beside a scalar payout schedule; the No leg is defined only as $1.00 minus the Yes payout and the scalar formula in the secondary text is used (p3-escalator-text)."
    ],
    "settlement_data_source": "Official box score made three-pointers as named in the full rules; the sampled secondary text is truncated before naming source agencies, so the exact source is unverified."
   },
@@ -2059,7 +2399,7 @@
      "input_ids": [
       "nba.minutes",
       "nba.injuries_pit",
-      "nba.garbage"
+      "nba.rating_blowout_minutes_curve"
      ]
     },
     {
@@ -2125,7 +2465,7 @@
      "input_ids": [
       "nba.three_att_script_elasticity",
       "nba.late_game_script",
-      "nba.garbage"
+      "nba.rating_blowout_minutes_curve"
      ]
     },
     {
@@ -2194,7 +2534,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.three_att_script_elasticity",
       "nba.late_game_script"
      ],
@@ -2250,18 +2590,20 @@
     "category": "variance_luck",
     "mechanism": "Make probability depends on shot context more than on a single season 3P%, so talent should be estimated per context and recombined with tonight's expected context mix.",
     "rationale": "Overall 3P% averages over open catch-and-shoot threes (about 38%) and tightly contested pull-ups (about 31%); a shooter's attempt mix changes with teammates and opposing closeouts, so the make probability changes even with fixed talent.",
-    "measurement": "Beta-binomial hierarchy on made/attempted by (catch-and-shoot, pull-up) x (wide-open, open, tight) cells over 3 seasons, league-cell mean as prior with prior weight 250 attempts per cell and player-level partial pooling; recent-season weight by 0.5 per year; combine cells with predicted tonight's context mix from shot-creation role and opponent openness allowed. Output a single p3 with credible interval. As-of: shots finished before tip.",
+    "measurement": "Base model (public per-shot data): beta-binomial hierarchy on made/attempted by shot zone (corner, above the break) x pull-up flag from shotchartdetail ACTION_TYPE and SHOT_ZONE fields over 3 seasons, league-cell mean as prior with prior weight 250 attempts per cell, partial pooling by player, recent-season weight 0.5 per year. Optional refinement if the tracking dashboards are confirmed (p3-defender-distance): aggregate catch-and-shoot versus pull-up and closest-defender bins (wide open 6+ ft, open 4-6, tight under 4) as separate multiplicative adjustments, not a crossed cell, because the dashboards are not per-shot. Combine with tonight's predicted context mix from shot-creation role and opponent openness allowed. Output a single p3 with credible interval. As-of: shots finished before tip.",
     "pregame_knowable": "yes",
     "free_sources": [
-     "nba_api shot dashboards by closest-defender distance and type (SOURCE_UNVERIFIED)",
+     "nba_api shotchartdetail (location, zone, action type; no per-shot defender distance to this resolver's knowledge)",
+     "nba_api tracking shot dashboards with closest-defender and catch-and-shoot splits (aggregate, SOURCE_UNVERIFIED)",
      "Cleaning the Glass"
     ],
     "registry_ids": [],
     "raw_data": [
-     "shot-level 3PA with type, defender distance, result"
+     "shot-level 3PA with zone, action type and result (shotchartdetail)",
+     "aggregate player tracking shot splits by closest-defender bin and catch-and-shoot flag (SOURCE_UNVERIFIED)"
     ],
-    "why": "Separates context-driven make probability from luck; the existing regression input shrinks a pooled 3P% instead.",
-    "role": "primary"
+    "why": "Separates context-driven make probability from luck; the existing regression input shrinks a pooled 3P% instead. Rebased on public per-shot fields so it does not depend on per-shot defender distance; role is secondary until the tracking splits are confirmed.",
+    "role": "secondary"
    },
    "nba.three_att_script_elasticity": {
     "label": "Elasticity of a shooter's three-point attempt rate to score margin and quarter",
@@ -2304,7 +2646,7 @@
     "category": "matchup",
     "mechanism": "A defense's effect on a shooter's threes shows up in the proportion of attempts that are open, which is a scheme trait and more persistent than opponent 3P% allowed.",
     "rationale": "Opponent 3P% allowed mixes luck with scheme; the open-attempt share allowed and the opponent's volume allowed by shot type are stable within a season and map directly to a shooter's catch-and-shoot context.",
-    "measurement": "From tracking-derived shot data compute per defense the percentage of opponent threes taken with closest defender >= 4 ft (wide open) and 2-4 ft (open), the corner share allowed, and opponent 3PA allowed per 100 possessions; 60-game half-life, shrink to league mean with prior weight 40 games; match against the shooter's tonight's expected cell mix.",
+    "measurement": "From team-level aggregate defense dashboards (closest-defender bins, one row per team and date window, not per-shot; window set by a DateTo filter to games before tip) compute per defense the percentage of opponent threes taken with closest defender >= 4 ft (wide open) and 2-4 ft (open), the corner share allowed, and opponent 3PA allowed per 100 possessions; 60-game half-life, shrink to league mean with prior weight 40 games; match against the shooter's tonight's expected cell mix.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nba_api defense dashboards by closest defender",
@@ -2314,8 +2656,30 @@
     "raw_data": [
      "team defense shot dashboard: attempts by defender distance"
     ],
-    "why": "A stable, scheme-based replacement for the noisy position-allowed variable.",
+    "why": "A stable, scheme-based replacement for the noisy position-allowed variable. Depends on team-level aggregate dashboards whose date-window vintages are SOURCE_UNVERIFIED (p3-defender-distance).",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Three-point attempts concentrate among starters and fall when starters sit in garbage time, but trailing teams also raise three volume; the margin-path curve separates the two.",
+    "role": "secondary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -2356,8 +2720,8 @@
     "reason": "Possessions scale attempts; second-order next to role and minutes."
    },
    "nba.garbage": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Blowouts cut starters' minutes but also inflate bench shooters' time and trailing teams' attempts, so the sign is role dependent; needs rebuild from ratings."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowouts cut starters' minutes but also inflate bench shooters' time and trailing teams' attempts, so the sign is role dependent; needs rebuild from ratings."
    },
    "nba.three_pt_luck": {
     "verdict": "KEEP_CONTEXT",
@@ -2454,7 +2818,7 @@
    },
    {
     "inputs": [
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.three_att_script_elasticity"
     ],
     "form": "regime-switch",
@@ -2483,33 +2847,38 @@
     "why": "Bayesian shrinkage gives a weight n/(n+k) on observed rate; with k near 750 attempts the weight on a 100-attempt sample is under 12%, so predicted make probability barely moves."
    },
    {
-    "input_id": "nba.garbage",
+    "input_id": "nba.rating_blowout_minutes_curve",
     "shape": "non-monotone in margin: attempts fall for starters, rise for bench and trailing team",
     "why": "The effect of blowout probability on threes depends on role and on late-game urgency, giving a U- or inverted-U relation rather than a monotone one."
    }
   ],
   "required_data": [
    {
-    "dataset": "Shot-level three-point attempts with shot type and defender distance",
+    "dataset": "Shot-level three-point attempts with zone and action type, plus aggregate defender-distance dashboards",
     "grain": "shot",
     "fields": [
      "game_id",
      "player_id",
      "shot_type",
-     "closest_defender_distance",
      "loc_x",
      "loc_y",
      "zone",
      "made",
-     "assisted_by"
+     "action_type",
+     "shot_distance"
     ],
     "timestamp_requirement": "Completed games only as-of tip",
     "history_needed": "3 seasons",
     "candidate_sources": [
      {
-      "name": "nba_api shotchartdetail / shot dashboards",
+      "name": "nba_api shotchartdetail",
       "access": "free_scrape",
-      "note": "Location available; per-shot defender distance availability SOURCE_UNVERIFIED"
+      "note": "Returns location, zone, action type and distance; no per-shot closest-defender distance and no assister to this resolver's knowledge (not re-verified live); assister comes from play-by-play"
+     },
+     {
+      "name": "nba_api tracking shot dashboards (closest-defender and catch-and-shoot splits)",
+      "access": "free_limited",
+      "note": "Aggregate by split, not per shot and not crossed with location; per-date-window availability SOURCE_UNVERIFIED"
      },
      {
       "name": "Second Spectrum",
@@ -2600,7 +2969,7 @@
      "nba.minutes",
      "nba.stat_dist",
      "nba.pace",
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.three_pt_luck"
     ]
    },
@@ -2640,14 +3009,55 @@
      "nba.def_scheme",
      "nba.opp_def_pos"
     ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
+    ]
    }
   ],
   "unresolved": [
    {
     "id": "p3-defender-distance",
     "type": "SOURCE_UNVERIFIED",
-    "description": "Making make-probability and openness inputs from per-shot closest-defender distance assumes the NBA stats endpoints return it per shot; public dashboards often return aggregated bins only and historical availability is uncertain.",
-    "what_would_resolve": "Query the shot-tracking dashboard for a sample player-season and list fields and bins."
+    "description": "Per-shot closest-defender distance is believed not to be returned by shotchartdetail, so make-probability and openness inputs are rebased on zone and action type with defender distance only as aggregate dashboard bins. Whether those bins exist per date window for 2026-27, and whether a catch-and-shoot by defender-distance cross is public, is unverified.",
+    "what_would_resolve": "Query shotchartdetail and the tracking shot dashboards with a DateTo filter for one player and team and list returned fields and bins."
    },
    {
     "id": "p3-titleonly",
@@ -2667,6 +3077,18 @@
     "description": "No variable captures rest and travel effects on shooting makes or rest-for-seeding minute cuts; magnitude for threes is unknown.",
     "what_would_resolve": "Back-test residual 3P% by rest and schedule state.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "p3-assist-linkage",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "nba.assisted_three_passer_map assumes every made three in the free play-by-play feed carries the assisting player id, and that missed threes can be linked to the intended passer. Assist ids exist on made shots, but missed-shot passer linkage is not available in box scores and may be absent in the feed.",
+    "what_would_resolve": "Parse one season of playbyplayv3 and compare made-three counts with assisted counts against the official box-score assist totals; test whether any missed-shot passer field exists."
+   },
+   {
+    "id": "p3-escalator-text",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled KXNBAESCALATOR3PT rules_primary ends 'Then the market resolves to Yes.' after a scalar payout schedule, while rules_secondary says 'This is a scalar market' with payout floor(10000 x (y/10)^3)/10000. The two sentences are inconsistent for a scalar contract; the record follows the payout formula and treats the closing sentence as template residue.",
+    "what_would_resolve": "Ask Kalshi or read a settled escalator market to confirm the Yes payout was the formula value and not $1."
    }
   ]
  },
@@ -2674,7 +3096,7 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Period contracts settle on points scored in a defined segment of the named game: quarter winner (YES if the named team outscores the opponent in that quarter), 'tie' markets (YES if neither team wins the quarter or half), spreads (named team wins the period by more than X.5), totals (combined points in the period above X.5) and team totals (one team's points in the period above X.5). Quarters 1-4 and the first half count only regulation points ('4th quarter markets do not include overtime'); the second half includes overtime ('2nd half markets are inclusive of overtime'). Postponement and void wording is not shown in the sampled period rules. Many series are TITLE_ONLY.",
+   "settlement_definition": "Period contracts settle on points scored in a defined segment of the named game: quarter winner (YES if the named team outscores the opponent in that quarter), 'tie' markets (YES if neither team wins the quarter or half), spreads (named team wins the period by more than X.5), totals (combined points in the period above X.5) and team totals (one team's points in the period above X.5). Quarters 1-4 and the first half count only regulation points ('4th quarter markets do not include overtime'); the second half includes overtime ('2nd half markets are inclusive of overtime'). Postponement and void wording is not shown in the sampled period rules. Overtime wording was seen only in the footnotes of the sampled series (1H, 2H, 1Q-3Q spreads and totals, 1H team total); the 1Q and 4Q team totals and other TITLE_ONLY series are assumed to follow the same footnotes, which appear to be printed generically across period series. Many series are TITLE_ONLY.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -2699,7 +3121,7 @@
     }
    ],
    "variants_and_edge_cases": [
-    "Overtime inclusion differs by contract: Q1-Q4 and 1H exclude OT, 2H (winner, spread, total) includes OT; a Q4 tie triggers OT which adds roughly 10-12 combined points to the 2H total but not to Q4.",
+    "Overtime inclusion differs by contract: Q1-Q4 and 1H exclude OT, 2H (winner, spread, total) includes OT; a game tied after regulation triggers a five-minute OT which adds roughly 22-26 combined points (about 11-13 per team) to the 2H total, spread and team total but not to Q4.",
     "Winner contracts have a tie leg (separate market 'tie in the 1st half/quarter'), so a model must produce a three-way probability, not a two-way split.",
     "Sampled strikes are far from central values (e.g. 1st quarter total 71.5 and 2nd quarter total 70.5 versus a typical combined quarter score in the mid-fifties, 2nd half total 135.5 versus a typical ~110), consistent with listed ladders of rungs; strike construction and which rungs are live is not verified.",
     "Spread strikes are half-points (7.5, 8.5), so no push exists; ties at zero margin go to the tie market (or NO for any team-win-by-X spread)."
@@ -2782,7 +3204,7 @@
       "coaching_scheme"
      ],
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.late_game_script",
       "nba.second_half_adjustment_effect",
       "nba.period_foul_bonus_state",
@@ -2792,7 +3214,7 @@
     {
      "id": "s6",
      "name": "Settlement partitions and cross-market identities",
-     "description": "The contracts partition the game: Q1+Q2=1H, Q3+Q4 plus OT = 2H; OT is excluded from Q4 but included in 2H, and a Q4 tie triggers an overtime that adds roughly a dozen points to the 2H total. Period winners carry a tie outcome. Consistency across period totals and the game total is an identity, not a signal, and rule text defines which points count.",
+     "description": "The contracts partition the game: Q1+Q2=1H, Q3+Q4 plus OT = 2H; OT is excluded from Q4 but included in 2H, and a game tied after regulation triggers a five-minute overtime that adds roughly 22-26 combined points (about 11-13 per team at about 2.3-2.4 points per team-minute) to the 2H total. Period winners carry a tie outcome. Consistency across period totals and the game total is an identity, not a signal, and rule text defines which points count.",
      "distribution": "Deterministic sum identities with a mixture over OT presence; OT occurrence probability about 5-7% conditional on regulation closeness.",
      "categories": [
       "settlement_contract",
@@ -2858,7 +3280,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.late_game_script",
       "nba.ot_model"
      ],
@@ -3005,6 +3427,28 @@
     ],
     "why": "Gives the period-specific volume term missing from the full-game pace input.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Q4 and second-half totals and spreads are directly shaped by garbage-time lineups and slowed late pace; the Q4 lead-entering-period probability is the relevant quantity.",
+    "role": "secondary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -3037,8 +3481,8 @@
     "reason": "An absent starter changes Q1/Q3 more than the full-game average; vintage and confirmation timing matter."
    },
    "nba.garbage": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Blowout probability matters for Q4 and for the 2H but is irrelevant for Q1; built from the spread it is a market observable and should be rebuilt from ratings."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowout probability matters for Q4 and for the 2H but is irrelevant for Q1; built from the spread it is a market observable and should be rebuilt from ratings."
    },
    "nba.late_game_script": {
     "verdict": "KEEP_SECONDARY",
@@ -3086,7 +3530,7 @@
    {
     "inputs": [
      "nba.rotation",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ],
     "form": "regime-switch",
     "mechanism": "Second-half lineups depend on the first-half margin: when the margin exceeds roughly 15 at halftime coaches shorten Q3 starter minutes and use bench units in Q4, so Q3 and Q4 are two different regimes whose scoring rates differ in both pace and efficiency.",
@@ -3098,7 +3542,7 @@
      "m.rules_text"
     ],
     "form": "other-nonlinear",
-    "mechanism": "Because 2H contracts include overtime and Q4 contracts do not, the 2H total is Q3 plus Q4 plus an overtime component with probability about 5-7% and size about 11-13 combined points, producing a right-skew in the 2H total and a wedge to Q3+Q4 prices.",
+    "mechanism": "Because 2H contracts include overtime and Q4 contracts do not, the 2H total is Q3 plus Q4 plus an overtime component with probability about 5-7% and size about 22-26 combined points (about 11-13 per team), producing a right-skew in the 2H total and a wedge to Q3+Q4 prices.",
     "how_to_test": "Decompose 2H total into regulation and OT parts in history and compare tail probabilities of the 2H total with and without the OT mixture component."
    },
    {
@@ -3127,7 +3571,7 @@
     "why": "Winner, tie and spread-at-7.5 contracts cut a discrete integer distribution at specific points; a Gaussian approximation misstates tie mass and tail probability by 1-2 percentage points."
    },
    {
-    "input_id": "nba.garbage",
+    "input_id": "nba.rating_blowout_minutes_curve",
     "shape": "threshold: Q4 regime switch when margin exceeds about 15-18 entering Q4",
     "why": "Starters are removed once the game is decided so Q4 pace and efficiency change discontinuously; effect on Q4 total and margin is small until the threshold."
    },
@@ -3220,7 +3664,7 @@
      "nba.period_possession_split",
      "nba.period_foul_bonus_state",
      "nba.late_game_script",
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.pace"
     ]
    },
@@ -3280,6 +3724,47 @@
     "feeds_inputs": [
      "m.rules_text"
     ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
+    ]
    }
   ],
   "unresolved": [
@@ -3292,7 +3777,7 @@
    {
     "id": "qh-titleonly",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Thirteen of the series (e.g. 3rd/4th quarter winners, 1Q spread, 4Q spreads and totals, 1H winner, team totals for 1Q/4Q) are TITLE_ONLY, so postponement and void wording and overtime treatment for team totals cannot be confirmed.",
+    "description": "Thirteen of the series (e.g. 3rd/4th quarter winners, 1Q spread, 4Q spreads and totals, 1H winner, team totals for 1Q/4Q) are TITLE_ONLY, so postponement and void wording and overtime treatment for team totals cannot be confirmed. The 4th-quarter overtime footnote is printed identically on first-, second- and third-quarter contracts, so for KXNBA1QTEAMTOTAL and KXNBA4QTEAMTOTAL the regulation-only treatment is inferred from a generic footnote, not read from their own rules.",
     "what_would_resolve": "Sample rules_primary and rules_secondary for each TITLE_ONLY ticker and update the contract section."
    },
    {
@@ -3306,6 +3791,19 @@
     "type": "DATA_UNAVAILABLE",
     "description": "Lineup-level possession and rating data with enough history for ridge-based unit ratings requires either pbpstats or a licensed feed; free coverage is partial and heavily rate limited.",
     "what_would_resolve": "Evaluate coverage of pbpstats and nba_api lineup endpoints over a sample of games."
+   },
+   {
+    "id": "qh-live-state",
+    "type": "OTHER",
+    "description": "Q2, Q3, Q4 and 2H markets exist for the same game as Q1, and the sampled rules give no close or trading-stop time. If they trade after tipoff, the needed inputs include in-game state (score at period start, who is on court, foul and bonus state, time remaining), which no input here covers; if they close at tipoff, pregame information suffices.",
+    "what_would_resolve": "Read the market close_time and trading hours for later-period markets on a live event and check whether quotes move after the first tip; then add a live-state input set if they do.",
+    "category": "game_context_script"
+   },
+   {
+    "id": "qh-start-timing",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "nba.starters_pit is KEEP_PRIMARY for Q1 and Q3 because starters are confirmed about 30 minutes before tipoff, but the sampled markets for Nov 8 games already show status active and no close time is sampled, so it is unknown whether the lineup confirmation arrives before the market stops trading.",
+    "what_would_resolve": "Compare the starter-confirmation timestamp with each period market's close time over a sample of games and record the lead time."
    }
   ]
  },
@@ -3313,25 +3811,48 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "No Kalshi series is filed under this archetype in the series ledger, so nothing can be read. By the catalog blueprint the targets are (a) race-to-N: the team (or possibly player) that first reaches N points in the game, and (b) game points leader: the player scoring the most points in the game. Overtime inclusion, the handling of co-leaders (equal points), DNP and void treatment, whether the race is team or player based, and the source of truth are all unverified; the closest live Kalshi series (KXNBARACE, KXNBAPTSLEADER) are classified under player_points and are TITLE_ONLY.",
+   "settlement_definition": "No Kalshi series is filed under this archetype in the series ledger, so nothing can be read. By the catalog blueprint the targets are (a) race-to-N: the team (or possibly player) that first reaches N points in the game, and (b) game points leader: the player scoring the most points in the game. Overtime inclusion, the handling of co-leaders (equal points), DNP and void treatment, whether the race is team or player based, and the source of truth are all unverified; the closest live Kalshi series (KXNBARACE, KXNBAPTSLEADER) are classified under player_points and are TITLE_ONLY. All claims in this record are conditional on the scope of the contract being a single game; no live series is confirmed to have that scope.",
    "rules_verification": "NO_LIVE_SERIES",
    "rules_evidence": [],
    "variants_and_edge_cases": [
-    "Co-leaders: if two players score the same maximum, the contract may split, void or resolve to the first scorer; unknown without rules text, and with 20 players the probability of a tied maximum is roughly 5-8%.",
+    "Co-leaders: if two players score the same maximum, the contract may split, void or resolve to the first scorer; unknown without rules text, and with 20 players the probability of a tied maximum is an unverified estimate of roughly 5-8%, to be computed from box scores.",
     "Overtime: whether overtime points count toward the leader changes the result in about 6% of games and shifts probability toward the stars with highest minutes.",
     "Race-to-N could be team-based or player-based (first player to N points); the ledger title 'NBA Race to Points' is ambiguous and the mechanisms differ (alternating-possession team process vs individual accumulation).",
-    "A race to N small enough to be reached in the first stint (5-15) depends on starters and first possession, while N of 30 or more reaches into the first-half rotation and behaves more like a half total."
+    "A race to N small enough to be reached in the first stint (5-15) depends on starters and first possession, while N of 30 or more reaches into the first-half rotation and behaves more like a half total.",
+    "Scope of every input below is conditional: they describe a SINGLE-GAME race-to-N or points leader. If KXNBARACE or KXNBAPTSLEADER prove to span several games or a season, nba.first_passage_race_table and nba.leader_share_by_usage_rank do not apply and a per-game threshold-hazard mechanism across all players is needed."
    ],
-   "settlement_data_source": "Not verifiable: no rules text exists for this archetype. Official play-by-play (for race timing) and box score (for leader points) would be the natural sources."
+   "settlement_data_source": "Not verifiable: no rules text exists for this archetype. Official play-by-play (for race timing) and box score (for leader points) would be the natural sources.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNBARACE",
+     "issue": "Race-to-N contract filed under player_points; TITLE_ONLY, so team versus player, N, game versus season scope and tie rule are all unknown. Until remapped this archetype has no contract evidence.",
+     "belongs_in": "race_to_and_points_leader"
+    },
+    {
+     "ticker": "KXNBAPTSLEADER",
+     "issue": "Points-leader (argmax) contract filed under player_points; TITLE_ONLY, scope (single game or longer) unknown.",
+     "belongs_in": "race_to_and_points_leader"
+    },
+    {
+     "ticker": "KXNBASERIESPTSLEADER",
+     "issue": "Series-level points leader (argmax over several games) filed under player_points; a multi-game accumulation, not a single-game argmax.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: series_stat_leader"
+    },
+    {
+     "ticker": "KXNBAFIRST50PTS",
+     "issue": "'First NBA Player to Score 50 Points' is a season-long first-passage event across all players and games, not a single-game race; the single-game first_passage_race_table does not apply.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: season_long_player_first_to_threshold"
+    }
+   ]
   },
   "mechanism": {
-   "summary": "Race-to-N is a first-passage problem on two alternating-possession scoring processes with lumpy 0-3 point outcomes, so the winner is determined by who starts with the ball, the starters' first-stint scoring rates and the early-game noise, with the first-possession edge worth roughly half a possession and diminishing relative to noise as N grows. Points leader is the argmax over around twenty players' final points, driven by minutes (including overtime and blowout cuts), usage allocation within the unit, per-shot efficiency and a heavy-tailed scoring distribution, with negative dependence between teammates and positive dependence across teams through pace. Both contracts are winner-take-all functionals of the underlying scoring processes, so the tails and dependence matter far more than means, and settlement details (ties, overtime) change the answer materially.",
+   "summary": "Race-to-N is a first-passage problem on two alternating-possession scoring processes with lumpy 0-3 point outcomes, so the winner is determined by who starts with the ball, the starters' first-stint scoring rates and the early-game noise, with the first-possession edge hypothesised at roughly half a possession (unverified) and diminishing relative to noise as N grows. Points leader is the argmax over around twenty players' final points, driven by minutes (including overtime and blowout cuts), usage allocation within the unit, per-shot efficiency and a heavy-tailed scoring distribution, with negative dependence between teammates and positive dependence across teams through pace. Both contracts are winner-take-all functionals of the underlying scoring processes, so the tails and dependence matter far more than means, and settlement details (ties, overtime) change the answer materially.",
    "stages": [
     {
      "id": "s1",
      "name": "Opening conditions: tip, starters and first possession",
-     "description": "The race starts with the opening tip determining first possession and with the identity of the starters, confirmed only shortly before tip. The first possession is worth about half a possession in expected points, which is a large share of the total edge for small N and a minor one for N of 25 or more. Starter changes shift early scoring rates immediately.",
-     "distribution": "Binary tip outcome near 50/50 with weak team dependence; starters a discrete state known late; early scoring edge scales as the inverse of sqrt(N).",
+     "description": "The race starts with the opening tip determining first possession and with the identity of the starters, confirmed only shortly before tip. The first possession is hypothesised to be worth about half a possession (unverified, to be estimated from play-by-play) in expected points, which is a large share of the total edge for small N and a minor one for N of 25 or more. Starter changes shift early scoring rates immediately.",
+     "distribution": "Binary tip outcome near 50/50 with weak team dependence; starters a discrete state known late; early scoring edge is assumed to scale as the inverse of sqrt(N) (to be tested).",
      "categories": [
       "role_personnel",
       "availability_news",
@@ -3374,7 +3895,7 @@
      ],
      "input_ids": [
       "nba.minutes",
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.ot_model",
       "nba.injuries_pit"
      ]
@@ -3459,7 +3980,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.ot_model",
       "nba.tip_first_shot"
      ],
@@ -3514,7 +4035,7 @@
     "label": "Empirical race-to-N first-passage table by N, opening possession and early-game rating gap",
     "category": "distribution",
     "mechanism": "First-to-N is a first-passage problem on two alternating-possession scoring processes with lumpy increments; the answer depends on N, who has the ball first and the early-game scoring rate gap.",
-    "rationale": "Treating the race as two independent Poisson clocks mispredicts because possessions alternate and scores come in 1-3 point lumps; the first-possession advantage is about half a possession and its relative value shrinks with N, so a table by N is needed.",
+    "rationale": "Treating the race as two independent Poisson clocks mispredicts because possessions alternate and scores come in 1-3 point lumps; the first-possession advantage is hypothesised to be about half a possession (unverified) and its relative value shrinks with N, so a table by N is needed. Scope: single-game race-to-N only; it does not describe a season-long first-to-threshold contract.",
     "measurement": "From 5 seasons of play-by-play compute for each game and each N in {5,10,15,20,25,30} which team reached N first, whether that team had the opening possession and the starters' first-stint net rating gap; fit logistic regressions per N with covariates (opening possession, rating gap, home) and ridge shrinkage; output P(win race) with standard errors. Rating gap uses the first-stint rating below, not full-game rating.",
     "pregame_knowable": "yes",
     "free_sources": [
@@ -3582,6 +4103,28 @@
     ],
     "why": "Required for the joint distribution that defines the maximum.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Series-style and game points leaders depend on minutes left to starters; a blowout caps the leading scorer total. Applies only if a live leader contract is confirmed.",
+    "role": "secondary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -3618,8 +4161,8 @@
     "reason": "The leader is typically the star with the most minutes; the tail of minutes (OT, blowout cuts) separates leaders and is a mixture variable."
    },
    "nba.garbage": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Blowouts reduce the favorite's stars and raise the underdog's relative chances; the existing note is right but built from the spread it uses a market observable instead of ratings."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowouts reduce the favorite's stars and raise the underdog's relative chances; the existing note is right but built from the spread it uses a market observable instead of ratings."
    },
    "nba.ot_model": {
     "verdict": "KEEP_CONTEXT",
@@ -3662,7 +4205,7 @@
      "nba.first_passage_race_table"
     ],
     "form": "diminishing-returns",
-    "mechanism": "First possession is worth about half a possession in points; in a race to 5-10 it is a large share of the total edge but for N of 25 or above it is swamped by rating gap and noise, so the effect shrinks like 1/sqrt(N).",
+    "mechanism": "First possession is hypothesised to be worth about half a possession in points (unverified); in a race to 5-10 it is a large share of the total edge but for N of 25 or above it is swamped by rating gap and noise, so the effect shrinks like 1/sqrt(N).",
     "how_to_test": "Estimate the opening-possession coefficient separately for each N in the logistic race model and check the decline."
    },
    {
@@ -3679,7 +4222,7 @@
     "inputs": [
      "nba.minutes",
      "nba.ot_model",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ],
     "form": "regime-switch",
     "mechanism": "Overtime favors the highest-minutes stars while blowouts remove the favorite's stars; leader probability therefore switches between a star-dominated regime in close games and a bench-diluted regime in lopsided ones.",
@@ -3790,7 +4333,7 @@
      "nba.minutes",
      "nba.usage",
      "nba.teammate_absence_shift",
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.ot_model"
     ]
    },
@@ -3827,6 +4370,47 @@
      "nba.off_rtg",
      "nba.def_rtg"
     ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
+    ]
    }
   ],
   "unresolved": [
@@ -3839,7 +4423,7 @@
    {
     "id": "rl-tie-rule",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "For points leader, a tied maximum (about 5-8% of games) could split, void or resolve by first scorer; the contract choice changes fair probabilities for near-equal candidates.",
+    "description": "For points leader, a tied maximum (unverified estimate of 5-8% of games, to be computed) could split, void or resolve by first scorer; the contract choice changes fair probabilities for near-equal candidates.",
     "what_would_resolve": "Read the tie clause of the leader contract and compute historical tie frequency."
    },
    {
@@ -3855,6 +4439,12 @@
     "description": "Whether the officiating crew's early foul calls alter the first-to-N result or the star's minutes is unmeasured and no input represents it.",
     "what_would_resolve": "Test whether crew foul rate predicts early free-throw runs in the first stint.",
     "category": "officiating_rules"
+   },
+   {
+    "id": "rl-race-scope",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The only race-style titles in the ledger (KXNBARACE, KXNBAFIRST50PTS) may be multi-game or season-long, in which case the contract is a per-game threshold hazard across all players over a season and the single-game first-passage table does not apply. No rules text is sampled for either, so the scope is unknown.",
+    "what_would_resolve": "Sample rules_primary and rules_secondary for KXNBARACE and KXNBAFIRST50PTS and classify each as single-game race, series race or season-long first-to-N before choosing inputs."
    }
   ]
  },
@@ -5803,7 +6393,7 @@
      ],
      "input_ids": [
       "nba.minutes",
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.foul_rates",
       "nba.injuries_pit"
      ]
@@ -5923,7 +6513,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.late_game_script"
      ],
      "note": "Blowout minutes changes and garbage-time pressing."
@@ -6048,6 +6638,28 @@
     ],
     "why": "Provides the dependence parameter needed for KXNBASTOCK that the independent components cannot.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Steals and blocks are low-count events that scale with minutes, so starter minutes lost in a blowout move the mean and the zero mass directly.",
+    "role": "secondary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -6088,8 +6700,8 @@
     "reason": "Arena-level credit for steals and blocks has documented home-side tendencies; effect is modest but adds dispersion at 0.5-1.5 strikes; the size estimated by arena needs many seasons."
    },
    "nba.garbage": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Minutes loss in blowouts matters; but steals can rise in garbage time when bench players press, so sign is role dependent; rebuild from ratings not the spread."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Minutes loss in blowouts matters; but steals can rise in garbage time when bench players press, so sign is role dependent; rebuild from ratings not the spread."
    },
    "nba.foul_rates": {
     "verdict": "KEEP_CONTEXT",
@@ -6327,7 +6939,7 @@
      "nba.scorer_bias",
      "nba.stat_corrections",
      "nba.pace",
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.foul_rates"
     ]
    },
@@ -6363,6 +6975,47 @@
     "feeds_inputs": [
      "nba.injuries_pit",
      "m.rules_text"
+    ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
     ]
    }
   ],
@@ -7048,7 +7701,7 @@
       "game_context_script"
      ],
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.ot_model",
       "nba.team_points_margin_curve"
      ]
@@ -7118,7 +7771,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.team_points_margin_curve",
       "nba.ot_model"
      ],
@@ -7144,7 +7797,7 @@
      "status": "COVERED",
      "input_ids": [
       "nba.team_points_variance_by_style",
-      "nba.garbage"
+      "nba.rating_blowout_minutes_curve"
      ],
      "note": "Style-dependent variance and skew."
     },
@@ -7241,6 +7894,28 @@
     ],
     "why": "Replaces the benchmark-derived implied team total with a market-free curve.",
     "role": "primary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Team scoring above a high strike needs full-strength lineups late, and the winning team sits starters while the losing team may not; the curve gives both sides without the spread.",
+    "role": "primary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -7285,8 +7960,8 @@
     "reason": "Free-throw rate and crew foul tendency change points from the line (about 3-4 points per game across crews); must be combined with game script because trailing teams foul more."
    },
    "nba.garbage": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Garbage time lowers the favorite's points while the underdog scores against bench units and via late fouls; sign differs by team, so this is the key skew input; rebuilt from ratings, not the spread."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Garbage time lowers the favorite's points while the underdog scores against bench units and via late fouls; sign differs by team, so this is the key skew input; rebuilt from ratings, not the spread."
    },
    "nba.ot_model": {
     "verdict": "KEEP_CONTEXT",
@@ -7338,7 +8013,7 @@
    },
    {
     "inputs": [
-     "nba.garbage",
+     "nba.rating_blowout_minutes_curve",
      "nba.team_points_margin_curve"
     ],
     "form": "piecewise",
@@ -7358,7 +8033,7 @@
    {
     "inputs": [
      "nba.fouls_ft",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ],
     "form": "conditional",
     "mechanism": "Trailing teams foul late and the leading team shoots the free throws, so crew foul tendency raises the favorite's points more in close games and the underdog's points via fouls drawn in garbage time; effect depends on the margin path.",
@@ -7376,7 +8051,7 @@
   ],
   "nonlinearities": [
    {
-    "input_id": "nba.garbage",
+    "input_id": "nba.rating_blowout_minutes_curve",
     "shape": "threshold with asymmetric effect on favorite and underdog",
     "why": "Beyond about a 15-point margin late, starters sit and the favorite's points fall, while the underdog's points rise slightly; the relation is not monotone in blowout probability and differs by side."
    },
@@ -7478,7 +8153,7 @@
      "nba.lineup_adj_rating",
      "nba.injuries_pit",
      "nba.usage",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ]
    },
    {
@@ -7538,6 +8213,47 @@
     "feeds_inputs": [
      "m.rules_text",
      "m.settlement_truth"
+    ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
     ]
    }
   ],
@@ -7669,7 +8385,7 @@
      ],
      "input_ids": [
       "nba.stat_dist",
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.single_game_ceiling_tail"
      ]
     },
@@ -7761,7 +8477,7 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.garbage",
+      "nba.rating_blowout_minutes_curve",
       "nba.cup_finals_pair_probability"
      ],
      "note": "Blowout and overtime context for the maximum; bracket progression for the matchup."
@@ -7925,6 +8641,28 @@
     ],
     "why": "Gives the product structure and timing rule for KXNBAMATCHUP.",
     "role": "secondary"
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+    "category": "distribution",
+    "mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+    "rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+    "measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+     "cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+     "Basketball-Reference game logs and play-by-play (free, polite scraping)"
+    ],
+    "registry_ids": [],
+    "why": "Single-game ceiling and season averages for scorers depend on the minutes lost in lopsided games; the curve gives that loss without the price.",
+    "role": "secondary",
+    "raw_data": [
+     "Team game log: date, home/away, final margin, pace, points for/against (nba_api leaguegamelog)",
+     "Play-by-play substitution events with score margin and game clock (playbyplayv3 or cdn.nba.com liveData)",
+     "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
+     "Coach by team-season table"
+    ]
    }
   },
   "input_audit": {
@@ -7953,8 +8691,8 @@
     "reason": "Pace of the opponent and of the team scales per-game attempts and thus both the average and the single-game ceiling; second-order."
    },
    "nba.garbage": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Blowouts cut stars' minutes and so reduce 54+ chances while close games and overtime raise them; matter for the single-game series only."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowouts cut stars' minutes and so reduce 54+ chances while close games and overtime raise them; matter for the single-game series only."
    },
    "nba.opp_def_pos": {
     "verdict": "WEAK",
@@ -7992,7 +8730,7 @@
     "inputs": [
      "nba.minutes",
      "nba.single_game_ceiling_tail",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ],
     "form": "threshold",
     "mechanism": "A 54-point night needs about 38 or more minutes, which arises mainly in close games and overtime; the probability of a ceiling game therefore jumps for games with high closeness probability and is negligible when blowout probability is high, a threshold-like dependence on game closeness.",
@@ -8129,7 +8867,7 @@
      "nba.team_win_streak_hazard",
      "nba.undefeated_start_survival",
      "nba.pace",
-     "nba.garbage"
+     "nba.rating_blowout_minutes_curve"
     ]
    },
    {
@@ -8195,6 +8933,47 @@
      "nba.injuries_pit",
      "nba.rotation",
      "m.rules_text"
+    ]
+   },
+   {
+    "dataset": "Team game results with period scores plus play-by-play substitution stints for the ratings-based blowout and minutes-versus-margin curve",
+    "grain": "team-game for ratings and margin residuals; stint (substitution event with score margin and clock) for minutes curves",
+    "fields": [
+     "game_id",
+     "game_date",
+     "home_team",
+     "away_team",
+     "final_margin",
+     "period_scores",
+     "pace",
+     "off_rtg",
+     "def_rtg",
+     "substitution_events",
+     "score_margin_at_event",
+     "player_ids_on_court",
+     "coach_id"
+    ],
+    "timestamp_requirement": "As-of tipoff of the target game: ratings use only games completed before tipoff; confirmed inactives from the pregame report; no closing line used.",
+    "history_needed": "5 seasons of team games for the margin residual distribution; 3 seasons of stints per team for coach-specific curves.",
+    "candidate_sources": [
+     {
+      "name": "nba_api leaguegamelog and playbyplayv3",
+      "access": "free_scrape",
+      "note": "Endpoint stability for 2026-27 not verified by this reviewer; fall back to cdn.nba.com liveData JSON."
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Rate-limited scraping; substitution data present but must be parsed."
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Stint and lineup data; access terms not verified."
+     }
+    ],
+    "feeds_inputs": [
+     "nba.rating_blowout_minutes_curve"
     ]
    }
   ],

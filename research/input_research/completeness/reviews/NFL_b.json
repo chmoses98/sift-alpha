@@ -3,7 +3,7 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Per-game ladder (KXNFLPASSYDSPRECISE, KXNFLPASSYDSPROT) settles YES when the named quarterback's official passing yards in the named game are at or above the integer rung (floor_strike is the half-yard below, e.g. 98.5 for '99+'); H2H settles YES if player A has strictly more passing yards than player B, 50/50 on equal yards; season ladders settle on regular-season totals; weekly-most settles 1/N on ties. A quarterback who is active but never takes a snap (precise) settles at fair price before game start, once he takes one snap (even nullified by penalty) it settles on recorded yards. Overtime inclusion is not stated in any sampled passing-yards text.",
+   "settlement_definition": "This record models only the PER-GAME passing-yards contracts: KXNFLPASSYDSPRECISE and KXNFLPASSYDSPROT settle YES when the named quarterback's official passing yards in the named game are at or above the integer rung (floor_strike is the half-yard below, e.g. 98.5 for '99+'); KXNFLPASSYDSH2H settles YES if player A has strictly more passing yards than player B, 50/50 on equal yards, fair price if either does not enter. KXNFLSEASONPASSYDS, KXNFLCAREERPASSYDS and KXNFLWEEKMOSTPASSYDS (weekly max over all QBs, non-participant No, 1/N ties) are misfiled here (see series_mapping_issues) and are NOT covered by stages s1-s7. For the precise ladder a QB who is active but never takes a snap settles at fair price before kickoff; once he takes one snap (even nullified by penalty) it settles on recorded yards; treatment of a QB who is inactive is not stated in the sampled text. Overtime inclusion is not stated in any sampled passing-yards text.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -32,9 +32,28 @@
     "Sampled passing-yards texts never say whether overtime yards count or which statistics provider is the source of truth; the existing draft's 'regulation-and-overtime' is an inference, recorded as CONTRACT_AMBIGUOUS.",
     "Season ladder (KXNFLSEASONPASSYDS, 3000+ for the 2026-27 regular season) has no DNP or mid-season-injury clause in the sample: a QB who misses the year simply fails the rung, which makes it a games-played problem rather than a per-game one.",
     "NFL official passing yards are gross yards (sack yardage is deducted only from team net passing), plays nullified by penalty are not credited, and a kneel-down is a rush, so dropbacks that end in sacks or scrambles add zero to this contract.",
-    "Weekly-most is a max over all QBs in the week and gives Nos to a non-participant; the H2H and ladder variants instead refund, so identical injury news changes expected value differently across variants."
+    "Weekly-most is a max over all QBs in the week and gives Nos to a non-participant; the H2H and ladder variants instead refund, so identical injury news changes expected value differently across variants.",
+    "Three of the seven live tickers (season, career, weekly-most) are not per-game contracts; claims in this record about DNP refunds, rung nesting and per-game volume apply only to KXNFLPASSYDSPRECISE, KXNFLPASSYDSPROT and KXNFLPASSYDSH2H.",
+    "Inactive-QB treatment: the PRECISE secondary text covers only 'active but never takes a snap'; an inactive or scratched QB is not addressed in the sampled wording and is carried as CONTRACT_AMBIGUOUS u5."
    ],
-   "settlement_data_source": "Not stated in the sampled rules text for passing yards (only the 'Governing League' official statistics are implied); Sleeper is named only in the fantasy series. Treat official NFL game-book/GSIS yardage as the assumed source and capture the Kalshi expiration value to check stat-correction drift."
+   "settlement_data_source": "Not stated in the sampled rules text for passing yards (only the 'Governing League' official statistics are implied); Sleeper is named only in the fantasy series. Treat official NFL game-book/GSIS yardage as the assumed source and capture the Kalshi expiration value to check stat-correction drift.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLSEASONPASSYDS",
+     "issue": "Season-total ladder (regular-season 3000+); per-game stages s1-s6 do not model games played, banked yards or role-regime change.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLCAREERPASSYDS",
+     "issue": "Career-total ladder; multi-season horizon with age and retirement, not a single-game compound process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLWEEKMOSTPASSYDS",
+     "issue": "League-wide weekly max over all quarterbacks; non-participant resolves No, ties 1/N; needs a field projection, not one QB.",
+     "belongs_in": "season_player_stats_and_leaders"
+    }
+   ]
   },
   "mechanism": {
    "summary": "A quarterback's passing yards in one game is a compound sum: the number of completed passes times yards per completion, where completions are a thinned binomial of attempts, attempts are dropbacks minus sacks, scrambles and spikes, and dropbacks are team plays times a script-dependent pass rate. Each layer has its own noise. Plays are set by both offenses' tempo and clock behaviour; pass rate swings with the score path (trailing offenses throw, leaders run); a pass's yield depends on the QB's accuracy, receiver separation, depth of target and the defence's pressure and shell; and a small number of explosive completions create a heavy right tail around any rung. Before the number of attempts is even defined, the quarterback must start, stay on the field and not be pulled in a blowout, which is a discrete scenario switch with a left-hand mass at low yardage and, for protected contracts, a refund.",
@@ -69,7 +88,9 @@
       "nfl.pace",
       "nfl.proe",
       "nfl.coaching",
-      "nfl.two_minute_tempo"
+      "nfl.two_minute_tempo",
+      "nfl.run_defense",
+      "nfl.rush_efficiency"
      ]
     },
     {
@@ -83,8 +104,10 @@
      ],
      "input_ids": [
       "nfl.script",
-      "nfl.garbage_time",
-      "nfl.proe"
+      "nfl.proe",
+      "nfl.own_rating_game_state_prior",
+      "nfl.off_epa",
+      "nfl.def_epa"
      ]
     },
     {
@@ -99,7 +122,6 @@
      ],
      "input_ids": [
       "nfl.pressure_qb",
-      "nfl.pass_rush",
       "nfl.ol",
       "nfl.qb_dropback_to_attempt_leakage"
      ]
@@ -140,7 +162,8 @@
       "nfl.weather_pit",
       "nfl.venue",
       "nfl.player_stat_variance",
-      "nfl.long_completion_tail_rate"
+      "nfl.long_completion_tail_rate",
+      "nfl.corr"
      ]
     },
     {
@@ -173,7 +196,6 @@
      "input_ids": [
       "nfl.def_epa",
       "nfl.coverage_scheme",
-      "nfl.pass_rush",
       "nfl.pressure_qb",
       "nfl.def_personnel"
      ],
@@ -226,9 +248,11 @@
      "input_ids": [
       "nfl.pace",
       "nfl.proe",
-      "nfl.two_minute_tempo"
+      "nfl.two_minute_tempo",
+      "nfl.run_defense",
+      "nfl.rush_efficiency"
      ],
-     "note": "Plays times pass rate; own and opponent tempo."
+     "note": "Plays times pass rate; own and opponent tempo. Run-game term added: opponent run defence and own rush efficiency set how many neutral plays become dropbacks."
     },
     "efficiency_conversion": {
      "status": "COVERED",
@@ -242,7 +266,8 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.player_stat_variance",
-      "nfl.long_completion_tail_rate"
+      "nfl.long_completion_tail_rate",
+      "nfl.corr"
      ],
      "note": "Compound distribution with explosive-play tail modelled explicitly."
     },
@@ -345,6 +370,26 @@
     ],
     "why": "Directly shapes the probability of high rungs and the correlation between a QB's yards and his top receiver's yards.",
     "role": "secondary"
+   },
+   "nfl.own_rating_game_state_prior": {
+    "label": "Own-rating margin and total prior for the game-state distribution (market-free)",
+    "category": "game_state",
+    "mechanism": "Builds the distribution of the expected score path from the team's own offence and defence ratings, home edge and starter quarterback status, so nfl.script is fed without any sportsbook spread or total.",
+    "rationale": "nfl.script's catalog measurement integrates over a margin distribution centred on the point spread; that makes the volume driver an echo of the market. The margin and total centre must come from own opponent-adjusted EPA ratings so it can be compared against Kalshi prices rather than copied from them.",
+    "measurement": "Expected margin = (off_epa_A - def_epa_B) - (off_epa_B - def_epa_A) per play x expected plays per team (nfl.pace), plus a home-field constant fitted on 2015-2025 games (about 1.5 points, refit yearly) and a starter-QB adjustment from nfl.qb_efficiency versus the replacement backup; EPA inputs use a 10-game exponential half-life (about 6 games) shrunk to league mean with k=6 games, opponent-adjusted by ridge. Expected total = sum of the two team expected plays x points per play. Margin sd = 13.0 points, total sd = 9.5 points, re-estimated from own residuals. As-of: last game before kickoff, QB and injury status at the latest inactive list. Contains no spread_line, total_line or moneyline.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play (epa, posteam, defteam, home_team)",
+     "nflverse schedules (home/away, roof)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, posteam, defteam, epa, play_type, qb_dropback",
+     "schedules: game_id, home_team, gameday",
+     "inactives: starting QB"
+    ],
+    "why": "Supplies the margin-state distribution that drives dropback inflation and the benching line for quarterback yards without using sportsbook lines.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -358,7 +403,7 @@
    },
    "nfl.script": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Score path is the main source of volume variance; useful only if expressed as P(margin state) feeding attempts, not as a spread term."
+    "reason": "Score path is the main source of volume variance; its pass-rate-by-lead response surface is kept, but the margin distribution that feeds it must be nfl.own_rating_game_state_prior (own ratings), never the sportsbook spread or total that the catalog measurement text mentions."
    },
    "nfl.qb_efficiency": {
     "verdict": "KEEP_PRIMARY",
@@ -406,7 +451,7 @@
    },
    "nfl.garbage_time": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Describes tail volume when trailing big; overlaps script, and the benching of starters in lopsided games is the opposite effect, which the new pull-threshold input handles."
+    "reason": "Blowout mass is already inside the script lattice and the benching threshold; kept as a secondary diagnostic only and removed from the staged input list to avoid double counting."
    },
    "nfl.two_minute_tempo": {
     "verdict": "KEEP_CONTEXT",
@@ -500,21 +545,32 @@
     "inputs": [
      "nfl.proe",
      "nfl.script",
-     "nfl.pace"
+     "nfl.own_rating_game_state_prior"
     ],
-    "form": "joint-distribution",
-    "mechanism": "Dropbacks equal plays times pass rate, and plays and pass rate are both functions of the score path, so the variance of attempts is larger than product-of-marginals suggests: trailing paths raise pass rate and also the number of plays via clock stoppages, while leading paths lower both together. Treating volume terms as independent understates the right tail of yards.",
-    "how_to_test": "Simulate score paths and compare the dispersion of simulated dropbacks to realised dispersion by spread bucket; check whether independent draws under-dispersed by more than 10 percent."
+    "form": "conditional",
+    "mechanism": "A pass-heavy offence (high neutral PROE) already throws near its ceiling when level, so a trailing score state adds fewer extra dropbacks than for a run-balanced offence; the pass-rate response to a deficit is steeper for low-PROE teams, and the heavy-PROE team's attempts are bounded by plays, not by script.",
+    "how_to_test": "Fit dropback share by lead bin separately for terciles of neutral PROE and test whether the deficit slope differs; compare out-of-sample rung calibration of an additive versus a PROE-by-deficit model."
    },
    {
     "inputs": [
      "nfl.def_epa",
-     "nfl.pass_rush",
+     "nfl.pressure_qb",
      "nfl.qb_efficiency"
     ],
     "form": "diminishing-returns",
-    "mechanism": "The extra yield from a great quarterback against a weak defence saturates because play-calling turns conservative with a lead and high efficiency yields early first downs and fewer snaps; a very good matchup does not translate linearly into more yards.",
-    "how_to_test": "Bin predicted efficiency edge into deciles and check realised yardage increments flatten above the 8th decile after conditioning on attempts."
+    "mechanism": "A high-efficiency quarterback gains less yards per attempt over a replacement-level one when the defence generates heavy pressure, because pressure forces early throws and sacks that efficiency priors measured against average defences do not capture; the efficiency premium saturates in the high-pressure regime.",
+    "how_to_test": "Regress yards per dropback on qb_efficiency x opponent pressure-rate tercile using opponent-adjusted data; a negative interaction coefficient confirms saturation."
+   },
+   {
+    "inputs": [
+     "nfl.corr",
+     "nfl.pace",
+     "nfl.weather_pit",
+     "nfl.script"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "In the head-to-head contract both quarterbacks share tempo and wind (positive covariance in passing yards) while the score path is zero-sum (the trailing side throws more), so the correlation between the two totals is positive in shootouts and negative in lopsided games; the H2H probability depends on the covariance, not on two independent means.",
+    "how_to_test": "From historical games compute the correlation of the two starters' passing yards in bins of pregame own-rating margin and of wind; compare H2H win-rate calibration for an independent versus a covariance-aware simulation."
    }
   ],
   "nonlinearities": [
@@ -566,8 +622,8 @@
      "pass_location",
      "no_huddle",
      "is_play_action",
-     "was_pressure",
-     "time_to_throw"
+     "was_pressure (participation table; season availability unverified, see u6)",
+     "time_to_throw (participation/NGS; availability unverified, see u6)"
     ],
     "timestamp_requirement": "Frozen at the end of the previous game; features for a game use only plays with game_date earlier than that game's date; no same-week revisions.",
     "history_needed": "8 seasons for rate priors, 3 for coach and coordinator regimes.",
@@ -607,16 +663,19 @@
      "nfl.def_epa",
      "nfl.coverage_scheme",
      "nfl.pressure_qb",
-     "nfl.pass_rush",
      "nfl.air_yards_adot",
-     "nfl.garbage_time",
      "nfl.two_minute_tempo",
      "nfl.coaching",
      "nfl.player_stat_variance",
      "nfl.qb_dropback_to_attempt_leakage",
      "nfl.long_completion_tail_rate",
      "nfl.qb_blowout_pull_threshold",
-     "nfl.def_personnel"
+     "nfl.def_personnel",
+     "nfl.own_rating_game_state_prior",
+     "nfl.off_epa",
+     "nfl.run_defense",
+     "nfl.rush_efficiency",
+     "nfl.corr"
     ]
    },
    {
@@ -679,8 +738,7 @@
      "wind speed and direction",
      "precipitation probability",
      "forecast issue time",
-     "spread_line",
-     "total_line"
+     "own pregame margin and total prior (computed from own EPA ratings; no sportsbook line stored here)"
     ],
     "timestamp_requirement": "Forecast vintages at 48, 24 and 3 hours before kickoff, never the observed weather; spread and total are used only to seed the script distribution, not as inputs to the outcome model.",
     "history_needed": "3 seasons of archived forecast vintages (own capture) and observed weather for calibration.",
@@ -704,7 +762,7 @@
     "feeds_inputs": [
      "nfl.weather_pit",
      "nfl.venue",
-     "nfl.script"
+     "nfl.own_rating_game_state_prior"
     ]
    },
    {
@@ -752,7 +810,7 @@
    {
     "id": "u2",
     "type": "DATA_UNAVAILABLE",
-    "description": "Pressure rate, time to throw and coverage shell are only available from paid charting vendors; free play-by-play does not contain them reliably, so the pressure and leakage matchup cannot be built from open data alone.",
+    "description": "Pressure rate, time to throw and coverage shell: whether open nflverse tables (participation/NGS) carry them for enough seasons is unverified (see u6); until verified assume paid charting (PFF, SIS) is needed, so the pressure and leakage matchup may not be buildable from open data alone.",
     "what_would_resolve": "License one charting vendor (PFF or SIS) or build approximations from sack, hit and scramble flags and test how much signal is lost.",
     "category": "opponent_matchup"
    },
@@ -769,6 +827,19 @@
     "description": "Situational and schedule factors (Thursday short weeks, travel across time zones, clinched-seed rest) affect quarterbacks' yardage only weakly in the literature, and the size of the effect on passing yards specifically is not established here.",
     "what_would_resolve": "Attach nfl.rest_travel and nfl.divisional_familiarity to this archetype and test whether they add explanatory power to attempts and yards after volume and script are in the model.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "u5",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled PRECISE text refunds only a quarterback who is 'active but never takes a snap'; it does not say what happens if the named QB is inactive or scratched before kickoff, and the H2H text separately says players who do not enter the game refund. The record therefore cannot state one DNP rule for the ladder.",
+    "what_would_resolve": "Pull the full Kalshi rules PDF or an expired market's settlement of a scratched QB to see whether an inactive QB refunds or resolves No."
+   },
+   {
+    "id": "u6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The play-level dataset lists was_pressure and time_to_throw as fields, while u2 says free play-by-play lacks them reliably. Which nflverse table (pbp versus pbp_participation versus NGS) carries them, and from which season, was not checked because the nflverse data dictionary could not be reached.",
+    "what_would_resolve": "Open the nflverse pbp and participation data dictionaries and count non-null was_pressure and time_to_throw per season; otherwise treat these fields as paid-vendor only.",
+    "category": "opponent_matchup"
    }
   ]
  },
@@ -776,7 +847,7 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Per-game 'N+' receiving-yards and receptions rungs (KXNFLRECYDS, KXNFLRECYDSPROT, KXNFLREC) resolve YES when the named player's official total reaches the integer rung; a player who is active but appears in no live play is settled at fair price before kickoff, and one live play (even nullified by a penalty) locks settlement to recorded stats. KXNFLLONGREC settles on the player's longest single reception over the strike. Escalator and ladder series are scalar: the YES payout is a function of the final count or yards, not a binary event. H2H pays 50/50 on equal yards and voids to fair price if either player does not enter. Overtime is not mentioned in the sampled receiving texts.",
+   "settlement_definition": "Per-game 'N+' receiving-yards and receptions rungs (KXNFLRECYDS, KXNFLRECYDSPROT, KXNFLREC) resolve YES when the named player's official total reaches the integer rung; a player who is active but appears in no live play is settled at fair price before kickoff, and one live play (even nullified by a penalty) locks settlement to recorded stats. KXNFLLONGREC settles on the player's longest single reception over the strike. Escalator and ladder series are scalar: the YES payout is a function of the final count or yards, not a binary event. H2H pays 50/50 on equal yards and voids to fair price if either player does not enter. Overtime is not mentioned in the sampled receiving texts. Per-game contracts only are modelled by s1-s7; KXNFLWEEKMOSTRECYDS, KXNFLMOSTRECYDS, KXNFLSEASONRECYDS, KXNFLSEASONREC, KXNFLCAREERRECYDS, KXNFLRECYDSRECORD and KXNFLRRYDS are misfiled here (see series_mapping_issues) and have no inputs in this record.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -802,7 +873,7 @@
     {
      "ticker": "KXNFLLONGREC",
      "quote": "If T.J. Hockenson is active but does not appear in any live play, the market settles to the fair market price before game start.",
-     "establishes": "The longest-reception market is a max over the player's receptions, with a void (not a loss) only for never-appearing players; a player with no catch but a live play settles on a longest reception of zero."
+     "establishes": "Activation rule for the longest-reception market: an active player who appears in no live play refunds at fair price, and once he appears in one live play it settles on the longest reception recorded; the sampled text does not say what a live-play player with no catch settles at (zero versus void), recorded as u6."
     }
    ],
    "variants_and_edge_cases": [
@@ -812,7 +883,44 @@
     "Sampled texts do not state overtime handling or the official statistics source for receptions/yards; reception credited on a play nullified by penalty is not credited under standard NFL scoring, but the 'live play' appearance rule counts it for activation only.",
     "Rush-and-receiving combined yards (KXNFLRRYDS) and the career/record series are in the same archetype in the ledger but follow different mechanisms (running-back usage, season horizons) and have no sampled rules text."
    ],
-   "settlement_data_source": "Official NFL statistics are implied by the 'Governing League' wording but the sampled rules do not name a provider or a correction rule; capture the Kalshi expiration value and compare with the game book."
+   "settlement_data_source": "Official NFL statistics are implied by the 'Governing League' wording but the sampled rules do not name a provider or a correction rule; capture the Kalshi expiration value and compare with the game book.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLWEEKMOSTRECYDS",
+     "issue": "League-wide, season, career or record horizon (max over players or accumulation over many games), not a single-game receiving process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLMOSTRECYDS",
+     "issue": "League-wide, season, career or record horizon (max over players or accumulation over many games), not a single-game receiving process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONRECYDS",
+     "issue": "League-wide, season, career or record horizon (max over players or accumulation over many games), not a single-game receiving process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONREC",
+     "issue": "League-wide, season, career or record horizon (max over players or accumulation over many games), not a single-game receiving process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLCAREERRECYDS",
+     "issue": "League-wide, season, career or record horizon (max over players or accumulation over many games), not a single-game receiving process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLRECYDSRECORD",
+     "issue": "League-wide, season, career or record horizon (max over players or accumulation over many games), not a single-game receiving process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLRRYDS",
+     "issue": "Combined rushing plus receiving yards needs a dual-role (usage across carries and targets) chain that this receiving chain does not provide.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: rush_plus_receiving_yards_combo"
+    }
+   ]
   },
   "mechanism": {
    "summary": "A receiver's yards and receptions are the product of three counts that need separate modelling: how many routes he runs, how many targets he draws per route, and what each target yields. Routes follow snaps, offensive formation and the team's passing volume (which is itself a function of tempo, pass tendency and score path). Targets per route depend on his role (alignment, depth), competition from teammates, the quarterback's tendency to concentrate reads, and the defender and coverage he sees. Targets convert to catches at a rate depending on depth and quarterback accuracy, and catches to yards through air yards and yards after the catch, with a heavy right tail from one long play. Receptions are a small count with strong overdispersion; yards are a compound of receptions and per-catch distance. Contract shape then matters: binary rungs need tail probabilities, linear ladders need means, the cubic escalator needs the upper tail, and the longest-reception contract needs the maximum of the receiver's catch lengths.",
@@ -829,13 +937,14 @@
      "input_ids": [
       "nfl.routes",
       "nfl.limited_player_discount",
-      "nfl.formation"
+      "nfl.formation",
+      "nfl.in_game_exit_risk"
      ]
     },
     {
      "id": "s2",
      "name": "Team pass attempts available to be targeted",
-     "description": "The team's dropbacks and pass attempts form the pool: tempo, pass tendency over expectation and the score path define it, and the defence's tendency to force the opponent into passing or running changes the pool. Pool size is a stable function of coordinator regime plus a game-script component, and the receiver's expected share is applied to it, so the pool and the share multiply.",
+     "description": "The team's dropbacks and pass attempts form the pool: tempo, pass tendency over expectation and the score path define it, and the defence's tendency to force the opponent into passing or running changes the pool. Pool size is a stable function of coordinator regime plus a game-script component, and the receiver's expected share is applied to it, so the pool and the share multiply. The starting quarterback is the largest single shifter of this pool and of target concentration: a backup start changes attempts, depth of target and which receivers the passer reads, and for the protected variant the receiver's own in-game exit (nfl.in_game_exit_risk) truncates routes after the first half.",
      "distribution": "Attempts ~28-45 per team-game with positive skew from trailing scripts; overdispersed Poisson-like count.",
      "categories": [
       "pace_volume",
@@ -843,7 +952,10 @@
      ],
      "input_ids": [
       "nfl.proe",
-      "nfl.script"
+      "nfl.script",
+      "nfl.qb",
+      "nfl.pace",
+      "nfl.in_game_exit_risk"
      ]
     },
     {
@@ -907,7 +1019,8 @@
      ],
      "input_ids": [
       "nfl.player_stat_variance",
-      "nfl.player_reception_length_distribution"
+      "nfl.player_reception_length_distribution",
+      "nfl.corr"
      ]
     },
     {
@@ -960,9 +1073,11 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.limited_player_discount",
-      "nfl.routes"
+      "nfl.routes",
+      "nfl.qb",
+      "nfl.in_game_exit_risk"
      ],
-     "note": "Return-from-injury caps and participation; inactive timing relative to quote time is not specified in the catalog text."
+     "note": "Return-from-injury caps and participation; inactive timing relative to quote time is not specified in the catalog text. Quarterback status (nfl.qb) and the receiver's own in-game exit risk are now attached; a backup-QB start is treated as a regime that rescales every receiver's volume."
     },
     "coaching_scheme": {
      "status": "COVERED",
@@ -989,9 +1104,10 @@
     "pace_volume": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.proe"
+      "nfl.proe",
+      "nfl.pace"
      ],
-     "note": "Pass attempts pool; plays-per-game input (nfl.pace) exists but is not attached here."
+     "note": "Pass attempts pool = plays (nfl.pace) x pass rate (nfl.proe); both are attached in stage s2; nfl.pace is a catalog input newly attached here, not part of the original archetype list so it has no audit entry."
     },
     "efficiency_conversion": {
      "status": "COVERED",
@@ -1009,7 +1125,7 @@
       "nfl.player_reception_length_distribution",
       "nfl.corr"
      ],
-     "note": "Overdispersion of targets and catch lengths; within-game correlations to the quarterback exist as nfl.corr in the catalog but are not attached here."
+     "note": "Overdispersion of targets and catch lengths; the receiver-to-quarterback and receiver-to-receiver within-game correlations in nfl.corr are now attached in stage s6 and fed from the play-level dataset (used for the H2H and combined-yards variants)."
     },
     "situational_schedule_motivation": {
      "status": "GAP",
@@ -1247,12 +1363,13 @@
    },
    {
     "inputs": [
+     "nfl.player_reception_length_distribution",
      "nfl.player_stat_variance",
      "m.rules_text"
     ],
-    "form": "other-nonlinear",
-    "mechanism": "The cubic escalator payoff makes the contract's value an expectation of a convex function: with fixed mean, a larger variance or heavier tail increases fair value, and the bucketed yards schedule creates steps at multiples of ten. Two receivers with the same expected yards have different fair values.",
-    "how_to_test": "Compute fair value by integrating the yardage distribution against the payout schedule for receivers with equal means and different tail weights."
+    "form": "piecewise",
+    "mechanism": "The cubic escalator payoff (min(s,14)/14)^3 for receptions and (y/200)^3 for yards is convex only below its cap: for a receiver whose expected total sits well under 14 receptions or 200 yards extra variance raises fair value, but for a high-volume receiver near or above the cap the payoff goes flat and extra variance lowers value, so the sign of the variance effect flips with the mean relative to the cap.",
+    "how_to_test": "Simulate the escalator payoff for receivers across mean tiers with fixed mean and two dispersion levels; check the sign of the fair-value difference changes near 10-14 receptions and 150-200 yards."
    }
   ],
   "nonlinearities": [
@@ -1291,8 +1408,8 @@
      "yards_gained",
      "air_yards",
      "yards_after_catch",
-     "routes run flag",
-     "alignment (slot, wide, inline, backfield)",
+     "routes run flag (SOURCE_UNVERIFIED in open data, see u5; paid-vendor otherwise)",
+     "alignment (slot, wide, inline, backfield) (SOURCE_UNVERIFIED in open data, see u5)",
      "offense_personnel",
      "defense coverage type",
      "defenders_in_box",
@@ -1303,8 +1420,8 @@
     "candidate_sources": [
      {
       "name": "nflverse play-by-play and participation",
-      "access": "free",
-      "note": "Targets and yards; participation includes offence and defence personnel, formation; route-level data is not in the free release (SOURCE_UNVERIFIED)."
+      "access": "free_limited",
+      "note": "Targets and yards; participation includes offence and defence personnel, formation; route-level data is not in the free release (SOURCE_UNVERIFIED). Route-level fields unverified, see u5."
      },
      {
       "name": "FTN charting via nflverse",
@@ -1346,7 +1463,10 @@
      "nfl.with_without_target_redistribution",
      "nfl.player_reception_length_distribution",
      "nfl.defense_target_funnel_share",
-     "nfl.qb_target_concentration"
+     "nfl.qb_target_concentration",
+     "nfl.pace",
+     "nfl.corr",
+     "nfl.qb"
     ]
    },
    {
@@ -1360,7 +1480,9 @@
      "report timestamp",
      "game-day inactive",
      "return-from-injury flag",
-     "snap and route counts in prior games"
+     "snap and route counts in prior games",
+     "starting quarterback and backup quarterback depth status",
+     "in-game exit flag (injury removal) per player-game"
     ],
     "timestamp_requirement": "Each report carries the time it was posted; features use the most recent report at least 5 minutes before the quote; inactive list approximately 90 minutes pre-kick.",
     "history_needed": "3 seasons of captured vintages; with-without needs 6 seasons of final inactive lists.",
@@ -1384,7 +1506,9 @@
     "feeds_inputs": [
      "nfl.limited_player_discount",
      "nfl.routes",
-     "nfl.with_without_target_redistribution"
+     "nfl.with_without_target_redistribution",
+     "nfl.qb",
+     "nfl.in_game_exit_risk"
     ]
    },
    {
@@ -1453,14 +1577,14 @@
    {
     "id": "u2",
     "type": "DATA_UNAVAILABLE",
-    "description": "Route-level participation and shadow-coverage assignments are proprietary (PFF, SIS) or tracking-only (NFL NGS full data); free play-by-play lacks routes run, so TPRR for most players must be approximated from targets and snaps.",
+    "description": "Route-level participation and shadow-coverage assignments are proprietary (PFF, SIS) or tracking-only (NFL NGS full data); the record does not assume free play-by-play carries routes run (open-data access unverified, see u5), so TPRR for most players may have to be approximated from targets and snaps.",
     "what_would_resolve": "License a charting vendor or approximate routes from pass-play snap participation and test the loss in explanatory power.",
     "category": "role_personnel"
    },
    {
     "id": "u3",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Combined rush-and-receiving yards (KXNFLRRYDS), career, record and season receiving markets are grouped in this archetype but follow different mechanisms (running back dual-role usage, multi-year horizons); one mechanism chain does not cover them.",
+    "description": "Combined rush-and-receiving yards (KXNFLRRYDS), career, record and season receiving markets are grouped in this archetype but follow different mechanisms (running back dual-role usage, multi-year horizons); one mechanism chain does not cover them. Mapped out via contract.series_mapping_issues: the season/career/record/weekly-most tickers belong in season_player_stats_and_leaders and the combined rush-plus-receiving ticker needs a new archetype.",
     "what_would_resolve": "Split these into their own archetype keys and author a separate chain for each, including a running-back receiving-role stage."
    },
    {
@@ -1469,6 +1593,19 @@
     "description": "No schedule or motivation input exists for receivers: late-season starter rest, short-week route participation and trade-deadline role changes are plausible drivers with unmeasured size.",
     "what_would_resolve": "Test adding rest and clinch flags to route-share models using three seasons of data.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "u5",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The play-level dataset lists a routes-run flag and alignment as free nflverse fields, while u2 says free play-by-play lacks routes run. Whether any open table (nflverse participation, FTN charting, NGS) carries per-player route participation, and for which seasons, is unverified; nfl.routes and the targets-per-route-run inputs are primary, so their data access is unconfirmed.",
+    "what_would_resolve": "Inspect the nflverse participation, FTN and NGS tables for a route/alignment field per player-play and record the first season and null rate; if absent, label routes as paid-vendor (PFF, SIS) only.",
+    "category": "role_personnel"
+   },
+   {
+    "id": "u6",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNFLLONGREC text says the market settles on 'longest reception recorded' once the player appears in a live play, but not what value a player with a live play and zero receptions takes (0 yards, void, or No); the earlier claim of a zero settlement was an inference.",
+    "what_would_resolve": "Obtain an expired KXNFLLONGREC market for a player with no catch, or Kalshi's full rules, to confirm the zero-catch treatment."
    }
   ]
  },
@@ -1476,13 +1613,13 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Per-game protected ladder (KXNFLRSHYDSPROT, e.g. 40+ rushing yards) settles YES at the integer rung and refunds at pre-kickoff fair price only when the player plays in the first half but takes no snap after halftime without having reached the rung; H2H pays strictly-more-yards YES, 50/50 on a tie and fair price if either player does not enter; game-most (KXNFLMOSTRSHYDS) is a max over all players in the game with 1/N on ties and No for a non-participant; weekly-most is the same across the week; season markets (1500+ regular-season rushing yards) settle on season totals. Overtime and the statistical source are not stated in the sampled text.",
+   "settlement_definition": "Per-game protected ladder (KXNFLRSHYDSPROT, e.g. 40+ rushing yards) settles YES at the integer rung and refunds at pre-kickoff fair price only when the player plays in the first half but takes no snap after halftime without having reached the rung; H2H pays strictly-more-yards YES, 50/50 on a tie and fair price if either player does not enter; game-most (KXNFLMOSTRSHYDS) is a max over all players in the game with 1/N on ties and No for a non-participant; weekly-most is the same across the week; season markets (1500+ regular-season rushing yards) settle on season totals. Overtime and the statistical source are not stated in the sampled text. Stages s1-s7 model only the per-game runner contracts (KXNFLRSHYDS, KXNFLRSHYDSPROT, KXNFLRSHYDSH2H, escalator and ladder); the game-most, weekly-most, season and career tickers are mapped elsewhere in series_mapping_issues and have no inputs in this record.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
      "ticker": "KXNFLRSHYDSPROT",
      "quote": "If the player participates in at least one play after the conclusion of the first half",
-     "establishes": "Protected contract pays on real statistics whenever the player plays after halftime (overtime included); the Drew Lock 40+ example shows the series also covers quarterbacks' rushing yards, not only backs."
+     "establishes": "Protected contract: a player who plays in the first half and then plays no snap after halftime (any overtime period counts as after the half) refunds unless he already reached the rung; the truncated sample does not state whether overtime yards count toward the statistic, nor what applies to a player with no first-half play (u6)."
     },
     {
      "ticker": "KXNFLMOSTRSHYDS",
@@ -1505,9 +1642,42 @@
     "The game-most market gives 1/N on ties and No for non-participants while the H2H and ladder variants refund; one injury report therefore moves the variants in different directions.",
     "Rushing yards can be negative (kneel-downs count as rushing attempts for the QB or back who takes the knee), which matters near low rungs and for H2H differences, though negative totals are rare in a full game.",
     "Escalator and ladder rushing series (KXNFLESCALATORRSHYDS, KXNFLLADDERRSHYDS) and the main per-game KXNFLRSHYDS ladder are title-only in the sample, so their payoff schedules, caps and overtime treatment cannot be verified.",
-    "Season (KXNFLSEASONRSHYDS, KXNFLSEASONRUSHYDS) and career (KXNFLCAREERRSHYDS) series have different horizons and fail on a missed season without refund; the career series is a multi-year survival problem."
+    "Season (KXNFLSEASONRSHYDS, KXNFLSEASONRUSHYDS) and career (KXNFLCAREERRSHYDS) series have different horizons and fail on a missed season without refund; the career series is a multi-year survival problem.",
+    "Protected variant: overtime appears only in the definition of post-half participation; whether overtime yards count and how a player with no first-half play settles are unstated and carried as u6."
    ],
-   "settlement_data_source": "The sampled rules never name a provider; 'Governing League' official statistics are implied and the existing draft's mention of kneel-down counting is a statistical convention, not text in the rules."
+   "settlement_data_source": "The sampled rules never name a provider; 'Governing League' official statistics are implied and the existing draft's mention of kneel-down counting is a statistical convention, not text in the rules.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLMOSTRSHYDS",
+     "issue": "Max over every rusher in one game (1/N ties, non-participant No); needs a field projection and joint distribution across both teams, not one runner.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: single_game_stat_leader_field_max"
+    },
+    {
+     "ticker": "KXNFLWEEKMOSTRSHYDS",
+     "issue": "League-wide weekly rushing leader (order statistic over all rushers); no per-runner chain here supplies the field.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONRSHYDS",
+     "issue": "Season total rung; per-game chain has no games-played hazard, banked yards or role-regime horizon. Title-only; may duplicate KXNFLSEASONRUSHYDS.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONRUSHYDS",
+     "issue": "Season total rung with the identical title (Rushing Yards) as KXNFLSEASONRSHYDS; both title-only so whether it is a spelling duplicate is unverified (u5).",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLCAREERRSHYDS",
+     "issue": "Career total over many seasons (age curve, survival, role); not a per-game process.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLRSHATT",
+     "issue": "Rushing attempts count is filed under the specials key, but its volume mechanism (carry share times team rush plays, stages s1-s4 and nfl.carries) is the one modelled here.",
+     "belongs_in": "rushing_yards"
+    }
+   ]
   },
   "mechanism": {
    "summary": "A runner's rushing yards equal his carries times his yards per carry, and both have to be forecast through different chains. Carries are team rushing plays times the share this runner takes; team rushing plays come from total plays and run rate, which respond strongly to the score path (leaders run to burn clock, trailers abandon the run), and the share depends on his role in a committee by down, distance and the goal line, backup handoffs in blowouts, and his health and snap ramp. Yards per carry come from the blocking and the front he faces (box count, run gap), the runner's ability to create yards over what the blockers provide, and a heavy right tail from explosive runs that makes yardage rungs very discontinuous. For quarterbacks the same contract records scrambles and designed runs, which come from pressure and scheme instead. The settlement rules decide whether the position is refunded, lost or settled when a runner is injured or rested.",
@@ -1566,7 +1736,6 @@
      ],
      "input_ids": [
       "nfl.script",
-      "nfl.garbage_time",
       "nfl.late_lead_clock_carry_yield"
      ]
     },
@@ -1598,7 +1767,6 @@
       "environment"
      ],
      "input_ids": [
-      "nfl.player_stat_variance",
       "nfl.rush_explosive_tail_rate",
       "nfl.qb_scramble_yield_given_pressure",
       "nfl.weather_pit"
@@ -1673,7 +1841,6 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.script",
-      "nfl.garbage_time",
       "nfl.late_lead_clock_carry_yield"
      ],
      "note": "Lead-driven carries and their lower yield."
@@ -1698,7 +1865,6 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.player_stat_variance",
       "nfl.rush_explosive_tail_rate"
      ],
      "note": "Heavy right tail of per-carry yields."
@@ -1923,12 +2089,12 @@
      "nfl.rush_efficiency"
     ],
     "form": "conditional",
-    "mechanism": "Bad weather raises the run share, but the yield effect depends on the line and the style: zone-blocking power offences gain, finesse perimeter runs lose; net yards depend on the blend of volume and yield changes.",
+    "mechanism": "Bad weather raises the run share, but whether yield per carry rises or falls with blocking style (zone/power versus perimeter runs) is a hypothesis only, not evidenced here; the net yardage effect is the sum of a volume gain and an unsigned yield change.",
     "how_to_test": "Interact weather indicators with run-scheme type in a yards model and see whether the net weather effect changes sign across schemes."
    },
    {
     "inputs": [
-     "nfl.player_stat_variance",
+     "nfl.carries",
      "nfl.rush_explosive_tail_rate"
     ],
     "form": "joint-distribution",
@@ -1975,10 +2141,10 @@
      "game_seconds_remaining",
      "posteam",
      "defteam",
-     "defenders_in_box",
+     "defenders_in_box (availability unverified, see u8)",
      "offense_personnel",
      "qb_scramble",
-     "was_pressure"
+     "was_pressure (availability unverified, see u8)"
     ],
     "timestamp_requirement": "As-of last completed game; box counts from participation data are revised after the game.",
     "history_needed": "6 seasons for gap-level matchups, 3 for runner-level rates.",
@@ -2013,8 +2179,6 @@
      "nfl.rb_efficiency",
      "nfl.run_defense",
      "nfl.qb_rushing",
-     "nfl.garbage_time",
-     "nfl.player_stat_variance",
      "nfl.late_lead_clock_carry_yield",
      "nfl.run_scheme_vs_front_matchup",
      "nfl.rush_explosive_tail_rate",
@@ -2141,6 +2305,32 @@
     "description": "Workload and rest effects across weeks for runners are not defined here and the literature on consecutive-game workload is mixed.",
     "what_would_resolve": "Add cumulative touches and days-since-last-game features and test on holdout seasons.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "u6",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled KXNFLRSHYDSPROT text uses overtime only to define 'participates after the first half'; it does not say whether overtime rushing yards count toward the rung, and the text is truncated before the clause for a player with no first-half play. The earlier claim that overtime is included for statistics is unsupported.",
+    "what_would_resolve": "Read the full protected-contract text and an expired market that went to overtime to see whether overtime yards counted and how a player with no first-half snap settles."
+   },
+   {
+    "id": "u7",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "The weather by run-style interaction asserts that zone/power offences gain and finesse runs lose yield in bad weather, with no evidence from sampled rules or data; the sign of the yield effect is a hypothesis.",
+    "what_would_resolve": "Estimate yards per carry by wind and precipitation bin split by scheme labels over several seasons and check that the sign differs by scheme before using the interaction.",
+    "category": "environment"
+   },
+   {
+    "id": "u8",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Play-level fields defenders_in_box and was_pressure are listed as free nflverse data while u2 says box counts are only partly free; which table carries them and from which season was not verified from this session.",
+    "what_would_resolve": "Check the nflverse pbp and participation data dictionaries for non-null defenders_in_box and was_pressure counts per season; otherwise relabel as paid vendor data.",
+    "category": "opponent_matchup"
+   },
+   {
+    "id": "u5",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNFLSEASONRSHYDS and KXNFLSEASONRUSHYDS are both title-only with the identical title 'Rushing Yards'; whether they are duplicate spellings of one series or distinct (different thresholds or seasons) cannot be told from the sample.",
+    "what_would_resolve": "Fetch both series' markets from Kalshi and compare strikes, seasons and expiry to decide whether one is a duplicate."
    }
   ]
  },
@@ -2148,7 +2338,7 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Each award contract resolves YES for the single named candidate if he (or the coach) is announced as winner of the named award for the 2026-27 season by the named body (e.g. AP Defensive Rookie of the Year, monthly Offensive Rookie of the Month for October); monthly awards pay $1/N rounded down to the cent among N co-winners, with No paying one minus that. Eligibility (rookie status, offence versus defence, calendar month window) follows the awarding body. Season-end awards are one-shot: there is no void for injury, so a candidate who is hurt simply loses. The sampled text does not address a tie in the annual AP awards, a vote re-count, or a rescinded award, and 38 of the 40 series in this archetype are draft, Hall of Fame and finalist markets with no rules sampled.",
+   "settlement_definition": "Applies to the season-award tickers only (KXNFLMVP, KXNFLOPOY/OPOTY, KXNFLDPOY/DPOTY, KXNFLOROY/OROTY, KXNFLDROY/DROTY, KXNFLCOACH/COTY, KXNFLCPOTY, KXNFLROTM, KXNFLPOTM and the All-Pro, All-Rookie and finalist tickers): each resolves YES for the single named candidate (or coach) if he is announced as winner of the named award for the 2026-27 season by the named body (e.g. AP Defensive Rookie of the Year; Offensive Rookie of the Month for October). Monthly awards pay $1/N rounded down to the cent among N co-winners, with No paying one minus that (KXNFLROTM text). There is no void for injury: a hurt candidate simply loses. The sampled text does not address a tie in the annual awards, a recount or a rescinded award. Of 40 live series only 2 (KXNFLDROTY, KXNFLROTM) have rules text; of the other 38 about 14 are true award markets (MVP, OPOY, DPOY, OROY, COTY, CPOTY, POTM and variants), about 20 are Draft markets, and the rest are Hall of Fame, All-Pro, All-Rookie, finalist and an interception-leader market, mapped out in series_mapping_issues.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -2172,9 +2362,128 @@
     "The archetype also holds draft markets (first pick, exact selection, position drafted, last pick), Hall of Fame, All-Pro, All-Rookie and finalist markets, whose outcome process (team needs, trades, voter bodies of 50+ ) differs entirely from a season-award vote; none has rules text in the sample.",
     "Monthly awards (KXNFLROTM, KXNFLPOTM) use a four- or five-game window, so an injury or bye inside the window matters far more than for a season award.",
     "The MVP market (KXNFLMVP) has no rules sampled; whether it is single-winner by AP plurality, how ties are broken, and whether ballots include the final week are unknown.",
-    "Coach of the Year and Comeback Player have no rules sampled; both reward change relative to the prior season, a different driver from production."
+    "Coach of the Year and Comeback Player have no rules sampled; both reward change relative to the prior season, a different driver from production.",
+    "About 20 NFL Draft tickers, two Hall of Fame tickers and the interception-leader ticker are not season-award votes; this record's stages s1-s7 do not model them (see series_mapping_issues).",
+    "Monthly window definition (calendar month versus week block) and MVP ballot format are not stated in sampled text and are carried as unresolved u5 and u7."
    ],
-   "settlement_data_source": "The annual award series name the AP; the monthly series name the league. The sampled rules do not state when ballots close, whether a re-announcement can change the winner, or the tie method for annual awards."
+   "settlement_data_source": "The annual award series name the AP; the monthly series name the league. The sampled rules do not state when ballots close, whether a re-announcement can change the winner, or the tie method for annual awards.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLDRAFTTE",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTMATCHUP",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLLASTPICKPOS",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTOU",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLSUPDRAFTPICK",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTRB",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTTEAM",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLFIRSTPICK",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTSELECT",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTPICK",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTEDGE",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLSDRAFTTOP",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTCOMPARE",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTDB",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTEAMPOS",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTOL",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTCAT",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTLB",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFTTOP",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLDRAFT1",
+     "issue": "NFL Draft market: outcome is set by team draft needs, board consensus, trades and prospect rankings, not a season-award vote; no input list in this record applies.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: nfl_draft_selection_markets"
+    },
+    {
+     "ticker": "KXNFLHALLOFFAME",
+     "issue": "Hall of Fame induction is a selector-panel vote on career resumes (multi-year eligibility), not a season award.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: hall_of_fame_selection"
+    },
+    {
+     "ticker": "KXNFLHOFINDUCTEES",
+     "issue": "Hall of Fame class membership; career-resume voting with a capped class size.",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: hall_of_fame_selection"
+    },
+    {
+     "ticker": "KXNFLLEADERPINT",
+     "issue": "Season interceptions leader is an order-statistic stat-leader market, not a vote.",
+     "belongs_in": "season_player_stats_and_leaders"
+    }
+   ]
   },
   "mechanism": {
    "summary": "An award is decided by a bounded electorate that ranks candidates from what it saw, not from true value. The chain starts with who is eligible (rookie status, offence versus defence) and who plays enough to be considered. Production is then measured relative to the peers the voters implicitly compare against, mostly through the counting stats and milestones they remember (yards, touchdowns, sacks, interceptions) rather than efficiency. Team success acts as a multiplier, strongly for the MVP and the Coach of the Year. The narrative path (hot streak, late-season surge, primetime exposure, injury timing relative to ballots) moves a candidate within the list, and among close candidates the split of votes across teammates and similar profiles decides the plurality. Finally the contract adds mechanics: ballot close, ties paying 1/N, and monthly windows with only a handful of games. Predictions must therefore be of voter behaviour on a candidate set, not of player quality.",
@@ -2197,17 +2506,17 @@
     {
      "id": "s2",
      "name": "Realised production relative to peers",
-     "description": "Voters see counting statistics and milestones: passing and rushing yards, touchdowns, sacks, interceptions, receptions, with a lean to visible plays. Production per game and cumulative both count, so injuries trade rate for volume. Production must be compared with the pool of candidates at the same position and across positions for the cross-position awards.",
+     "description": "Voters see counting statistics and milestones: passing and rushing yards, touchdowns, sacks, interceptions, receptions, with a lean to visible plays. Production per game and cumulative both count, so injuries trade rate for volume. Production must be compared with the pool of candidates at the same position and across positions for the cross-position awards. Defensive candidates (DPOY, DROY) are scored on a sack, pressure, interception, tackle-for-loss composite and offensive skill candidates on EPA, all ranked within the eligible pool by nfl.position_peer_production_index, with banked totals extended by nfl.rest_of_season_stat_projection.",
      "distribution": "Production totals approximately normal across the season with heavy tails for TDs; ranking relative to peers is what matters, and seasonal rank changes slowly late in the year.",
      "categories": [
       "talent_strength",
       "efficiency_conversion"
      ],
      "input_ids": [
-      "nfl.award_stats",
       "nfl.qb_efficiency",
       "nfl.td_luck",
-      "nfl.fantasy_points_model"
+      "nfl.position_peer_production_index",
+      "nfl.rest_of_season_stat_projection"
      ]
     },
     {
@@ -2250,7 +2559,8 @@
      "input_ids": [
       "nfl.award_milestone_proximity",
       "nfl.voter_exposure_and_straw_poll_signal",
-      "nfl.td_luck"
+      "nfl.td_luck",
+      "nfl.rest_of_season_stat_projection"
      ]
     },
     {
@@ -2288,10 +2598,10 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.qb_efficiency",
-      "nfl.award_stats",
-      "nfl.standings_sim"
+      "nfl.standings_sim",
+      "nfl.position_peer_production_index"
      ],
-     "note": "Player production and team strength; the existing award_stats input has no stated calculation and is replaced in function by the new milestone and exposure inputs."
+     "note": "Player production (new cross-position index including defensive composite), QB efficiency and team strength; the WEAK award_stats input is no longer relied on and is replaced by nfl.position_peer_production_index and nfl.rest_of_season_stat_projection."
     },
     "opponent_matchup": {
      "status": "NOT_APPLICABLE",
@@ -2302,7 +2612,7 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.rookie_opportunity_and_draft_capital",
-      "nfl.fantasy_points_model"
+      "nfl.position_peer_production_index"
      ],
      "note": "Rookie role and position determine the candidate pool; cross-position comparison via fantasy points is weak."
     },
@@ -2338,7 +2648,8 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.season_to_date_pace",
-      "nfl.award_month_window_games"
+      "nfl.award_month_window_games",
+      "nfl.rest_of_season_stat_projection"
      ],
      "note": "Remaining games and the number of games in the monthly window."
     },
@@ -2493,6 +2804,47 @@
     ],
     "why": "Provides a voter-behaviour signal without importing prices, helping to distinguish the front runner from candidates with equal production.",
     "role": "context"
+   },
+   "nfl.position_peer_production_index": {
+    "label": "Cross-position production index versus peers (offence and defence)",
+    "category": "player_role",
+    "mechanism": "Converts a candidate's season-to-date production into a position-neutral standing among eligible candidates, using EPA-based value for offensive players and a defensive-production composite for defenders.",
+    "rationale": "The record's production stage relied on WEAK inputs and one QB-only input, so DPOY, DROY and OPOY (skill positions) had no calibrated production measure. Voters compare a sack leader with a coverage corner, so a within-position percentile is needed; it must also be shrunk for small samples early in the season.",
+    "measurement": "Offensive candidates: EPA contributed per game (QB: EPA+CPOE composite from nfl.qb_efficiency; RB/WR/TE: receiving or rushing EPA plus yards over expected per touch) converted to z-score versus the 2015-2025 distribution of the same position at the same week of season. Defenders: composite z of sacks per game, pressures per game (if available) and QB hits, interceptions plus passes defensed, tackles for loss, and forced fumbles with weights 0.35/0.25/0.15/0.15/0.10 (weights are assumptions to be fit to past DPOY vote share); shrink toward position mean with k=5 games; ranks within the eligible pool (rookies only for rookie awards); as-of the last completed week. Output: rank and z-gap to the next candidate.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse weekly player stats (sacks, QB hits, interceptions, passes defended, TFL)",
+     "nflverse play-by-play (epa by player)",
+     "Pro-Football-Reference season stats (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "weekly player stats: player_id, week, position, sacks, qb_hits, def_interceptions, passes_defended, tackles_for_loss, forced_fumbles",
+     "pbp: player epa totals",
+     "roster: rookie flag, position"
+    ],
+    "why": "Gives DPOY/DROY/OPOY/OROY a production measure that is comparable across positions, instead of the weak award-stats and QB-only fields.",
+    "role": "primary"
+   },
+   "nfl.rest_of_season_stat_projection": {
+    "label": "Rest-of-season statistical projection to the ballot cutoff",
+    "category": "pace_volume",
+    "mechanism": "Projects each candidate's final regular-season totals by adding expected remaining-game production to banked totals, with a games-played hazard.",
+    "rationale": "Awards are voted on final-season body of work, and Kalshi prices trade in October to January while about half the games remain; ranking by banked stats ignores that a candidate on a bye or with a tough schedule will fall behind. The projection is for production rank, not a price.",
+    "measurement": "Projected total = banked total + sum over remaining games g of P(plays g) x expected per-game rate_g, where the per-game rate is a 50/50 blend of season-to-date per-game rate and a 3-year prior (shrunk with k=6 games), scaled by opponent defence adjustment from nfl.schedule_strength (+-10 percent cap) and by P(plays g) from nfl.games_played_dist; uncertainty from a negative-binomial per-game sd fitted on 2015-2025. As-of: before the next kickoff window; cutoff = last regular-season game (ballot close date assumed at the end of the regular season, unverified, see u3).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse weekly player stats",
+     "nflverse schedules"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "weekly player stats by player-week",
+     "schedule: remaining opponents and byes",
+     "injury status vintages"
+    ],
+    "why": "Turns banked production into a projected final production rank, the quantity voters ultimately compare, at the date the contract trades.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -2558,7 +2910,7 @@
     "inputs": [
      "nfl.standings_sim",
      "nfl.qb_efficiency",
-     "nfl.award_stats"
+     "nfl.position_peer_production_index"
     ],
     "form": "threshold",
     "mechanism": "MVP voters effectively require a top-two seed for quarterbacks: below that line a leading efficiency edge earns little, above it the same edge translates into most of the first-place votes. The effect of production is therefore conditional on the seed distribution.",
@@ -2577,7 +2929,7 @@
     "inputs": [
      "nfl.teammate_vote_split_penalty",
      "nfl.leader_order_statistic",
-     "nfl.award_stats"
+     "nfl.position_peer_production_index"
     ],
     "form": "joint-distribution",
     "mechanism": "Candidates with correlated support (same team, same position) have negatively correlated chances of winning, so the joint distribution of winners is not a product of marginals; a rival's collapse benefits his teammate more than the field.",
@@ -2598,9 +2950,9 @@
      "nfl.td_luck",
      "nfl.voter_exposure_and_straw_poll_signal"
     ],
-    "form": "conditional",
-    "mechanism": "Touchdown-heavy primetime performances produce visibility that voters remember even if they are luck-driven; regressing on expected rather than actual touchdowns underestimates the vote share of lucky but visible candidates.",
-    "how_to_test": "Include realised-touchdowns and expected-touchdowns in a vote-share regression with primetime weighting and compare coefficients."
+    "form": "multiplicative",
+    "mechanism": "Touchdown luck is rewarded by voters only when it is visible: the vote-share boost from touchdown counts above expectation is multiplied by primetime and highlight exposure, so for a low-exposure candidate a lucky touchdown total adds little, while for a high-exposure candidate it adds vote share even though regression predicts it will fade.",
+    "how_to_test": "Regress past vote share on td_luck x exposure index (primetime snaps share, straw-poll rank) and test the product term against td_luck and exposure alone."
    },
    {
     "inputs": [
@@ -2670,12 +3022,12 @@
      }
     ],
     "feeds_inputs": [
-     "nfl.award_stats",
      "nfl.award_voting_mechanics",
      "nfl.teammate_vote_split_penalty",
      "nfl.award_milestone_proximity",
      "nfl.leader_order_statistic",
-     "nfl.standings_sim"
+     "nfl.standings_sim",
+     "nfl.position_peer_production_index"
     ]
    },
    {
@@ -2688,7 +3040,13 @@
      "snap counts",
      "games played",
      "team record",
-     "standings seed"
+     "standings seed",
+     "sacks",
+     "qb_hits",
+     "def_interceptions",
+     "passes_defended",
+     "tackles_for_loss",
+     "forced_fumbles"
     ],
     "timestamp_requirement": "As-of each Tuesday after the Monday-night game.",
     "history_needed": "15 seasons.",
@@ -2713,14 +3071,15 @@
      "nfl.qb_efficiency",
      "nfl.td_luck",
      "nfl.season_to_date_pace",
-     "nfl.fantasy_points_model",
      "nfl.games_played_dist",
      "nfl.schedule_strength",
      "nfl.award_milestone_proximity",
      "nfl.rookie_opportunity_and_draft_capital",
      "nfl.award_month_window_games",
      "nfl.coach_surprise_vs_own_prior",
-     "nfl.news"
+     "nfl.news",
+     "nfl.position_peer_production_index",
+     "nfl.rest_of_season_stat_projection"
     ]
    },
    {
@@ -2785,7 +3144,7 @@
    {
     "id": "u2",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "About half of the live series in this archetype are draft, Hall of Fame, All-Pro and finalist markets whose outcome mechanisms (team draft needs, trades, selector panels) are not a season vote and are not covered by this chain; nfl.draft_board exists in the catalog but is not attached here.",
+    "description": "About half of the live series in this archetype are draft, Hall of Fame, All-Pro and finalist markets whose outcome mechanisms (team draft needs, trades, selector panels) are not a season vote and are not covered by this chain; nfl.draft_board exists in the catalog but is not attached here. Mapped out: about 20 Draft tickers and two Hall of Fame tickers are recorded in contract.series_mapping_issues as needing their own archetypes.",
     "what_would_resolve": "Split the archetype into awards, draft and honours sub-archetypes and author separate chains, attaching nfl.draft_board to the draft group."
    },
    {
@@ -2800,6 +3159,26 @@
     "description": "Public straw polls are not stored in structured archives; capturing them requires manual curation or news APIs, and the voter-sentiment signal has a short history.",
     "what_would_resolve": "Build a weekly capture of public straw polls from three outlets and evaluate their predictive value against final votes over multiple seasons.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "u5",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNFLROTM text says 'for October of the 2026-27 NFL season' but not whether the window is the calendar month or the league's week-block definition of a monthly award; nfl.award_month_window_games counts 3-5 games from the schedule on an assumed definition, so the primary windowing input is unconfirmed.",
+    "what_would_resolve": "Check the NFL's published Rookie of the Month window definition and the Kalshi full rules; recompute window games from the confirmed definition.",
+    "category": "pace_volume"
+   },
+   {
+    "id": "u6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Straw-poll capture has no cited structured archive (manual), Pro-Football-Reference scraping terms were not checked, and per-voter ballots are mostly not public, so the split-penalty and exposure inputs can only be fit to published vote totals and not to individual ballots.",
+    "what_would_resolve": "Check the PFR terms of use and robots policy, locate any structured straw-poll archive, and confirm which vote breakdowns the AP publishes by voter."
+   },
+   {
+    "id": "u7",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The AP MVP and other annual award ballot format (single first-place plurality versus ranked-points) was not checked against current AP rules and the sampled Kalshi text names only the winner; this changes how vote splitting and second-place support matter.",
+    "what_would_resolve": "Fetch the current AP award voting rules and an expired MVP market's resolution text to confirm the ballot format and tie rule.",
+    "category": "settlement_contract"
    }
   ]
  },
@@ -2807,7 +3186,7 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "This registered archetype has no live Kalshi series assigned to it in the ledger (its season-stat contracts are filed under rushing_yards, qb_passing_yards, receiving and the fantasy archetype), so there is no rules text to verify. The expected contract is a regular-season-only total at an integer rung (the sibling KXNFLSEASONPASSYDS and KXNFLSEASONRSHYDS series use a half-yard floor_strike on a 'N+' wording), a league or position leader (dead-heat 1/N on ties, as in the weekly-most series) or a head-to-head season comparison. Overtime, playoffs and the statistics source are unstated for this archetype.",
+   "settlement_definition": "This registered archetype has no live Kalshi series assigned to it in the ledger (its season-stat contracts are filed under rushing_yards, qb_passing_yards, receiving and the fantasy archetype), so there is no rules text to verify. The expected contract is a regular-season-only total at an integer rung (the sibling KXNFLSEASONPASSYDS and KXNFLSEASONRSHYDS series use a half-yard floor_strike on a 'N+' wording), a league or position leader (dead-heat 1/N on ties, as in the weekly-most series) or a head-to-head season comparison. Overtime, playoffs and the statistics source are unstated for this archetype. Consequence: season-total, career, weekly-most and leader tickers that exist today are filed under other archetypes (see series_mapping_issues); until the ledger is corrected, this record's claims about them are conditional on the wording of those series, which is title-only for most.",
    "rules_verification": "NO_LIVE_SERIES",
    "rules_evidence": [],
    "variants_and_edge_cases": [
@@ -2817,7 +3196,79 @@
     "Weekly leaders (a single-game maximum over all players) and season leaders (a cumulative maximum) share the word 'leader' but are different order statistics with very different randomness.",
     "Playoff games are excluded in the sibling season markets (regular season wording), so a deep run adds no volume to any total."
    ],
-   "settlement_data_source": "No ticker in this archetype to read from; sibling series imply official league statistics (the 'Governing League') and fantasy series name Sleeper. Treat as unverified until a live series is mapped."
+   "settlement_data_source": "No ticker in this archetype to read from; sibling series imply official league statistics (the 'Governing League') and fantasy series name Sleeper. Treat as unverified until a live series is mapped.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXNFLSEASONPASSYDS",
+     "issue": "Currently filed under qb_passing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLCAREERPASSYDS",
+     "issue": "Currently filed under qb_passing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLWEEKMOSTPASSYDS",
+     "issue": "Currently filed under qb_passing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLWEEKMOSTRECYDS",
+     "issue": "Currently filed under receiving_yards_and_receptions, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLMOSTRECYDS",
+     "issue": "Currently filed under receiving_yards_and_receptions, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONRECYDS",
+     "issue": "Currently filed under receiving_yards_and_receptions, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONREC",
+     "issue": "Currently filed under receiving_yards_and_receptions, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLCAREERRECYDS",
+     "issue": "Currently filed under receiving_yards_and_receptions, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLRECYDSRECORD",
+     "issue": "Currently filed under receiving_yards_and_receptions, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLWEEKMOSTRSHYDS",
+     "issue": "Currently filed under rushing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONRSHYDS",
+     "issue": "Currently filed under rushing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLSEASONRUSHYDS",
+     "issue": "Currently filed under rushing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLCAREERRSHYDS",
+     "issue": "Currently filed under rushing_yards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    },
+    {
+     "ticker": "KXNFLLEADERPINT",
+     "issue": "Currently filed under season_awards, whose per-game chain does not attach this record's inputs (games played, role-regime hazard, rate persistence, clinch rest, contender covariance); the season, career or leader contract is priced from this record.",
+     "belongs_in": "season_player_stats_and_leaders"
+    }
+   ]
   },
   "mechanism": {
    "summary": "A season statistic is the sum over games played of a per-game output, and the contract is decided by three quantities that are separate in kind: how many games the player appears in (a discrete attrition process), what per-game rate he runs at once on the field (a role and efficiency process that is autocorrelated within the season and can switch regimes after an injury, trade or coaching change), and the realised total already banked. For threshold contracts the probability is the chance that banked plus remaining output crosses the rung, which depends on remaining games and the variance of the sum, larger than independent-game variance because of the persistent role state. For leader contracts the question is a maximum over many correlated contenders, where covariance among teammates and shared schedules matters and the open field of unlisted players holds real mass. Late-season rest of clinched teams and weather add a seasonal truncation to the final weeks.",
@@ -3155,8 +3606,8 @@
     "reason": "Remaining opponent strength moves per-game rates only slightly over a few games."
    },
    "nfl.skill_avail": {
-    "verdict": "DUPLICATE_OF:nfl.role_regime_change_hazard",
-    "reason": "Teammate injuries are one trigger of role change; model it as the hazard of a share shift rather than a separate availability flag."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Observable teammate and own injury or return status is a trigger and measurable input for the role-shift hazard, not the same quantity as the forecast hazard of a share shift; kept as the observed-state feature feeding nfl.role_regime_change_hazard, consistent with its place in stage s2."
    },
    "nfl.player_stat_variance": {
     "verdict": "WEAK",
@@ -3207,17 +3658,18 @@
      "nfl.leader_order_statistic"
     ],
     "form": "joint-distribution",
-    "mechanism": "Leader probabilities depend on covariance across contenders: positive covariance for a quarterback and his receiver raises the chance that neither leads when the team falters, and negative covariance within a backfield raises the chance that exactly one does.",
-    "how_to_test": "Fit leader probabilities from a correlated simulation and from an independent one and compare Brier score on historical leader outcomes."
+    "mechanism": "Leader probability for a player depends on the variance of his lead over each rival: positive covariance between two contenders on one offence (quarterback and a receiver sharing team passing volume) shrinks the variance of their gap so the better one is more reliably ahead, while negative covariance within a backfield (competing for the same carries) widens the gap variance and makes order flips more likely. The sign is positive for same-team passing pairs and negative for same-position teammates.",
+    "how_to_test": "Fit leader probabilities from a covariance-matrix simulation versus an independent simulation, and compare Brier score and calibration on historical position leaders, separately for same-team positive-sign and same-position negative-sign pairs."
    },
    {
     "inputs": [
      "nfl.td_luck",
+     "nfl.role_regime_change_hazard",
      "nfl.season_to_date_pace"
     ],
     "form": "conditional",
-    "mechanism": "Touchdown thresholds near season end depend on banked touchdowns, which are partly luck; the remaining expected touchdown rate should be the role-based rate regardless of how many have been banked, so banked luck persists as an offset but not in the rate.",
-    "how_to_test": "Regress remaining touchdowns on banked touchdowns and on role-based expectation to see whether banked luck predicts remaining output."
+    "mechanism": "Banked touchdown excess fades toward the role-based rate only to the extent it came from luck (long scores, fumble-recovery touchdowns); excess that rests on a stable red-zone share persists, and a role-regime change redefines the role-based rate itself, so the shrinkage of banked touchdowns toward expectation depends on how stable the underlying role is.",
+    "how_to_test": "Regress remaining touchdowns on banked touchdowns, role-based expectation and an indicator of red-zone share stability or a regime-change event; test the banked x stability term and the null that banked excess has no effect."
    },
    {
     "inputs": [
@@ -3323,9 +3775,9 @@
     "history_needed": "10 seasons.",
     "candidate_sources": [
      {
-      "name": "nflverse injuries, rosters and transactions",
+      "name": "nflverse injuries and rosters (transactions table not verified to exist)",
       "access": "free",
-      "note": "Weekly resolution; transaction dates partially available."
+      "note": "Injuries and rosters are published by nflverse; a structured transactions or coaching-change table is SOURCE_UNVERIFIED, see u5."
      },
      {
       "name": "NFL transactions and press releases",
@@ -3336,6 +3788,11 @@
       "name": "Spotrac/OverTheCap",
       "access": "free_limited",
       "note": "Contracts and transactions; scraping terms apply."
+     },
+     {
+      "name": "Manually curated coordinator, trade and role-change log",
+      "access": "own_capture",
+      "note": "Required for the regime-change hazard if no structured transactions table exists (u5)."
      }
     ],
     "feeds_inputs": [
@@ -3379,7 +3836,7 @@
    {
     "id": "u1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "No live series is assigned to this registered archetype, so none of the settlement details (eligible games, source, tie rule, overtime) can be checked; sibling ladders such as KXNFLSEASONPASSYDS and weekly-most series carry the actual season-stat contracts and have different rules.",
+    "description": "No live series is assigned to this registered archetype, so none of the settlement details (eligible games, source, tie rule, overtime) can be checked; sibling ladders such as KXNFLSEASONPASSYDS and weekly-most series carry the actual season-stat contracts and have different rules. Consequence: the inputs here (games played, role-regime hazard, rate persistence, clinch rest, contender covariance) are required by live season and leader tickers filed under four other archetypes whose records do not attach them; see contract.series_mapping_issues.",
     "what_would_resolve": "Re-map the season-stat and leader tickers (including KXNFLSEASONREC, KXNFLSEASONRSHYDS, KXNFLMOSTRSHYDS and KXNFLWEEKMOSTPASSYDS) to this archetype or retire it, then verify the rules."
    },
    {
@@ -3400,6 +3857,19 @@
     "description": "Transaction and coaching-change timelines are not available as a clean structured free dataset, so the regime-change hazard must be built by manual curation and has limited event counts for rare events like in-season coordinator changes.",
     "what_would_resolve": "Curate a dated event log for 10 seasons from official transaction wires and press releases.",
     "category": "coaching_scheme"
+   },
+   {
+    "id": "u5",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The availability dataset lists 'nflverse injuries, rosters and transactions' as free, but u4 says transactions and coaching-change timelines are not a clean free dataset, and an nflverse transactions table is not known to exist; the primary role_regime_change_hazard input may need manual curation of trades, coordinator changes and role events.",
+    "what_would_resolve": "Check the nflverse release list for a transactions or coaching table; if absent, plan manual capture from NFL transactions pages and team press releases and label the data own_capture.",
+    "category": "coaching_scheme"
+   },
+   {
+    "id": "u6",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "The target includes team leaders, matchup (head-to-head) and team-event families, but all stages are player-based; team-level season totals and head-to-head season comparisons (paired covariance of two players) are not modelled by this chain, and the ICC 0.1-0.3 and 25 percent shift threshold remain assumptions (u2).",
+    "what_would_resolve": "Add a team-level stage or a separate archetype for team season leaders and head-to-head comparisons, and estimate the ICC and shift threshold from 2012-2025 player-weeks."
    }
   ]
  },

@@ -19,16 +19,34 @@
     {
      "ticker": "KXCONMEBOLSUDBTTS",
      "quote": "Reg Time: Both Teams To Score",
-     "establishes": "Market title itself labels the contract as regulation-time, confirming the same window for the continental-cup variant."
+     "establishes": "Title text only (a market title, not rules text): it corroborates a regulation-time BTTS wording but does not by itself establish the window; the window rests on the KXVENFUTVEBTTS quote."
     }
    ],
    "variants_and_edge_cases": [
     "Knockout/cup ties (KXCOPADELREYBTTS, KXISRSCUPBTTS, KXCONMEBOLSUDBTTS): extra time is excluded, so a 1-0 after 90 that finishes 2-1 in ET is still BTTS-No; the 90-minute-only goal process, not the advancement process, is what must be modelled.",
     "146 live series (almost all TITLE_ONLY): only KXARGPREMDIVBTTS, KXCONMEBOLSUDBTTS, KXSERIECBTTS and KXVENFUTVEBTTS have sampled rules; the remaining leagues are assumed identical but not verified, including whether abandonment mid-match voids or settles on goals already scored.",
     "KXUCLBTTS sits in the ledger under competition_winner_and_top_n although its rules text is a plain regulation-time BTTS contract, so some live BTTS volume is mis-bucketed.",
-    "Own-goal credit means P(team scores) must include opponent own-goal probability (about 3-5% of goals), a small positive term for weak attacks facing high lines and crosses."
+    "Own-goal credit means P(team scores) must include opponent own-goal probability (about 3-5% of goals), a small positive term for weak attacks facing high lines and crosses.",
+    "No live clean-sheet series exists in the ledger for this archetype key; any claim about clean-sheet contracts is conditional on such a series being listed. Own-goal propensity (defender error, high line, crossing volume) has no input yet."
    ],
-   "settlement_data_source": "Official league/competition match report goal events with goal credit (own goals credited to the beneficiary), as published by the governing league and tracked by Kalshi's data provider; minute of goal not needed for the full-match contract, needed for the first-half variant."
+   "settlement_data_source": "Official league/competition match report goal events with goal credit (own goals credited to the beneficiary), as published by the governing league and tracked by Kalshi's data provider; minute of goal not needed for the full-match contract, needed for the first-half variant.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXSOCCERBTTS",
+     "issue": "Plain Both Team to Score series filed under handicap_and_exact_score (typed correct_score)",
+     "belongs_in": "btts_and_clean_sheet"
+    },
+    {
+     "ticker": "KXUCLBTTS",
+     "issue": "Champions League BTTS with regulation-time BTTS rules text filed under competition_winner_and_top_n",
+     "belongs_in": "btts_and_clean_sheet"
+    },
+    {
+     "ticker": "KXUCL1HBTTS",
+     "issue": "UCL Half BTTS is a half-period market filed here",
+     "belongs_in": "first_half_and_period"
+    }
+   ]
   },
   "mechanism": {
    "summary": "BTTS is the intersection of two goal-count events, P(H>=1 and A>=1), so it is governed by the lower of the two scoring rates and by their dependence. Each side's rate comes from opponent-adjusted chance volume and quality, adjusted for the confirmed starting XI and keeper; each side's shutout probability exceeds the Poisson value for teams with concentrated attacks. The two processes are coupled by game state: after the first goal the trailing side chases (raising both sides' chance rates) or the leader parks. Discrete shocks (a red card, a penalty, a keeper swap) and the regulation-only settlement window (extra time excluded, own goals credited) complete the chain. The binary has no strike ladder, so the key modelling objects are min(lambda), zero inflation and the state-conditional hazard.",
@@ -98,9 +116,12 @@
       "situational_schedule_motivation"
      ],
      "input_ids": [
-      "soc.fouls_cards",
       "soc.lineups_pit",
-      "soc.xi_strength_delta"
+      "soc.xi_strength_delta",
+      "soc.penalty_rate",
+      "soc.second_leg_aggregate_state",
+      "soc.rotation_index",
+      "soc.stakes_leverage"
      ]
     },
     {
@@ -199,16 +220,20 @@
      "note": "Low-score dependence and zero-inflation are the distribution inputs that move P(0) directly."
     },
     "situational_schedule_motivation": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Late-season dead rubbers, rotation and fixture congestion alter lineups and effort in ways that move the weaker side's chance to score; rotation_index and stakes inputs exist in the catalog but are not attached here and no BTTS-specific evidence of their effect size is established."
+     "status": "COVERED",
+     "input_ids": [
+      "soc.second_leg_aggregate_state",
+      "soc.rotation_index",
+      "soc.stakes_leverage"
+     ],
+     "note": "Aggregate state of two-legged cup ties, predicted rotation and dead-rubber leverage shift the weaker side scoring chance and the stronger side defensive intensity; effect sizes for BTTS are still to be estimated."
     },
     "officiating_rules": {
      "status": "COVERED",
      "input_ids": [
-      "soc.fouls_cards"
+      "soc.penalty_rate"
      ],
-     "note": "Referee penalty and red-card tendency give a discrete route to a goal for a blanked side."
+     "note": "Referee/VAR-shrunk penalty-award rate gives the discrete route by which a blanked side still scores; card counts (soc.fouls_cards, audited WEAK) are no longer cited as cover."
     },
     "settlement_contract": {
      "status": "COVERED",
@@ -340,12 +365,12 @@
   "interactions": [
    {
     "inputs": [
-     "soc.xg_adjusted_ratings",
-     "soc.weaker_side_big_chance_creation"
+     "soc.weaker_side_big_chance_creation",
+     "soc.gk"
     ],
-    "form": "concave",
-    "mechanism": "P(BTTS) rises with the weaker side's lambda with sharply diminishing returns once P(score>=1) saturates, so a given rating gap hurts BTTS far more when the weaker lambda is 0.4 than when it is 1.1.",
-    "how_to_test": "Fit BTTS on min(lambda) versus mean lambda and compare calibration by min-lambda decile."
+    "form": "multiplicative",
+    "mechanism": "The weaker side's P(score>=1) is 1-exp(-chances x conversion against this keeper): a high count of big chances only turns into BTTS-Yes if the opposing keeper's shrunk shot-stopping does not cancel it, so the keeper term scales the weaker side's chance-quality channel (direction: strong keeper cuts it).",
+    "how_to_test": "Bin matches by weaker-side big-chance count and by opposing keeper shrunk PSxG-GA tercile; compare realised weaker-side scoring rate with the additive model."
    },
    {
     "inputs": [
@@ -362,7 +387,7 @@
      "soc.dixon_coles_low_score"
     ],
     "form": "regime-switch",
-    "mechanism": "Before the first goal the pairing behaves as in a static Dixon-Coles game; after it, the trailing manager's choice switches the match into an open regime, so the effective dependence is positive below one goal and flips by the 70th minute.",
+    "mechanism": "Before the first goal the pairing behaves as in a static Dixon-Coles game; after it, the trailing manager's choice switches the match into an open regime, so the effective dependence is positive below one goal and may flip later in the match (hypothesis, timing not established from data).",
     "how_to_test": "Estimate scoring hazard conditional on state at each minute bucket; test if BTTS error clusters in 1-0 games with a chasing side."
    },
    {
@@ -380,7 +405,7 @@
      "soc.weaker_side_big_chance_creation"
     ],
     "form": "threshold",
-    "mechanism": "A weaker side with elite set-piece xG crosses a threshold at which its P(score) stays near 0.55-0.6 even against a dominant opponent; below the threshold it collapses to counter-attack luck.",
+    "mechanism": "A weaker side with elite set-piece xG crosses a threshold at which its P(score) stays above the rating-implied level (the 0.55-0.6 figure is an unsourced hypothesis to be estimated) even against a dominant opponent; below the threshold it collapses to counter-attack luck.",
     "how_to_test": "Bin set-piece xG share; compare weaker-side scoring rate vs open-play-only prediction."
    }
   ],
@@ -472,17 +497,17 @@
      {
       "name": "Understat shot data",
       "access": "free",
-      "note": "Shot minute and xG; goals identified by result"
+      "note": "Shot minute, xG, situation and result incl. own-goal flag for six European leagues; no red cards, so score-before must be cumulated from goals"
      },
      {
       "name": "Opta event feed",
       "access": "paid",
-      "note": "Full event timeline"
+      "note": "Full event timeline incl. cards"
      },
      {
       "name": "API-Football / football-api providers",
       "access": "paid",
-      "note": "Event timelines but quality varies by lower leagues"
+      "note": "Card and goal event timelines with minutes; quality varies by lower leagues; needed for red_card_flag"
      }
     ],
     "feeds_inputs": [
@@ -490,7 +515,8 @@
      "soc.dixon_coles_low_score",
      "soc.score_state",
      "soc.period_split",
-     "soc.fouls_cards"
+     "soc.fouls_cards",
+     "soc.penalty_rate"
     ]
    },
    {
@@ -558,6 +584,43 @@
      "soc.gk",
      "soc.keeper_shot_stopping_regression"
     ]
+   },
+   {
+    "dataset": "Referee and penalty history",
+    "grain": "one row per match with referee id, penalties awarded by side, red cards by minute, VAR overturns",
+    "fields": [
+     "match_id",
+     "referee_id",
+     "pens_for",
+     "pens_against",
+     "red_card_minutes",
+     "var_overturns"
+    ],
+    "timestamp_requirement": "Final after the match; referee assignment is public 1-3 days before kickoff, use only prior matches",
+    "history_needed": "5 seasons of referee assignments for stable shrunk rates",
+    "candidate_sources": [
+     {
+      "name": "football-data.co.uk referee columns",
+      "access": "free",
+      "note": "Referee name and cards for the leagues it covers; penalties not provided"
+     },
+     {
+      "name": "API-Football fixtures/events",
+      "access": "paid",
+      "note": "Penalty and card events with minutes; lower-league quality varies"
+     },
+     {
+      "name": "Transfermarkt referee pages",
+      "access": "free_scrape",
+      "note": "Penalty and card counts per referee, scraped"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.penalty_rate",
+     "soc.rotation_index",
+     "soc.second_leg_aggregate_state",
+     "soc.stakes_leverage"
+    ]
    }
   ],
   "unresolved": [
@@ -580,11 +643,29 @@
     "what_would_resolve": "Check each league's free source for xG/PSxG; fall back to goals-based ratings with a documented wider shrinkage where none exists."
    },
    {
-    "id": "gap_situational_schedule_motivation",
-    "type": "MECHANISM_UNCERTAIN",
-    "description": "Late-season dead rubbers, rotation and fixture congestion alter lineups and effort in ways that move the weaker side's chance to score; rotation_index and stakes inputs exist in the catalog but are not attached here and no BTTS-specific evidence of their effect size is established.",
-    "what_would_resolve": "Backtest BTTS residual against rotation_index and stakes_leverage across a multi-season league sample with lineups timestamps.",
+    "id": "rotation_stakes_effect_size",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Rotation, stakes and second-leg aggregate inputs are attached to s4 but no free point-in-time rotation ground truth exists and the size of their effect on P(both score) in domestic cups is not established from available data.",
+    "what_would_resolve": "Backtest BTTS residuals against rotation_index and aggregate-state buckets on three seasons of cup and league games.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "cross_tier_lambda_floor",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "In Copa del Rey, Israeli Cup and Copa do Brasil early rounds the weaker side lambda (the binding quantity for BTTS) is poorly identified; the cross-tier link soc.cross_tier_strength_link and soc.favourite_rotation_in_mismatch are defined in the handicap_and_exact_score record, not in the catalog yet.",
+    "what_would_resolve": "Share the handicap record cross-tier inputs after catalog merge and attach them here; test min-lambda calibration on cross-tier cup games."
+   },
+   {
+    "id": "event_source_red_cards",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Red-card timing and score-before are not exposed by Understat shot pages as far as is known; red_card_flag requires a second provider (API-Football/Opta) and coverage of non-top-6 leagues has not been checked.",
+    "what_would_resolve": "Pull one sample match per league from API-Football and from Understat and compare event fields."
+   },
+   {
+    "id": "own_goal_propensity_input",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Own goals supply roughly 3-5% of goals and count for the beneficiary, but no input measures own-goal propensity of a defence or the crossing volume that creates it, and no free source tags own goals consistently outside the top leagues.",
+    "what_would_resolve": "Define a shrunk own-goals-for-against rate from Understat own-goal flags and test whether it adds anything over ratings."
    }
   ]
  },
@@ -592,19 +673,39 @@
   "reviewer": "soccer_author_a",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "No live Kalshi series maps to this archetype in the ledger, so the settlement terms are inferred from the catalog target only: YES would mean one named team (or player) finishes ahead of another on a defined end-of-competition metric (final league position, points, goals). Tie handling on points, the tiebreaker order (goal difference, head-to-head, play-off), points deductions and the exact source table are not visible and cannot be stated; they are recorded as unresolved rather than assumed.",
+   "settlement_definition": "No series is filed under this key in the ledger (rules_verification stays NO_LIVE_SERIES for that reason), but three live TITLE_ONLY head-to-head series are mis-filed under match_result_3way: KXEPLH2HFINISH (EPL H2H Finishing Position), KXEPLH2H (EPL H2H Results) and KXWCTEAMH2H (World Cup Team Head to Head). No rules text is sampled for any of them, so the compared metric, tie handling, deduction treatment and source table are unverified. YES presumably means one named team finishes ahead of the other on the stated end-of-competition metric; that is an inference from titles only and is recorded in unresolved, not assumed.",
    "rules_verification": "NO_LIVE_SERIES",
    "rules_evidence": [],
    "variants_and_edge_cases": [
-    "If two teams finish level on points the outcome depends on the competition's tiebreak order (goal difference vs head-to-head vs play-off), so P(ahead) must include a tie-resolution branch whose rule differs by league (La Liga head-to-head first, Premier League goal difference first).",
+    "If two teams finish level on points the outcome depends on the competition's tiebreak order (goal difference vs head-to-head vs play-off), so P(ahead) must include a tie-resolution branch whose rule differs by league (the order differs by league and is unsourced here; it must be read from the competition regulations).",
     "A pending points deduction or administrative sanction can reorder the final table after the last match; a head-to-head contract may settle on the official final table at a stated date rather than on-pitch results.",
     "Player-versus-player variants (top scorer duel) would add playing-time, penalty-taker and tie rules and are a separate mechanism from team table finish.",
-    "Cup head-to-head (which team goes further) would depend on bracket paths, not table points; the key must disclose which of table-finish, cup-round or stat-count form a market uses."
+    "Cup head-to-head (which team goes further) would depend on bracket paths, not table points; the key must disclose which of table-finish, cup-round or stat-count form a market uses.",
+    "KXEPLH2H 'Results' could settle on points or goals in the two direct meetings; that needs a match-result model for two fixtures (soc.h2h_zero_sum_fixtures becomes the whole contract), not a season Monte Carlo.",
+    "KXWCTEAMH2H is a World Cup head-to-head: the comparison is round reached or group finish, which needs group tiebreaks and bracket path difficulty (defined in the competition_winner_and_top_n record), not points over 38 league games.",
+    "Non-standard finish formats (Ecuador LigaPro hexagonal with carried-over points, Peru/Uruguay/Venezuela playoffs, MLS conferences) make \"finish ahead\" ambiguous between aggregate table, stage table and playoff result; none are verified."
    ],
-   "settlement_data_source": "Official final league table or competition record as published by the governing body; for no-live-series this is an assumption, not read from rules text."
+   "settlement_data_source": "Official final league table or competition record as published by the governing body; for no-live-series this is an assumption, not read from rules text.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXEPLH2HFINISH",
+     "issue": "EPL head-to-head finishing position (TITLE_ONLY) filed under match_result_3way; matches this table-race mechanism",
+     "belongs_in": "competition_head_to_head"
+    },
+    {
+     "ticker": "KXEPLH2H",
+     "issue": "EPL H2H \"Results\" (TITLE_ONLY) filed under match_result_3way; metric may be direct-meeting results or points rather than final table position, which is a different mechanism",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: league_direct_meeting_results (if the rules confirm a settlement on the two fixtures between the clubs); otherwise competition_head_to_head"
+    },
+    {
+     "ticker": "KXWCTEAMH2H",
+     "issue": "World Cup team head-to-head (TITLE_ONLY) filed under match_result_3way; a tournament-progress comparison, not a league table race",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: tournament_team_head_to_head"
+    }
+   ]
   },
   "mechanism": {
-   "summary": "A head-to-head season finish is a race between two cumulative points totals. State at the as-of date (points, goal difference, games in hand, deductions) is the starting condition; each team's remaining fixtures generate points through a goal model with its own opponents, venues and rest; the two totals are coupled negatively through direct meetings and positively through shared shocks and common opponents, which sets the variance of the gap. Strength itself is uncertain and drifts with injuries, transfers and congestion. The resolution is the final table, with a tiebreaker branch on equal points and a possible post-hoc deduction. With no live series the contract wording itself is unverified.",
+   "summary": "A head-to-head season finish is a race between two cumulative points totals. State at the as-of date (points, goal difference, games in hand, deductions) is the starting condition; each team's remaining fixtures generate points through a goal model with its own opponents, venues and rest; the two totals are coupled negatively through direct meetings and positively through shared shocks and common opponents, which sets the variance of the gap. Strength itself is uncertain and drifts with injuries, transfers and congestion. The resolution is the final table, with a tiebreaker branch on equal points and a possible post-hoc deduction. With no live series the contract wording itself is unverified. Scope: stages s1-s5 describe only the table-finish contract (KXEPLH2HFINISH); KXEPLH2H Results may instead settle on the two direct meetings (zero-sum, a match-outcome model) and KXWCTEAMH2H on tournament progress (bracket/group path), and no stage here is claimed to cover those.",
    "stages": [
     {
      "id": "s1",
@@ -624,7 +725,7 @@
      "id": "s2",
      "name": "Remaining-fixture points distributions",
      "description": "Each team's remaining matches generate points via a calibrated goal model with opponent strength, venue and rest; the two teams face different schedules, so the expected points difference depends on schedule asymmetry, not only on current ratings. Rating uncertainty widens the spread of the points-gap distribution beyond independent match noise.",
-     "distribution": "Sum of independent three-outcome match lotteries per team (points 0/1/3) plus a shared latent strength uncertainty; approx normal for the gap with sd about 1.6 points per sqrt(match).",
+     "distribution": "Sum of independent three-outcome match lotteries per team (points 0/1/3) plus a shared latent strength uncertainty; approx normal for the gap with sd per match to be estimated (a three-outcome points lottery gives roughly 1.2-1.4 points per match for typical probabilities).",
      "categories": [
       "talent_strength",
       "opponent_matchup",
@@ -671,7 +772,7 @@
      "id": "s5",
      "name": "Tie resolution and settlement",
      "description": "A tie on points moves the outcome to the competition's tiebreaker (goal difference, goals scored or head-to-head), so the end-of-season goal-difference gap and direct-match results matter in the narrow set of paths where points are level; deductions and the official final table fix the settlement.",
-     "distribution": "Discrete tie branch (P(equal points) about 6-12% for evenly matched teams at end of season) resolved by a continuous goal-difference comparison.",
+     "distribution": "Discrete tie branch (P(equal points) is an unsourced hypothesis of order 5-10% for evenly matched teams, to be measured from simulated and historical tables) resolved by a continuous goal-difference comparison.",
      "categories": [
       "settlement_contract",
       "officiating_rules"
@@ -905,7 +1006,7 @@
      "soc.shared_shock_overlap"
     ],
     "form": "multiplicative",
-    "mechanism": "A shared European schedule hurts a thin squad far more than a deep one, so the relative strength shift is proportional to overlap times (1 - depth quality), generating gap changes of up to roughly 0.1 goals per match in the congested window.",
+    "mechanism": "A shared European schedule hurts a thin squad far more than a deep one, so the relative strength shift is proportional to overlap times (1 - depth quality), generating gap changes of of unestimated size in the congested window (a hypothesis, not a measured effect).",
     "how_to_test": "Regress points-per-game change over congested windows on depth and overlap."
    },
    {
@@ -923,8 +1024,8 @@
      "soc.remaining_schedule_strength"
     ],
     "form": "joint-distribution",
-    "mechanism": "Uncertainty in each team's strength persists over all remaining fixtures (it is not averaged away), so the sd of the gap grows more like linear in games remaining rather than sqrt, especially when one team has a harder schedule.",
-    "how_to_test": "Compare variance of simulated gap with fixed vs sampled strengths; backtest coverage of gap intervals."
+    "mechanism": "Uncertainty in each team's strength persists over all remaining fixtures (it is not averaged away), so the strength part of the gap sd grows linearly in games remaining while only the match-noise part grows with sqrt (variance quadratic vs linear), especially when one team has a harder schedule.",
+    "how_to_test": "Compare simulated gap variance with fixed versus sampled strengths and backtest interval coverage, separating the n^2 strength term from the n match-noise term."
    }
   ],
   "nonlinearities": [
@@ -935,8 +1036,8 @@
    },
    {
     "input_id": "soc.ratings_uncertainty",
-    "shape": "Linear growth of variance with horizon",
-    "why": "Because the latent strength is shared across matches, uncertainty accumulates linearly and then compounds with drift; ignoring it understates tails early in the season."
+    "shape": "Variance grows quadratically (sd linearly) with horizon through the persistent latent strength term, plus a linear-in-games match-noise variance",
+    "why": "With a persistent latent strength the sd of that component is linear in games remaining (variance quadratic) while the match-noise component has sd proportional to sqrt(games); ignoring the persistent term understates tails early in the season."
    }
   ],
   "required_data": [
@@ -994,7 +1095,7 @@
      {
       "name": "ClubElo",
       "access": "free",
-      "note": "Daily Elo ratings by club"
+      "note": "Daily Elo point ratings by club only; no uncertainty (sd) published, so the sd field must be self-derived from rating history or a Bayesian model"
      },
      {
       "name": "Understat/FBref xG",
@@ -1053,22 +1154,28 @@
   ],
   "unresolved": [
    {
-    "id": "no_live_series_h2h",
+    "id": "h2h_series_rules_unseen",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "No Kalshi series maps to head-to-head in the ledger; the settlement metric, tiebreak order, treatment of deductions and source table for any such market are unknown and the catalog target is generic.",
-    "what_would_resolve": "Obtain the live rules text of any head-to-head soccer series once listed, or confirm that none exist and retire the archetype."
+    "description": "Three live head-to-head series exist (KXEPLH2HFINISH, KXEPLH2H, KXWCTEAMH2H) but all are TITLE_ONLY and filed under match_result_3way; the settlement metric of each, the tiebreak order, treatment of deductions and the source table are unknown, and EPL H2H Results may not be a table-finish contract at all.",
+    "what_would_resolve": "Fetch rules_primary/secondary for the three series and re-file them; if Results is a two-fixture contract it needs a match-outcome archetype, and the World Cup variant a bracket archetype."
    },
    {
-    "id": "mid_season_manager_effect",
+    "id": "h2h_three_mechanisms",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "The magnitude and persistence of a manager change on points-per-game is not established and is not covered by any input here.",
-    "what_would_resolve": "Run an event study across top leagues for 10 seasons with matched controls and estimate a shrunk effect."
+    "description": "The three live head-to-head titles likely correspond to three different outcome mechanisms (final table gap, two direct fixtures, tournament progress); this record models only the first and its inputs are untested for the other two.",
+    "what_would_resolve": "Read the rules text of KXEPLH2H and KXWCTEAMH2H and either add match-outcome and bracket stages here or move them to dedicated archetypes."
+   },
+   {
+    "id": "h2h_format_variants",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "For leagues with split seasons, hexagonals, playoffs or conferences a finish-ahead contract could compare aggregate table, stage table or playoff outcome; no live H2H series outside the EPL is known and the compared metric is not visible in any rules text.",
+    "what_would_resolve": "Obtain rules text for any non-EPL finish-ahead series and record the compared table per league."
    },
    {
     "id": "gap_coaching_scheme",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Managerial change, tactical shift and in-season coaching tenure change a team's points-per-game, and a pending sacking or appointment is not modelled by any listed input; the effect size of a mid-season manager change on points is debated.",
-    "what_would_resolve": "Event-study of league points-per-game before/after managerial changes across 10 seasons with a matched control of similar-form teams.",
+    "description": "Mid-season managerial change, tactical shift and a pending sacking or appointment change points-per-game and no listed input captures them; effect size and persistence are debated (this entry merges the earlier mid_season_manager_effect item).",
+    "what_would_resolve": "Event study of league points-per-game before and after managerial changes over 10 seasons with matched controls, then define a manager-change input.",
     "category": "coaching_scheme"
    }
   ]
@@ -1106,9 +1213,108 @@
     "Single-elimination cups and World Cup/Copa/Asian Cup outrights: one binary per team across several rounds with extra time and penalties (penalty shootout winner advances), so the settlement event is the final's winner, not 90-minute results.",
     "Point-margin series (KXEPLPOINTMARGIN, KXBUNDESLIGAPOINTMARGIN, KXLIGUE1POINTMARGIN, KXLALIGAPOINTMARGIN, KXSERIEAPOINTMARGIN) settle on first-minus-second regardless of who the champion is; they are a different random variable from the title winner.",
     "Ledger bucket noise: KXUCLBTTS is a match BTTS contract and KXWCPLAYERGOALS/KXWCCAREERGOALS/KXPLAYWC are player-stat props; they need their own archetypes and are not served by a season-simulation input set.",
-    "Many ledger series are TITLE_ONLY (about 100 of 124); points deductions, voided seasons and trophies stripped after the fact (e.g. a later sanction) are not addressed in the sampled texts."
+    "Many ledger series are TITLE_ONLY (about 100 of 124); points deductions, voided seasons and trophies stripped after the fact (e.g. a later sanction) are not addressed in the sampled texts.",
+    "Input scope: the inputs here (comp_sim, ratings, schedule, tiebreaks, format conversion, bracket path) are valid for the outright, top-N, advance and stage-reach series and the five point-margin series; they do NOT apply to the match-level and aggregate series listed in series_mapping_issues (single GAME/1H/SPREAD/TOTAL/BTTS contracts, World Cup goal-count and event props, player-stat props), for which this key has no applicable input.",
+    "Ecuador LigaPro (KXECULP) carries regular-season points into a hexagonal decided on total points, Peru (KXPERLIGA1) uses Apertura/Clausura and playoff stages, and Venezuela (KXVENFUTVE) a final between half-season winners, so 'champion' differs by league beyond the Argentine/Paraguayan/Uruguayan cases; KXSOCCERTROPHIES also counts a Supercopa de Espana mini-tournament. The Manchester City-type retroactive-sanction case is the reviewer's judgement, not rules text (see retroactive_sanctions)."
    ],
-   "settlement_data_source": "Final official league table or tournament result published by the governing body (league, UEFA, CONMEBOL, FIFA); trophy counts rely on the named competitions' official results; whether later sanctions retroactively change the champion is not stated."
+   "settlement_data_source": "Final official league table or tournament result published by the governing body (league, UEFA, CONMEBOL, FIFA); trophy counts rely on the named competitions' official results; whether later sanctions retroactively change the champion is not stated.",
+   "series_mapping_issues": [
+    {
+     "ticker": "KXGERSCGAME",
+     "issue": "Filed under competition_winner_and_top_n but is: Germany Super Cup single-match winner",
+     "belongs_in": "match_result_3way"
+    },
+    {
+     "ticker": "KXCANPLGAME",
+     "issue": "Filed under competition_winner_and_top_n but is: Canadian Premier League single-match winner",
+     "belongs_in": "match_result_3way"
+    },
+    {
+     "ticker": "KXUCLGAME",
+     "issue": "Filed under competition_winner_and_top_n but is: UEFA Champions League single-match winner",
+     "belongs_in": "match_result_3way"
+    },
+    {
+     "ticker": "KXUCLWGAME",
+     "issue": "Filed under competition_winner_and_top_n but is: Women's Champions League single-match winner",
+     "belongs_in": "match_result_3way"
+    },
+    {
+     "ticker": "KXAFCCLGAME",
+     "issue": "Filed under competition_winner_and_top_n but is: AFC Champions League single-match winner",
+     "belongs_in": "match_result_3way"
+    },
+    {
+     "ticker": "KXEFLCHAMPIONSHIPGAME",
+     "issue": "Filed under competition_winner_and_top_n but is: EFL Championship single-match winner",
+     "belongs_in": "match_result_3way"
+    },
+    {
+     "ticker": "KXUCL1H",
+     "issue": "Filed under competition_winner_and_top_n but is: Champions League first-half winner (half market)",
+     "belongs_in": "first_half_and_period"
+    },
+    {
+     "ticker": "KXUCLSPREAD",
+     "issue": "Filed under competition_winner_and_top_n but is: Champions League match spread",
+     "belongs_in": "handicap_and_exact_score"
+    },
+    {
+     "ticker": "KXEFLCHAMPIONSHIPSPREAD",
+     "issue": "Filed under competition_winner_and_top_n but is: EFL Championship match spread",
+     "belongs_in": "handicap_and_exact_score"
+    },
+    {
+     "ticker": "KXUCLTOTAL",
+     "issue": "Filed under competition_winner_and_top_n but is: Champions League match total goals",
+     "belongs_in": "total_goals"
+    },
+    {
+     "ticker": "KXEFLCHAMPIONSHIPTOTAL",
+     "issue": "Filed under competition_winner_and_top_n but is: EFL Championship match total goals",
+     "belongs_in": "total_goals"
+    },
+    {
+     "ticker": "KXUCLBTTS",
+     "issue": "Filed under competition_winner_and_top_n but is: Champions League BTTS match contract",
+     "belongs_in": "btts_and_clean_sheet"
+    },
+    {
+     "ticker": "KXWCTEAMTOTALGOALS",
+     "issue": "Filed under competition_winner_and_top_n but is: World Cup tournament goal count (aggregate)",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: tournament_goal_aggregates"
+    },
+    {
+     "ticker": "KXWCGSGOALS",
+     "issue": "Filed under competition_winner_and_top_n but is: World Cup group-stage goal count (aggregate)",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: tournament_goal_aggregates"
+    },
+    {
+     "ticker": "KXWCKOPENALTIES",
+     "issue": "Filed under competition_winner_and_top_n but is: World Cup number of matches going to penalties",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: tournament_event_counts"
+    },
+    {
+     "ticker": "KXWCCONCEDE1ST",
+     "issue": "Filed under competition_winner_and_top_n but is: World Cup concede-first event",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: tournament_event_counts"
+    },
+    {
+     "ticker": "KXWCPLAYERGOALS",
+     "issue": "Filed under competition_winner_and_top_n but is: World Cup player goals (player stat)",
+     "belongs_in": "player_season_leader_and_awards"
+    },
+    {
+     "ticker": "KXWCCAREERGOALS",
+     "issue": "Filed under competition_winner_and_top_n but is: World Cup career goals (player stat)",
+     "belongs_in": "player_season_leader_and_awards"
+    },
+    {
+     "ticker": "KXPLAYWC",
+     "issue": "Filed under competition_winner_and_top_n but is: Player World Cup participation (availability/selection)",
+     "belongs_in": "NEW_ARCHETYPE_NEEDED: player_tournament_selection"
+    }
+   ]
   },
   "mechanism": {
    "summary": "A competition outright is a sum over scenarios of a latent strength vector, a schedule and a format. Strength is uncertain and drifts; the remaining matches are sampled to produce a joint table; the title (or top-N or margin) is then read from the sampled tables, with the format converting table position into a champion in split-season and knockout competitions (bracket paths, extra time, shootouts). Multi-competition clubs trade league points for cup progress, and trophy-count contracts need the joint path. The margin series is an order-statistic of the top two totals, a different distribution from the title winner. Administrative shocks (deductions, voided seasons) and the definition of the competition-season complete the chain.",
@@ -1149,7 +1355,7 @@
      "id": "s3",
      "name": "Competition format conversion",
      "description": "Where the title is not the table leader (split seasons, liguilla playoffs, MLS Cup, World Cup knockouts, two-leg ties), a team's table position is converted to the title by a bracket with seeding, home advantage in legs and a penalty-shootout lottery, so the format-specific path probability, not strength alone, sets the price; a one-match final with extra time and penalties compresses strength differences toward 50%.",
-     "distribution": "Sequence of binary knockout events with win probability about 0.55-0.75 for the favourite; product of path probabilities, dominated by bracket draw luck for the elite.",
+     "distribution": "Sequence of binary knockout events with win probability for the favourite to be estimated per format (roughly 0.55-0.75 is a hypothesis); product of path probabilities, dominated by bracket draw luck for the elite.",
      "categories": [
       "game_context_script",
       "settlement_contract",
@@ -1158,7 +1364,9 @@
      "input_ids": [
       "soc.bracket_path_difficulty",
       "soc.playoff_format_conversion",
-      "soc.tiebreaker_rules"
+      "soc.tiebreaker_rules",
+      "soc.uefa_league_phase_simulation",
+      "soc.seeded_bracket_path_given_finish"
      ]
     },
     {
@@ -1177,7 +1385,8 @@
       "soc.transfers",
       "soc.cup_progression_load",
       "soc.squad_depth_value",
-      "soc.motivation"
+      "soc.motivation",
+      "soc.club_multi_competition_dependence"
      ]
     },
     {
@@ -1269,9 +1478,9 @@
     "efficiency_conversion": {
      "status": "COVERED",
      "input_ids": [
-      "soc.xg"
+      "soc.ratings"
      ],
-     "note": "Finishing luck versus skill in points so far is regressed by using xG-based ratings."
+     "note": "Luck-versus-skill split is performed inside the rating fit (xG-based goal model with shrinkage) so soc.ratings carries it; soc.xg is audited WEAK and is no longer cited as standalone cover."
     },
     "distribution_variance": {
      "status": "COVERED",
@@ -1284,10 +1493,9 @@
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
-      "soc.cup_progression_load",
-      "soc.motivation"
+      "soc.cup_progression_load"
      ],
-     "note": "Rotation and priority across competitions and dead-rubber effort late in the season."
+     "note": "Rotation and priority across competitions come from soc.cup_progression_load; soc.motivation is audited KEEP_CONTEXT (circular with the simulation) and is not cited as cover."
     },
     "officiating_rules": {
      "status": "NOT_APPLICABLE",
@@ -1363,6 +1571,64 @@
     ],
     "why": "Directly the random variable of the point-margin series, and it is not the same as the title-winner probability.",
     "role": "secondary"
+   },
+   "soc.uefa_league_phase_simulation": {
+    "label": "UEFA 36-team league-phase simulation: finishing-rank distribution, top-8 / 9-24 / 25+ outcomes and tiebreakers",
+    "category": "game_state",
+    "mechanism": "Monte Carlo of the 8 league-phase matches per club against four-pot-drawn opponents, giving the distribution of final rank, points and goal difference and hence direct R16 entry, playoff or elimination.",
+    "rationale": "The UCL/UEL league phase (36 teams, 8 unequal fixtures, rank 1-8 direct, 9-24 playoff, 25+ out, goal-difference and goals-scored tiebreakers) replaced the group stage from 2024-25, so there is no long history of P(advance | rank); the rank distribution has to be simulated from team strengths and the actual fixed opponent list.",
+    "measurement": "From the official draw list the eight opponents and venues per club; per match win/draw/loss from the opponent- and venue-adjusted goal model (soc.ratings, Dixon-Coles) with team strength sampled from its posterior; 20,000 simulated league phases using UEFA tiebreak order (points, goal difference, goals scored, away goals, wins, away wins, opponents points, disciplinary). Output P(rank r) and P(top8), P(9-24), P(25+) per club, as-of after the last played matchday, recomputed after each result.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "UEFA.com fixtures and standings (free_scrape)",
+     "football-data.co.uk results for domestic strength (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "league-phase draw and fixture list",
+     "played results",
+     "tiebreak order"
+    ],
+    "why": "Supplies the seeding and bracket side for KXUCL16*, KXUEL16*, KXUCL8, KXUCLTOP, KXUCLBOTTOM, KXUCLLEAGUE-type series where table position, not strength alone, decides the stage reached.",
+    "role": "primary"
+   },
+   "soc.seeded_bracket_path_given_finish": {
+    "label": "Seeded bracket path and opponent set conditional on league-phase finishing rank",
+    "category": "matchup",
+    "mechanism": "Maps each league-phase finishing rank (or 9-24 playoff pairing) to the possible playoff, R16, quarter and semi opponents, bracket side and tie venues, so P(reach stage) is a product of path probabilities conditional on rank.",
+    "rationale": "In the new UEFA format rank 1-8 avoid the playoff and sit on fixed bracket lines while 9-24 face a seeded two-leg playoff; the opponent a club can meet in the R16 depends on its finish, so the same strength gives different stage-reach probabilities by finish and stage-markets cannot be priced from a strength rating alone.",
+    "measurement": "For each simulated final rank, apply the published bracket lines and seeding rules to enumerate opponent sets; per tie compute P(advance) by two-leg aggregate simulation from the match-level goal model (home advantage in each leg, extra time and penalties tilted to the stronger side from historical shootout rates, to be estimated); multiply along the path; as-of after each draw.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "UEFA regulations and draw procedure (free)",
+     "UEFA.com draw results (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "bracket schedule",
+     "draw results",
+     "tie format"
+    ],
+    "why": "Needed because UEFA stage-reach series (R16, R8, finalist, advance) are settled by bracket position determined by the league-phase finish.",
+    "role": "primary"
+   },
+   "soc.club_multi_competition_dependence": {
+    "label": "Dependence of one club's league, cup and Champions League title events",
+    "category": "distribution",
+    "mechanism": "Joint distribution of a club winning the league, domestic cup(s), Supercopa and the Champions League, driven by shared squad strength, a shared injury/fatigue shock and the schedule trade-off between competitions.",
+    "rationale": "KXSOCCERTROPHIES counts trophies across La Liga, Copa del Rey, Supercopa de Espana and the Champions League, so its price is a sum of correlated Bernoulli events; treating them as independent misprices count thresholds, and the sign of the correlation is mixed (shared strength positive, fixture overload negative).",
+    "measurement": "Simulate the four competitions jointly with a common latent club strength draw and a shared availability shock (sample injury days from squad-level history); estimate the pairwise correlation of title indicators from simulated paths and compare with historical co-occurrence of league-plus-cup and league-plus-UCL doubles over 20 seasons (small sample, shrink toward independence with k=10 seasons). As-of after each round.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Wikipedia/RSSSF historical trophy tables (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "season trophy results by club",
+     "squad injury days"
+    ],
+    "why": "Provides the dependence structure the trophy-count series needs and which no independent per-competition probability can deliver.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -1434,12 +1700,12 @@
   "interactions": [
    {
     "inputs": [
-     "soc.ratings_uncertainty",
-     "soc.comp_sim"
+     "soc.preseason_prior",
+     "soc.ratings_uncertainty"
     ],
-    "form": "convex",
-    "mechanism": "Title probability for a mid-ranked contender is convex in strength uncertainty: widening the posterior raises its odds more than it lowers the favourite's, because the title is the maximum over teams and maxima reward variance.",
-    "how_to_test": "Re-run the simulation with posterior sd scaled by 0.5, 1, 1.5 and track title odds of rank 3-6 teams."
+    "form": "conditional",
+    "mechanism": "For promoted or rebuilt clubs the preseason prior fixes the posterior mean while its width sets the tails: early in the season title odds of a mid-ranked contender are convex in prior width, and the prior weight fades as matches accumulate, so the interaction is large in the first third of a season and near zero afterwards (hypothesis on timing).",
+    "how_to_test": "Backtest title and top-N calibration by matchweek bucket with prior sd inflated versus fixed, and compare Brier score in the first ten matchweeks."
    },
    {
     "inputs": [
@@ -1533,6 +1799,11 @@
       "name": "Opta/Stats Perform",
       "access": "paid",
       "note": "Complete competition database"
+     },
+     {
+      "name": "UEFA.com fixtures, draw and standings pages",
+      "access": "free_scrape",
+      "note": "League-phase opponent lists, standings and tiebreak columns; official source of truth for the format"
      }
     ],
     "feeds_inputs": [
@@ -1540,7 +1811,9 @@
      "soc.remaining_schedule_strength",
      "soc.playoff_format_conversion",
      "soc.tiebreaker_rules",
-     "soc.top_two_order_statistics"
+     "soc.top_two_order_statistics",
+     "soc.uefa_league_phase_simulation",
+     "soc.seeded_bracket_path_given_finish"
     ]
    },
    {
@@ -1560,7 +1833,7 @@
      {
       "name": "ClubElo",
       "access": "free",
-      "note": "Elo for most clubs worldwide, used for cross-league cup strengths"
+      "note": "Elo ratings for European clubs (coverage of the South American, Asian and North American clubs in this key is unverified); used for cross-league cup strengths only where the club is listed"
      },
      {
       "name": "Own Dixon-Coles / Bayesian state-space fit",
@@ -1571,6 +1844,11 @@
       "name": "Opta Power Rankings / The Analyst",
       "access": "paid",
       "note": "External rating with simulation probabilities"
+     },
+     {
+      "name": "World Football Elo Ratings (eloratings.net)",
+      "access": "free",
+      "note": "National-team Elo used for World Cup, Copa America, AFCON and Asian Cup outrights; club coverage none"
      }
     ],
     "feeds_inputs": [
@@ -1619,7 +1897,8 @@
      "soc.points_deductions",
      "soc.cup_progression_load",
      "soc.motivation",
-     "soc.abandonment_risk"
+     "soc.abandonment_risk",
+     "soc.club_multi_competition_dependence"
     ]
    }
   ],
@@ -1648,6 +1927,25 @@
     "description": "Manager changes and in-season tactical evolution shift a contender's strength, and the true effect size of a sacking or appointment is not estimated in any input here; the existing catalog only flags it inside soc.transfers.",
     "what_would_resolve": "Event-study estimating the change in points-per-game after manager changes with matched controls across top leagues.",
     "category": "coaching_scheme"
+   },
+   {
+    "id": "uefa_format_history_short",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "The 36-team UEFA league phase has only a few completed seasons, so P(advance | rank) and the shootout/tie-break base rates cannot be fitted from history; the two new UEFA inputs rely on simulation from team strengths and are uncalibrated against realised format outcomes.",
+    "what_would_resolve": "Backtest simulated rank distributions against the realised 2024-25 onward league phases once the rules texts of the UEFA series are read."
+   },
+   {
+    "id": "rating_source_coverage_non_european",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The sampled rules-text series are dominated by Paraguay, Uruguay, Peru, Venezuela, Ecuador, Chile, Argentina, Libertadores and Sudamericana outrights, and by national-team tournaments; ClubElo is European-centred and Understat covers six European leagues, so soc.ratings, soc.ratings_uncertainty and soc.preseason_prior are not verifiably computable from free sources for these competitions.",
+    "what_would_resolve": "Check ClubElo and eloratings.net coverage per league and fall back to an own results-based Dixon-Coles fit; record which leagues have xG-based ratings at all.",
+    "category": "talent_strength"
+   },
+   {
+    "id": "extra_time_tilt_unestimated",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "The round win probability w_r = P(win in 90) + P(draw) x 0.5 with a 0.52-0.55 stronger-side tilt for extra time and penalties is an unsourced placeholder in soc.bracket_path_difficulty; the true tilt and shootout skill effect are not estimated.",
+    "what_would_resolve": "Estimate the extra-time and shootout win rate of the stronger side from historical cup knockouts and replace the placeholder."
    }
   ]
  },
@@ -1655,7 +1953,7 @@
   "reviewer": "soccer_author_a",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "YES settles on goals scored within one half only, the half's regulation 45 minutes plus its own stoppage time: first-half markets (result/winner of the half, Tie, total over a half-goal strike, spread 'wins by more than N goals in the 1st Half', exact half-time score, first-half BTTS) count only first-half goals, and second-half markets (2H total, 2H result) count only second-half goals, not the cumulative score. A drawn half (including 0-0) resolves the 'Tie' market YES. Cancelled matches or those rescheduled more than 48 hours away resolve to a fair price. Strikes are x.5 'more than' (strike_type greater) so no pushes exist; own goals count for the team awarded the goal.",
+   "settlement_definition": "YES settles on goals scored within one half only, one half only (the winner/Tie texts, e.g. KXSERIEA2H, say 'after 45 minutes plus stoppage time'; the total, spread and BTTS texts say only that goals scored during the half count, so stoppage-time inclusion there is inferred): first-half markets (result/winner of the half, Tie, total over a half-goal strike, spread 'wins by more than N goals in the 1st Half', exact half-time score, first-half BTTS) count only first-half goals, and second-half markets (2H total, 2H result) count only second-half goals, not the cumulative score. A drawn half (including 0-0) resolves the 'Tie' market YES. Cancelled matches or those rescheduled more than 48 hours away resolve to a fair price. Strikes are x.5 'more than' (strike_type greater) so no pushes exist; own goals count for the team awarded the goal.",
    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
@@ -1681,14 +1979,15 @@
     {
      "ticker": "KXSERIEA2H",
      "quote": "after 45 minutes plus stoppage time",
-     "establishes": "Period is 45 minutes plus that half's stoppage time, so first-half added time (1-3 minutes) and second-half added time (4-8) carry different goal exposure."
+     "establishes": "Period is 45 minutes plus that half's stoppage time for the winner/Tie text; first-half and second-half added time differ in length so exposure differs by half (typical lengths are not sourced here)."
     }
    ],
    "variants_and_edge_cases": [
     "Second-half contracts are conditional-in-state: the 2H goal rate depends on the half-time score (leader parks, trailing side chases), yet the contract ignores the half-time score itself; 1H and 2H are therefore correlated through state, not independent halves of a Poisson.",
     "First-half exact-score ladder (KXMLS1HSCORE, KXLIGUE11HSCORE) is a custom strike set of mutually exclusive scores with mass concentrated on 0-0, 1-0, 0-1, 1-1; tail scores like 3-2 in a half are rare, so the ladder is dominated by Dixon-Coles low-cell structure.",
     "Half spread 'wins by more than 1.5 goals' (KXBUNDESLIGA1HSPREAD, KXUCL1HSPREAD) needs a 2-0+ half lead, a rare event (about 5-8% for a strong favourite), so estimates are sensitive to the tail of the half goal distribution.",
-    "About 268 live series, 18 with rules text; others (KXEPL2HTOTAL ...) are TITLE_ONLY at sample time and assumed the same; first-half stoppage in lower leagues can vary because added time is referee-discretionary."
+    "About 268 live series, 18 with rules text; others (KXEPL2HTOTAL ...) are TITLE_ONLY at sample time and assumed the same; first-half stoppage in lower leagues can vary because added time is referee-discretionary.",
+    "Knockout-cup half series (KXTACAPORT, KXUSOPENCUP, KXFACUP families if listed) may or may not count extra-time halves as '2nd Half'; the sampled texts do not say, so the 2H window in cup ties is CONTRACT_AMBIGUOUS."
    ],
    "settlement_data_source": "Official match report goal events with minute (goal minute and period as recorded by the league/Kalshi data provider, with 45+N counted as first half and 90+N as second half); own goals credited to the beneficiary."
   },
@@ -1709,8 +2008,7 @@
      "input_ids": [
       "soc.xg_adjusted_ratings",
       "soc.xi_strength_delta",
-      "soc.lineups_pit",
-      "soc.xg"
+      "soc.lineups_pit"
      ]
     },
     {
@@ -1749,8 +2047,8 @@
     {
      "id": "s4",
      "name": "Second-half state and conditional rates",
-     "description": "For second-half markets the half-time score matters: the trailing side's attack rate rises, the leading side's falls, substitutions arrive around minute 60, and a first-half red card alters everything. The 2H total is therefore a function of the 1H result, creating positive dependence of halves in strong-favourite matches and negative in tight ones.",
-     "distribution": "Conditional intensity multipliers by half-time margin (e.g. +25% for the trailing side, -15% for a two-goal leader), plus discrete red-card shocks.",
+     "description": "For second-half markets the half-time score matters: the trailing side's attack rate rises, the leading side's falls, substitutions arrive around minute 60, and a first-half red card alters everything. The 2H total is therefore a function of the 1H result, which plausibly creates dependence between halves whose sign by match type is a hypothesis to be tested, not an established fact.",
+     "distribution": "Conditional intensity multipliers by half-time margin (sizes such as +25% trailing or -15% for a two-goal leader are unsourced hypotheses to estimate), plus discrete red-card shocks.",
      "categories": [
       "game_context_script",
       "coaching_scheme",
@@ -1758,13 +2056,14 @@
      ],
      "input_ids": [
       "soc.second_half_state_multiplier",
-      "soc.score_state"
+      "soc.score_state",
+      "soc.penalty_rate"
      ]
     },
     {
      "id": "s5",
      "name": "Stoppage, officials and settlement",
-     "description": "Added time (in minutes) and VAR delays extend each half's exposure and differ by half and referee; first-half stoppage is short, second-half long. Settlement uses the half's regulation 45+ stoppage and ignores the other half, with fair-price resolution for postponements.",
+     "description": "Added time (in minutes) and VAR delays extend each half's exposure and differ by half and referee; second-half stoppage is typically longer than first-half stoppage (lengths to be measured). Settlement uses the half's regulation 45+ stoppage and ignores the other half, with fair-price resolution for postponements.",
      "distribution": "Added time per half is a small discrete variable (1-3 min in the first half, 4-8 in the second); goal rate per minute times added minutes shifts expected goals by about 0.03 to 0.15.",
      "categories": [
       "officiating_rules",
@@ -1782,10 +2081,9 @@
      "status": "COVERED",
      "input_ids": [
       "soc.xg_adjusted_ratings",
-      "soc.xg",
       "soc.finishing_regression"
      ],
-     "note": "Opponent-adjusted full-match strengths with luck regressed supply the base rates for both halves."
+     "note": "Opponent-adjusted full-match strengths with luck regressed supply the base rates for both halves; raw soc.xg is audited DUPLICATE_OF soc.xg_adjusted_ratings and is not cited."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -1865,9 +2163,10 @@
     "officiating_rules": {
      "status": "COVERED",
      "input_ids": [
-      "soc.added_time"
+      "soc.added_time",
+      "soc.penalty_rate"
      ],
-     "note": "Referee added-time habits set exposure minutes in each half."
+     "note": "Referee added-time habits set exposure minutes in each half and the referee/VAR penalty and red-card propensity drives the discrete first-half shocks named in stage s4."
     },
     "settlement_contract": {
      "status": "COVERED",
@@ -1884,7 +2183,7 @@
     "label": "Half-specific attack and defence ratings",
     "category": "team_strength",
     "mechanism": "Separate xG creation and concession rates for the first and second half.",
-    "rationale": "A single full-match rating hides that some teams are strong starters (high press early, fresh legs) and weak finishers, and vice versa; first-half markets need first-half strengths, which differ from full-match by up to 20% for extreme styles.",
+    "rationale": "A single full-match rating hides that some teams are strong starters (high press early, fresh legs) and weak finishers, and vice versa; first-half markets need first-half strengths, which differ from full-match by up to 20% for extreme styles. It overlaps soc.period_split and soc.first_goal_hazard (all three describe how scoring is spread over the match); the team-level deviation from the league 1H share is small, so this input is a shrunk correction, not a standalone primary.",
     "measurement": "For each team: xG for/against in minutes 1-45+ and 46-90+ per 45 minutes, opponent-adjusted with a ridge regression log(xG_half) ~ attack_i + defence_j + home + half, 30-match window half-life 15, shrink half-effect to the league 1H/2H ratio with k=20 matches; output a 1H multiplier m_1H_team in [0.7,1.3].",
     "pregame_knowable": "yes",
     "free_sources": [
@@ -1896,7 +2195,7 @@
      "shot-level xG with minute and team"
     ],
     "why": "Gives the first-half and second-half lambdas their own team-level scaling rather than a fixed league 45/55 split.",
-    "role": "primary"
+    "role": "secondary"
    },
    "soc.second_half_state_multiplier": {
     "label": "Second-half scoring multipliers conditional on half-time score and cards",
@@ -1937,8 +2236,8 @@
   },
   "input_audit": {
    "soc.period_split": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Share of goals in each half is the direct scaling factor, but it must be team- and opponent-conditioned, not just a team average."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Share of goals per half is the scaling factor, but team-level sd around the league share is only a few percentage points with heavy shrinkage; it overlaps soc.half_specific_xg_ratings (its team/opponent-conditioned form) and soc.first_goal_hazard, so it is demoted from primary to secondary."
    },
    "soc.xg_adjusted_ratings": {
     "verdict": "KEEP_PRIMARY",
@@ -1953,8 +2252,8 @@
     "reason": "Team draw effects carry some persistence, but the half draw is largely structural (low counts), so the weight is small."
    },
    "soc.first_goal_hazard": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Opening-period intensity is exactly the first-half time profile; keep, estimated in 15-minute bins."
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Opening-period hazard measures the same time profile as soc.period_split and the half-specific ratings; it is kept only as a context check and to build the HT-margin distribution, not as an independent driver."
    },
    "soc.pace_press": {
     "verdict": "KEEP_SECONDARY",
@@ -2013,25 +2312,25 @@
      "soc.pace_press"
     ],
     "form": "multiplicative",
-    "mechanism": "High-press teams front-load their chances; pairing a high-press side with a deep-block opponent raises first-half goal expectation more than the sum of the parts, a multiplicative effect on m_1H.",
-    "how_to_test": "Fit 1H goals on pressing intensity interaction with opponent line height."
+    "mechanism": "High-press teams front-load their chances; pairing a high-press side with a deep-block opponent (proxied by the opponent's PPDA and territory, since line height itself is not in free data) raises first-half expected goals more than the sum of the parts.",
+    "how_to_test": "Fit 1H goals on pressing intensity interacted with the opponent PPDA/deep-block proxy; line height needs a tracking-data provider and is not available free."
    },
    {
     "inputs": [
-     "soc.half_level_dependence_rho",
-     "soc.draw_propensity"
+     "soc.first_goal_hazard",
+     "soc.second_half_state_multiplier"
     ],
-    "form": "joint-distribution",
-    "mechanism": "Half draw probability is controlled jointly by the dependence parameter and the team draw effect, and they are partly confounded; separating them is required to price the Tie and exact-score ladders.",
-    "how_to_test": "Compare half-level goodness of fit with and without each parameter."
+    "form": "conditional",
+    "mechanism": "An early first-half goal produces the half-time margin that then selects the second-half multiplier: the opening-period hazard determines which state regime the 2H starts in, so P(2H total over 1.5) differs by who scored first and when (direction: a favourite conceding first lifts 2H output, an underdog scoring first lowers it).",
+    "how_to_test": "Condition 2H goal counts on first-goal minute bucket and scorer favouredness, and compare with a model that uses only the HT margin."
    },
    {
     "inputs": [
      "soc.added_time",
      "soc.period_split"
     ],
-    "form": "threshold",
-    "mechanism": "A match with VAR checks and a long first-half delay can lift the first-half exposure by 3-5 minutes (about +7%), a threshold shift for close 0.5 total strikes.",
+    "form": "multiplicative",
+    "mechanism": "A long first-half delay (VAR checks, injuries) adds exposure minutes: the extra time scales the half's expected goals proportionally (roughly one minute per 1/45 of the half rate; the size of a typical delay is to be measured) and matters most for close 0.5 total strikes.",
     "how_to_test": "Contrast 1H goals per minute vs added time buckets."
    },
    {
@@ -2080,7 +2379,7 @@
      {
       "name": "football-data.co.uk",
       "access": "free",
-      "note": "HT and FT scores for major leagues"
+      "note": "HT and FT scores only for covered leagues; it does NOT provide goal minutes, so goal_minute/goal_side come from Understat, API-Football or Opta"
      },
      {
       "name": "Understat shots with minute",
@@ -2172,9 +2471,7 @@
      }
     ],
     "feeds_inputs": [
-     "soc.added_time",
-     "m.ladder_structure",
-     "m.rules_text"
+     "soc.added_time"
     ]
    },
    {
@@ -2204,6 +2501,35 @@
      "soc.lineups_pit",
      "soc.xi_strength_delta"
     ]
+   },
+   {
+    "dataset": "Referee and penalty history",
+    "grain": "one row per match with referee id, penalties awarded by side and minute, red cards by minute",
+    "fields": [
+     "match_id",
+     "referee_id",
+     "pens_for",
+     "pens_against",
+     "pen_minute",
+     "red_card_minutes"
+    ],
+    "timestamp_requirement": "Final after the match; referee assignment known 1-3 days pre-match, use prior matches only",
+    "history_needed": "5 seasons",
+    "candidate_sources": [
+     {
+      "name": "football-data.co.uk referee columns",
+      "access": "free",
+      "note": "Referee and cards for covered leagues; penalties not given"
+     },
+     {
+      "name": "API-Football fixtures/events",
+      "access": "paid",
+      "note": "Penalty and card events with minute"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.penalty_rate"
+    ]
    }
   ],
   "unresolved": [
@@ -2231,6 +2557,18 @@
     "description": "Heat, humidity, altitude and pitch reduce second-half intensity relative to the first; the size of the effect on the 1H/2H goal split by league and month is not established and the catalog weather input is not tied to halves.",
     "what_would_resolve": "Regress 2H share of goals on kickoff temperature/humidity and altitude using multi-season data with kickoff hour as control.",
     "category": "environment"
+   },
+   {
+    "id": "half_xg_coverage_non_top6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Understat shot-level xG with minute covers six European leagues (plus RPL); the live half series span Liga Portugal, Liga MX, MLS, USL, Eredivisie, Brasileiro, CONMEBOL and cups, where only HT/FT scores (and unverified paid event feeds) exist, so soc.half_specific_xg_ratings and soc.second_half_state_multiplier cannot be computed from free data there.",
+    "what_would_resolve": "Verify per-league goal-minute availability on API-Football/Wyscout samples and fall back to HT/FT-based ratings (soc.period_split) where minutes are missing."
+   },
+   {
+    "id": "cup_second_half_extra_time",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "Whether a 2nd Half market in a knockout cup counts the 45+45 regulation second half only or extra-time halves is not shown in any sampled text, and the stoppage-time clause is explicit only for the winner/Tie variants, not for total, spread, BTTS or exact-score texts.",
+    "what_would_resolve": "Read the rules_primary/secondary of a cup half series and of the exact-score series."
    }
   ]
  },

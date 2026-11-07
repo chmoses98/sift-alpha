@@ -13,6 +13,7 @@ export function LabResearch() {
     <section className="lab-research" data-testid="lab-research" aria-label="Independent prediction laboratory">
       <h2>Independent prediction laboratory</h2>
       <p className="lab-note">{s.claim_boundary}</p>
+      <p className="lab-note lab-warn" data-testid="lab-evidence-status">Build artifact of an unmerged draft PR ({nice(s.evidence_status.dashboard_panel)}; workflow {nice(s.evidence_status.prospective_workflow)}). Not live production evidence.</p>
       <div className="lab-scroll">
         <table>
           <thead><tr><th>Family</th><th>Games (before → after repairs)</th><th>Log-loss gain vs market (after)</th><th>95% CI</th><th>Verdict</th></tr></thead>
@@ -30,7 +31,7 @@ export function LabResearch() {
         </table>
       </div>
       <h3>Prospective 2026 totals test</h3>
-      <p>Frozen model <b>{p.frozen_model}</b>: {p.predictions} timestamped predictions, {p.quotes} captured quotes, {p.decision_games} settled decision games. Status: {nice(p.status)}. Inference: {p.inference}.</p>
+      <p>Frozen model <b>{p.frozen_model}</b>: {p.predictions} timestamped predictions, {p.quotes} captured quotes, {p.decision_games} settled decision games, {p.complete_observations} complete quote observations. Status: {nice(p.status)}; claim gate: {nice(p.gate)}. Inference: {p.inference}.</p>
       <h3>Open repair cases</h3>
       <ul className="lab-cases">
         {s.repair_cases.map(c => <li key={c.id}><b>{c.priority}</b> {c.id} <span className="lab-chip">{nice(c.status)}</span></li>)}

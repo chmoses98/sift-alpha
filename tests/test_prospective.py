@@ -26,7 +26,7 @@ def obs(minutes_before, complete=True):
 
 
 def quote(minutes_before, bid=0.40, ask=0.44, ticker="KXNFLTOTAL-26NOV08AAAHHH-48", floor=47.5, source=PP.SOURCE_CAPTURE):
-    return {"kind": "quote", "source": source, "observed_at": iso(minutes_before), "ticker": ticker, "game_id": "g1", "floor": floor, "bid": bid, "ask": ask, "status": "active", "result": ""}
+    return {"kind": "quote", "source": source, "series": "KXNFLTOTAL", "observed_at": iso(minutes_before), "ticker": ticker, "game_id": "g1", "floor": floor, "bid": bid, "ask": ask, "status": "active", "result": ""}
 
 
 def status(audit, h):
@@ -183,6 +183,10 @@ def test_self_capture_records_use_their_page_timestamps(tmp_path):
     assert [r["observed_at"] for r in rows] == ["2026-11-08T10:00:00+00:00", "2026-11-08T10:00:05+00:00"] and all(r["source"] == PP.SOURCE_FALLBACK for r in rows)
     ob = json.loads((tmp_path / "observations.jsonl").read_text().splitlines()[0])
     assert ob["observed_at"] == "2026-11-08T10:00:05+00:00" and ob["complete"] and ob["skipped_markets"] == 1 and ob["pages"] == 2    # observed at the LAST page time
+    PP._LAST.clear()                                                                                              # a new process: state is rebuilt from the ledger
+    assert PP.record_quotes(book, g, tmp_path) == 0                                                              # unchanged rows are not rewritten; the observation still is
+    obs2 = [json.loads(l) for l in (tmp_path / "observations.jsonl").read_text().splitlines()]
+    assert len(obs2) == 2 and obs2[1]["unchanged_rows_not_rewritten"] == 2
 
 
 # ---------------------------------------------------------------- ingestion of the verified collector
@@ -339,3 +343,32 @@ def test_player_decisions_use_series_observation_and_latest_prediction():
     assert [a["status"] for a in a2 if a["horizon"] == "T-6h"] == ["NO_COMPLETE_OBSERVATION_IN_WINDOW"]
     gate = PP.claim_gate(frame, True)
     assert gate["status"] == "INSUFFICIENT_N"
+
+
+def test_empty_book_is_an_error_unless_explicitly_allowed():
+    srv, url = _serve([(200, {"markets": [], "cursor": ""})])
+    with pytest.raises(PP.FetchError):
+        PP.fetch_totals(base=url, pause=0)
+    srv.shutdown()
+    srv, url = _serve([(200, {"markets": [], "cursor": ""})])
+    b = PP.fetch_totals(base=url, pause=0, allow_empty=True); srv.shutdown()
+    assert b["n"] == 0 and b["complete"] and len(b["pages"]) == 1
+
+
+def test_player_series_rows_in_the_shared_ledger_are_not_totals_contracts():
+    player_row = dict(quote(400, ticker="KXNFLRECYDS-26NOV08AAAHHH-AAATX1-60", floor=59.5), series="KXNFLRECYDS")
+    assert status(PP.audit_and_frame([pred(30)], [player_row], [obs(365)], GAMES, KO)[1], "T-6h") == ["NO_QUOTE_ROW"]
+
+
+def test_player_report_runs_end_to_end_on_synthetic_ledgers(tmp_path, monkeypatch):
+    from alpha_engine.lab import player_lab as PLm
+    pdir, qdir, ddir = tmp_path / "p", tmp_path / "q", tmp_path / "d"; ddir.mkdir()
+    PP.append(pdir / "predictions.jsonl", {"kind": "contract_prediction", "ticker": "T", "game_id": "g1", "family": "rec_yds", "series": "KXNFLRECYDS", "pid": "a", "kickoff_utc": KO.isoformat(),
+                                           "generated_utc": (KO - pd.Timedelta(hours=30)).isoformat(), "model_p": 0.6, "week": 10})
+    PP.append(qdir / "quotes.jsonl", dict(quote(400, ticker="T", floor=59.5), series="KXNFLRECYDS", source=PP.SOURCE_FALLBACK))
+    PP.append(qdir / "observations.jsonl", {"kind": "series_observation", "series": "KXNFLRECYDS", "observed_at": iso(362), "complete": True, "run_id": "r"})
+    GAMES.to_csv(ddir / "games.csv", index=False)
+    monkeypatch.setattr(PLm, "load_pbp_players", lambda *a, **k: None)
+    monkeypatch.setattr(PLm, "player_games", lambda *a, **k: pd.DataFrame({"game_id": ["g1"], "pid": ["a"], "rec_yds": [75.0], "rec": [5], "rush_yds": [0.0], "pass_yds": [0.0], "td_any": [0]}))
+    r = PC.run_player_report(pdir, qdir, ddir, now=KO)
+    assert r["label"] == "MARKET_SELECTED_POPULATION" and r["audit_by_horizon"]["T-6h"] == {"ELIGIBLE": 1} and r["gate"]["status"] == "INSUFFICIENT_N"

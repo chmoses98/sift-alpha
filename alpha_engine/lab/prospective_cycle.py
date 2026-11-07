@@ -121,3 +121,29 @@ def publish(repo: Path, out: Path, rel: str = "nfl_totals_v1", branch: str = BRA
         finally:
             _run(repo, "worktree", "remove", "--force", str(tmp / "wt"), check=False); shutil.rmtree(tmp, ignore_errors=True)
     return {"pushed": False, "error": "push failed after retries (non-fast-forward race or network)"}
+
+
+def run_player_report(player_dir: Path, quotes_dir: Path, data_dir: Path, now: pd.Timestamp | None = None, season: int = 2026) -> dict:
+    """Evaluate the separately labelled player experiment: its own predictions ledger, the shared quote/observation ledgers, outcomes from post-game play-by-play, its OWN gate (never pooled with totals)."""
+    from . import player_prospective as PPR, player_lab as PL
+    now = now or pd.Timestamp.now(tz="UTC"); player_dir, quotes_dir, data_dir = Path(player_dir), Path(quotes_dir), Path(data_dir)
+    preds = CI._read(player_dir / "predictions.jsonl"); quotes = CI._read(quotes_dir / "quotes.jsonl"); obs = CI._read(quotes_dir / "observations.jsonl")
+    games = pd.read_csv(data_dir / "games.csv")
+    floors = {}
+    for q in quotes:
+        if q.get("floor") is not None:
+            floors[q["ticker"]] = q["floor"]
+    contracts = pd.DataFrame([{"ticker": p["ticker"], "game_id": p["game_id"], "pid": p.get("pid"), "family": p["family"], "floor": floors.get(p["ticker"], np.nan)} for p in preds]).drop_duplicates("ticker")
+    contracts = contracts.dropna(subset=["floor"]) if len(contracts) else contracts
+    pg = PL.player_games(PL.load_pbp_players(data_dir / "pbp", [season])) if len(contracts) else pd.DataFrame()
+    outcomes = PPR.settle(contracts, pg, games) if len(contracts) else {}
+    frame, audit = PPR.audit_and_frame(preds, quotes, obs, outcomes, now)
+    chains_ok = all(PP.verify_chain(f)["ok"] for f in (player_dir / "predictions.jsonl", quotes_dir / "quotes.jsonl", quotes_dir / "observations.jsonl") if f.exists())
+    gate = PP.claim_gate(frame, chains_ok)
+    gate["scope"] = "applies to the MARKET_SELECTED_POPULATION (exchange-listed players) only"
+    by: dict = {}
+    for a in audit:
+        by.setdefault(a["horizon"], {}).setdefault(a["status"], 0); by[a["horizon"]][a["status"]] += 1
+    rep = {"cycle_utc": now.isoformat(), "label": PPR.LABEL, "experiment": "nfl_player_v3_listed_emp", "predictions": len(preds), "contracts": int(len(contracts)), "audit_by_horizon": by, "gate": gate}
+    (player_dir / "REPORT.json").write_text(json.dumps(rep, indent=1, default=float))
+    return rep

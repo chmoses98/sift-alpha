@@ -125,7 +125,7 @@ def run_predict(data_dir, work, out_lab, out_dir, gt_path, now: pd.Timestamp, bo
     from . import game_lab as GL
     data_dir, work, out_lab, out_dir = Path(data_dir), Path(work), Path(out_lab), Path(out_dir); work.mkdir(parents=True, exist_ok=True)
     games = pd.read_csv(data_dir / "games.csv")
-    books = books or {s: PP.fetch_totals(series=s) for s in SERIES}
+    books = books or {s: PP.fetch_totals(series=s, allow_empty=True) for s in SERIES}      # a series with no listings yet is a valid COMPLETE empty book
     u = contracts_from_book(books, games)
     gt = pd.read_parquet(gt_path); tg = pd.read_parquet(Path(gt_path).with_name("tg.parquet"))
     import json

@@ -28,5 +28,10 @@ def build(lab: Path, prospective: Path) -> dict:
             "player_bias": json.load(open(lab / "player_bias_audit.json")) if (lab / "player_bias_audit.json").exists() else None,
             "repair_cases": [{"id": c["id"], "priority": c["priority"], "status": c["status"], "family": c.get("family")} for c in cases[:12]],
             "coverage": {"archive_settled_by_family": {f: sum(v.values()) for f, v in cov["archive_settled_by_family_season"].items()}, "weather_roof_aware_2025": cov["weather_roof_aware"].get("2025")},
-            "prospective_2026": {"frozen_model": "nfl_totals_v1", "predictions": len(pred), "quotes": quo, "decision_games": (rep.get("evaluation") or {}).get("decision_games", 0), "status": (rep.get("evaluation") or {}).get("status", "NO_DECISIONS_YET"),
+            "evidence_status": {"dashboard_panel": "BUILT_NOT_VIEWED_IN_BROWSER", "prospective_workflow": "NOT_MERGED_INERT_UNTIL_MERGED_TO_DEFAULT_BRANCH", "collector_source": "market-data (verified collector; staleness shown below)",
+                                "note": "These are build artifacts of an unmerged draft PR. They are not live production evidence; the prospective numbers below are what the ledgers actually contain."},
+            "repair_next": (json.load(open(lab / "repair_cases.json")).get("next") or {}).get("next_id"),
+            "prospective_2026": {"frozen_model": "nfl_totals_v1", "predictions": len(pred), "quotes": quo, "decision_games": (rep.get("evaluation") or {}).get("decision_games", 0), "status": (rep.get("evaluation") or {}).get("status", "NO_DECISIONS_YET"), "gate": ((rep.get("evaluation") or {}).get("gate") or {}).get("status", "INSUFFICIENT_N"),
+                                 "complete_observations": (rep.get("counts") or {}).get("complete_observations", 0), "audit_by_horizon": (rep.get("eligible_decision_games") or {}).get("by_status"),
+                                 "capture_gaps": {k: (rep.get("capture_gaps") or {}).get(k) for k in ("gaps_over_limit", "longest_gap_min", "covered_minutes", "window_minutes")},
                                  "inference": "withheld until >= 60 settled decision games"}}

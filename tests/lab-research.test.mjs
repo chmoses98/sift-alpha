@@ -28,3 +28,13 @@ test("prospective status never reports inference before the pre-registered minim
 test("panel is mounted", () => {
   assert.ok(/<LabResearch \/>/.test(readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8")));
 });
+
+test("summary never presents unmerged build artifacts as live evidence", () => {
+  assert.match(s.evidence_status.dashboard_panel, /NOT_VIEWED/);
+  assert.match(s.evidence_status.prospective_workflow, /INERT|NOT_MERGED/);
+  assert.ok(["INSUFFICIENT_N", "FAIL", "PASS_PROVISIONAL"].includes(s.prospective_2026.gate));
+});
+
+test("panel shows the evidence-status warning", () => {
+  assert.ok(/lab-evidence-status/.test(readFileSync(new URL("../src/lab-research.jsx", import.meta.url), "utf8")));
+});

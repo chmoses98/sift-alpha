@@ -239,3 +239,15 @@ def test_frozen_config_equals_selected_total_config_with_pit_groups():
     for k in ("rating", "model", "dist"):
         assert PP.FROZEN[k] == rep[k]
     assert PP.FROZEN["groups"] == [g for g in rep["groups"] if g not in ("qb", "environment")] + ["environment_dome"]
+
+
+def test_recover_handles_kalshi_lar_code_for_the_rams():
+    import pandas as pd
+    from alpha_engine.lab import recover as RV
+    g = pd.DataFrame({"game_id": ["2026_09_LA_WAS", "2026_09_HOU_LAC"], "season": [2026, 2026], "week": [9, 9], "gameday": ["2026-11-08", "2026-11-08"], "away_team": ["LA", "HOU"], "home_team": ["WAS", "LAC"]})
+    idx = RV.games_index(g)
+    r = RV.recover({"ticker": "KXNFLTOTAL-26NOV08LARWAS-45"}, idx)
+    assert r["game_id"] == "2026_09_LA_WAS"                                                      # was silently unmapped before the alias
+    assert RV.recover({"ticker": "KXNFLSPREAD-26NOV08LARWAS-WAS3"}, idx)["team"] == "WAS"
+    assert RV.recover({"ticker": "KXNFLREC-26NOV08LARWAS-LARPNACUA17-5"}, idx)["team"] == "LA"   # player contracts carry the Kalshi code
+    assert RV.recover({"ticker": "KXNFLREC-26NOV08HOULAC-LACJHERBERT1-5"}, idx)["team"] == "LAC"   # LAC must never be read as LA/LAR

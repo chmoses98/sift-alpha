@@ -60,7 +60,7 @@ def build_predictions(data_dir: Path, work: Path, download: bool, season: int = 
     return P, games, sha
 
 
-def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: pd.Timestamp | None = None, download: bool = True, md_src=None, md_ref: str = "origin/market-data", pins: dict | None = None) -> dict:
+def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: pd.Timestamp | None = None, download: bool = True, md_src=None, md_ref: str = "origin/market-data", pins: dict | None = None, exchange_results: dict | None = None) -> dict:
     now = now or pd.Timestamp.now(tz="UTC")
     out = Path(out); work = Path(work); work.mkdir(parents=True, exist_ok=True)
     rep: dict = {"cycle_utc": now.isoformat(), "config_id": PP.config_id(), "mode": "RESEARCH_ONLY", "steps": {}}
@@ -85,7 +85,7 @@ def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: 
     preds, quotes, obs = (CI._read(out / f) for f in ("predictions.jsonl", "quotes.jsonl", "observations.jsonl"))
     chains = {f: PP.verify_chain(out / f) for f in LEDGERS if (out / f).exists()}
     chains_ok = all(c["ok"] for c in chains.values())
-    frame, audit = PP.audit_and_frame(preds, quotes, obs, games, now)
+    frame, audit = PP.audit_and_frame(preds, quotes, obs, games, now, exchange_results=exchange_results)
     first = min((pd.Timestamp(p["generated_utc"]) for p in preds), default=now)
     rep["accounting"] = PP.accounting(games, audit, fz_utc)
     rep.update({"chains": chains, "evaluation": PP.evaluate(frame, audit, chains_ok), "capture_gaps": CI.capture_gaps(obs, first, now) if obs else None,
@@ -95,6 +95,93 @@ def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: 
     (out / "REPORT.json").write_text(json.dumps(rep, indent=1, default=float))
     (out / "decision_audit.json").write_text(json.dumps(audit, indent=0))
     return rep
+
+
+# ------------------------------------------------------------------ commit provenance and the single-writer lease
+def code_sha(repo: Path) -> str:
+    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else "unknown"
+
+
+def commit_message(message: str, meta: dict | None) -> str:
+    """Every publishing run is identified in the commit itself (git trailers), so any ledger/shard commit can be traced to its run, role and code version."""
+    if not meta:
+        return message
+    return message + "\n\n" + "\n".join(f"{k}: {v}" for k, v in meta.items())
+
+
+LEASE = "LEASE.json"
+
+
+def _read_branch_file(repo: Path, rel: str, remote: str = "origin", branch: str = BRANCH) -> bytes | None:
+    r = subprocess.run(["git", "-C", str(repo), "show", f"FETCH_HEAD:{rel}"], capture_output=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _push_one(repo: Path, files: dict[str, bytes], message: str, branch: str, remote: str, meta: dict | None, expect_head: str | None = None) -> dict:
+    """Commit `files` on top of the CURRENT branch head and push (non-force).  If `expect_head` is given the push is only attempted when the head has not moved (compare-and-swap)."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        have = _run(repo, "fetch", "--depth=1", remote, branch, check=False).returncode == 0
+        head = _run(repo, "rev-parse", "FETCH_HEAD").stdout.strip() if have else None
+        if expect_head is not None and head != expect_head:
+            return {"pushed": False, "raced": True}
+        _run(repo, "worktree", "prune", check=False)
+        if have:
+            _run(repo, "worktree", "add", "-f", "--detach", str(tmp / "wt"), "FETCH_HEAD")
+        else:
+            _run(repo, "worktree", "add", "-f", "--detach", str(tmp / "wt"), "HEAD"); _run(tmp / "wt", "checkout", "--orphan", branch); _run(tmp / "wt", "rm", "-rf", "--quiet", ".", check=False)
+        wt = tmp / "wt"
+        for rel, data in files.items():
+            (wt / rel).parent.mkdir(parents=True, exist_ok=True); (wt / rel).write_bytes(data)
+        _run(wt, "add", "-A")
+        if not _run(wt, "status", "--porcelain").stdout.strip():
+            return {"pushed": False, "unchanged": True}
+        _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", commit_message(message, meta))
+        ok = _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False).returncode == 0
+        return {"pushed": ok, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip() if ok else None, "raced": not ok}
+    finally:
+        _run(repo, "worktree", "remove", "--force", str(tmp / "wt"), check=False); shutil.rmtree(tmp, ignore_errors=True)
+
+
+def acquire_lease(repo: Path, holder: str, role: str = "refresh", ttl_min: float = 45.0, now: pd.Timestamp | None = None, branch: str = BRANCH, remote: str = "origin") -> dict:
+    """Single-writer lease for ledger refreshes, held in a file on the data branch and taken with a compare-and-swap push (two racing writers cannot both win).  A held, unexpired lease
+    blocks other holders; an expired lease may be taken over (the takeover is itself a commit that names the previous holder)."""
+    now = now or pd.Timestamp.now(tz="UTC")
+    for _ in range(3):
+        have = _run(repo, "fetch", "--depth=1", remote, branch, check=False).returncode == 0
+        head = _run(repo, "rev-parse", "FETCH_HEAD").stdout.strip() if have else None
+        cur = _read_branch_file(repo, LEASE) if have else None
+        prev = json.loads(cur) if cur else None
+        if prev and not prev.get("released") and prev.get("holder") != holder and pd.Timestamp(prev["expires_utc"]) > now:
+            return {"acquired": False, "reason": "lease held", "holder": prev["holder"], "expires_utc": prev["expires_utc"]}
+        doc = {"holder": holder, "role": role, "acquired_utc": now.isoformat(), "expires_utc": (now + pd.Timedelta(minutes=ttl_min)).isoformat(), "released": False,
+               "took_over_from": prev["holder"] if prev and not prev.get("released") and prev.get("holder") != holder else None}
+        r = _push_one(repo, {LEASE: json.dumps(doc, indent=1).encode()}, f"lease: acquire ({role})", branch, remote, {"writer-run": holder, "role": role}, expect_head=head)
+        if r.get("pushed"):
+            return {"acquired": True, **doc}
+    return {"acquired": False, "reason": "lost the race to another writer"}
+
+
+def release_lease(repo: Path, holder: str, now: pd.Timestamp | None = None, branch: str = BRANCH, remote: str = "origin") -> dict:
+    now = now or pd.Timestamp.now(tz="UTC")
+    _run(repo, "fetch", "--depth=1", remote, branch, check=False)
+    cur = _read_branch_file(repo, LEASE)
+    if not cur or json.loads(cur).get("holder") != holder:
+        return {"released": False, "reason": "not the holder"}
+    doc = json.loads(cur); doc.update({"released": True, "released_utc": now.isoformat()})
+    r = _push_one(repo, {LEASE: json.dumps(doc, indent=1).encode()}, "lease: release", branch, remote, {"writer-run": holder, "role": doc.get("role", "refresh")})
+    return {"released": bool(r.get("pushed"))}
+
+
+def lease_ok(repo: Path, holder: str, now: pd.Timestamp | None = None, remote: str = "origin", branch: str = BRANCH) -> bool:
+    now = now or pd.Timestamp.now(tz="UTC")
+    _run(repo, "fetch", "--depth=1", remote, branch, check=False)
+    cur = _read_branch_file(repo, LEASE)
+    if not cur:
+        return False
+    d = json.loads(cur)
+    return d.get("holder") == holder and not d.get("released") and pd.Timestamp(d["expires_utc"]) > now
 
 
 # ------------------------------------------------------------------ append-only publication
@@ -114,9 +201,11 @@ def fetch_branch_files(repo: Path, branch: str, rel: str, dest: Path) -> list[st
     return got
 
 
-def publish(repo: Path, out: Path, rel: str = "nfl_totals_v1", branch: str = BRANCH, remote: str = "origin", message: str = "prospective cycle") -> dict:
+def publish(repo: Path, out: Path, rel: str = "nfl_totals_v1", branch: str = BRANCH, remote: str = "origin", message: str = "prospective cycle", meta: dict | None = None, holder: str | None = None) -> dict:
     """Append-only push of the out/ ledgers to `branch`.  Guard: every file already on the branch must be a byte-prefix of the local file.  Non-force; retried on a race."""
     out = Path(out)
+    if holder is not None and not lease_ok(repo, holder, remote=remote, branch=branch):
+        return {"pushed": False, "error": "ledger publication refused: this run does not hold the single-writer lease"}
     for attempt in range(4):
         tmp = Path(tempfile.mkdtemp())
         try:
@@ -138,13 +227,13 @@ def publish(repo: Path, out: Path, rel: str = "nfl_totals_v1", branch: str = BRA
                     if not new.read_bytes().startswith(b):
                         return {"pushed": False, "error": f"append-only violation: {f} on {branch} is not a prefix of the local ledger"}
                 shutil.copyfile(new, old)
-            for f in ("FREEZE.json", "FREEZE_DIGEST.json", "REPORT.json", "decision_audit.json"):
+            for f in ("FREEZE.json", "FREEZE_DIGEST.json", "REPORT.json", "decision_audit.json", "alerts.json"):
                 if (out / f).exists():
                     shutil.copyfile(out / f, dst / f)
             _run(wt, "add", "-A")
             if not _run(wt, "status", "--porcelain").stdout.strip():
                 return {"pushed": False, "unchanged": True}
-            _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", message)
+            _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", commit_message(message, meta))
             r = _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False)
             if r.returncode == 0:
                 return {"pushed": True, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip(), "attempt": attempt + 1}
@@ -180,11 +269,16 @@ def run_player_report(player_dir: Path, quotes_dir: Path, data_dir: Path, now: p
 
 
 # ------------------------------------------------------------------ capture shards: new-files-only publication and retrieval
-def publish_captures(repo: Path, stage: Path, branch: str = BRANCH, remote: str = "origin", rel: str = "captures", message: str = "capture shards") -> dict:
-    """Publish immutable capture shards as NEW files on `branch` (never overwrites a different file at an existing path; identical re-publication is a no-op).  Safe for concurrent capture
-    sessions: shards have unique names, so a lost push race is simply retried against the fresh branch head."""
+def publish_captures(repo: Path, stage: Path, branch: str = BRANCH, remote: str = "origin", message: str = "capture shards", meta: dict | None = None) -> dict:
+    """Publish NEW files from `stage` (whose layout mirrors the branch root) to `branch`.  A capture worker may only ever add files under ALLOWED_PREFIXES (captures/, contracts/, heartbeats/,
+    settlements/): any other staged path is refused and reported, so a capture run cannot touch ledgers, freeze files, the lease, or anything else.  Never overwrites a different file at an
+    existing path; identical re-publication is a no-op.  Concurrent writers cannot fork anything because every path is new."""
+    from . import capture_window as CW
     stage = Path(stage)
-    files = sorted(p for p in stage.rglob("*.json.gz"))
+    files = sorted(p for p in stage.rglob("*") if p.is_file() and not p.name.startswith("_") and p.suffix in (".gz", ".json"))
+    bad = [str(p.relative_to(stage)) for p in files if not str(p.relative_to(stage)).startswith(CW.ALLOWED_PREFIXES)]
+    if bad:
+        return {"pushed": False, "error": f"refused: staged paths outside the capture allowlist: {bad[:5]}"}
     if not files:
         return {"pushed": False, "unchanged": True}
     for attempt in range(5):
@@ -198,7 +292,7 @@ def publish_captures(repo: Path, stage: Path, branch: str = BRANCH, remote: str 
                 _run(repo, "worktree", "add", "-f", "--detach", str(tmp / "wt"), "HEAD"); _run(tmp / "wt", "checkout", "--orphan", branch); _run(tmp / "wt", "rm", "-rf", "--quiet", ".", check=False)
             wt = tmp / "wt"; added = 0
             for f in files:
-                dst = wt / rel / f.relative_to(stage)
+                dst = wt / f.relative_to(stage)
                 if dst.exists():
                     if dst.read_bytes() != f.read_bytes():
                         return {"pushed": False, "error": f"append-only violation: {dst.relative_to(wt)} exists with different content"}
@@ -207,7 +301,7 @@ def publish_captures(repo: Path, stage: Path, branch: str = BRANCH, remote: str 
             if not added:
                 return {"pushed": False, "unchanged": True}
             _run(wt, "add", "-A")
-            _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", f"{message} (+{added})")
+            _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", commit_message(f"{message} (+{added})", meta))
             if _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False).returncode == 0:
                 return {"pushed": True, "added": added, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip(), "attempt": attempt + 1}
         finally:
@@ -225,12 +319,30 @@ def fetch_branch_tree(repo: Path, branch: str, rel: str, dest: Path, remote: str
 
 
 # ------------------------------------------------------------------ the single-writer refresh (expensive, run rarely) -- capture itself lives in capture_window
-def run_refresh(repo: Path, work: Path, data_dir: Path, player: bool = True, now: pd.Timestamp | None = None, season: int = 2026) -> dict:
-    """fetch published state -> refresh nflverse -> ingest new capture shards -> frozen-model check + new predictions -> evaluate -> (player predictions + report) -> append-only publish."""
-    from . import capture_window as CW
+def run_refresh(repo: Path, work: Path, data_dir: Path, player: bool = True, now: pd.Timestamp | None = None, season: int = 2026, run_id: str | None = None, use_lease: bool = True) -> dict:
+    """Single writer.  lease -> fetch published state -> refresh nflverse -> ingest new capture shards -> frozen-model + pin checks -> predictions -> evaluate -> alerts -> (player) -> append-only
+    publish (lease re-checked, commit trailers name this run) -> release lease.  A run that cannot take the lease changes NOTHING."""
+    from . import capture_window as CW, alerts as AL
     from ..input_research import refresh as RF
     repo, work, data_dir = Path(repo), Path(work), Path(data_dir)
-    now = now or pd.Timestamp.now(tz="UTC"); out = {"refresh_utc": now.isoformat(), "mode": "RESEARCH_ONLY", "steps": {}}
+    now = now or pd.Timestamp.now(tz="UTC"); run_id = run_id or f"refresh-{now.strftime('%Y%m%dT%H%M%SZ')}"
+    out = {"refresh_utc": now.isoformat(), "run_id": run_id, "mode": "RESEARCH_ONLY", "steps": {}}
+    meta = {"writer-run": run_id, "role": "refresh", "code": code_sha(repo)[:12]}
+    if use_lease:
+        lz = acquire_lease(repo, run_id, now=now); out["steps"]["lease"] = lz
+        if not lz.get("acquired"):
+            out["lease_busy"] = True; out["alert_summary"] = AL.summarize([{"severity": "WARN", "code": "LEASE_BUSY", "detail": str(lz)}]); return out
+    try:
+        return _refresh_locked(repo, work, data_dir, player, now, season, run_id, meta, out, use_lease)
+    finally:
+        if use_lease:
+            out["steps"]["lease_release"] = release_lease(repo, run_id)
+
+
+def _refresh_locked(repo, work, data_dir, player, now, season, run_id, meta, out, use_lease):
+    from . import capture_window as CW, alerts as AL
+    from ..input_research import refresh as RF
+    holder = run_id if use_lease else None
     seed = repo / "research" / "prospective"
     pv, pp = work / "pv", work / "pv_player"
     for rel, d, seeddir in (("nfl_totals_v1", pv, seed / "nfl_totals_v1"), ("nfl_player_v3", pp, seed / "nfl_player_v3")):
@@ -247,9 +359,31 @@ def run_refresh(repo: Path, work: Path, data_dir: Path, player: bool = True, now
     RF.download(data_dir, season)
     games = pd.read_csv(data_dir / "games.csv")
     shards = work / "shards"; out["steps"]["shards_fetched"] = fetch_branch_tree(repo, BRANCH, "captures", shards)
+    hbs_dir = work / "hb"; fetch_branch_tree(repo, BRANCH, "heartbeats", hbs_dir)
     out["steps"]["shard_ingest"] = CW.ingest_shards(shards, pv, games, now=now)
-    rep = run_cycle(data_dir, None, pv, work / "cyc", now=now, download=False, pins=PINS)
-    out["steps"]["cycle"] = {k: rep.get(k) for k in ("steps", "counts", "eligible_decision_games", "aborted")}
+    sstage = work / "settle_stage"; sh = CW.capture_settled(lambda: pd.Timestamp.now(tz="UTC"))
+    CW.write_shard(sstage, sh, kind="settlements")
+    out["steps"]["settle_capture"] = {"markets": sum(b["n"] for b in sh["books"].values()), "failures": sh["failures"], "published": publish_captures(repo, sstage, message="settlement evidence", meta=meta).get("pushed")}
+    fetch_branch_tree(repo, BRANCH, "settlements", work / "settle_tree")
+    xr, xconf = CW.load_exchange_results(work / "settle_tree"); out["steps"]["exchange_results"] = {"tickers": len(xr), "conflicts": len(xconf)}
+    rep = run_cycle(data_dir, None, pv, work / "cyc", now=now, download=False, pins=PINS, exchange_results=xr)
+    out["cycle"] = {k: rep.get(k) for k in ("steps", "counts", "eligible_decision_games", "aborted", "accounting")}
+    out["steps"]["cycle"] = out["cycle"]
+    heartbeats = [json.loads(f.read_text()) for f in sorted(hbs_dir.rglob("*.json"))] if hbs_dir.exists() else []
+    obs = [json.loads(l) for l in (pv / "observations.jsonl").read_text().splitlines()] if (pv / "observations.jsonl").exists() else []
+    first = json.loads((pv / "FREEZE.json").read_text())["frozen_utc"]
+    ko = CW.kickoffs(games, season); cov = CW.coverage_matrix(ko[ko > pd.Timestamp(first)], obs) if len(ko) else None
+    extra = []
+    if rep.get("aborted"):
+        extra.append({"severity": "HIGH", "code": "FROZEN_MODEL_ABORT", "detail": str(rep["aborted"])[:200]})
+    for k, v in (rep.get("evaluation") or {}).get("audit_by_horizon", {}).items():
+        if v.get("SETTLEMENT_MISMATCH"):
+            extra.append({"severity": "HIGH", "code": "SETTLEMENT_MISMATCH", "detail": f"{k}: {v['SETTLEMENT_MISMATCH']} game-horizon cell(s) where exchange result != nflverse outcome"})
+    if xconf:
+        extra.append({"severity": "HIGH", "code": "SETTLEMENT_MISMATCH", "detail": f"{len(xconf)} ticker(s) with conflicting exchange results across shards"})
+    alerts = AL.evaluate(heartbeats, obs, out["steps"]["shard_ingest"], now, coverage=cov, since=first, extra=extra)
+    out["alerts"] = alerts; out["alert_summary"] = AL.summarize(alerts)
+    (pv / "alerts.json").write_text(json.dumps({"generated_utc": now.isoformat(), "run_id": run_id, "summary": out["alert_summary"], "alerts": alerts}, indent=1))
     if rep.get("aborted"):
         out["aborted"] = rep["aborted"]; return out
     if player and verify_pins(pp, PLAYER_PINS):
@@ -260,8 +394,8 @@ def run_refresh(repo: Path, work: Path, data_dir: Path, player: bool = True, now
         try:
             out["steps"]["player_predict"] = PPR.run_predict(data_dir, work / "player", repo / "research" / "audit" / "lab", pp, work / "cyc" / "lab" / "game_table.parquet", now)
             out["steps"]["player_gate"] = run_player_report(pp, pv, data_dir, now)["gate"]
-            out["steps"]["publish_player"] = publish(repo, pp, rel="nfl_player_v3", message="prospective player refresh")
+            out["steps"]["publish_player"] = publish(repo, pp, rel="nfl_player_v3", message="prospective player refresh", meta=meta, holder=holder)
         except Exception as e:                                                     # a failed player refresh never blocks the totals experiment
             out["steps"]["player_predict"] = {"error": repr(e)[:300]}
-    out["steps"]["publish_totals"] = publish(repo, pv, rel="nfl_totals_v1", message="prospective refresh")
+    out["steps"]["publish_totals"] = publish(repo, pv, rel="nfl_totals_v1", message="prospective refresh", meta=meta, holder=holder)
     return out

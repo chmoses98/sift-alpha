@@ -67,13 +67,20 @@ def test_no_window_means_no_capture(tmp_path):
     assert r["ticks"] == 0 and r["no_window"] and not list(tmp_path.rglob("*.json.gz"))
 
 
+def _w(stage, tick):
+    sh, reg = tick
+    if reg:
+        CW.write_shard(stage, reg, "contracts")
+    return CW.write_shard(stage, sh)
+
+
 def test_shards_are_hash_verified_and_ingested_idempotently(tmp_path):
     stage, out = tmp_path / "s", tmp_path / "o"
     gm = pd.DataFrame({"game_id": ["2026_10_AAA_HHH"], "gameday": ["2026-11-08"], "away_team": ["AAA"], "home_team": ["HHH"], "season": [2026], "week": [10]})
     clk = FakeClock("2026-11-08 08:20")
-    sh = CW.capture_tick(clk, fetch=lambda s: {**_book(s), "pages": [{"fetched_utc": "2026-11-08T08:19:58+00:00", "markets": [{"ticker": f"KXNFLTOTAL-26NOV08AAAHHH-{44 + i}", "floor_strike": 43.5 + i, "yes_bid_dollars": "0.4", "yes_ask_dollars": "0.44", "status": "active", "result": ""} for i in range(2)]}]}, series=("KXNFLTOTAL",))
-    p = CW.write_shard(stage, sh)
-    assert CW.write_shard(stage, sh) == p                                                          # same content, same name, no duplicate
+    tk = CW.capture_tick(clk, fetch=lambda s: {**_book(s), "pages": [{"fetched_utc": "2026-11-08T08:19:58+00:00", "markets": [{"ticker": f"KXNFLTOTAL-26NOV08AAAHHH-{44 + i}", "floor_strike": 43.5 + i, "yes_bid_dollars": "0.4", "yes_ask_dollars": "0.44", "status": "active", "result": ""} for i in range(2)]}]}, series=("KXNFLTOTAL",))
+    p = _w(stage, tk)
+    assert _w(stage, tk) == p                                                          # same content, same name, no duplicate
     r1 = CW.ingest_shards(stage, out, gm, now=pd.Timestamp("2026-11-08 08:21", tz="UTC"))
     assert r1["ingested"] == 1 and r1["observations"] == 1 and r1["quotes"] == 2
     r2 = CW.ingest_shards(stage, out, gm, now=pd.Timestamp("2026-11-08 08:22", tz="UTC"))
@@ -87,9 +94,9 @@ def test_corrupt_future_and_misnamed_shards_are_rejected(tmp_path):
     stage, out = tmp_path / "s", tmp_path / "o"
     gm = pd.DataFrame({"game_id": ["g"], "gameday": ["2026-11-08"], "away_team": ["AAA"], "home_team": ["HHH"], "season": [2026], "week": [10]})
     clk = FakeClock("2026-11-08 08:20")
-    good = CW.write_shard(stage, CW.capture_tick(clk, fetch=lambda s: _book(s), series=("KXNFLTOTAL",)))
+    good = _w(stage, CW.capture_tick(clk, fetch=lambda s: _book(s), series=("KXNFLTOTAL",)))
     raw = good.read_bytes(); bad = good.with_name(good.name.replace("__", "__0")); bad.write_bytes(raw)                    # name hash no longer matches content
-    fut = CW.write_shard(stage, CW.capture_tick(FakeClock("2026-11-09 00:00"), fetch=lambda s: _book(s), series=("KXNFLTOTAL",)))
+    fut = _w(stage, CW.capture_tick(FakeClock("2026-11-09 00:00"), fetch=lambda s: _book(s), series=("KXNFLTOTAL",)))
     r = CW.ingest_shards(stage, out, gm, now=pd.Timestamp("2026-11-08 08:21", tz="UTC"))
     assert len(r["rejected"]) == 2 and any("future" in v for v in r["rejected"].values()) and any("corrupt" in v for v in r["rejected"].values())
 
@@ -112,14 +119,14 @@ def test_publish_captures_is_new_files_only_and_survives_concurrent_writers(tmp_
     bare, (c1, c2) = _remote(tmp_path)
     clk = FakeClock("2026-11-08 08:20")
     s1, s2 = tmp_path / "s1", tmp_path / "s2"
-    CW.write_shard(s1, CW.capture_tick(clk, fetch=lambda s: _book(s), series=("KXNFLTOTAL",), run_id="a"))
+    _w(s1, CW.capture_tick(clk, fetch=lambda s: _book(s), series=("KXNFLTOTAL",), run_id="a"))
     clk.t += pd.Timedelta(minutes=5)
-    CW.write_shard(s2, CW.capture_tick(clk, fetch=lambda s: _book(s), series=("KXNFLTOTAL",), run_id="b"))
+    _w(s2, CW.capture_tick(clk, fetch=lambda s: _book(s), series=("KXNFLTOTAL",), run_id="b"))
     assert PC.publish_captures(c1, s1)["pushed"] and PC.publish_captures(c2, s2)["pushed"]                         # second writer re-fetches and appends: no fork, no loss
     files = _git(bare, "ls-tree", "-r", "--name-only", PC.BRANCH).split()
-    assert len(files) == 2 and all(f.startswith("captures/") for f in files)
+    assert len(files) == 4 and all(f.startswith(("captures/", "contracts/")) for f in files) and sum(f.startswith("captures/") for f in files) == 2
     assert PC.publish_captures(c1, s1).get("unchanged")                                                            # identical re-publication is a no-op
-    f = next(s1.rglob("*.json.gz")); f.write_bytes(b"tampered")                                                  # same path, different bytes: refused
+    f = next((s1 / "captures").rglob("*.json.gz")); f.write_bytes(b"tampered")                                                  # same path, different bytes: refused
     assert "append-only violation" in PC.publish_captures(c1, s1).get("error", "")
     dest = tmp_path / "pulled"; assert PC.fetch_branch_tree(c2, PC.BRANCH, "captures", dest) == 2
 
@@ -128,4 +135,4 @@ def test_forced_capture_runs_outside_windows_and_is_marked(tmp_path):
     clk = FakeClock("2026-11-08 02:00")
     r = CW.run_window_capture(G, tmp_path, clock=clk, fetch=lambda s: _book(s), sleep=clk.sleep, interval_s=60, span_min=3, force=True)
     assert r["ticks"] >= 2 and not r["no_window"]
-    assert all(CW.read_shard(p)["forced"] for p in tmp_path.rglob("*.json.gz"))
+    assert all(CW.read_shard(p)["forced"] for p in (tmp_path / "captures").rglob("*.json.gz"))

@@ -13,7 +13,8 @@ import pandas as pd
 
 MON = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
 EV = re.compile(r"^KXNFL[A-Z0-9]+-(\d\d)([A-Z]{3})(\d\d)([A-Z]+?)(TD\d+)?-(.*)$")
-ALT = {"JAC": "JAX", "JAX": "JAC"}
+# Kalshi <-> nflverse team-code aliases.  Kalshi 2026 event tickers use LAR for the Rams (nflverse: LA); older tickers used LA.  Every alias is exercised by a test on a real ticker.
+ALT = {"JAC": "JAX", "JAX": "JAC", "LAR": "LA", "LA": "LAR"}
 
 
 def games_index(games: pd.DataFrame) -> dict:

@@ -118,24 +118,27 @@ class FetchError(RuntimeError):
     pass
 
 
-def _get_json(url: str, tries: int, pause: float, opener=urllib.request.urlopen) -> dict:
+def _get_json(url: str, tries: int, pause: float, opener=urllib.request.urlopen):
+    """GET -> (parsed json, sha256 of the RAW response bytes, raw length).  The raw hash is stored with every page so the stored fields stay verifiable against what the exchange sent."""
     last = None
     for a in range(tries):
         try:
-            return json.load(opener(urllib.request.Request(url, headers={"User-Agent": "sift-alpha-research"}), timeout=30))
+            with opener(urllib.request.Request(url, headers={"User-Agent": "sift-alpha-research"}), timeout=30) as r:
+                raw = r.read()
+            return json.loads(raw), hashlib.sha256(raw).hexdigest(), len(raw)
         except Exception as e:                          # network error, HTTP error (incl. 429), bad JSON
             last = e; time.sleep(pause * 2 ** a)
     raise FetchError(f"GET failed after {tries} tries: {url}: {last!r}")
 
 
-def fetch_totals(base: str = KALSHI, series: str = "KXNFLTOTAL", pause: float = 1.0, tries: int = 4, max_pages: int = 20, clock=None, allow_empty: bool = False) -> dict:
+def fetch_totals(base: str = KALSHI, series: str = "KXNFLTOTAL", pause: float = 1.0, tries: int = 4, max_pages: int = 20, clock=None, allow_empty: bool = False, status: str = "open", extra: str = "") -> dict:
     """Full paginated book for one series.  FAIL CLOSED: any page failing after retries, a repeated cursor, running past max_pages, or an empty result raises FetchError -- a partial or empty
     book is never returned.  Every page carries its own fetched-at timestamp (taken after the response arrives)."""
     clock = clock or (lambda: pd.Timestamp.now(tz="UTC"))
     pages, cursor, seen = [], None, set()
     for _ in range(max_pages):
-        d = _get_json(f"{base}?series_ticker={series}&status=open&limit=200" + (f"&cursor={cursor}" if cursor else ""), tries, pause)
-        pages.append({"fetched_utc": clock().isoformat(), "markets": d.get("markets", [])})
+        d, raw_sha, raw_len = _get_json(f"{base}?series_ticker={series}&status={status}&limit=200" + (f"&cursor={cursor}" if cursor else "") + extra, tries, pause)
+        pages.append({"fetched_utc": clock().isoformat(), "raw_sha256": raw_sha, "raw_bytes": raw_len, "markets": d.get("markets", [])})
         cursor = d.get("cursor")
         if not cursor:
             break
@@ -163,7 +166,7 @@ def _last_state(out_dir: Path) -> dict:
             for l in f.read_text().splitlines():
                 r = json.loads(l)
                 if r.get("source") == SOURCE_FALLBACK:
-                    st[r["ticker"]] = (r["bid"], r["ask"], r.get("status"))
+                    st[r["ticker"]] = (r["bid"], r["ask"], r.get("status"), r.get("bid_size"), r.get("ask_size"), r.get("last_price"))
         _LAST[k] = st
     return _LAST[k]
 
@@ -172,21 +175,29 @@ def record_quotes(book: dict, games: pd.DataFrame, out_dir: Path, run_id: str | 
     """Append a COMPLETE fallback book: one `series_observation` (observed_at = the LAST page's fetched time, so every quote was already known then) and a `quote` row for every usable market
     whose bid/ask/status CHANGED since its last recorded row (same convention as the verified collector: an unchanged contract is covered by the observation, so volume stays bounded).
     Each quote carries its own page time.  Quotes without a verifiable bid and ask, or that cannot be tied to a game, are skipped (counted in the observation), never repaired."""
-    out_dir = Path(out_dir); idx = RV.games_index(games); n = skipped = unchanged = 0; rows = []; last = _last_state(out_dir)
+    out_dir = Path(out_dir); idx = RV.games_index(games); n = skipped = unchanged = no_quote = 0; rows = []; last = _last_state(out_dir); unmapped: dict = {}
     for pg in book["pages"]:
         for m in pg["markets"]:
             rec = {"ticker": m["ticker"], "game_id": None}
             RV.fill(rec, idx)
-            if m.get("yes_bid_dollars") is None or m.get("yes_ask_dollars") is None or rec["game_id"] is None:
-                skipped += 1; continue
-            key = (float(m["yes_bid_dollars"]), float(m["yes_ask_dollars"]), m.get("status"))
+            if rec["game_id"] is None:                                  # cannot be tied to a game (e.g. an unknown team-code alias): VISIBLE, never silent
+                skipped += 1; unmapped[m.get("event_ticker") or m["ticker"]] = unmapped.get(m.get("event_ticker") or m["ticker"], 0) + 1; continue
+            if m.get("yes_bid_dollars") is None or m.get("yes_ask_dollars") is None:
+                skipped += 1; no_quote += 1; continue
+            key = (float(m["yes_bid_dollars"]), float(m["yes_ask_dollars"]), m.get("status"), m.get("yes_bid_size_fp"), m.get("yes_ask_size_fp"), m.get("last_price_dollars"))
             if last.get(m["ticker"]) == key:
                 unchanged += 1; continue
-            rows.append(({"kind": "quote", "source": SOURCE_FALLBACK, "observed_at": pg["fetched_utc"], "ticker": m["ticker"], "game_id": rec["game_id"], "floor": m.get("floor_strike"),
-                          "bid": key[0], "ask": key[1], "status": m.get("status"), "result": m.get("result") or "", "series": book["series"]}, key))
+            row = {"kind": "quote", "source": SOURCE_FALLBACK, "observed_at": pg["fetched_utc"], "ticker": m["ticker"], "game_id": rec["game_id"], "floor": m.get("floor_strike"),
+                   "bid": key[0], "ask": key[1], "status": m.get("status"), "result": m.get("result") or "", "series": book["series"], "page_raw_sha256": pg.get("raw_sha256")}
+            for src, dst in (("yes_bid_size_fp", "bid_size"), ("yes_ask_size_fp", "ask_size"), ("no_bid_dollars", "no_bid"), ("no_ask_dollars", "no_ask"), ("last_price_dollars", "last_price"),
+                             ("volume_fp", "volume"), ("open_interest_fp", "open_interest"), ("close_time", "close_time"), ("updated_time", "exchange_updated_time"), ("static_sha", "static_sha")):
+                if m.get(src) is not None:
+                    row[dst] = m[src]
+            rows.append((row, key))
     last_t = book["pages"][-1]["fetched_utc"]
     append(out_dir / "observations.jsonl", {"kind": "series_observation", "source": SOURCE_FALLBACK, "run_id": run_id or ("fb-" + book["series"] + "-" + last_t), "series": book["series"], "observed_at": last_t, "complete": True,
-                                            "n": book["n"], "pages": len(book["pages"]), "tier": "PUBLIC_REST", "skipped_markets": skipped, "unchanged_rows_not_rewritten": unchanged})
+                                            "n": book["n"], "pages": len(book["pages"]), "tier": "PUBLIC_REST", "skipped_markets": skipped, "no_quote_markets": no_quote, "unmapped_markets": sum(unmapped.values()),
+                                            "unmapped_events": sorted(unmapped)[:25], "unchanged_rows_not_rewritten": unchanged})
     for r, key in rows:
         append(out_dir / "quotes.jsonl", r); last[r["ticker"]] = key; n += 1
     return n
@@ -222,7 +233,7 @@ def _index(preds: list[dict], quotes: list[dict], obs: list[dict]):
     return byg, qt, ob
 
 
-def audit_and_frame(preds, quotes, obs, games: pd.DataFrame, now, tickers_by_game: dict | None = None):
+def audit_and_frame(preds, quotes, obs, games: pd.DataFrame, now, tickers_by_game: dict | None = None, exchange_results: dict | None = None):
     """Returns (frame, audit).  audit = one row per (game, horizon) with a reason code; frame = one row per (ticker, horizon) that is ELIGIBLE (prediction, complete fresh observation and a quote row exist),
     with the realised outcome when the game has finished."""
     byg, qt, ob = _index(preds, quotes, obs)
@@ -246,7 +257,7 @@ def audit_and_frame(preds, quotes, obs, games: pd.DataFrame, now, tickers_by_gam
             if k is None or (dt - ob_t[k]).total_seconds() / 60 > PRIMARY_AGE_MIN:
                 audit.append({**a, "status": "NO_COMPLETE_OBSERVATION_IN_WINDOW", "last_complete_obs_utc": ob_t[k].isoformat() if k is not None else None}); continue
             age = (dt - ob_t[k]).total_seconds() / 60
-            got = 0
+            got = 0; mismatched = []
             for tk in by_game_tickers.get(gid, []):
                 cand = [q for q in qt[tk] if _ts(q["observed_at"]) <= ob_t[k]]
                 if not cand:
@@ -257,8 +268,14 @@ def audit_and_frame(preds, quotes, obs, games: pd.DataFrame, now, tickers_by_gam
                 fin = g.loc[gid] if gid in g.index else None
                 settled = fin is not None and not pd.isna(fin["home_score"])
                 outcome = float(fin["home_score"] + fin["away_score"] > q["floor"]) if settled and q["floor"] is not None else np.nan
+                xr = (exchange_results or {}).get(tk)
+                if settled and xr is not None and not np.isnan(outcome) and (xr["result"] == "yes") != bool(outcome):
+                    mismatched.append(tk); continue                      # exchange and nflverse disagree about the outcome: never an eligible decision
                 rows.append({"game_id": gid, "week": p["week"], "family": "total", "ticker": tk, "horizon": h, "floor": q["floor"], "bid": q["bid"], "ask": q["ask"], "age": age, "outcome": outcome,
-                             "model_p": float(dists.prob_gt(p["dist"], p["mu"], p["sigma"], q["floor"])), "prediction_generated_utc": p["generated_utc"], "obs_utc": ob_t[k].isoformat()}); got += 1
+                             "model_p": float(dists.prob_gt(p["dist"], p["mu"], p["sigma"], q["floor"])), "prediction_generated_utc": p["generated_utc"], "obs_utc": ob_t[k].isoformat(), "exchange_result": None if xr is None else xr["result"],
+                             "settlement_verified": bool(xr is not None), "exchange_updated_utc": q.get("exchange_updated_time"), "bid_size": q.get("bid_size"), "ask_size": q.get("ask_size")}); got += 1
+            if got == 0 and mismatched:
+                audit.append({**a, "status": "SETTLEMENT_MISMATCH", "tickers": len(mismatched)}); continue
             if got == 0:
                 audit.append({**a, "status": "NO_QUOTE_ROW"}); continue
             fin = g.loc[gid] if gid in g.index else None

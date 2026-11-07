@@ -23,6 +23,7 @@ from . import marketfree as MF
 from . import stats as S
 
 COMPLEXITY_GBM = 40
+GBM_MAX_ROWS = 40000   # cap on training rows for boosted models (most recent rows) to keep the sweep tractable
 
 
 def _ridge(X, y, alpha):
@@ -98,7 +99,11 @@ def fit_predict(cfg, space, X_all, r, tr_idx, te_idx_list):
     cols = _columns(space, cfg)
     Xt = X_all[cols].to_numpy(float)
     Xtr, tes = _design(cfg, cols, Xt[tr_idx], r[tr_idx], [Xt[i] for i in te_idx_list])
-    f = _ridge(Xtr, r[tr_idx], cfg["alpha"]) if cfg["model"] == "ridge" else _gbm(np.nan_to_num(Xtr, nan=0.0), r[tr_idx], cfg["depth"], cfg["n_iter"])
+    if cfg["model"] == "ridge":
+        f = _ridge(Xtr, r[tr_idx], cfg["alpha"])
+    else:
+        k = max(0, len(Xtr) - GBM_MAX_ROWS)
+        f = _gbm(np.nan_to_num(Xtr[k:], nan=0.0), r[tr_idx][k:], cfg["depth"], cfg["n_iter"])
     return [f(t) if cfg["model"] == "ridge" else f(np.nan_to_num(t, nan=0.0)) for t in tes]
 
 
@@ -107,8 +112,9 @@ def complexity(cfg, space):
     return n * (2 if cfg["sq"] else 1) + cfg["ix"] + (COMPLEXITY_GBM if cfg["model"] == "gbm" else 0)
 
 
-def nested_search(d: pd.DataFrame, r: np.ndarray, groups: dict[str, list[str]], test_seasons, n_configs=120, inner_k=3, seed=1, min_train=3) -> dict:
-    """d: feature table with ``season``; r: residual target (y - baseline). Returns outer predictions of the search procedure and what it selected."""
+def nested_search(d: pd.DataFrame, r: np.ndarray, groups: dict[str, list[str]], test_seasons, n_configs=120, inner_k=3, seed=1, min_train=3, ledger=None, ctx=None) -> dict:
+    """d: feature table with ``season``; r: residual target (y - baseline). Returns outer predictions of the search procedure and what it selected.
+    ``ledger`` (ledger.Ledger) + ``ctx`` (dict identifying market/null/rep/data fingerprint) log EVERY configuration x outer season with its inner-fold scores and whether it was picked."""
     MF.assert_market_free([c for g in groups.values() for c in g])
     space = Space(groups, seed)
     seasons = d["season"].to_numpy()
@@ -136,6 +142,11 @@ def nested_search(d: pd.DataFrame, r: np.ndarray, groups: dict[str, list[str]], 
         pred[te] = fit_predict(cfgs[pick], space, d, r, trn, [te])[0]
         n_core = 1 + len(groups)
         core = {"full": round(float(m[0]), 4), **{f"drop:{g}": round(float(m[1 + i]), 4) for i, g in enumerate(groups)}}
+        if ledger is not None:
+            for ci, cfg in enumerate(cfgs):
+                ledger.record({**(ctx or {}), "outer_season": int(s), "cfg": {k: (list(v) if isinstance(v, tuple) else v) for k, v in cfg.items()}},
+                              {"inner_rel_mse": round(float(m[ci]), 5), "inner_folds": [round(float(x), 5) for x in rel[ci]], "picked": bool(ci == pick), "within_1se": bool(ci in ok), "complexity": complexity(cfg, space)},
+                              sample={"inner_seasons": [int(v) for v in vals]})
         chosen.append({"core_inner_rel_mse": core, "season": int(s), "config": {k: (list(v) if isinstance(v, tuple) else v) for k, v in cfgs[pick].items()}, "inner_rel_mse": round(float(m[pick]), 4),
                        "best_inner_rel_mse": round(float(m[best]), 4), "n_within_1se": len(ok)})
     return {"pred": pred, "chosen": chosen, "n_configs": len(cfgs)}
@@ -170,7 +181,10 @@ def permutation_null(d, r, groups, test_seasons, cluster_keys, reps=2, **kw) -> 
         for sn in np.unique(d["season"]):
             idx = np.where(d["season"].to_numpy() == sn)[0]
             rs[idx] = rng.permutation(r[idx])
-        res = nested_search(d, rs, groups, test_seasons, seed=1 + k, **kw)
+        kw2 = dict(kw)
+        if kw2.get("ctx") is not None:
+            kw2["ctx"] = {**kw2["ctx"], "null": True, "rep": k}
+        res = nested_search(d, rs, groups, test_seasons, seed=1 + k, **kw2)
         g = summarize_gain(d, rs, res["pred"], cluster_keys)
         out.append({"rep": k, "pct_gain": g["pct_gain"], "ci_0.05": g["ci_0.05"]})
     return out

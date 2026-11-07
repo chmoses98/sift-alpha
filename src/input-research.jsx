@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from "react";
 import index from "../research/audit/input_research/index.json";
 import queue from "../research/audit/input_research/queue.json";
+import {ComputableInputsPanel, ScaledSearchPanel} from "./research-milestone2.jsx";
 import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch, UnregisteredArchetypes, DataReadinessPanel} from "./research-experiments.jsx";
 import "./input-research.css";
 
@@ -67,6 +68,8 @@ export function InputResearch() {
     {sport === "SOCCER" && <SoccerSearch/>}
     {doc && <UnregisteredArchetypes doc={doc} sport={sport}/>}
     <DataReadinessPanel sport={sport}/>
+    <ComputableInputsPanel sport={sport}/>
+    <ScaledSearchPanel/>
     {!doc ? <p className="ir-fine">Loading {sport}…</p> : <>
       <div className="ir-pick">
         <label>Market family

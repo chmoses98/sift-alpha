@@ -13,17 +13,20 @@ import re
 import numpy as np
 import pandas as pd
 
-FORBIDDEN = re.compile(r"(spread_line|total_line|moneyline|spread_odds|under_odds|over_odds|^mkt_|implied_team_total$|^spread_team$|^abs_spread$|odds|price|(^|_)ask($|_)|(^|_)bid($|_)|"
+# Superset of this lab's guard and PR #59's (alpha_engine/lab/guard.py): implied / closing / consensus / _mkt_ / bid$ / ask$ are rejected too.
+FORBIDDEN = re.compile(r"(spread_line|total_line|moneyline|spread_odds|under_odds|over_odds|^mkt_|_mkt_|implied|closing|consensus|^spread_team$|^abs_spread$|odds|price|(^|_)ask($|_)|(^|_)bid($|_)|ask$|bid$|"
                        r"^ix_trailing_x_passrate$|^ix_total_x_pace$|^ix_spread_x|^ix_pace_x_total|kalshi|devig|vig$|close_line|market)", re.I)
+# post-game quantities: valid only as TARGETS (from #59)
+POSTGAME = re.compile(r"^(home_score|away_score|result|total|overtime)$")
 SCRIPT_FEATURES = ["diff_exp_epa_pass", "diff_exp_epa_rush", "diff_exp_sr", "diff_exp_pressure", "diff_exp_sack_vs_prot", "diff_exp_expl_pass", "diff_score_drive", "diff_to_luck",
                    "sum_exp_epa_pass", "sum_exp_epa_rush", "sum_exp_sr", "sum_pace_sec", "sum_neutral_pass", "sum_pass_oe", "sum_to_luck", "sum_pen_rate", "sum_third_conv",
                    "sum_score_drive", "rest_diff", "short_week_any", "div_flag", "neutral_site", "late_season"]
 
 
-def assert_market_free(cols) -> None:
-    bad = [c for c in cols if FORBIDDEN.search(str(c))]
+def assert_market_free(cols, allow_targets=()) -> None:
+    bad = [c for c in cols if FORBIDDEN.search(str(c)) or (POSTGAME.match(str(c)) and c not in allow_targets)]
     if bad:
-        raise ValueError(f"market-derived columns are forbidden in primary models: {bad}")
+        raise ValueError(f"market-derived or post-game columns are forbidden in primary models: {bad}")
 
 
 def _ridge_fit(X, y, alpha):

@@ -150,3 +150,17 @@ test("data coverage panel shows the measured class matrix, per-sport archetype r
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test("verified computable inputs and scaled search panels show counts, statuses, ledger and verdicts", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Verified computable inputs/).first()).toBeVisible();
+  await expect(ir.getByText(/non-market inputs computed and verified/)).toBeVisible();
+  await expect(ir.getByText(/perturbation test passed/)).toBeVisible();
+  await page.locator(".ir-sport", { hasText: /^SOCCER/ }).click();
+  await expect(ir.getByText(/soc\.goal_dist|goal_dist/).first()).toBeVisible();
+  await expect(ir.getByText(/Systematic combination testing/)).toBeVisible();
+  await expect(ir.getByText(/configuration-fold records logged/)).toBeVisible();
+  await expect(ir.getByText(/Holm/).first()).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});

@@ -20,9 +20,10 @@ def _versions() -> dict:
     return out
 
 
-def write_heartbeat(stage: Path, hb: dict) -> Path:
+def write_heartbeat(stage: Path, hb: dict, phase: str = "") -> Path:
+    """phase "" = the final heartbeat of a firing; phase "start" is published BEFORE any work, so a run that is killed (time limit, crash) still leaves evidence."""
     ts = pd.Timestamp(hb["started_utc"]).strftime("%Y%m%dT%H%M%SZ")
-    p = Path(stage) / "heartbeats" / ts[:4] / ts[:8] / f"{ts}__{hb['role']}__{hb['run_id']}.json"
+    p = Path(stage) / "heartbeats" / ts[:4] / ts[:8] / f"{ts}__{hb['role']}__{hb['run_id']}{'__' + phase if phase else ''}.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(hb, sort_keys=True, indent=1, default=str))
     return p
@@ -53,6 +54,11 @@ def capture(repo: Path, stage: Path, span: float, interval: float, force: bool, 
     hb = {"kind": "heartbeat", "role": "capture", "run_id": run_id, "started_utc": started.isoformat(), "code_sha": PC.code_sha(repo), "release": os.environ.get("RELEASE_SHA"), "versions": _versions(),
           "span_min": span, "interval_s": interval, "forced": force, "status": "failed", "ticks": 0, "series_failures": 0, "publish_errors": []}
     res = None
+    try:
+        write_heartbeat(stage, {**hb, "status": "started"}, "start")
+        PC.publish_captures(repo, stage, message="heartbeat (start)", meta={"writer-run": run_id, "role": "capture-heartbeat", "code": hb["code_sha"][:12], "status": "started"})
+    except Exception:
+        pass                                                           # the final heartbeat still reports publication state
     try:
         gp = games_csv
         if not gp:

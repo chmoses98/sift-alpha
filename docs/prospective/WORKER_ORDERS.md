@@ -3,7 +3,7 @@
 Version-controlled so a worker session never depends on a long, drifting prompt.  A scheduled firing needs **one** shell command and **one** line of output.
 
 ## Capture firing
-1. Run: `bash scripts/prospective/bootstrap.sh capture`
+1. Run it in the BACKGROUND with the maximum timeout (the harness default of 30 min kills a 57-min window run): Bash `run_in_background=true`, `timeout=3500000`, command `bash scripts/prospective/bootstrap.sh capture`. Wait for it to exit. Do NOT re-run it after a kill: the start heartbeat already records the firing and a retry would only duplicate captures.
 2. Reply with the single line it prints (`CAPTURE <status> run=… ticks=… series_failures=… publish_errors=… heartbeat=pushed|NOT_PUBLISHED …`). Nothing else.
 3. If it prints nothing or fails, reply `CAPTURE failed reason=no_output`. Do not debug, edit code, or retry more than once.
 

@@ -108,3 +108,12 @@ def test_schedule_plan_covers_every_window_and_never_misses_one():
     lines = SP.to_cron(pat, exc)
     assert SP.uncovered(g, SP.expand_cron_hours(lines, now - pd.Timedelta(hours=2), now + pd.Timedelta(days=3)), now) == []
     assert SP.uncovered(g, set(), now)                                                                  # sanity: with no firings everything is uncovered
+
+
+def test_killed_run_leaves_a_start_heartbeat_and_raises_run_unfinished(tmp_path):
+    hb = {"role": "capture", "run_id": "k", "started_utc": (T - pd.Timedelta(minutes=120)).isoformat(), "status": "started", "span_min": 57.0}
+    p = WK.write_heartbeat(tmp_path, hb, "start")
+    assert p.name.endswith("__capture__k__start.json")
+    assert "RUN_UNFINISHED" in {a["code"] for a in AL.evaluate([hb, _hb(10)], [], None, T)}
+    assert "RUN_UNFINISHED" not in {a["code"] for a in AL.evaluate([hb, {**hb, "status": "ok"}, _hb(10)], [], None, T)}
+    assert "RUN_UNFINISHED" not in {a["code"] for a in AL.evaluate([{**hb, "started_utc": (T - pd.Timedelta(minutes=10)).isoformat()}, _hb(5)], [], None, T)}

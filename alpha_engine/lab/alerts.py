@@ -16,7 +16,12 @@ def _t(x):
 
 def evaluate(heartbeats: list[dict], observations: list[dict], ingest: dict | None, now, coverage: pd.DataFrame | None = None, since=None, extra: list[dict] | None = None) -> list[dict]:
     now = _t(now); out: list[dict] = list(extra or [])
-    cap = sorted((h for h in heartbeats if h.get("role") == "capture"), key=lambda h: h["started_utc"])
+    allcap = [h for h in heartbeats if h.get("role") == "capture"]
+    ended = {h["run_id"] for h in allcap if h.get("status") != "started"}
+    for h in allcap:                                                   # a start heartbeat with no final one, long after the run should have ended
+        if h.get("status") == "started" and h["run_id"] not in ended and (now - _t(h["started_utc"])).total_seconds() / 60 > float(h.get("span_min") or 57) + 15:
+            out.append({"severity": "HIGH", "code": "RUN_UNFINISHED", "detail": f"{h['run_id']} started {h['started_utc']} but never published a final heartbeat (killed or crashed)"})
+    cap = sorted((h for h in allcap if h.get("status") != "started"), key=lambda h: h["started_utc"])
     if since is not None:
         cap = [h for h in cap if _t(h["started_utc"]) >= _t(since)]
     if cap:

@@ -38,7 +38,7 @@ class PauseGuard(unittest.TestCase):
 
     def test_no_override_flag_exists(self):
         src = (ROOT / "alpha_engine/input_research/phase.py").read_text()
-        self.assertNotIn("environ", src)
+        self.assertNotIn("os.environ", src); self.assertNotIn("getenv", src)
 
 
 class GateIsNotSelfCertifying(unittest.TestCase):
@@ -76,9 +76,15 @@ class GateIsNotSelfCertifying(unittest.TestCase):
                 self.assertEqual(r["independent"], "CLEAR")
                 self.assertEqual(r["open_findings"], 0)
                 self.assertGreaterEqual(r["unresolved"], 1)
-        st, openf = C.independent_state({"findings": [{"severity": "MAJOR", "resolution": "OPEN"}, {"severity": "MINOR", "resolution": "OPEN"}]})
+        wrap = lambda fs: {"reviewer": "x", "verdict": "REVISE", "rederivation_notes": "n" * 220, "findings": fs}
+        rec = {"unresolved": [{"id": "u1"}]}
+        st, openf = C.independent_state(wrap([{"severity": "MAJOR", "resolution": "OPEN"}, {"severity": "MINOR", "resolution": "OPEN"}]), rec)
         self.assertEqual((st, len(openf)), ("OPEN_FINDINGS", 1))
-        self.assertEqual(C.independent_state({"findings": [{"severity": "BLOCKER", "resolution": "RESOLVED: reworded stage 2"}]})[0], "CLEAR")
+        self.assertEqual(C.independent_state(wrap([{"severity": "BLOCKER", "resolution": "RESOLVED: reworded stage 2 and added nba.garbage_ratings to the stage inputs"}]), rec)[0], "CLEAR")
+        self.assertEqual(C.independent_state(wrap([{"severity": "BLOCKER", "resolution": "RESOLVED: fixed"}]), rec)[0], "OPEN_FINDINGS")          # too terse to count
+        self.assertEqual(C.independent_state(wrap([{"severity": "MAJOR", "resolution": "DEFERRED_TO_UNRESOLVED:u1"}]), rec)[0], "CLEAR")
+        self.assertEqual(C.independent_state(wrap([{"severity": "MAJOR", "resolution": "DEFERRED_TO_UNRESOLVED:nope"}]), rec)[0], "OPEN_FINDINGS")  # must point at a declared gap
+        self.assertEqual(C.independent_state({"findings": [], "verdict": "REVISE"}, rec)[0], "NONE")                                              # no re-derivation, does not count
         self.assertEqual(C.independent_state(None)[0], "NONE")
 
 

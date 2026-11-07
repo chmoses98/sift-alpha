@@ -317,13 +317,22 @@ def similarity_flags(sport: str, reviews: dict[str, dict], threshold: float = 0.
     return dict(flags)
 
 
-def independent_state(ind: dict | None) -> tuple[str, list[dict]]:
+def finding_closed(f: dict, rec: dict | None) -> bool:
+    """A finding is closed only by (a) RESOLVED: <what changed, >=40 chars> or (b) DEFERRED_TO_UNRESOLVED:<id> where <id> is a declared entry in the record's own unresolved list."""
+    r = str(f.get("resolution", "OPEN"))
+    if r.startswith("RESOLVED"):
+        return len(r) >= 48
+    if r.startswith("DEFERRED_TO_UNRESOLVED:"):
+        return r.split(":", 1)[1].strip() in {u.get("id") for u in (rec or {}).get("unresolved") or []}
+    return False
+
+
+def independent_state(ind: dict | None, rec: dict | None = None) -> tuple[str, list[dict]]:
     if not ind:
         return "NONE", []
     if ind.get("verdict") not in ("PASS_WITH_OPEN_GAPS", "REVISE") or len(str(ind.get("rederivation_notes", "")).strip()) < 200 or not ind.get("reviewer"):
         return "NONE", []   # a review without the reviewer's own re-derivation does not count
-    f = ind.get("findings") or []
-    openf = [x for x in f if x.get("severity") in ("BLOCKER", "MAJOR") and not str(x.get("resolution", "OPEN")).startswith("RESOLVED")]
+    openf = [x for x in ind.get("findings") or [] if x.get("severity") in ("BLOCKER", "MAJOR", "SOURCE_UNVERIFIED") and not finding_closed(x, rec)]
     return ("OPEN_FINDINGS" if openf else "CLEAR"), openf
 
 
@@ -368,7 +377,7 @@ def compute_gate() -> dict:
                 sim = flags.get(k, [])
                 if sim:
                     errs = errs + [f"possible boilerplate: {x}" for x in sim[:4]]
-                ist, openf = independent_state(ind.get(k))
+                ist, openf = independent_state(ind.get(k), rec)
                 m = rec.get("mechanism") or {}
                 row.update(problems=errs[:25], n_problems=len(errs), stages=len(m.get("stages") or []), new_inputs=len(rec.get("new_inputs") or {}), existing_inputs_audited=len(rec.get("input_audit") or {}),
                            interactions=len(rec.get("interactions") or []), nonlinearities=len(rec.get("nonlinearities") or []), datasets=len(rec.get("required_data") or []),

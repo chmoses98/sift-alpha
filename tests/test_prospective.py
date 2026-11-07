@@ -372,3 +372,24 @@ def test_player_report_runs_end_to_end_on_synthetic_ledgers(tmp_path, monkeypatc
     monkeypatch.setattr(PLm, "player_games", lambda *a, **k: pd.DataFrame({"game_id": ["g1"], "pid": ["a"], "rec_yds": [75.0], "rec": [5], "rush_yds": [0.0], "pass_yds": [0.0], "td_any": [0]}))
     r = PC.run_player_report(pdir, qdir, ddir, now=KO)
     assert r["label"] == "MARKET_SELECTED_POPULATION" and r["audit_by_horizon"]["T-6h"] == {"ELIGIBLE": 1} and r["gate"]["status"] == "INSUFFICIENT_N"
+
+
+def test_freeze_pins_match_the_committed_declarations_and_detect_edits(tmp_path):
+    root = Path(__file__).resolve().parents[1] / "research" / "prospective"
+    assert PC.verify_pins(root / "nfl_totals_v1") == {} and PC.verify_pins(root / "nfl_player_v3", PC.PLAYER_PINS) == {}
+    import shutil
+    shutil.copytree(root / "nfl_totals_v1", tmp_path / "t")
+    f = tmp_path / "t" / "FREEZE.json"; f.write_text(f.read_text().replace("nfl_totals_v1", "nfl_totals_v2", 1))
+    assert "FREEZE.json" in PC.verify_pins(tmp_path / "t")
+
+
+def test_cycle_aborts_on_changed_freeze_declaration_and_on_sigma_drift(tmp_path, monkeypatch):
+    P = pd.DataFrame({"game_id": ["g0"], "season": [2025], "week": [1], "mu": [41.0], "sigma": [13.0], "mu0": [44.0]})
+    monkeypatch.setattr(PC, "build_predictions", lambda *a, **k: (P, GAMES, "sha"))
+    out = tmp_path / "out"; out.mkdir()
+    (out / "FREEZE.json").write_text(json.dumps({"frozen_utc": "2026-11-01T00:00:00+00:00"}))
+    (out / "FREEZE_DIGEST.json").write_text(json.dumps({"mu_digest_2014_2025": PC.digest_mu(P), "sigma_digest_2014_2025": "0" * 64}))
+    r = PC.run_cycle(tmp_path, None, out, tmp_path / "w", now=KO, download=False)
+    assert r.get("aborted") and r["steps"]["frozen_reproduction"]["sigma_ok"] is False and not (out / "predictions.jsonl").exists()      # sigma changed, mu did not
+    r2 = PC.run_cycle(tmp_path, None, out, tmp_path / "w", now=KO, download=False, pins=PC.PINS)
+    assert "frozen declaration changed" in r2["aborted"]

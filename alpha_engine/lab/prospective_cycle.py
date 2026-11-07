@@ -16,6 +16,28 @@ LEDGERS = ("predictions.jsonl", "quotes.jsonl", "observations.jsonl")
 BRANCH = "prospective-data"
 
 
+# sha256 of the frozen declarations, pinned IN CODE: changing a freeze file therefore needs a visible code change, and a cycle that finds a different file aborts without appending.
+PINS = {"FREEZE.json": "4de7dba4ae0bf4af21b771cf642a161fdfed1d565f83a310adb31c36f84a2e78",
+        "FREEZE_DIGEST.json": "f979647e42701fb2278db9f4997c84856a667cee3ce1ef91401185454ade47ee"}
+PLAYER_PINS = {"FREEZE.json": "8a32f4c827be7500a3b72b991023cdf459c6ab5c4b91e0517e63700bc6293b82"}
+
+
+def verify_pins(d: Path, pins: dict = None) -> dict:
+    pins = PINS if pins is None else pins
+    bad = {}
+    for f, want in pins.items():
+        p = Path(d) / f
+        got = hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+        if got != want:
+            bad[f] = {"expected": want, "got": got}
+    return bad
+
+
+def digest_sigma(P: pd.DataFrame) -> str:
+    x = P[P["season"].between(2014, 2025)].sort_values("game_id")
+    return hashlib.sha256(",".join(f"{g}:{s:.6f}" for g, s in zip(x["game_id"], x["sigma"])).encode()).hexdigest()
+
+
 def digest_mu(P: pd.DataFrame) -> str:
     x = P[P["season"].between(2014, 2025)].sort_values("game_id")
     return hashlib.sha256(",".join(f"{g}:{m:.6f}" for g, m in zip(x["game_id"], x["mu"])).encode()).hexdigest()
@@ -38,15 +60,21 @@ def build_predictions(data_dir: Path, work: Path, download: bool, season: int = 
     return P, games, sha
 
 
-def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: pd.Timestamp | None = None, download: bool = True, md_src=None, md_ref: str = "origin/market-data") -> dict:
+def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: pd.Timestamp | None = None, download: bool = True, md_src=None, md_ref: str = "origin/market-data", pins: dict | None = None) -> dict:
     now = now or pd.Timestamp.now(tz="UTC")
     out = Path(out); work = Path(work); work.mkdir(parents=True, exist_ok=True)
     rep: dict = {"cycle_utc": now.isoformat(), "config_id": PP.config_id(), "mode": "RESEARCH_ONLY", "steps": {}}
+    if pins is not None:
+        bad = verify_pins(out, pins)
+        if bad:
+            rep["aborted"] = f"frozen declaration changed or missing: {sorted(bad)}; nothing appended"; rep["pin_mismatch"] = bad
+            (out / "REPORT.json").write_text(json.dumps(rep, indent=1)); return rep
     P, games, dsha = build_predictions(Path(data_dir), work, download)
     fz = json.loads((out / "FREEZE_DIGEST.json").read_text())
-    got = digest_mu(P)
-    rep["steps"]["frozen_reproduction"] = {"ok": got == fz["mu_digest_2014_2025"], "expected": fz["mu_digest_2014_2025"], "got": got}
-    if got != fz["mu_digest_2014_2025"]:
+    got, gots = digest_mu(P), digest_sigma(P)
+    ok_mu = got == fz["mu_digest_2014_2025"]; ok_sig = fz.get("sigma_digest_2014_2025") in (None, gots)
+    rep["steps"]["frozen_reproduction"] = {"ok": ok_mu and ok_sig, "mu_ok": ok_mu, "sigma_ok": ok_sig, "expected": fz["mu_digest_2014_2025"], "got": got}
+    if not (ok_mu and ok_sig):
         rep["aborted"] = "frozen model no longer reproduces its 2014-2025 predictions (data revision or code drift); nothing appended"
         (out / "REPORT.json").write_text(json.dumps(rep, indent=1)); return rep
     rep["steps"]["predictions_appended"] = PP.predict(P, games, now, out / "predictions.jsonl", dsha)
@@ -219,10 +247,13 @@ def run_refresh(repo: Path, work: Path, data_dir: Path, player: bool = True, now
     games = pd.read_csv(data_dir / "games.csv")
     shards = work / "shards"; out["steps"]["shards_fetched"] = fetch_branch_tree(repo, BRANCH, "captures", shards)
     out["steps"]["shard_ingest"] = CW.ingest_shards(shards, pv, games, now=now)
-    rep = run_cycle(data_dir, None, pv, work / "cyc", now=now, download=False)
+    rep = run_cycle(data_dir, None, pv, work / "cyc", now=now, download=False, pins=PINS)
     out["steps"]["cycle"] = {k: rep.get(k) for k in ("steps", "counts", "eligible_decision_games", "aborted")}
     if rep.get("aborted"):
         out["aborted"] = rep["aborted"]; return out
+    if player and verify_pins(pp, PLAYER_PINS):
+        out["steps"]["player_predict"] = {"error": "player freeze declaration changed or missing", "pin_mismatch": verify_pins(pp, PLAYER_PINS)}
+        player = False
     if player:
         from . import player_prospective as PPR
         try:

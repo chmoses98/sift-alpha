@@ -25,9 +25,10 @@ TABLE_GROUPS = {"qb": ["diff_qb_epa", "sum_qb_epa", "h_qb_change", "a_qb_change"
                 "environment": ["dome", "wind_eff", "cold", "wind_x_pass"],
                 "injuries": ["inj_diff_qb", "inj_sum_qb", "inj_diff_ol", "inj_sum_ol", "inj_diff_skill", "inj_sum_skill", "inj_diff_dl", "inj_sum_dl", "inj_diff_lb", "inj_sum_lb",
                              "inj_diff_db", "inj_sum_db"]}
+TABLE_GROUPS["environment_dome"] = ["dome"]          # strict point-in-time stand-in for `environment`: roof is known from the schedule/venue, observed temp/wind are not
 OPTIONAL = ["protection", "explosive", "tempo", "efficiency_luck", "qb", "schedule", "environment", "injuries"]
 # point-in-time status of each group (documented, not asserted by the data): qb/environment/injuries are PARTIAL (realised starter, observed weather, report timing)
-GROUP_PIT = {"strength": "yes", "protection": "yes", "explosive": "yes", "tempo": "yes", "efficiency_luck": "yes", "qb": "partial", "schedule": "yes",
+GROUP_PIT = {"environment_dome": "yes", "strength": "yes", "protection": "yes", "explosive": "yes", "tempo": "yes", "efficiency_luck": "yes", "qb": "partial", "schedule": "yes",
              "environment": "partial", "injuries": "partial"}
 TARGETS = {"margin": lambda g: g["home_score"] - g["away_score"], "total": lambda g: g["home_score"] + g["away_score"],
            "home_pts": lambda g: g["home_score"], "away_pts": lambda g: g["away_score"]}
@@ -212,10 +213,10 @@ class GameLab:
                     best=best, best_bh_q=q[best["id"]], n_bh_q05=sum(v < 0.05 for v in q.values()), reference=ref,
                     n_selection_positive=sum(r["metrics"]["sel"]["mean"] > 0 for r in rows), n_validation_positive=sum(r["metrics"]["val"]["mean"] > 0 for r in rows))
 
-    def final_predictions(self, target: str, cfg: dict) -> pd.DataFrame:
+    def final_predictions(self, target: str, cfg: dict, last: int = HOLDOUT) -> pd.DataFrame:
         """Walk-forward mu/sigma for every season 2014-2025 from the chosen config (2025 predicted from <=2024 only), plus climatology for comparison."""
         y = self.target(target); ok = ~np.isnan(y)
-        seasons_all = list(range(FIRST_TEST, HOLDOUT + 1))
+        seasons_all = list(range(FIRST_TEST, last + 1))
         X, _ = matrix(self.gt, self.ratings(cfg["rating"]), cfg["groups"])
         mu = wf_mean(X, np.where(ok, y, 0.0), self.seasons, seasons_all, cfg["model"])
         sig = sigma_wf(np.where(ok, y, 0.0), mu, self.seasons, seasons_all)

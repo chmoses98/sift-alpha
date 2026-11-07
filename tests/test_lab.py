@@ -1,6 +1,7 @@
 """Alpha lab: market-free guard, ledger idempotence, distribution maths, point-in-time ratings and as-of features (no look-ahead, row alignment), market scoring and the
 segment search's discovery/holdout separation.  Synthetic data only."""
 import json, os, sys, tempfile, unittest
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -157,3 +158,102 @@ def test_exceed_platt_recovers_calibration():
     o = (rng.uniform(size=p.size) < exceed.apply((0.0, 0.5), p)).astype(float)   # truth is a flattened version of p
     a, b = exceed.fit(p, o)
     assert abs(b - 0.5) < 0.1
+
+
+def _idn_tables():
+    import pandas as pd
+    from alpha_engine.lab import identity as I
+    players = pd.DataFrame({"gsis_id": ["a", "b", "c", "d"], "display_name": ["Kenny Gainwell", "Josh Allen", "Josh Allen", "Marquise Brown"],
+                            "first_name": ["Kenneth", "Joshua", "Josh", "Marquise"], "last_name": ["Gainwell", "Allen", "Allen", "Brown"],
+                            "latest_team": ["TB", "BUF", "JAX", "PHI"], "last_season": [2026] * 4})
+    pg = pd.DataFrame({"pid": ["a", "b", "c", "d"], "season": [2025] * 4, "team": ["PIT", "BUF", "JAX", "KC"]})
+    return I, I.build_tables(players, pg)
+
+
+def test_identity_season_team_and_aliases():
+    I, (nm, played) = _idn_tables()
+    assert I.resolve_one("Kenneth Gainwell", "PIT", 2025, nm, played) == ("a", "RESOLVED_SEASON_TEAM")      # legal first name, new team
+    assert I.resolve_one("Hollywood Brown", "KC", 2025, nm, played)[0] == "d"                              # verified alias
+    assert I.resolve_one("Hollywood Brown", "PHI", 2025, nm, played)[0] is None                            # alias not used when team evidence disagrees
+    assert I.resolve_one("Josh Allen", "BUF", 2025, nm, played)[0] == "b" and I.resolve_one("Josh Allen", "JAX", 2025, nm, played)[0] == "c"
+
+
+def test_identity_never_guesses():
+    I, (nm, played) = _idn_tables()
+    assert I.resolve_one("Josh Allen", "MIA", 2025, nm, played)[1] == "AMBIGUOUS"
+    assert I.resolve_one("Nobody Real", "MIA", 2025, nm, played)[1] == "NO_NAME_MATCH"
+    assert I.resolve_one("No Touchdown", None, 2025, nm, played)[1] == "NON_PLAYER_NO_TD"
+    assert I.resolve_one("Miami Special Teams", "MIA", 2025, nm, played)[1] == "NON_PLAYER_DEFENSE"
+    assert I.resolve_one("Chicago Defense", "CHI", 2025, nm, played)[1] == "NON_PLAYER_DEFENSE"
+
+
+def test_repair_postseason_labels():
+    import pandas as pd
+    from alpha_engine.lab import repair
+    g = pd.DataFrame({"game_type": ["REG", "WC", "DIV", "CON", "SB"]})
+    assert repair.normalize_games(g)["game_type"].tolist() == ["REG", "POST", "POST", "POST", "POST"]
+
+
+def _games():
+    import pandas as pd
+    return pd.DataFrame({"game_id": ["2025_21_LA_SEA", "2025_05_JAX_KC", "2025_05_LAC_LA"], "season": [2025] * 3, "week": [21, 5, 5], "gameday": ["2026-01-25", "2025-10-05", "2025-10-05"],
+                         "away_team": ["LA", "JAX", "LAC"], "home_team": ["SEA", "KC", "LA"]})
+
+
+def test_recover_game_and_side_from_ticker():
+    from alpha_engine.lab import recover as RV
+    idx = RV.games_index(_games())
+    r = RV.recover({"ticker": "KXNFLTOTAL-26JAN25LASEA-74"}, idx)
+    assert r["game_id"] == "2025_21_LA_SEA" and r["week"] == 21 and "team" not in r                       # total: no side
+    assert RV.recover({"ticker": "KXNFLSPREAD-26JAN25LASEA-SEA14"}, idx)["team"] == "SEA"
+    assert RV.recover({"ticker": "KXNFLREC-26JAN25LASEA-LATFERGUSON18-1"}, idx)["team"] == "LA"
+    assert RV.recover({"ticker": "KXNFLGAME-25OCT05JACKC-JAC"}, idx)["team"] == "JAX"                    # Kalshi JAC == nflverse JAX
+    assert RV.recover({"ticker": "KXNFLGAME-25OCT05LACLA-LAC"}, idx)["team"] == "LAC"                    # LAC must not be read as LA
+    assert RV.recover({"ticker": "KXNFLGAME-25AUG09LASEA-LA"}, idx) is None                              # preseason: no nflverse game
+
+
+def test_recover_only_fills_nulls():
+    from alpha_engine.lab import recover as RV
+    idx = RV.games_index(_games())
+    rec = {"ticker": "KXNFLSPREAD-26JAN25LASEA-SEA14", "game_id": None, "team": "SEA", "week": None}
+    assert RV.fill(rec, idx) and rec["team"] == "SEA" and rec["week"] == 21 and rec["recovered_from_ticker"]
+    mapped = {"ticker": "KXNFLSPREAD-26JAN25LASEA-SEA14", "game_id": "X"}
+    assert not RV.fill(mapped, idx) and mapped["game_id"] == "X"
+
+
+def test_prospective_chain_detects_tampering(tmp_path):
+    from alpha_engine.lab import prospective as PP
+    p = tmp_path / "c.jsonl"
+    for i in range(3):
+        PP.append(p, {"kind": "x", "i": i})
+    assert PP.verify_chain(p)["ok"]
+    lines = p.read_text().splitlines(); r = json.loads(lines[1]); r["i"] = 99; lines[1] = json.dumps(r, sort_keys=True); p.write_text("\n".join(lines) + "\n")
+    v = PP.verify_chain(p); assert v["ok"] is False and v["first_bad_line"] == 2
+
+
+def test_prospective_decision_rules():
+    import pandas as pd
+    from alpha_engine.lab import prospective as PP
+    games = pd.DataFrame({"game_id": ["g"], "home_score": [30.0], "away_score": [20.0], "gameday": ["2026-11-08"], "gametime": ["13:00"]})
+    ko = pd.Timestamp("2026-11-08 13:00", tz="America/New_York").tz_convert("UTC")
+    pred = {"game_id": "g", "week": 10, "kickoff_utc": ko.isoformat(), "generated_utc": (ko - pd.Timedelta(hours=30)).isoformat(), "dist": "normal", "mu": 45.0, "sigma": 13.0}
+    def q(minutes_before, bid=0.40, ask=0.44):
+        return {"game_id": "g", "ticker": "T-48", "floor": 47.5, "bid": bid, "ask": ask, "captured_utc": (ko - pd.Timedelta(minutes=minutes_before)).isoformat()}
+    df = PP.decision_frame([pred], [q(365), q(500), q(100)], games)
+    h6 = df[df.horizon == "T-6h"]
+    assert len(h6) == 1 and abs(h6.iloc[0]["age"] - 5) < 1e-6                     # the 365-min-before capture (5 min old), not the 500-min one
+    assert set(df.horizon) == {"T-6h", "T-90m"}                                    # no capture inside the T-24h window
+    assert df.iloc[0]["outcome"] == 1.0                                            # 50 > 47.5
+    late = dict(pred, generated_utc=(ko - pd.Timedelta(hours=5)).isoformat())      # prediction made AFTER the T-6h decision time
+    late_df = PP.decision_frame([late], [q(365)], games)
+    assert late_df.empty or "T-6h" not in set(late_df.horizon)
+    assert PP.evaluate(df)["by_horizon"]["T-6h"]["inference"].startswith("withheld")
+
+
+def test_frozen_config_equals_selected_total_config_with_pit_groups():
+    """Guards against transcription drift: the frozen totals config must be the lab's selected one (rating/model/dist) with only the partial-PIT groups replaced."""
+    from alpha_engine.lab import prospective as PP
+    rep = json.load(open(Path(__file__).resolve().parents[1] / "research/audit/lab/game_lab_report.json"))["targets"]["total"]["selected"]["config"]
+    for k in ("rating", "model", "dist"):
+        assert PP.FROZEN[k] == rep[k]
+    assert PP.FROZEN["groups"] == [g for g in rep["groups"] if g not in ("qb", "environment")] + ["environment_dome"]

@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from alpha_engine.input_research import nfl_features as nf, stats as S
+from . import identity as IDN
 from . import dists, player_lab as PL, market as MK
 
 K2N = {"JAC": "JAX"}
@@ -153,7 +154,8 @@ def selected_config(out: Path, target: str):
 def contract_probs(kalshi: Path, data: Path, work: Path, out: Path) -> tuple[pd.DataFrame, dict]:
     """Fair P(YES) for every priced 2025 player contract (one frame row per contract x horizon), plus resolution diagnostics (never silently dropped)."""
     horizons = sorted(Path(kalshi / "horizons").glob("*.jsonl"))
-    d = MK.load_contracts([str(h) for h in horizons])
+    games = pd.read_csv(data / "games.csv"); rstats: dict = {}
+    d = MK.load_contracts([str(h) for h in horizons], games=games, stats=rstats)
     d = d[d["family"].isin(list(MK.KALSHI_STAT.values()))].copy()
     gt = pd.read_parquet(work / "game_table.parquet"); gpred = pd.read_parquet(work / "game_predictions.parquet")
     pg, st = pd.read_parquet(work / "pg.parquet"), pd.read_parquet(work / "states.parquet")
@@ -163,8 +165,10 @@ def contract_probs(kalshi: Path, data: Path, work: Path, out: Path) -> tuple[pd.
     date = pd.to_datetime(gt.set_index("game_id")["gameday"])
     wk = gt.set_index("game_id")["week"]
     u = d.drop_duplicates("ticker")[["ticker", "game_id", "family", "team", "player", "floor", "home", "away"]].copy()
-    u = resolve(u, nm)
-    diag = {"contracts": int(len(u)), "unresolved_player": int(u["pid"].isna().sum())}
+    u = IDN.resolve(u.assign(season=2025), players, pg)
+    idr = IDN.report(u)
+    diag = {"recovered_records": rstats.get("recovered", 0), "contracts": int(len(u)), "unresolved_player": int(u["pid"].isna().sum()), "identity": idr,
+            "unresolved_real_player": int((u["pid"].isna() & ~u["id_reason"].str.startswith("NON_PLAYER")).sum())}
     u = u.dropna(subset=["pid"]).copy()
     miss = ~u["game_id"].isin(date.index)
     diag["no_game_in_table"] = int(miss.sum()); diag["no_game_ids"] = sorted(u.loc[miss, "game_id"].unique().tolist())
@@ -177,9 +181,9 @@ def contract_probs(kalshi: Path, data: Path, work: Path, out: Path) -> tuple[pd.
         lab = PL.PlayerLab(pg, st, ctx, inj, out / f"ledger_player_{fam}.jsonl")
         p = final_player_predictions(lab, fam, cfg, x[["ticker", "pid", "team", "game_id", "season", "week", "date", "home", "floor"]], av)
         diag[f"{fam}_p_act_missing"] = int(p["p_act"].isna().sum())
-        res.append(p[["ticker", "model_p", "p_act", "mu"]])
+        res.append(p[["ticker", "model_p", "p_act", "mu", "pid"]])
     pp = pd.concat(res)
-    d = d.merge(pp[["ticker", "model_p"]], on="ticker", how="left")
+    d = d.merge(pp[["ticker", "model_p", "p_act", "mu", "pid"]], on="ticker", how="left")
     return d, diag
 
 

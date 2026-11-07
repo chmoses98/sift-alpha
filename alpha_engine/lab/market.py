@@ -21,11 +21,15 @@ KALSHI_STAT = {"receiving_yards": "rec_yds", "receptions": "receptions", "rushin
 K2N = {"JAC": "JAX"}
 
 
-def load_contracts(horizon_files, season="2025") -> pd.DataFrame:
+def load_contracts(horizon_files, season="2025", games: pd.DataFrame | None = None, stats: dict | None = None) -> pd.DataFrame:
+    from . import recover as RV
+    idx = RV.games_index(games) if games is not None else None
     rows = []
     for p in horizon_files:
         for l in open(p):
             r = json.loads(l)
+            if idx is not None and r.get("game_id") is None and RV.fill(r, idx) and stats is not None:
+                stats["recovered"] = stats.get("recovered", 0) + 1
             if str(r.get("season")) != season or r.get("period") != "FULL" or r.get("result") not in ("yes", "no"):
                 continue
             fam = None
@@ -176,3 +180,30 @@ def segment_search(d: pd.DataFrame, tau=0.0, top_k=5, min_n=60, min_games=15) ->
                                                       else "NOT_DEMONSTRATED")
     return dict(tau=tau, discovery_weeks=f"<= {DISCOVERY_MAX_WEEK}", holdout_weeks=f"> {DISCOVERY_MAX_WEEK}", segments_examined=tested, segments_carried_forward=len(carried),
                 n_positive_after_holm=sum(r["status"] == "POSITIVE_HOLDOUT_AFTER_FEES" for r in carried), carried=carried)
+
+
+FRESH_TIERS = (5, 15, 30, 60, 180)
+
+
+def freshness_table(d: pd.DataFrame, tiers=FRESH_TIERS) -> dict:
+    """Decision-time executability.  `d` = contracts with model_p BEFORE any age filter.  A quote's age_min is how stale it was at the decision horizon; a 180-minute-old quote
+    at T-6h is the last observed book, not necessarily a price you could have traded at T-6h.  For every maximum-age tier: usable rows, age/spread/fee profile and the strategy
+    result (model-expected vs realised net per contract at tau=0 and 0.02), per family at the primary horizon."""
+    base = d[(d["horizon"] == PRIMARY) & d["model_p"].notna()]
+    out = {"age_quantiles_min": {}, "tiers": {}}
+    for fam, x in base.groupby("family"):
+        q = x["age"].quantile([0.5, 0.75, 0.9]).round(1).to_dict()
+        out["age_quantiles_min"][fam] = {"rows_with_two_sided_quote": int(len(x)), "p50": q[0.5], "p75": q[0.75], "p90": q[0.9], "share_age_gt_60": float((x["age"] > 60).mean())}
+    for t in tiers:
+        m = (base["ask"] > base["bid"]) & (base["bid"] >= 0.01) & (base["ask"] <= 0.99) & ((base["ask"] - base["bid"]) <= MAX_SPREAD) & (base["age"] <= t)
+        x = score(base[m])
+        rows = {}
+        for fam, y in x.groupby("family"):
+            r = {"n": int(len(y)), "games": int(y["game_id"].nunique()), "mean_spread": float((y["ask"] - y["bid"]).mean()), "mean_fee_per_contract": float(np.mean([taker_fee(a) for a in y["ask"]]))}
+            for tau in (0.0, 0.02):
+                z = y[y["pred_ev"] > tau]
+                c = clustered(z["real"].to_numpy(), z["game_id"].to_numpy()) if len(z) else None
+                r[f"tau{tau:g}"] = {"n": int(len(z)), "mean_pred_ev": float(z["pred_ev"].mean()) if len(z) else None, "mean_real": float(z["real"].mean()) if len(z) else None, "ci": c["ci"] if c else None}
+            rows[fam] = r
+        out["tiers"][f"age<={t}min"] = rows
+    return out

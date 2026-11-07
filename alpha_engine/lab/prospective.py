@@ -61,14 +61,17 @@ def kickoff_utc(g) -> pd.Timestamp:
 
 def predict(P: pd.DataFrame, games: pd.DataFrame, now: pd.Timestamp, path: Path, data_sha: str) -> int:
     """P: GameLab.final_predictions(total, FROZEN, last=2026).  Appends one record per not-yet-started 2026 game that has no record yet."""
-    have = set()
+    last: dict = {}
     if Path(path).exists():
-        have = {json.loads(l)["game_id"] for l in Path(path).read_text().splitlines()}
+        for l in Path(path).read_text().splitlines():
+            r = json.loads(l); last[r["game_id"]] = r
     g = games.set_index("game_id")
     n = 0
     for r in P[P["season"] == 2026].itertuples():
-        if r.game_id in have or r.game_id not in g.index or np.isnan(r.mu):
+        if r.game_id not in g.index or np.isnan(r.mu):
             continue
+        if r.game_id in last and abs(last[r.game_id]["mu"] - float(r.mu)) < 1e-9:
+            continue                                                       # unchanged: no duplicate record
         row = g.loc[r.game_id]
         ko = kickoff_utc(type("G", (), {"gameday": row["gameday"], "gametime": row["gametime"]}))
         if ko <= now:
@@ -120,21 +123,27 @@ HORIZONS_MIN = {"T-24h": 24 * 60, "T-6h": 6 * 60, "T-90m": 90}
 
 def decision_frame(preds: list[dict], quotes: list[dict], games: pd.DataFrame) -> pd.DataFrame:
     """One row per (ticker, horizon): the last quote captured at/before kickoff-h within PRIMARY_AGE_MIN, scored only if the prediction was generated before that decision time."""
-    P = {p["game_id"]: p for p in preds}
+    byg: dict = {}
+    for p in preds:
+        byg.setdefault(p["game_id"], []).append(p)
+    for v in byg.values():
+        v.sort(key=lambda p: p["generated_utc"])
     q = pd.DataFrame(quotes)
-    if q.empty or not P:
+    if q.empty or not byg:
         return pd.DataFrame()
     q["captured"] = pd.to_datetime(q["captured_utc"], utc=True)
     g = games.set_index("game_id")
     rows = []
     for gid, x in q.groupby("game_id"):
-        if gid not in P:
+        if gid not in byg:
             continue
-        p = P[gid]; ko = pd.Timestamp(p["kickoff_utc"]); gen = pd.Timestamp(p["generated_utc"])
+        ko = pd.Timestamp(byg[gid][0]["kickoff_utc"])
         for h, mins in HORIZONS_MIN.items():
             dt = ko - pd.Timedelta(minutes=mins)
-            if gen > dt:
+            usable = [p for p in byg[gid] if pd.Timestamp(p["generated_utc"]) <= dt]      # the LATEST prediction generated before the decision time
+            if not usable:
                 continue
+            p = usable[-1]
             c = x[(x["captured"] <= dt) & (x["captured"] >= dt - pd.Timedelta(minutes=PRIMARY_AGE_MIN))]
             for tk, y in c.groupby("ticker"):
                 r = y.sort_values("captured").iloc[-1]
@@ -168,3 +177,43 @@ def evaluate(df: pd.DataFrame) -> dict:
             r["inference"] = f"withheld: fewer than {MIN_GAMES} decision games"
         out["by_horizon"][h] = r
     return out
+
+
+# ------------------------------------------------------------------ CLI
+def _read(path: Path) -> list[dict]:
+    return [json.loads(l) for l in Path(path).read_text().splitlines()] if Path(path).exists() else []
+
+
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Prospective totals evaluation (RESEARCH_ONLY)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("capture", help="fetch open KXNFLTOTAL quotes (public read-only endpoint) into a timestamped snapshot file")
+    c.add_argument("--games", required=True); c.add_argument("--out", required=True)
+    i = sub.add_parser("ingest", help="append snapshot files to the hash-chained quotes ledger in capture-time order")
+    i.add_argument("--snapshots", required=True); i.add_argument("--dir", required=True)
+    r = sub.add_parser("report", help="evaluate settled decisions and write REPORT.json")
+    r.add_argument("--games", required=True); r.add_argument("--dir", required=True)
+    a = ap.parse_args(argv)
+    if a.cmd == "capture":
+        now = pd.Timestamp.now(tz="UTC"); out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+        f = out / f"quotes_{now.strftime('%Y%m%dT%H%M%SZ')}.jsonl"
+        n = record_quotes(fetch_totals(), pd.read_csv(a.games), now, f)
+        print(f"captured {n} quotes -> {f}")
+    elif a.cmd == "ingest":
+        d = Path(a.dir); seen = {(r["captured_utc"], r["ticker"]) for r in _read(d / "quotes.jsonl")}; n = 0
+        rows = [json.loads(l) for f in sorted(Path(a.snapshots).rglob("quotes_*.jsonl")) for l in f.read_text().splitlines()]
+        for r in sorted(rows, key=lambda r: (r["captured_utc"], r["ticker"])):
+            if (r["captured_utc"], r["ticker"]) in seen:
+                continue
+            append(d / "quotes.jsonl", {k: v for k, v in r.items() if k not in ("prev", "hash")}); n += 1
+        print(f"ingested {n} new quotes; chain {verify_chain(d / 'quotes.jsonl')}")
+    else:
+        d = Path(a.dir)
+        rep = {"generated_utc": pd.Timestamp.now(tz="UTC").isoformat(), "config_id": config_id(), "chains": {"predictions": verify_chain(d / "predictions.jsonl"), "quotes": verify_chain(d / "quotes.jsonl")},
+               "evaluation": evaluate(decision_frame(_read(d / "predictions.jsonl"), _read(d / "quotes.jsonl"), pd.read_csv(a.games)))}
+        (d / "REPORT.json").write_text(json.dumps(rep, indent=1, default=float)); print(json.dumps(rep, indent=1, default=float))
+
+
+if __name__ == "__main__":
+    main()

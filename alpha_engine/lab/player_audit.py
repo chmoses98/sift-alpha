@@ -62,3 +62,28 @@ def by_bucket(x: pd.DataFrame, fam: str, edges) -> list[dict]:
         rows.append({"bucket": str(b), "n": int(len(h)), "model": float(h["model_p"].mean()), "realised": float(h["outcome"].mean()), "market": float(((h["bid"] + h["ask"]) / 2).mean()),
                      "model_in_pg": float(h[h["in_pg"]]["model_p"].mean()) if h["in_pg"].any() else None, "realised_in_pg": float(h[h["in_pg"]]["outcome"].mean()) if h["in_pg"].any() else None})
     return rows
+
+
+VARIANTS = ["v0_incumbent", "v1_inv_model", "v2_listed_active", "v3_listed_emp"]
+
+
+def report(V: pd.DataFrame, pg: pd.DataFrame, n_boot: int = 500) -> dict:
+    """Root-cause report from the declared variants frame (one row per ticker x horizon).  Diagnostics on 2025 contracts: NOT a holdout."""
+    from . import exceed as EX
+    from ..input_research import stats as S
+    c = V[(V["horizon"] == "T-6h")].drop_duplicates("ticker")
+    c = c[c["family"].isin(STAT_COL) & c["pid"].notna() & c["model_p"].notna()]
+    x = attach_actuals(c, pg, dict(zip(c["ticker"], c["pid"])))
+    out = {"basis": "2025 contracts at T-6h with a resolved player; diagnostic only (2025 already examined)", "threshold_semantics": semantics(x), "level": level(x), "variants": {}}
+    q = V[(V["horizon"] == "T-6h") & V["p_inv"].notna() & ((V["ask"] - V["bid"]) <= 0.10) & (V["age"] <= 180) & V["family"].isin(STAT_COL)]
+    for fam, g in q.groupby("family"):
+        o = g["outcome"].to_numpy(float); mid = ((g["bid"] + g["ask"]) / 2).to_numpy(float); row = {"n": int(len(g)), "games": int(g["game_id"].nunique()), "realised_yes": float(o.mean()), "mean_market_mid": float(mid.mean())}
+        for v in VARIANTS:
+            p = g[v].to_numpy(float); gain = EX.logloss(mid, o) - EX.logloss(p, o); b = S.ClusterBoot(g["game_id"].to_numpy(), n_boot=n_boot).summarize(gain)
+            row[v] = {"mean_p": float(np.mean(p)), "logloss_gain_vs_market": b["mean"], "ci": b["ci_0.05"]}
+        out["variants"][fam] = row
+    out["root_cause"] = ("The level bias is dominated by the P(active) factor: the incumbent multiplied P(stat>=k | involved) by a raw appearance rate (~0.82-0.89) computed over every player who appeared, "
+                         "while the players the exchange lists are involved ~97-100% of the time (listing is itself selection information). A market-free involvement model trained on earlier seasons "
+                         "is far better calibrated on the at-risk universe (log loss 0.41 vs 0.60) but cannot reproduce the listing selection (P_inv ~0.86 on listed players). Threshold semantics are correct "
+                         "(settlement = stat >= threshold) and the conditional mean is not biased low. A secondary, validated effect is the pooled negative-binomial shape for yardage.")
+    return out

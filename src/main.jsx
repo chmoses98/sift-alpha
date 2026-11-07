@@ -12,6 +12,7 @@ import { LiveEvidence } from "./live-evidence.jsx";
 import { CollectorsStatus } from "./collectors-status.jsx";
 import { VerificationDesk } from "./verification-desk.jsx";
 import { InputResearch } from "./input-research.jsx";
+import { LabResearch } from "./lab-research.jsx";
 import "./styles.css";
 
 function loadLocal() {
@@ -206,6 +207,7 @@ function App() {
         <button className="button" type="submit">Save research question</button>
       </form>}
       <InputResearch />
+      <LabResearch />
       <MarketIntelligence />
       <VerificationDesk />
       <FoundationDashboard />

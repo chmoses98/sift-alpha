@@ -393,3 +393,13 @@ def test_cycle_aborts_on_changed_freeze_declaration_and_on_sigma_drift(tmp_path,
     assert r.get("aborted") and r["steps"]["frozen_reproduction"]["sigma_ok"] is False and not (out / "predictions.jsonl").exists()      # sigma changed, mu did not
     r2 = PC.run_cycle(tmp_path, None, out, tmp_path / "w", now=KO, download=False, pins=PC.PINS)
     assert "frozen declaration changed" in r2["aborted"]
+
+
+def test_accounting_covers_every_game_horizon_and_flags_gaps():
+    g = pd.DataFrame({"game_id": ["a", "b", "c"], "season": [2026] * 3, "gameday": ["2026-11-01", "2026-11-08", "2026-11-15"], "gametime": ["13:00", "13:00", "13:00"]})
+    frozen = "2026-11-06T00:00:00+00:00"
+    audit = [{"game_id": gid, "horizon": h} for gid in ("b", "c") for h in PP.HORIZONS_MIN]
+    r = PP.accounting(g, audit, frozen)
+    assert r["game_horizons"] == 9 and r["ineligible_decision_before_freeze"] == 3 and r["unaccounted"] == []          # game a kicked off before the freeze
+    r2 = PP.accounting(g, audit[:-1], frozen)
+    assert r2["unaccounted"] == ["c:T-90m"]                                                                            # a missing audit row is reported, not hidden

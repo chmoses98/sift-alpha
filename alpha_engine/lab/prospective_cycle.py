@@ -87,6 +87,7 @@ def run_cycle(data_dir: Path, md_repo: Path | None, out: Path, work: Path, now: 
     chains_ok = all(c["ok"] for c in chains.values())
     frame, audit = PP.audit_and_frame(preds, quotes, obs, games, now)
     first = min((pd.Timestamp(p["generated_utc"]) for p in preds), default=now)
+    rep["accounting"] = PP.accounting(games, audit, fz_utc)
     rep.update({"chains": chains, "evaluation": PP.evaluate(frame, audit, chains_ok), "capture_gaps": CI.capture_gaps(obs, first, now) if obs else None,
                 "counts": {"predictions": len(preds), "quotes": len(quotes), "observations": len(obs), "complete_observations": sum(1 for o in obs if o["complete"])}})
     ev = frame[(frame["horizon"] == "T-6h") & frame["outcome"].notna()] if not frame.empty else frame

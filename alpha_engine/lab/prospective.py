@@ -266,6 +266,22 @@ def audit_and_frame(preds, quotes, obs, games: pd.DataFrame, now, tickers_by_gam
     return pd.DataFrame(rows), audit
 
 
+def accounting(games: pd.DataFrame, audit: list[dict], frozen_utc, season: int = 2026) -> dict:
+    """Every game of the season must be accounted for at every horizon: audited (any status), or kicked off before the freeze (never eligible).  `unaccounted` must be empty."""
+    fz = _ts(frozen_utc); seen = {(a["game_id"], a["horizon"]) for a in audit}
+    g = games[(games["season"] == season) & games["gametime"].notna()]
+    pre, unacc, n = [], [], 0
+    for r in g.itertuples():
+        ko = kickoff_utc(r)
+        for h in HORIZONS_MIN:
+            n += 1
+            if ko - pd.Timedelta(minutes=HORIZONS_MIN[h]) < fz and (r.game_id, h) not in seen:
+                pre.append((r.game_id, h)); continue                      # the decision time was before the freeze: structurally ineligible
+            if (r.game_id, h) not in seen:
+                unacc.append(f"{r.game_id}:{h}")
+    return {"game_horizons": n, "ineligible_decision_before_freeze": len(pre), "audited": len(seen), "unaccounted": unacc}
+
+
 def audit_summary(audit: list[dict]) -> dict:
     out: dict = {}
     for a in audit:

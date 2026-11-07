@@ -233,6 +233,7 @@ def _worker(args):
 
 
 if __name__ == "__main__":
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('scaled_search')
     import multiprocessing as mp
     only = set(sys.argv[1:])
     ms = [m for m in all_markets() if not only or m[0].split(":")[0] in only or m[0] in only]

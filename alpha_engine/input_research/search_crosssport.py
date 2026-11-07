@@ -278,6 +278,7 @@ def tennis(c: Path, tour="atp"):
 
 
 def main():
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('search_crosssport')
     c = Path(sys.argv[1])
     sports = sys.argv[2:] or ["NBA", "NHL", "MLB", "CBB", "CFB", "TENNIS"]
     fn = {"NBA_PLAYER_POINTS": nba_player_points, "NBA": nba, "NHL": nhl, "MLB": mlb, "CBB": lambda p: espn(p, "CBB"), "CFB": lambda p: espn(p, "CFB"), "TENNIS": tennis}

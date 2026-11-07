@@ -1,0 +1,1177 @@
+{
+ "anytime_first_td_scorer": {
+  "contract": {
+   "settlement_definition": "Player-level markets (KXNFLTEAMFIRSTTD: 'DJ Moore: 1st Buffalo Touchdown'; KXNFLTDPROT: 'DJ Moore 2+ touchdowns (Protected)') settle YES only if the named player is the scorer of that team's first TD, or reaches the stated TD count, in the full game including overtime; defensive and special-teams TDs count as TDs. Team-level KXNFLFIRSTTDTEAM resolves to whichever team scores the first TD of any type, with an explicit 'No team scores a TD' strike. If the player is active but never takes a snap, the market settles to the fair price set before kickoff rather than NO; once he takes a snap (even one nullified by penalty) it settles on TDs. Protected contracts additionally void to a pre-kickoff fair price if the player plays in the first half but not after halftime, unless he already hit the count. Games not started within 48 hours of schedule settle to fair price. KXNFLLONGESTFG is a season-long extreme-value market (longest made FG 70+ yards), unrelated to scorers.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNFLFIRSTTDTEAM",
+     "quote": "All touchdowns count for this market, including offensive, defensive, and special teams.",
+     "establishes": "Team first-TD market counts defensive and special-teams TDs and overtime, so first-TD mass is not purely an offensive-drive event."
+    },
+    {
+     "ticker": "KXNFLTEAMFIRSTTD",
+     "quote": "If DJ Moore is active but never takes a snap, the market settles to the fair market price before game start.",
+     "establishes": "Zero-snap active players are voided to a fair price, not lost; the pregame-priced probability is conditional on taking a snap."
+    },
+    {
+     "ticker": "KXNFLTEAMFIRSTTD",
+     "quote": "If no Buffalo touchdowns are scored in the game, the No Buffalo Touchdown market resolves to Yes and all other player markets resolve to No.",
+     "establishes": "Each player's market is the team's first TD, so the player share is conditional on the team scoring at all; a no-TD team strike exists."
+    },
+    {
+     "ticker": "KXNFLTDPROT",
+     "quote": "If the individual player participates in at least one play during the first half of the game but does not participate in any play after the conclusion of the first half",
+     "establishes": "Protected 2+ TD contracts carry a half-time exit void rule that truncates the injury-exit tail."
+    },
+    {
+     "ticker": "KXNFLDSTTD",
+     "quote": "Defensive or special teams touchdowns recorded in overtime count.",
+     "establishes": "Overtime counts for D/ST TD market; the strike is floor 0.5 (1+)."
+    },
+    {
+     "ticker": "KXNFLLONGESTFG",
+     "quote": "If the longest made field goal is 70+ yards in the 2026-27 Pro Football regular season",
+     "establishes": "A season-long extreme-value contract bucketed here, unrelated to TD scoring mechanics."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Three families share the label: (a) player first-TD-of-team and 2+ TD (protected) props, (b) team first-TD / D/ST TD / team TD count, (c) season-long extremes and totals (longest FG, season rushing TDs, career rushing TDs, longest TD). Only (a) and (b) share the TD-allocation mechanism; (c) is a different problem filed here by the ledger.",
+    "KXNFLTEAMFIRSTTD is the team's first TD, not the game's first; its sampled rules text does not say what happens if the player's team scores but only via defense/special teams (assumed to count as a team TD with a named scorer or an 'other' strike; not visible).",
+    "KXNFLFIRSTTD, KXNFLNEXTTD, KXNFLANYTD, KXNFL2TD, KXNFLGAMETD, KXNFLTD, KXNFLTOTALTD, KXNFLFIRSTTDTIME, KXNFLLONGESTTD and KXNFLSHORTESTTD are TITLE_ONLY: no rules were sampled, so overtime, return-TD attribution and nullified-play handling cannot be confirmed.",
+    "Protected markets pay a fair price (set before kickoff) on a first-half-only participant; so the effective event is TD count conditional on playing after halftime or already hitting the strike.",
+    "Strike construction for protected props is floor_strike 1.5 with a '2+' title, i.e. strike_type 'greater' on an integer count; no tie or push is possible."
+   ],
+   "settlement_data_source": "Official NFL scoring summaries/game book (scorer credit per play); Kalshi rules reference 'official final result' and the league as the Governing League. Stat-correction lag is not specified in sampled text."
+  },
+  "mechanism": {
+   "summary": "A player's first-TD or anytime-TD outcome is the product of five stochastic layers. (1) He must take a snap (and, for protected props, play after halftime) or the contract voids. (2) His team must score touchdowns rather than field goals: a Poisson-binomial count over roughly 10-12 drives, with TD vs FG decided by red-zone and 4th-and-goal policy. (3) Each TD is allocated to a scorer through a categorical draw over rushers, receivers, the QB and non-offensive units, where the weights depend on field position at the TD (a 1-yard plunge versus a 40-yard throw), the personnel package and the game script. (4) For first-TD markets the two teams race: the first TD goes to the team whose drive converts first, so opening possession, scripted opening drives and defensive/special-teams scores determine team order, and then that team's first-TD scorer distribution (different from its average TD scorer distribution) applies. (5) For 2+ TD contracts, within-player TD counts are overdispersed relative to Poisson because goal-line role and a high-scoring game state are shared across a player's TDs. The pool, allocation and ordering layers must be modelled separately; a single 'TD rate' conflates them.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Participation gate and void states",
+     "description": "The contract only pays or loses if the player takes a snap; active-but-no-snap voids to a pregame fair price and a protected contract voids on a first-half-only appearance. So the modelled quantity is P(TD | plays), plus a separate P(void) that affects sizing but not the label. Drivers are the Friday designation, the 90-minute inactive list, depth-chart role (a gadget RB3 may be active and never see a snap), and in-game injury exit hazard by position and snap load. Early exits shorten the exposure window; late exits matter less once the TD is already recorded for protected markets.",
+     "distribution": "Bernoulli at status level (active/inactive), then a position-specific hazard of leaving the game; protected void adds a halftime step function; discrete and heavily mass-at-0/1 near kickoff",
+     "categories": [
+      "availability_news",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nfl.inactives_pit",
+      "nfl.in_game_exit_risk",
+      "nfl.skill_avail",
+      "nfl.zero_snap_active_risk"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Team TD pool and TD-versus-FG conversion",
+     "description": "The team's expected touchdown count is drives times P(TD per drive). The value that matters for scorer markets is touchdowns, not points: an implied total of 24 can be 3 TDs and a FG or 2 TDs and 3 FGs. Red-zone TD rate, 4th-and-goal go-for-it policy, kicker range and opponent red-zone defense decide the split. Implied team totals from spread and total supply a first estimate but are not TD-specific, so a TD-specific mean must be derived and regressed because red-zone TD rate has low year-to-year stability.",
+     "distribution": "Count of 1 to 5 TDs per team per game; approx Poisson-binomial with mild overdispersion from game-state sharing; discrete, right-skewed",
+     "categories": [
+      "pace_volume",
+      "efficiency_conversion",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nfl.team_total_split",
+      "nfl.redzone",
+      "nfl.fourth_and_goal_policy",
+      "nfl.drives",
+      "nfl.kicker",
+      "nfl.pace"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "TD source and scorer allocation within the team",
+     "description": "Each team TD is drawn from a categorical distribution over rushers (including QB sneaks and scrambles), receivers by route and target role, and unit-level scores (pick-six, return). The weights are not season TD shares: they are a function of the yard line at which the score occurs, which is a function of the drive type. Goal-line carries inside the 3 and end-zone targets behave very differently from open-field touches. Teammate absences shift weights non-proportionally because a replacement has a different goal-line role than the player he replaces. Realized TD counts regress heavily to opportunity-based expectation.",
+     "distribution": "Categorical with player-specific weights; TD per carry convex in distance to the goal line; high noise at player level because a player sees only 3-10 goal-line touches per season-quarter",
+     "categories": [
+      "role_personnel",
+      "efficiency_conversion",
+      "opponent_matchup"
+     ],
+     "input_ids": [
+      "nfl.rz_share",
+      "nfl.carries",
+      "nfl.targets",
+      "nfl.qb_rushing",
+      "nfl.td_rates",
+      "nfl.td_luck",
+      "nfl.dvp",
+      "nfl.player_xtd",
+      "nfl.goal_line_personnel"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "First-TD race between teams and time-to-first-TD",
+     "description": "For first-TD markets the first TD of the game goes to whichever team scores one first, and field goals do not count, so the first TD can come late. The ordering depends on the opening possession (coin-toss and deferral habit), scripted first-drive plays, each team's per-drive TD hazard and defensive or return TD risk. The first-TD scorer distribution differs from the average because early drives are scripted and field position starts from kickoffs; early-game drives also lean on a coach's rehearsed plays with a different target hierarchy.",
+     "distribution": "Competing-risk process over alternating drives; geometric-like hazard of first TD per drive; probability of no TD in the game is small but nonzero and priced as a separate strike",
+     "categories": [
+      "game_context_script",
+      "coaching_scheme"
+     ],
+     "input_ids": [
+      "nfl.opening_possession",
+      "nfl.opening_script",
+      "nfl.team_first_td_attribution",
+      "nfl.dst_td_hazard"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Multiplicity and cross-TD dependence",
+     "description": "2+ TD (protected) contracts and anytime markets need P(N>=k) for a player, not just P(N>=1). A player's TDs are positively dependent: a high team total and his goal-line role both scale every TD, and an early TD signals a favourable script. The count is therefore a mixed Poisson (overdispersed) with a team-level and a role-level shared factor, and team scoring is positively correlated with opponent scoring through pace.",
+     "distribution": "Mixed Poisson / negative-binomial player counts; thick right tail for goal-line backs and WR1s in high-total games",
+     "categories": [
+      "distribution_variance",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nfl.multi_td_dispersion",
+      "nfl.corr",
+      "nfl.script",
+      "nfl.player_stat_variance"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Settlement attribution, stat correction and void mechanics",
+     "description": "Contracts settle on the official scoring summary: who gets credit on fumble-recovery TDs, laterals, nullified plays and kick-return TDs, whether OT TDs count, and the fair-price rule for no-snap or protected exits. Stat corrections can flip a close attribution. The tradable edge also depends on the exact void rule because P(void) changes capital at risk.",
+     "distribution": "Deterministic rule application given the scoring summary; small probability of post-game stat correction and of ambiguous credit",
+     "categories": [
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "m.rules_text",
+      "m.stat_correction_risk",
+      "m.settlement_truth"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.off_epa",
+      "nfl.td_luck",
+      "nfl.td_rates"
+     ],
+     "note": "Team offense strength enters via the TD pool; player talent enters mostly through xTD shares rather than season TD totals."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.dvp",
+      "nfl.redzone"
+     ],
+     "note": "Opponent red-zone defence and position funnelling, although defence-vs-position is a weak, noisy contributor."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.rz_share",
+      "nfl.carries",
+      "nfl.targets",
+      "nfl.goal_line_personnel",
+      "nfl.player_xtd"
+     ],
+     "note": "Goal-line and end-zone roles and personnel packages decide scorer shares."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.inactives_pit",
+      "nfl.skill_avail",
+      "nfl.in_game_exit_risk",
+      "nfl.zero_snap_active_risk"
+     ],
+     "note": "Snap eligibility, void states and teammate absences."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.opening_script",
+      "nfl.fourth_and_goal_policy"
+     ],
+     "note": "Scripted openers and 4th-and-goal aggressiveness change TD versus FG and who gets the ball."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.proe",
+      "nfl.dst_td_hazard"
+     ],
+     "note": "Weather and venue are captured only indirectly; wind shifts TD source from pass to run (see interactions). Direct weather ids are in game_total."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.team_total_split",
+      "nfl.opening_possession",
+      "nfl.team_first_td_attribution"
+     ],
+     "note": "Spread and total determine expected state; opening possession and first-TD attribution cover the race."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.pace",
+      "nfl.drives"
+     ],
+     "note": "Drives set the number of TD chances."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.redzone",
+      "nfl.td_luck",
+      "nfl.player_xtd"
+     ],
+     "note": "TD conversion per trip and per touch with regression."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.multi_td_dispersion",
+      "nfl.td_luck"
+     ],
+     "note": "Overdispersion for 2+ TD props."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Resting starters in clinched games and late-season role changes shift goal-line roles, but no input here captures motivation-linked rest for TD scorers; the generic motivation id exists in the catalog but is not attached or tested for scorer shares."
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Officiating crews shift penalty counts only marginally for who scores; goal-line pass interference spot fouls can create scores but the effect is second-order next to role and pool."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "nfl.zero_snap_active_risk"
+     ],
+     "note": "Void, protected and fair-price rules change what is modelled."
+    }
+   }
+  },
+  "new_inputs": {
+   "nfl.player_xtd": {
+    "label": "Player expected touchdowns (xTD) from play-level opportunity",
+    "category": "player_role",
+    "mechanism": "Each rushing attempt and target carries a modelled TD probability that depends on yard line, down and distance, and play type; summing gives an opportunity-based TD expectation independent of luck.",
+    "rationale": "Season TD counts and TD rates are dominated by finishing luck (a back with 6 carries inside the 5 can score 0-6). xTD collapses to the opportunity and removes the single-season noise that makes nfl.td_rates misleading.",
+    "measurement": "For each rush attempt or target in the player's last 17 team games (half-life 6 games), assign P(TD | yardline_100, down, ydstogo, play_type, is_target) from a league-wide model fit on 2006+ pbp; sum by player; divide by team xTD to get a share. Shrink share to positional prior with k=4 team games' worth of goal-line touches. As-of: through the previous game; recompute after inactives.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play (nflreadr::load_pbp)",
+     "nflverse ff_opportunity expected TD columns (SOURCE_UNVERIFIED for exact field names)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, play_id, yardline_100, down, ydstogo, play_type, rusher_id, receiver_id, touchdown, pass_location, air_yards",
+     "participation: offense_personnel, defenders_in_box"
+    ],
+    "why": "Anytime and first-TD probability is a share times a pool; xTD share is the cleanest estimate of the share and is absent from the existing list.",
+    "role": "primary"
+   },
+   "nfl.goal_line_personnel": {
+    "label": "Goal-line package and personnel tree (inside the 5)",
+    "category": "player_role",
+    "mechanism": "In goal-to-go snaps inside about the 5-yard line, teams switch to heavy sets (extra TE/OL, FB) and select specific ball carriers and a QB-sneak option, so the TD-eligible set differs from the field-wide rotation.",
+    "rationale": "A back who plays 70% of snaps may have zero goal-line role; a 250-pound change-of-pace back may play 5% of snaps and take 60% of inside-the-3 carries. The share of snaps and the share of goal-line carries are different quantities.",
+    "measurement": "For snaps with yardline_100 <= 5 over the last 20 team games (half-life 8 games): tabulate by player share of carries, targets, QB sneaks, and offense_personnel (e.g. 22, 23, 12). Report share_carry_i5, share_tgt_i5, sneak_rate and TE/FB TD share. Shrink to team-level rates at k=8 snaps. Zero-fill and flag players who joined the team during the window.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp + participation (personnel from FTN/NGS charting; coverage 2016+ varies, SOURCE_UNVERIFIED)",
+     "Pro Football Reference play index (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: yardline_100, rusher_id, receiver_id, qb_scramble, qb_sneak flag if present, offense_personnel",
+     "depth chart vintages"
+    ],
+    "why": "Separates nominal depth-chart role from real goal-line role, which is the main allocator of TDs.",
+    "role": "primary"
+   },
+   "nfl.fourth_and_goal_policy": {
+    "label": "4th-and-goal and goal-to-go go-for-it policy",
+    "category": "game_state",
+    "mechanism": "On 4th-and-goal from inside the 2-3 yards, coaches either kick a FG or go for the TD, changing the number of TDs and the target and carry mix on those snaps.",
+    "rationale": "TD pool is what matters, not points; two teams with equal implied totals can differ by half a TD per game because of this choice. It also drives who receives the final-yard touches.",
+    "measurement": "Go-for-it rate on 4th-and-goal with ydstogo <= 3 over the last 2 seasons, opponent and win-probability adjusted: logistic regression on wp, ydstogo, score_differential, time; coach-level random effect with k=12 attempts shrinkage; as-of last game of the prior week; flagged on coach change.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp (fourth_down_decision fields, wp)",
+     "4th-down model (nflfastR 4th down)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: down, ydstogo, yardline_100, wp, go-for-it flag via play_type"
+    ],
+    "why": "Turns a points forecast into a TD forecast and decides which role gets the last-yard touch.",
+    "role": "secondary"
+   },
+   "nfl.team_first_td_attribution": {
+    "label": "Team first-TD scorer attribution history",
+    "category": "player_role",
+    "mechanism": "The scorer of a team's first TD is drawn from a distribution that differs from the full-game distribution because the first score arises in scripted and early-down contexts.",
+    "rationale": "Scorer shares in first TDs are rated off about 17 events per team-season, so they need strong shrinkage to the full-game xTD share; naive 'first TD hit rate' is nearly pure noise.",
+    "measurement": "For each team-game, record the scorer of the team's first TD and the yard line; compute recency-weighted shares (half-life 20 team games, includes prior-season games at 0.5 weight) and shrink to the player's full-game xTD share with k=10 team first-TD events; output: scorer share and expected yardline.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, posteam, touchdown, td_player_id, yardline_100, drive number"
+    ],
+    "why": "First-TD props are conditional on the team scoring first, and who scores first differs from who scores overall.",
+    "role": "secondary"
+   },
+   "nfl.dst_td_hazard": {
+    "label": "Defensive and special-teams TD hazard per team-game",
+    "category": "distribution",
+    "mechanism": "Pick-sixes, fumble returns, punt and kick return TDs happen at low frequency and are partly attributable to scheme and returner skill but largely random.",
+    "rationale": "These events end the 'first TD' contest for every offensive player and count in the team first-TD and D/ST TD markets; they are about 1 in 8-10 team games.",
+    "measurement": "Per team-game rate = 0.5*(own takeaway-return TD rate regressed to league mean with k=40 team games + opponent giveaway rate) + returner threat (kick and punt return TD per return, k=60 returns) + opponent special teams allowed rate. Poisson mean; as-of previous game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp (touchdown with td_team != posteam)",
+     "Pro Football Reference returns tables"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: interception_return_td flags, fumble_recovery_return_td, kickoff/punt returner id"
+    ],
+    "why": "Both first-TD and D/ST TD contracts need an event rate that offensive models ignore.",
+    "role": "secondary"
+   },
+   "nfl.zero_snap_active_risk": {
+    "label": "Active-but-zero-snap and protected-void probability",
+    "category": "availability",
+    "mechanism": "A player can be active and take no snap (RB3, TE3, gadget WR), which voids the contract, and protected contracts void on first-half-only exposure.",
+    "rationale": "The contract is conditional on a snap; ignoring this overstates a low-usage player's effective price and misses the void probability that determines how much capital is truly at risk.",
+    "measurement": "P(no snap | active) = fraction of last 12 active games with zero offensive snaps, shrunk with a beta prior by depth-chart slot (k=6); P(first-half-only) = fraction of active games with snaps in 1H and none in 2H, plus a Friday-designation uplift from past data; as-of 90-minute inactive list.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse participation and snap_counts (nflreadr::load_snap_counts)",
+     "NFL game-day inactives"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "snap_counts: game_id, player, offense_snaps, offense_pct",
+     "inactives by game"
+    ],
+    "why": "Directly parameterizes the fair-price void in KXNFLTEAMFIRSTTD and KXNFLTDPROT.",
+    "role": "secondary"
+   },
+   "nfl.multi_td_dispersion": {
+    "label": "Within-player multi-TD dispersion factor",
+    "category": "distribution",
+    "mechanism": "A player's TDs share a latent intensity (team total and goal-line role), so P(2+) exceeds the Poisson implied by P(1+).",
+    "rationale": "2+ TD contracts and 'multiple touchdowns' markets are priced off the same marginal intensity; dispersion decides the tail ratio P(2+)/P(1+).",
+    "measurement": "Fit a negative-binomial dispersion r by position group (RB goal-line, WR1, TE, QB rush) on the last 5 seasons of player-games with at least 4 expected TD-opportunity touches; report r and P(2+|P(1+)) lookup table; as-of start of week.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse player_stats and pbp"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player-game TD counts, xTD by game"
+    ],
+    "why": "Needed for the 2+ TD protected contract and the 2TD series; the existing list covers only P(1+).",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nfl.team_total_split": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Pool-size input, but it translates points to means rather than TDs; must be paired with the new 4th-and-goal policy and red-zone TD rate or it overstates TD counts for FG-heavy teams."
+   },
+   "nfl.td_rates": {
+    "verdict": "WEAK",
+    "reason": "Role-based realized TD rates carry heavy finishing luck and overlap with nfl.rz_share and nfl.td_luck; useful only as a shrinkage prior beneath an opportunity-based xTD."
+   },
+   "nfl.rz_share": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Closest to the allocator but 'red-zone share' blends 20-yard-line touches with inside-the-3 touches; needs the inside-5 split in the new goal-line input."
+   },
+   "nfl.carries": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Goal-line carry share is the key part; total carry share is not. Overlaps rz_share for the inside-10 portion so treat as a partner not a separate signal."
+   },
+   "nfl.targets": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "End-zone and red-zone target share matters; TPRR and aDOT are mostly irrelevant for TD; keep only the zone-restricted parts."
+   },
+   "nfl.opening_script": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Informs the first-TD race but few drives per season make it noisy; shrink heavily and use alongside opening possession."
+   },
+   "nfl.opening_possession": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Opening possession order is largely a coin flip plus a deferral habit; effect on first-TD is real but modest (about one extra drive of lead)."
+   },
+   "nfl.qb_rushing": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "QB sneaks and scrambles remove goal-line TDs from RBs and are strongest where a mobile QB is the team's leading TD scorer."
+   },
+   "nfl.skill_avail": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Teammate absence reallocates goal-line touches non-proportionally; the usable form is replacement role, not a generic 'availability flag'."
+   },
+   "nfl.td_luck": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Regression device that is partly duplicative of xTD; keep for team-level yards-to-points regression."
+   },
+   "nfl.dvp": {
+    "verdict": "WEAK",
+    "reason": "Defence-vs-position yardage allowed is a poor TD predictor at the game level and is confounded by schedule; red-zone TD rate allowed by role is better."
+   },
+   "nfl.in_game_exit_risk": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Exit hazard shortens exposure; protected contracts truncate part of that tail, so the effect differs by contract."
+   },
+   "nfl.inactives_pit": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Decisive near kickoff; also supplies the active-but-no-snap check. Role is higher than secondary on game day but only partial pregame."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Void, protected and fair-price rules are central to the label."
+   },
+   "m.quote_history": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Market price series is a benchmark, not a determinant of who scores; may only serve as a comparison."
+   },
+   "m.strike_hit_rates": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Realized frequency by price bucket measures market calibration, not mechanism; keep for evaluation only."
+   },
+   "m.volume_oi": {
+    "verdict": "IRRELEVANT",
+    "reason": "Liquidity metrics do not alter who scores a touchdown; relevant only to trade sizing."
+   },
+   "m.trade_tape": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Executed trades are market microstructure; no information on the scoring process."
+   },
+   "nfl.pace": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Plays per game scale drives modestly; its TD effect runs through drives and efficiency already covered."
+   },
+   "nfl.proe": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Splits TDs between receivers and rushers, but red-zone PROE is the relevant version, not neutral-situation PROE."
+   },
+   "nfl.drives": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Number of drives sets the number of TD chances; use clock-killing style only for the team pool."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.skill_avail",
+     "nfl.goal_line_personnel",
+     "nfl.player_xtd"
+    ],
+    "form": "conditional",
+    "mechanism": "When a primary goal-line back is out, the vacated carries go mainly to whichever back has the next heaviest inside-5 role, not to the next-highest snap player; the shift is non-proportional and can leave a pass-catching back's TD rate unchanged while a rotational power back doubles.",
+    "how_to_test": "Compare TD probability change for each teammate when a goal-line player is inactive vs active, grouped by replacement role (power back vs receiving back vs QB), controlling for team xTD."
+   },
+   {
+    "inputs": [
+     "nfl.team_total_split",
+     "nfl.fourth_and_goal_policy",
+     "nfl.redzone"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Team TDs are points times the TD fraction of scoring trips; a team with an aggressive 4th-and-goal policy and good red-zone offence converts the same total into more TDs, scaling every scorer's probability, while FG-prone teams do the reverse.",
+    "how_to_test": "Regress team TD count on implied total with interaction terms for go-for-it rate and red-zone TD rate; the interaction coefficient reveals the uplift."
+   },
+   {
+    "inputs": [
+     "nfl.opening_possession",
+     "nfl.opening_script",
+     "nfl.team_first_td_attribution"
+    ],
+    "form": "multiplicative",
+    "mechanism": "P(player first TD) = P(team first TD) x P(player | team first TD). Receiving the opening kickoff raises the first factor; a scripted pass-heavy opener changes the second factor toward the WR/TE group instead of the goal-line back. The two factors are not independent through the script.",
+    "how_to_test": "Estimate the first-TD scorer distribution separately for teams that receive first vs defer and compare with that team's full-game TD shares."
+   },
+   {
+    "inputs": [
+     "nfl.proe",
+     "nfl.qb_rushing",
+     "nfl.rz_share"
+    ],
+    "form": "regime-switch",
+    "mechanism": "In wind or heavy precipitation, red-zone pass rate falls and short-yardage runs rise, so receivers' TD share falls and runners' and the QB's rise; the shift is a regime change above a wind threshold, not a linear drift.",
+    "how_to_test": "Split goal-to-go plays by wind bucket (<10, 10-15, >15 mph) and compare pass/run TD shares by team."
+   },
+   {
+    "inputs": [
+     "nfl.multi_td_dispersion",
+     "nfl.team_total_split",
+     "nfl.script"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A player's second TD is much likelier in games where his team's total is high and the team leads, so P(2+) is not a function of P(1+) alone; the shared game-state factor widens the right tail beyond Poisson.",
+    "how_to_test": "Compare empirical P(2+|1+) for goal-line backs across implied-total terciles against a Poisson baseline."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.player_xtd",
+    "shape": "convex in distance to the goal line",
+    "why": "TD probability per carry rises from low single-digit percent at the 10 to roughly half or more at the 1; linear yardage-based role shares badly misprice players whose carries are inside versus outside the 5."
+   },
+   {
+    "input_id": "nfl.team_total_split",
+    "shape": "saturating: P(anytime)=1-exp(-lambda)",
+    "why": "Anytime probability is concave in a player's expected TD count, so doubling expected TDs does not double probability; this matters most for high-share stars where lambda is near 1."
+   },
+   {
+    "input_id": "nfl.zero_snap_active_risk",
+    "shape": "step at designation boundaries",
+    "why": "Player-level participation switches from near 1 to near 0 across Out/Doubtful/Questionable/Active, so P(void) is a step function of status rather than a smooth variable."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Play-by-play with scoring plays and field position",
+    "grain": "play",
+    "fields": "game_id, play_id, posteam, defteam, yardline_100, down, ydstogo, play_type, rusher_id, receiver_id, passer_id, touchdown, td_team, td_player_id, return TD flags, qtr, game_seconds_remaining, wp, weather fields",
+    "timestamp_requirement": "As-of end of previous week; no revisions after stat corrections unless vintage-stored",
+    "history_needed": "2006+ for models; 17 games for features",
+    "candidate_sources": [
+     {
+      "name": "nflverse nflreadr load_pbp",
+      "access": "free",
+      "note": "play-level, includes td_player_id"
+     },
+     {
+      "name": "Pro Football Reference play index",
+      "access": "free_scrape",
+      "note": "manual scrape; terms of use limit"
+     },
+     {
+      "name": "Sports Info Solutions / PFF",
+      "access": "paid",
+      "note": "charting of alignment and personnel, SOURCE_UNVERIFIED for field list"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.player_xtd",
+     "nfl.goal_line_personnel",
+     "nfl.team_first_td_attribution",
+     "nfl.fourth_and_goal_policy",
+     "nfl.dst_td_hazard",
+     "nfl.rz_share",
+     "nfl.carries",
+     "nfl.targets",
+     "nfl.td_rates",
+     "nfl.td_luck",
+     "nfl.redzone",
+     "nfl.opening_script",
+     "nfl.opening_possession",
+     "nfl.drives"
+    ]
+   },
+   {
+    "dataset": "Participation and snap counts",
+    "grain": "player-game",
+    "fields": "game_id, player_id, offense_snaps, offense_pct, st_snaps, offense_personnel, defenders_in_box",
+    "timestamp_requirement": "Snap counts post-game; inactives list 90 minutes before kickoff",
+    "history_needed": "2016+ where personnel is available",
+    "candidate_sources": [
+     {
+      "name": "nflverse load_snap_counts and load_participation",
+      "access": "free",
+      "note": "participation coverage varies by season, SOURCE_UNVERIFIED"
+     },
+     {
+      "name": "NFL game-day inactives",
+      "access": "free_scrape",
+      "note": "official page; no API"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.zero_snap_active_risk",
+     "nfl.inactives_pit",
+     "nfl.skill_avail",
+     "nfl.in_game_exit_risk"
+    ]
+   },
+   {
+    "dataset": "Official injury reports with timestamps",
+    "grain": "player-day",
+    "fields": "status, practice participation, body part, report time",
+    "timestamp_requirement": "Vintage per report; Wed/Thu/Fri plus game-day",
+    "history_needed": "5+ seasons",
+    "candidate_sources": [
+     {
+      "name": "NFL official injury report (nfl.com) archived by own_capture",
+      "access": "own_capture",
+      "note": "point-in-time capture needed; nflverse load_injuries gives final weekly status only"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.skill_avail",
+     "nfl.inactives_pit"
+    ]
+   },
+   {
+    "dataset": "Player TD distribution and dispersion table",
+    "grain": "player-game",
+    "fields": "td_count by type, xTD, role flags, team implied total",
+    "timestamp_requirement": "As-of weekly",
+    "history_needed": "2019-2025",
+    "candidate_sources": [
+     {
+      "name": "derived from nflverse",
+      "access": "derived",
+      "note": "computed in-house"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.multi_td_dispersion",
+     "nfl.player_stat_variance",
+     "nfl.corr",
+     "nfl.team_total_split"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "Ten series in this archetype (FIRSTTD, NEXTTD, ANYTD, 2TD, GAMETD, TD, TOTALTD, FIRSTTDTIME, LONGESTTD, SHORTESTTD) have no rules text sampled, so how return TDs, OT scores and the 'next' definition work cannot be checked.",
+    "what_would_resolve": "Sample the full rules_primary/secondary for one live market from each TITLE_ONLY series and confirm OT, D/ST attribution and void rules.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "OTHER",
+    "description": "The ledger lumps season-long extremes (KXNFLLONGESTFG 70+ yards, season rushing TDs, career rushing TDs) into this archetype. They need an extreme-value/season-accrual model, not a TD allocator, and no input here covers them.",
+    "what_would_resolve": "Move those series to a season-stats or kicker-range archetype and author a separate mechanism (long-attempt count x make probability by distance)."
+   },
+   {
+    "id": "u3",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Pregame coach intent for goal-line packages and opening scripts is unobserved; history gives only realized plays on few drives per season, so first-TD scorer shares have large irreducible error.",
+    "what_would_resolve": "Own capture of beat-writer reports and practice-observation notes timestamped pregame, evaluated for incremental accuracy over xTD shares.",
+    "category": "coaching_scheme"
+   },
+   {
+    "id": "u4",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Motivation and rest effects on goal-line roles (clinched teams, tanking, injury-managed vets) have no defined input here, and no data shows how large they are for scorer shares.",
+    "what_would_resolve": "Define a rest/role-change flag from late-season snap histories and test on weeks 16-18.",
+    "category": "situational_schedule_motivation"
+   }
+  ],
+  "reviewer": "NFL_a author (Claude)",
+  "review_date": "2026-11-07"
+ },
+ "combos_and_parlays": {
+  "contract": {
+   "settlement_definition": "No live Kalshi series is mapped to this archetype in the ledger, so there is no sampled rules text. A multi-leg combo is understood to resolve YES only when every leg resolves as required, and NO as soon as any one leg fails; what happens when a leg is voided (postponed beyond 48 hours, a protected prop exit, a no-snap fair-price settlement), pushes on an integer line, or depends on overtime cannot be confirmed from evidence and is carried as CONTRACT_AMBIGUOUS. Settlement source would be the same official scoring and box-score data that settles each leg.",
+   "rules_verification": "NO_LIVE_SERIES",
+   "rules_evidence": [],
+   "variants_and_edge_cases": [
+    "Leg types differ in overtime treatment inside the same archetype: other NFL series sampled elsewhere show 1st-half and quarter legs exclude overtime, 2nd-half and full-game legs include it, and 4th-quarter legs say 'excluding overtime', so a combo mixing a quarter leg with a full-game leg has a joint event whose two legs react differently to a tied game that goes to overtime.",
+    "Player legs carry fair-price void rules (active but no snap, protected props with a first-half-only appearance) in sibling series; if such a leg sits in a combo, the combo either re-prices to remaining legs or voids and the payout changes; this is not verifiable without combo rules text.",
+    "Integer spread or total lines can push; whether a pushed leg is dropped, voided or counted as a loss in a combo is unknown, which materially changes pricing near key numbers 3 and 7.",
+    "Legs on the same game share one latent process, while legs on different games are near-independent; combos spanning weeks have staggered resolution and different information sets at each close."
+   ],
+   "settlement_data_source": "Not verified (no series). Presumed to be the per-leg official game results and box-score statistics used by the sibling NFL series, with the combo's own void/push rule unknown."
+  },
+  "mechanism": {
+   "summary": "A combo's probability is the probability of an intersection of leg events, so the objects to model are the dependence structure and the joint support, not the marginals. In football all same-game legs are functions of one latent process: the drive sequence. A single drive outcome (a 12-play field-goal drive versus a 2-play deep touchdown) simultaneously moves team points, quarter scoring, the QB's yards and TDs, the rusher's attempts, and the clock that decides how many more drives occur. Hard accounting identities link the legs: individual yards cannot exceed the team total, individual TDs sum to team TDs, a team's points must be 3a+6b+... in discrete steps, and the winner's margin and the game total are tied through team scores. Between games there is near independence, apart from shared weather, referee crew or league-wide shocks. So the pricing task is: (i) good legs, (ii) a joint simulator or copula calibrated to these identities and to regime-dependent dependence (script, QB status, weather), (iii) exact leg wording so that void/push/OT states are handled, and (iv) execution cost and thin liquidity once a price exists.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Leg marginals from the underlying archetype models",
+     "description": "Each leg inherits a marginal probability from the model of its own archetype: spread and moneyline from the margin distribution, total from drive-by-drive scoring, QB yards from attempts and efficiency, TD scorer from the allocation model. If the marginals are wrongly calibrated, the joint is wrong whatever the copula; the combo error is approximately the sum of leg errors because probabilities multiply. Marginals must also be coherent with each other (for example, a team total leg and a game total leg imply an opponent total).",
+     "distribution": "Each leg is Bernoulli with its own probability; the joint support is a subset of {0,1}^k with k = 2 to 6 legs; errors in marginals compound multiplicatively across legs",
+     "categories": [
+      "talent_strength",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nfl.ratings",
+      "nfl.team_total_split",
+      "nfl.score_resid",
+      "nfl.player_stat_variance"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Shared latent game state",
+     "description": "Same-game legs depend on the same latent variables: expected margin, expected total, pace, QB and key-player availability, weather and the lead state across time. A trailing script raises the QB's attempts and yards and lowers the favourite's rushing, so favourite-cover and QB-yards are negatively related even though 'good team' and 'high total' are positively related. These dependencies are regime-dependent: the sign of the correlation between a rusher's yardage and the favourite covering flips between competitive and blowout games.",
+     "distribution": "Continuous latent factors (margin ~ N-ish with key-number lattice, total, pace) driving conditional Bernoulli legs; dependence is conditional and non-constant across regimes",
+     "categories": [
+      "game_context_script",
+      "pace_volume",
+      "availability_news"
+     ],
+     "input_ids": [
+      "nfl.script",
+      "nfl.corr",
+      "nfl.leg_dependence_by_margin_regime",
+      "nfl.common_availability_shock"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Accounting identities and hard constraints",
+     "description": "Football box-score numbers obey sums: the TDs of all players on a team sum to the team's offensive TDs, individual receiving yards are bounded by the team's passing yards, and team points are non-negative combinations of 7, 3, 2, 6 and 8. These constraints create dependence that Gaussian correlations miss: two teammates both scoring first-TD legs is impossible, and two skill players both going over their yardage lines requires a large passing team total.",
+     "distribution": "Deterministic constraints on a discrete lattice; produces exactly zero joint probability for incompatible leg sets and large non-Gaussian dependence in the tails",
+     "categories": [
+      "distribution_variance",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nfl.team_stat_accounting_constraints",
+      "nfl.corr"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Leg wording: push, void, overtime and fair-price states",
+     "description": "The joint event is determined by each leg's own settlement text. Legs ending in a push on integer lines, voided on postponement, excluding overtime, or settling at a fair price on a no-snap player each remove or alter the event. A combo containing a regulation-only leg and a full-game leg has a joint outcome that diverges whenever the game is tied after 60 minutes. Combo contract text decides if a voided leg is dropped or whether the combo is cancelled.",
+     "distribution": "Rule-based, deterministic given leg and combo wording; tiny probability of tie/postponement but concentrated on key numbers",
+     "categories": [
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "m.rules_text",
+      "nfl.score_resid",
+      "nfl.leg_void_push_matrix"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Execution cost, fees and book thinness",
+     "description": "Once a model joint probability exists, realized edge is the model joint minus the executable price, fees (often a larger share of a long-shot combo price) and the cost of hedging legs that do not exist as markets. Combo books are thin and stale, so the price can reflect a market-maker's correlation assumption rather than information.",
+     "distribution": "Price is a dealer quote; edge is small relative to spread; deterministic fee schedule applies to the whole combo payoff",
+     "categories": [
+      "settlement_contract",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "m.combo_pricing",
+      "m.fees",
+      "m.orderbook_depth"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.ratings",
+      "nfl.team_total_split"
+     ],
+     "note": "Team strength enters through leg marginals for side and total legs."
+    },
+    "opponent_matchup": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Matchup effects live inside each leg's own archetype model and enter the combo only through its marginals; the combo layer adds no separate opponent-matchup variable."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.team_stat_accounting_constraints"
+     ],
+     "note": "Role shares matter through the identity that player outputs sum to team outputs."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.common_availability_shock"
+     ],
+     "note": "A QB or WR1 scratch moves several legs at once, so availability is a shared factor."
+    },
+    "coaching_scheme": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Coaching tendencies act through team marginals and script, which are already represented by the script lattice; no combo-specific coaching variable exists."
+    },
+    "environment": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Wind, precipitation and dome status move total, passing-yard and kicker legs together, but no shared-weather factor is defined for combos; the dependence of leg pairs on weather is not parameterized here."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.script",
+      "nfl.leg_dependence_by_margin_regime"
+     ],
+     "note": "Lead-state script is the main source of cross-leg dependence."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.corr",
+      "nfl.script"
+     ],
+     "note": "Plays and drives are shared across volume legs; covered via the correlation matrix."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.player_stat_variance"
+     ],
+     "note": "Marginal stat shapes for each leg; conversion luck is in each leg's own model."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.score_resid",
+      "nfl.corr",
+      "nfl.team_stat_accounting_constraints"
+     ],
+     "note": "Joint distribution on the score lattice with constraints."
+    },
+    "situational_schedule_motivation": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Rest, stakes and motivation affect legs only through each leg's own marginal; they create no separate dependency channel between legs at the combo layer."
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Crew tendencies are small and affect legs in each model individually; no combo-level effect has been identified beyond the shared game environment."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "nfl.leg_void_push_matrix",
+      "m.fees"
+     ],
+     "note": "Per-leg void, push and overtime wording plus combo fee mechanics."
+    }
+   }
+  },
+  "new_inputs": {
+   "nfl.leg_dependence_by_margin_regime": {
+    "label": "Leg-pair dependence conditioned on margin and total regime",
+    "category": "distribution",
+    "mechanism": "Cross-leg dependence between pairs such as favourite cover and QB yards, or total over and rusher yards, changes sign by game regime (competitive, favourite blowout, shootout).",
+    "rationale": "A single correlation coefficient averages a positive correlation in shootouts with a negative one in blowouts, understating joint probabilities for some leg sets and overstating for others.",
+    "measurement": "For each leg-type pair (about 30 types), estimate the Kendall tau or tetrachoric correlation of the two leg indicators within bins of pregame spread (|s|<3, 3-7, >7) and total terciles, using 2015+ player-games; shrink bin estimates toward the pooled estimate with k=150 games; require 400+ games per cell; report standard errors; as-of end of previous week.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp, player_stats, schedules (spread and total fields)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player-game stats: passing_yards, rushing_yards, receptions, tds",
+     "game: spread_line, total_line, result",
+     "pregame lines (benchmark used only to define regimes, not as an input to probability)"
+    ],
+    "why": "Provides the specific conditional dependence structure that a constant matrix misses and is what separates combo pricing from multiplying marginals.",
+    "role": "primary"
+   },
+   "nfl.team_stat_accounting_constraints": {
+    "label": "Team-to-player accounting constraints for same-game legs",
+    "category": "distribution",
+    "mechanism": "Individual player outputs must sum to team outputs, so player legs on one team compete for a fixed pool, and incompatible leg sets have zero joint probability.",
+    "rationale": "Gaussian correlations allow two teammates to both hit first-TD legs or both clear very large yardage lines; the identity-based approach prevents impossible combinations and captures negative dependence among teammates.",
+    "measurement": "Compute, from historical player-games, the distribution of the share of team yards and TDs captured by the top-k players; define a Dirichlet-multinomial allocation for each team-game with concentration from the prior 17 games (shrink k=20); enforce sum(player) = team and floor for unlisted players. Output joint distribution over pairs of player legs on one team; as-of previous game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse pbp and player_stats"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: player ids by yards, TD and target",
+     "team-game totals"
+    ],
+    "why": "Directly handles same-team multi-leg combos that are the dominant retail leg set.",
+    "role": "primary"
+   },
+   "nfl.common_availability_shock": {
+    "label": "Shared availability shock across legs (QB, WR1, OL, kicker)",
+    "category": "availability",
+    "mechanism": "One lineup event (QB scratch, kicker injury, star WR late scratch) moves several legs of the same combo simultaneously.",
+    "rationale": "Legs priced early assume a baseline lineup; a late change lowers the QB yards leg, total and favourite-cover jointly, so the joint probability is a mixture over lineup states rather than a product.",
+    "measurement": "Define lineup states (QB1/QB2, WR1 in/out, starting kicker, RT in/out) with probabilities from injury designation base rates (shrink to position-level, k=10 games); condition each leg on state using prior-season splits with k=3 games shrinkage; joint = sum over states of P(state) x product of conditional legs adjusted by in-state dependence. As-of per injury report vintage.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NFL official injury reports (own_capture)",
+     "nflverse depth charts and rosters"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "injury report vintages",
+     "depth charts",
+     "player-game stats by teammate presence"
+    ],
+    "why": "Late news makes combos stale unevenly; the mixture decomposition is needed to price the correlated move.",
+    "role": "secondary"
+   },
+   "nfl.leg_void_push_matrix": {
+    "label": "Per-leg void, push and overtime state matrix",
+    "category": "market_structure",
+    "mechanism": "Each leg type has deterministic rules for pushes, postponement, no-snap voids and overtime that define the joint event and its payout.",
+    "rationale": "Combo payoff differs between a pushed leg being dropped or the combo lost; near 3 and 7 on integer spreads the push mass is 6-9% of games and cannot be ignored.",
+    "measurement": "Table with columns: leg_series, includes_OT (yes/no/unknown), push_possible (integer line), void_rule, fair_price_rule, source text hash and date; join to the combo's rules text; for each combo, compute P(joint | rule variant) for each variant of the unknown combo wording and carry the spread as model uncertainty. As-of rules text version captured at order time.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Kalshi API rules_primary and rules_secondary (free, own_capture for versions)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "market rules text by ticker with timestamp",
+     "combo market metadata"
+    ],
+    "why": "Combo wording is unknown here and materially changes the joint event.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nfl.corr": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The central object, but a single within-game correlation matrix is too coarse; it needs conditioning on margin regime and enforcement of team accounting identities."
+   },
+   "nfl.ratings": {
+    "verdict": "WEAK",
+    "reason": "Used only for outcome legs and partially market-derived; a power rating adds nothing about dependence, and market-implied components are benchmarks that would double-count line information."
+   },
+   "nfl.team_total_split": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Ensures the team-total and game-total legs are coherent with spread legs; useful consistency check, not a dependence driver."
+   },
+   "nfl.script": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Lead-state script is the source of the sign flips in cross-leg dependence; correctly central."
+   },
+   "nfl.score_resid": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Key-number mass for spread and total legs; also produces push probability, but on its own is a marginal not a joint."
+   },
+   "nfl.player_stat_variance": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Supplies marginal shapes for player legs; the joint depends more on shared drivers than on each shape."
+   },
+   "m.combo_pricing": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Quoted combo price versus correlated product is the comparison target; using it as an input would leak market belief into the probability."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Leg wording determines the joint event; no combo-level text is available so the input is critical and incomplete."
+   },
+   "m.fees": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Fees reduce realized edge but do not change probability; keep for trade evaluation."
+   },
+   "m.orderbook_depth": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Spread and depth show executable price and liquidity, not the probability of the legs; belongs in execution analysis."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.script",
+     "nfl.corr",
+     "nfl.leg_dependence_by_margin_regime"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Favourite cover and QB passing yards are positively linked in competitive shootouts and negative in blowouts where the leader runs the clock; the sign of the correlation depends on the margin regime, so one fitted coefficient is wrong in both.",
+    "how_to_test": "Estimate the pair correlation separately for |spread| bins and total terciles and test the sign change."
+   },
+   {
+    "inputs": [
+     "nfl.team_stat_accounting_constraints",
+     "nfl.corr"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Two receivers' yardage overs on the same team require a passing total that few games reach; the accounting identity makes the pair's joint probability much lower than the product conditional on the same team total, and zero for first-TD pairs.",
+    "how_to_test": "Compare model joint for teammate pairs with and without the sum constraint on historical player-games."
+   },
+   {
+    "inputs": [
+     "nfl.common_availability_shock",
+     "nfl.ratings",
+     "nfl.team_total_split"
+    ],
+    "form": "conditional",
+    "mechanism": "A QB scratch moves the favourite-win leg, team total and passing legs in the same direction but by different amounts; the combo's joint is a mixture over QB states whose weights are only known at inactive-list time.",
+    "how_to_test": "Backtest mixture-versus-product predictions on games with late QB changes."
+   },
+   {
+    "inputs": [
+     "nfl.score_resid",
+     "m.rules_text",
+     "nfl.leg_void_push_matrix"
+    ],
+    "form": "threshold",
+    "mechanism": "At integer lines on 3 and 7, a push leg changes the combo's payoff; the joint probability has a discontinuity at the key numbers and the effect depends on whether the push is dropped or loses.",
+    "how_to_test": "Compute joint probability under both push rules for combos with lines on 3, 7 and 10; compare to settled outcomes."
+   },
+   {
+    "inputs": [
+     "m.fees",
+     "m.combo_pricing",
+     "m.orderbook_depth"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Fees and spreads apply once to the total price but each added leg multiplies model uncertainty, so net edge declines faster than linearly in leg count; long combos are priced mostly by dealer's correlation assumption.",
+    "how_to_test": "Net edge by leg count after fees and spread on historical combo quotes."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.corr",
+    "shape": "sign-changing across margin regimes",
+    "why": "Correlation between the favourite covering and the QB's yards is positive in close games and negative in blowouts; averaging gives near zero and misses both."
+   },
+   {
+    "input_id": "nfl.score_resid",
+    "shape": "spikes at key numbers 3, 7, 10, 14",
+    "why": "Margin distribution has lumps at 3 and 7, so spread legs near these numbers have jump changes in cover and push probability that a continuous model does not produce."
+   },
+   {
+    "input_id": "nfl.team_total_split",
+    "shape": "truncation and concavity in the leg count",
+    "why": "Joint probability multiplies across legs so tiny marginal miscalibration compounds; the loss in joint accuracy is roughly linear in log-odds errors but large in price terms for long shots."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Player-game box scores with pregame line context",
+    "grain": "player-game",
+    "fields": "player_id, team, passing/rushing/receiving yards, TDs, receptions, snaps, spread_line, total_line, result, weather",
+    "timestamp_requirement": "As-of previous week; lines stored only to define regimes",
+    "history_needed": "2015-2025",
+    "candidate_sources": [
+     {
+      "name": "nflverse player_stats and schedules",
+      "access": "free",
+      "note": "includes closing spread and total in schedules"
+     },
+     {
+      "name": "Pro Football Reference game logs",
+      "access": "free_scrape",
+      "note": "for cross-checks"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.leg_dependence_by_margin_regime",
+     "nfl.team_stat_accounting_constraints",
+     "nfl.corr",
+     "nfl.player_stat_variance"
+    ]
+   },
+   {
+    "dataset": "Kalshi combo market metadata, rules text and order books",
+    "grain": "market",
+    "fields": "ticker, leg list, rules_primary/secondary, bid/ask depth by time, fees, settlement result",
+    "timestamp_requirement": "Snapshot at order time; rules version at open and close",
+    "history_needed": "from first listing",
+    "candidate_sources": [
+     {
+      "name": "Kalshi API and own capture",
+      "access": "own_capture",
+      "note": "combo series not present in ledger; existence is SOURCE_UNVERIFIED"
+     },
+     {
+      "name": "Sportsbook same-game-parlay prices",
+      "access": "paid",
+      "note": "e.g. via OddsJam/The Odds API, coverage of SGP is SOURCE_UNVERIFIED"
+     }
+    ],
+    "feeds_inputs": [
+     "m.combo_pricing",
+     "m.rules_text",
+     "m.fees",
+     "m.orderbook_depth",
+     "nfl.leg_void_push_matrix"
+    ]
+   },
+   {
+    "dataset": "Injury report vintages and depth charts",
+    "grain": "player-day",
+    "fields": "designation, practice status, depth slot, report timestamp",
+    "timestamp_requirement": "Per report time",
+    "history_needed": "2018-2025",
+    "candidate_sources": [
+     {
+      "name": "NFL injury reports (own_capture)",
+      "access": "own_capture",
+      "note": "historic vintages via nflverse load_injuries are weekly final status only"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.common_availability_shock"
+    ]
+   },
+   {
+    "dataset": "Drive-level game simulator calibration set",
+    "grain": "drive",
+    "fields": "drive result, points, plays, time consumed, start field position, score state",
+    "timestamp_requirement": "As-of previous week",
+    "history_needed": "2015-2025",
+    "candidate_sources": [
+     {
+      "name": "nflverse pbp",
+      "access": "free",
+      "note": "drive aggregates derived"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.script",
+     "nfl.score_resid",
+     "nfl.team_total_split"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The ledger lists no live Kalshi series for NFL combos, so how legs are combined, whether a voided leg drops out and how pushes work are all unknown; the mechanism assumes an all-legs-must-win event.",
+    "what_would_resolve": "Locate any live multivariate/combo NFL ticker and sample its rules text; confirm leg void and push treatment.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Historical sportsbook same-game-parlay prices and their implied correlations are proprietary; this limits evaluating whether a correlation model beats the dealer's.",
+    "what_would_resolve": "Purchase or capture SGP quotes (paid feeds) for a season and compare modelled joint to quoted price.",
+    "category": "distribution_variance"
+   },
+   {
+    "id": "u3",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Whether to use a copula, a drive-level game simulator, or a latent-factor model for the joint is undecided; each handles identities and regime dependence differently and no test exists here.",
+    "what_would_resolve": "Run a held-out comparison of joint log-likelihood on 2022-2025 same-game leg sets (research step, not performed here).",
+    "category": "distribution_variance"
+   },
+   {
+    "id": "u4",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Shared weather as a combo dependency is not defined: wind moves total, kicker and passing legs together but the shape and thresholds by leg pair are not specified.",
+    "what_would_resolve": "Define leg-pair weather elasticities from games with measured wind and test on dome versus outdoor splits.",
+    "category": "environment"
+   }
+  ],
+  "reviewer": "NFL_a author (Claude)",
+  "review_date": "2026-11-07"
+ }
+}

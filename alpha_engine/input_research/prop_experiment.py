@@ -471,6 +471,7 @@ def ablate(df, qb, cols, groups, hn="primary_T-60m"):
 
 
 def main():
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('prop_experiment')
     import argparse, sys
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True); ap.add_argument("--cache-dir", required=True); ap.add_argument("--refresh", action="store_true")

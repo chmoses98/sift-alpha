@@ -68,6 +68,7 @@ def run(data_dir: Path, n_configs: int = N_CONFIGS, null_reps: int = 2):
 
 
 def main():
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('search_nfl_qb')
     import argparse
     ap = argparse.ArgumentParser(); ap.add_argument("--data-dir", required=True); ap.add_argument("--n-configs", type=int, default=N_CONFIGS); ap.add_argument("--null-reps", type=int, default=2)
     a = ap.parse_args()

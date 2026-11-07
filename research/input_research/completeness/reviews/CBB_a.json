@@ -1,0 +1,790 @@
+{
+ "game_moneyline_spread": {
+  "reviewer": "CBB_a author (Claude)",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "YES settles on the final official margin of the single named game: the named team wins outright (KXNCAAMBGAME, D3GAME, CBC, conference-tournament game series, title only), wins by more than a .5 floor_strike (KXNCAAMBSPREAD, so no push exists), wins by a stated bucket such as 6 to 10 (KXNCAAMBWINMARGIN), or satisfies a conjunction of a spread cover and a total under (KXNCAAMBSGP). The game is identified by teams and the originally scheduled date. A postponement that still tips within 48 hours stays open; cancelled or not started inside 48 hours resolves to a fair price (neither YES nor NO). The sampled full-game rules never state whether overtime is included, only that the market resolves on the official final result.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNCAAMBSPREAD",
+     "quote": "wins by more than 50.5 points in the Queens University vs Oklahoma St. men's college basketball game originally scheduled for Nov 6, 2026",
+     "establishes": "Spread strikes are 'wins by more than X.5' on the game identified by the original scheduled date; a 50.5-point strike shows the series lists mismatch buy games with extreme margins."
+    },
+    {
+     "ticker": "KXNCAAMBSPREAD",
+     "quote": "If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+     "establishes": "Cancellation or a more than 48 hour delay voids the event at a fair price, so the label is censored, not NO."
+    },
+    {
+     "ticker": "KXNCAAMBWINMARGIN",
+     "quote": "If Michigan wins the game by 6 to 10 points in the Michigan vs UConn men's college basketball game",
+     "establishes": "The winning-margin series is a set of mutually exclusive margin buckets, so the whole margin distribution (not only the median) is the target."
+    },
+    {
+     "ticker": "KXNCAAMBSGP",
+     "quote": "collectively score under 144.5 total points in the UConn at Michigan men's college basketball game",
+     "establishes": "The same-game parlay is a conjunction of a spread cover and a total, so the joint distribution of margin and total, not two marginals, settles it."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Overtime: no sampled full-game rule says whether OT points count toward the margin; the 2nd-half series explicitly says including overtime, so the full-game wording relies on 'official final result' and is inferred, not verified. A five-minute OT collapses most close games to a 1-to-6 point margin.",
+    "Strikes end in .5 so there is no push; WINMARGIN buckets (for example 6 to 10) have integer edges so a margin of exactly 5 or 11 falls in a neighbour bucket.",
+    "KXNCAAMBGAME, D3GAME, CBC, HL and MARMADREGION are TITLE_ONLY: their rules text was not sampled, so tie-break, forfeit and tournament-advancement wording (a region winner is a multi-game event) is CONTRACT_AMBIGUOUS.",
+    "Mismatch buy games (a 50.5-point strike against a Division I newcomer) and Division III opponents (D3GAME) have no standard rating coverage; margins there are driven by bench-clearing, not by the efficiency gap.",
+    "Postponement within 48 hours keeps the market open but moves tip time, so lineup news and rest assumptions made at open can be stale."
+   ],
+   "settlement_data_source": "Official final score as published for the game (NCAA/ESPN box score); the sampled rules cite 'the official final result' without naming a provider, so provider hierarchy on score corrections is unverified."
+  },
+  "mechanism": {
+   "summary": "A college game margin is a sum of possession-level scoring differences, so the expected margin is the tempo-scaled gap between two opponent-adjusted efficiency ratings plus a venue term, and the margin sd scales with the square root of possessions (roughly 10 to 11 points for a typical game, wider when tempo is high or three-point reliance is large). The mean is poorly known: rosters turn over heavily through the transfer portal, so early-season ratings are priors with large posterior sd, and who actually plays (often undisclosed) shifts the mean by points. Around the mean the realised margin is not a clean Gaussian: favourites in lopsided games pull starters and let leads erode (compressing spread covers for big favourites), and trailing teams foul late (inflating the favourite's final margin by free throws while leaving winner probability unchanged), so winner, cover, bucket and parlay contracts read different parts of one mixture-shaped distribution.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Latent strength gap with roster-churn prior",
+     "description": "Each side has a latent per-possession strength (offense minus defense, opponent-adjusted) that must be estimated from a thin schedule: about 30 games, a connected graph only through conference play, and heavy roster turnover through the transfer portal. Early in the season the preseason prior (returning minutes, portal arrivals, recruiting, coach) carries most weight; by January the in-season ratings dominate. The gap is a posterior, not a point, and its sd is largest for new-roster teams and for isolated schedules. Unrated opponents (Division III, newly reclassifying D1 schools) have no rating at all and need a tier prior.",
+     "distribution": "Gaussian posterior on the rating gap with sd shrinking roughly like 1/sqrt(games played); heavy-tailed for new rosters and for opponents with fewer than a handful of D1 games.",
+     "categories": [
+      "talent_strength",
+      "opponent_matchup"
+     ],
+     "input_ids": [
+      "cbb.ratings",
+      "cbb.adj_off",
+      "cbb.adj_def",
+      "cbb.preseason_prior",
+      "cbb.in_season_improvement",
+      "cbb.rating_uncertainty",
+      "cbb.unrated_opponent_prior",
+      "cbb.point_in_time_rating_snapshot"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Who actually plays tonight",
+     "description": "The strength gap is conditional on the active rotation. College programs have no mandated injury report, so a star's status is often revealed minutes before tip through starters lists or warm-up news, and the market may price the scratch before a pregame feed does. The effect of an absence depends on replacement quality and bench depth: with a seven-man rotation a missing starter costs more than in a ten-man one. The model must treat status as a probability mixture over scenarios rather than as a label.",
+     "distribution": "Discrete mixture over rotation scenarios (starter in/out, minutes-limited), each shifting the mean by roughly 0 to 6 points; probabilities of each scenario are themselves uncertain and time-dependent.",
+     "categories": [
+      "availability_news",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "cbb.injuries",
+      "cbb.status_disclosure",
+      "cbb.starters",
+      "cbb.lineup_adj_rating",
+      "cbb.player_impact",
+      "cbb.roster_minutes",
+      "cbb.lineups"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Venue, travel and schedule-spot shift",
+     "description": "Home court adds a mean shift of about three to four points on average but varies by arena, crowd and altitude, and collapses toward zero or reverses on neutral floors (in-season events, conference tournaments, the Crown). Rest, travel and third-games-in-days effects are small in college but matter in multi-game events. Schedule spots (buy games, rivalry, post-exam lull, lookahead to conference play) change effort and rotation, which feeds the blowout stage as much as the mean.",
+     "distribution": "Approximately constant shift per venue class with team-specific deviations that need heavy shrinkage (team home edge is noisy over about 15 home games); schedule-spot effects are small and unevenly measurable.",
+     "categories": [
+      "environment",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "cbb.venue",
+      "cbb.home_court_team",
+      "cbb.neutral_site",
+      "cbb.rest_travel",
+      "cbb.schedule_spot",
+      "cbb.motivation"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Possession count and margin variance",
+     "description": "Final margin variance is not a constant: it grows with the number of possessions and with three-point reliance (three-point shooting is a high-variance way to score). The slower side often controls tempo, so a low-possession game with an underdog that shoots many threes widens the effective upset probability beyond what the same mean gap gives in a fast game. Expected possession count is a negotiated quantity from both teams' adjusted tempo.",
+     "distribution": "Margin sd scales approximately with sqrt(possessions) times a shot-profile factor; tempo itself has about 3 to 4 possession residual sd; pace control is asymmetric (slow team usually wins the argument).",
+     "categories": [
+      "pace_volume",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "cbb.tempo",
+      "cbb.pace_mismatch",
+      "cbb.three_pt_dist",
+      "cbb.four_factors",
+      "cbb.score_resid"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Late-game script and blowout compression",
+     "description": "Observed margin differs from the in-game 'true' margin through two end-of-game mechanisms. In a lopsided game the favourite's coach substitutes freely, so the lead decays or stalls; whether a 25-point halftime lead ends at 18 or 30 depends heavily on the coach's bench-clearing habit and on the opponent's garbage-time scoring. In a close game the trailing team fouls and the leader's free-throw conversion extends or protects the margin without changing who wins. Overtime converts a tied game into a 1 to 6 point margin.",
+     "distribution": "Regime mixture: competitive regime (margin approximately normal) and blowout regime (compressed with a coach-specific decay), with overtime adding a spike of 1 to 6 point margins; the mixture weight is a threshold-like function of the expected margin.",
+     "categories": [
+      "game_context_script",
+      "coaching_scheme",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "cbb.blowout_garbage",
+      "cbb.late_game_foul_script",
+      "cbb.ot_model",
+      "cbb.coach_blowout_substitution_rate",
+      "cbb.margin_regime_mixture"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Contract mapping and joint outcomes",
+     "description": "The same margin distribution settles different contracts. Moneyline reads P(margin > 0), spread reads a tail at a .5 strike, winning margin reads a bucket pmf, and the same-game parlay needs the joint of margin and total because favourites in blowouts both cover and (through starters resting) tend to push totals under or over depending on tempo. Settlement frictions (postponement beyond 48 hours resolves to fair price, official score vs a later correction) censor or relabel rows.",
+     "distribution": "Discrete integer margin with a continuous latent; correlation between margin and total is weakly positive for fast favourites and negative when a blowout slows scoring; void probability is small but nonzero (a few percent in early-season weather or cancellation windows).",
+     "categories": [
+      "settlement_contract",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "m.rules_text",
+      "cbb.margin_total_covariance",
+      "cbb.margin_regime_mixture"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "note": "Opponent-adjusted efficiency gap with roster-churn prior and explicit posterior sd, plus point-in-time snapshots to stop retroactive rating leakage.",
+     "input_ids": [
+      "cbb.ratings",
+      "cbb.adj_off",
+      "cbb.adj_def",
+      "cbb.preseason_prior",
+      "cbb.rating_uncertainty",
+      "cbb.point_in_time_rating_snapshot"
+     ]
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "note": "Style and size matchup context plus a tier prior for opponents that have no rating (D3, reclassifying schools).",
+     "input_ids": [
+      "cbb.defense_style",
+      "cbb.size_rebounding",
+      "cbb.unrated_opponent_prior",
+      "cbb.repeat_matchup"
+     ]
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "note": "Replacement quality and bench depth decide how many points an absence costs.",
+     "input_ids": [
+      "cbb.lineup_adj_rating",
+      "cbb.player_impact",
+      "cbb.roster_minutes",
+      "cbb.lineups"
+     ]
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "note": "Scenario mixture over undisclosed statuses; arrival timing relative to market close is the subtle part and is not recoverable from free sources.",
+     "input_ids": [
+      "cbb.injuries",
+      "cbb.status_disclosure",
+      "cbb.starters"
+     ]
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "note": "Coach-specific bench-clearing threshold and defensive scheme; no free source gives rotation tendencies except box-score minutes history.",
+     "input_ids": [
+      "cbb.coach_blowout_substitution_rate",
+      "cbb.defense_style"
+     ]
+    },
+    "environment": {
+     "status": "COVERED",
+     "note": "Home, neutral and altitude shifts with shrinkage of team-specific home edge.",
+     "input_ids": [
+      "cbb.venue",
+      "cbb.home_court_team",
+      "cbb.neutral_site"
+     ]
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "note": "Existing blowout, foul and OT inputs exist in the catalog but were not wired to this archetype's list; they are required here.",
+     "input_ids": [
+      "cbb.blowout_garbage",
+      "cbb.late_game_foul_script",
+      "cbb.ot_model",
+      "cbb.margin_regime_mixture"
+     ]
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "note": "Possession count sets margin variance; tempo itself was absent from the archetype's existing list.",
+     "input_ids": [
+      "cbb.tempo",
+      "cbb.pace_mismatch"
+     ]
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "note": "Shot-profile volatility drives variance; luck regression for shooting is carried inside the rating ensemble and not separately wired (see unresolved).",
+     "input_ids": [
+      "cbb.three_pt_dist",
+      "cbb.four_factors"
+     ]
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "note": "Mixture-shaped margin pmf and joint margin-total distribution for the parlay.",
+     "input_ids": [
+      "cbb.rating_uncertainty",
+      "cbb.score_resid",
+      "cbb.margin_regime_mixture",
+      "cbb.margin_total_covariance"
+     ]
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "note": "Small, hard-to-measure effects mainly in multi-game events and buy games.",
+     "input_ids": [
+      "cbb.rest_travel",
+      "cbb.schedule_spot",
+      "cbb.motivation"
+     ]
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "note": "Officiating crew effects move total points and fouls more than the margin; for a side-versus-side contract a crew's whistle tendency is nearly symmetric and its home-bias component is too small and noisy to estimate pregame."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "note": "Strike construction (.5, no push), buckets, void at 48 hours, conjunction legs; OT inclusion remains an unverified inference.",
+     "input_ids": [
+      "m.rules_text",
+      "m.settlement_truth"
+     ]
+    }
+   }
+  },
+  "new_inputs": {
+   "cbb.unrated_opponent_prior": {
+    "label": "Tier prior for unrated or newly reclassifying opponents",
+    "category": "team_strength",
+    "mechanism": "Division III, NAIA and first-year D1 transition schools have no or almost no D1 games, so adjusted-efficiency ratings do not exist or are one-game noise; margin must come from a tier prior with a very wide sd.",
+    "rationale": "The ledger lists a D3 game series and a spread strike of 50.5 against a D1 newcomer. A rating pipeline that silently fills these with the league mean gives wrong means and understated variance; the market in these games is thin and can be stale.",
+    "measurement": "For each opponent with fewer than 8 D1 games in the current season, replace its rating with prior = tier_mean + 0.5*(conference_or_division_mean - tier_mean) learned from past seasons of the same tier (D3 vs D1 buy games, reclassifying schools in years 1 to 4), in points per 100 possessions; set prior sd to the empirical sd of that tier's rating residual (about 3 times the sd of an established D1 team). As-of: use the rating snapshot taken before tip; update with the opponent's own prior-game results with weight n/(n+8).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sports-Reference CBB schedule and game logs",
+     "NCAA stats site D3 and D1 records",
+     "Bart Torvik (D1 only)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "historical game results of D1 vs D3 and D1 vs transitioning schools with final margins",
+     "program reclassification year and conference",
+     "opponent D1 games played to date"
+    ],
+    "why": "Separates the genuinely extreme-margin buy games (strikes in the 40s) from ordinary games and tells the model that variance and mean uncertainty are larger and asymmetric there.",
+    "role": "secondary"
+   },
+   "cbb.coach_blowout_substitution_rate": {
+    "label": "Coach-specific bench-clearing and lead-protection behaviour",
+    "category": "game_state",
+    "mechanism": "How quickly a coach removes starters and what pace he plays once ahead by a lot determines how much of an in-game lead survives to the final margin.",
+    "rationale": "Cover probability at large spreads is dominated by the end-of-game margin decay, not by the pregame mean. Some coaches play starters until a 30-point lead; others empty the bench at +20 by the second-half under-12 timeout. This is a stable trait across seasons (coach, not roster), unlike team scoring luck.",
+    "measurement": "From play-by-play: for every game in which a team led by at least 15 at any media timeout, compute lead_at_time_t (t = 12:00, 8:00, 4:00 remaining) and the final margin; coach_decay = mean(final_margin - lead_at_8min) per 8 minutes of game time, estimated over the coach's last 4 seasons with shrinkage weight n/(n+15) to the league mean decay, split by lead bucket (15 to 25, over 25). Also compute the share of second-half minutes played by the top-5 minutes players when ahead by 20 or more.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "ESPN play-by-play (unofficial JSON)",
+     "Sports-Reference play-by-play pages (partial)",
+     "NCAA live stats archive"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play with game clock and score",
+     "box score minutes by player",
+     "coach-to-team-season mapping"
+    ],
+    "why": "Gives the compression term for large favourite spreads and winning-margin buckets that rating gaps cannot explain.",
+    "role": "primary"
+   },
+   "cbb.margin_regime_mixture": {
+    "label": "Competitive versus blowout regime mixture of the final margin",
+    "category": "distribution",
+    "mechanism": "Final margin is a mixture of a competitive regime (late fouling, overtime) and a blowout regime (compressed, coach-dependent), with the mixing weight a threshold function of the expected margin.",
+    "rationale": "A single normal with sd 10 mis-prices tails at both ends: too fat in the blowout regime for favourites covering large numbers, and too thin right at tied-game and overtime-driven 1 to 5 point margins. Winning-margin buckets and 40+ point spreads sit in exactly these regimes.",
+    "measurement": "Fit on historical closing-line-independent model expected margins m_hat: P(blowout)=logistic(a + b*|m_hat| + c*coach_decay) with a normal-in-regime margin for each regime (mu_k, sd_k) and a discrete overtime spike mass at margins 1 to 6 whose weight equals P(tie at 0:00) from the ot model; output the integer-margin pmf (for strikes at .5 and win-margin buckets) at pregame as-of; refit each season with at least 10 prior seasons.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sports-Reference and ESPN historical scores",
+     "own model expected margins"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "historical final scores with OT flag",
+     "pregame expected margin per game (model output)",
+     "coach decay estimates"
+    ],
+    "why": "Specifies the shape every contract in this archetype reads: moneyline, spread tail, win-margin bucket probabilities.",
+    "role": "primary"
+   },
+   "cbb.margin_total_covariance": {
+    "label": "Joint distribution of margin and total for same-game parlays",
+    "category": "distribution",
+    "mechanism": "Margin and total are not independent: tempo and scoring-environment shocks move both teams' points together while blowouts reshape both margin and total through bench play and clock use.",
+    "rationale": "KXNCAAMBSGP is a conjunction of a spread cover and a total; pricing it as the product of two marginals mis-prices a systematic correlation, typically positive for favourites in fast games (favourite scores more, total higher) and negative when a slow favourite grinds.",
+    "measurement": "Estimate corr(margin_resid, total_resid) from standardized residuals (actual minus model expectation, divided by game-level sd) bucketed by favourite size (0-5, 5-10, 10-20, 20+) and by team tempo tercile, with shrinkage to the pooled correlation weight n/(n+200) per bucket; as-of all prior games; apply through a bivariate normal copula with the regime mixture margins.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sports-Reference historical scores",
+     "Bart Torvik game files"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "historical final score for both teams per game",
+     "pregame expected margin and expected total from the model",
+     "tempo tercile labels"
+    ],
+    "why": "The only way to price the parlay legs coherently with the spread and the total contracts; absent from the existing list.",
+    "role": "secondary"
+   },
+   "cbb.point_in_time_rating_snapshot": {
+    "label": "Point-in-time rating snapshots (no retroactive revision)",
+    "category": "team_strength",
+    "mechanism": "Free rating sites recompute the whole season after each game and revise past ratings; a rating pulled today for a past date contains information from games after that date.",
+    "rationale": "A backtest or live feature using the current rating page overstates edge via look-ahead; archival snapshots are rare and paid for KenPom. The strength gap input is only valid if it equals the number visible before tip.",
+    "measurement": "Store, each day by 06:00 ET, adj_off, adj_def, tempo, games_played, rank and the schedule-adjustment version for every D1 team from the chosen source; define the feature rating_gap(game) as the snapshot value from the last snapshot before tip minus the venue term; add snapshot_age_hours and an indicator for rating-method revision dates; for history use time-machine pages only where timestamps exist, otherwise rebuild from game results using a fixed algorithm.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Bart Torvik time machine (SOURCE_UNVERIFIED for full coverage)",
+     "own daily scrape from today"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "daily rating tables by team with timestamps",
+     "game results to rebuild ratings point-in-time"
+    ],
+    "why": "Guards the central strength input against leakage specific to how CBB ratings are published.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "cbb.ratings": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Core strength term, but the entry says 'plus market-implied', which contaminates a fundamentals input with a benchmark; keep the free-rating ensemble only and carry the market separately."
+   },
+   "cbb.adj_off": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Needed to build the tempo-scaled margin and style matchup; for a pure side contract the net rating already carries most information, so offense alone is secondary."
+   },
+   "cbb.adj_def": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Same reasoning as offense; its luck regression on opponent shooting matters because defensive efficiency is the noisier half in a 30-game sample."
+   },
+   "cbb.rating_uncertainty": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Posterior sd of the gap decides how wide the winner and spread distribution is early in the season and for isolated schedules; correctly primary."
+   },
+   "cbb.preseason_prior": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "With heavy portal turnover the prior is most of the information through roughly December; primary for early-season games, fading afterwards."
+   },
+   "cbb.in_season_improvement": {
+    "verdict": "WEAK",
+    "reason": "Hard to separate from regular ratings drift and rotation settling, small effect sizes with high noise; keep only as a slope term inside the prior update, not a standalone feature."
+   },
+   "cbb.lineup_adj_rating": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Translates availability into a mean shift; only as good as the player-impact inputs and the status probabilities beneath it."
+   },
+   "cbb.injuries": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Largest controllable mean shift and also where the market may be ahead; the as-of vintage of the status matters more than the label."
+   },
+   "cbb.status_disclosure": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Useful to convert vague statuses into probabilities, but the calibration sample is tiny for college; a conference-level prior is the realistic starting point."
+   },
+   "cbb.starters": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Confirmed lineups arrive near tip, often after the tradable window; useful for labelling but not for early pricing."
+   },
+   "cbb.venue": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Home court is the largest non-talent term; includes altitude as a sub-case."
+   },
+   "cbb.home_court_team": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Team-specific home edges are noisy on a 15-game home sample; only valid with heavy shrinkage to the league mean."
+   },
+   "cbb.neutral_site": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Needed for events and conference tournaments where nominal home teams get partial crowd advantage."
+   },
+   "cbb.rest_travel": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Rest effect in college is small except in tournament formats; context that moderates variance rather than the mean."
+   },
+   "cbb.motivation": {
+    "verdict": "WEAK",
+    "reason": "Stakes are real but this is a hard-to-quantify label with partial knowability; unless turned into measurable variables (seed race, bubble) it is anecdotal."
+   },
+   "cbb.pace_mismatch": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Correctly a variance term: possession count controls margin sd, so mismatches in pace change cover probabilities for the underdog."
+   },
+   "cbb.three_pt_dist": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Volatility term for the underdog; needs the three-point attempt share and luck-adjusted rates to avoid double counting with the rating ensemble."
+   },
+   "cbb.score_resid": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Shape of residuals is needed, but it must be a model residual and not a residual against a market line (which would be a benchmark)."
+   },
+   "cbb.size_rebounding": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Mismatch effects are largely already inside efficiency; useful only for interaction with pace and zone."
+   },
+   "cbb.defense_style": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Style effects on margin are small relative to rating error; keep for matchup variance (press and zone produce turnover-driven swings)."
+   },
+   "m.quote_history": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Price path shows what is already priced; it is a timing diagnostic, not an outcome driver, and must not enter the outcome model."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Defines the settled event (strike, bucket, void window); the contract input that decides labels."
+   },
+   "m.external_lines": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Sportsbook closing and opening numbers are the comparison prior; using them as a model input removes the ability to measure edge."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "A cross-rung consistency check on market prices, valuable for coherence between spread, win-margin and moneyline quotes but derived from the market."
+   },
+   "m.orderbook_depth": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Execution capacity, not outcome information; matters for sizing, not for probability."
+   },
+   "cbb.market_calibration_bias": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Describes the market's reliability by price bucket; a post-model shading term and not an input to margin probability."
+   },
+   "m.volume_oi": {
+    "verdict": "IRRELEVANT",
+    "reason": "Liquidity of a game says nothing about the margin; at most a scaling for sizing."
+   },
+   "m.trade_tape": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Informed-flow hypothesis based on prints; market-derived and untested, so not an outcome input."
+   },
+   "m.settlement_truth": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Defines labels and timing but is not a predictor; the correct provider and correction handling must be pinned."
+   },
+   "cbb.lineups": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Lineup on/off data validate availability adjustments, but five-man sample sizes are small; use at the player level with shrinkage."
+   },
+   "cbb.player_impact": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Value-over-replacement of each rotation player converts absences into points; provider differences (BPM vs EvanMiya) are material."
+   },
+   "cbb.roster_minutes": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Bench depth moderates the absence effect; it is an input to the lineup-adjusted rating rather than a separate predictor."
+   },
+   "m.lifecycle": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Defines the tradable information set (close time vs last lineup news) for evaluation; not a predictor."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "cbb.tempo",
+     "cbb.ratings"
+    ],
+    "form": "multiplicative",
+    "mechanism": "The same rating gap converts into a larger expected margin in a high-possession game and a smaller one in a low-possession game, so the spread is gap times possession ratio, and the underdog's cover chance is higher in slow games where margin sd is also smaller relative to the number.",
+    "how_to_test": "Regress realised margin on gap, possessions and gap x possessions using prior-season games; check whether residual sd falls with sqrt(possessions) and whether the gap coefficient scales with tempo."
+   },
+   {
+    "inputs": [
+     "cbb.blowout_garbage",
+     "cbb.coach_blowout_substitution_rate"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Once the expected margin passes roughly 15 to 20 points the game flips into a blowout regime whose end-of-game compression depends on the coach: a lead-protecting coach turns a model margin of 25 into a 14 point cover miss, while a starter-heavy coach does not. Below the threshold the coach term is irrelevant.",
+    "how_to_test": "Split games by predicted margin bucket and compare final-margin minus lead-at-8-minutes across coaches with high and low decay; verify the difference vanishes below 12 points."
+   },
+   {
+    "inputs": [
+     "cbb.rating_uncertainty",
+     "cbb.preseason_prior",
+     "cbb.in_season_improvement"
+    ],
+    "form": "conditional",
+    "mechanism": "Early in the season (before about 8 games) the prior carries the weight and uncertainty is highest, so the weight on the in-season improvement slope should be near zero; by February the same slope is a useful signal. The correct blend depends on games played and on roster continuity.",
+    "how_to_test": "Compare out-of-sample margin error of the gap using prior-only, ratings-only and blended versions in game-number buckets (0-5, 6-12, 13-20, 21+) and test for a crossing point."
+   },
+   {
+    "inputs": [
+     "cbb.injuries",
+     "cbb.roster_minutes",
+     "cbb.lineup_adj_rating"
+    ],
+    "form": "conditional",
+    "mechanism": "A starter's absence costs more points for a team with a short rotation and a low-quality replacement than for a deep team; the effect is also larger when the missing player controls the ball, since the replacement changes turnovers and pace as well as scoring.",
+    "how_to_test": "Using games with known absences, regress margin shift on player impact value interacted with bench-depth index and replacement impact; compare to a flat per-player shift."
+   },
+   {
+    "inputs": [
+     "cbb.venue",
+     "cbb.neutral_site",
+     "cbb.home_court_team"
+    ],
+    "form": "piecewise",
+    "mechanism": "Home advantage is a three-regime piecewise term: full home court, neutral floor, and semi-home (conference tournaments held in a nearby arena); the team-specific deviation applies to the full-home regime and shrinks toward zero otherwise.",
+    "how_to_test": "Estimate separate venue coefficients by regime from historical margins and test whether team-specific home edges survive out of sample only in the home regime."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "cbb.ratings",
+    "shape": "S-shaped probit link from rating gap to win probability; fat tails in lopsided matchups",
+    "why": "A 20-point expected margin is not a 99.9 percent win in practice because rating error, an injury scenario or a cold-shooting night keep upset mass near 1 to 4 percent; with a normal link the tail is understated."
+   },
+   {
+    "input_id": "cbb.blowout_garbage",
+    "shape": "threshold near 15 to 20 expected margin points above which lead decay appears",
+    "why": "Cover probabilities for big favourites fall sharply once the game is expected to be non-competitive because coaches clear benches; below the threshold the effect is zero, which is why a linear term fails."
+   },
+   {
+    "input_id": "cbb.rating_uncertainty",
+    "shape": "saturating decay with games played (approximately 1/sqrt(n)), floor from roster change",
+    "why": "Posterior sd falls fast over the first 8 to 10 games and slowly afterwards, with a floor because injuries and rotation changes keep re-introducing uncertainty; treating it as constant overstates early certainty."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Team-game results and box scores",
+    "grain": "one row per team per game",
+    "fields": [
+     "date",
+     "opponent",
+     "location (home/away/neutral)",
+     "points for/against",
+     "possessions",
+     "OT flag",
+     "four-factor components",
+     "minutes by player"
+    ],
+    "timestamp_requirement": "Game close time; features built only from rows completed before tip time with a stored snapshot (no later rating revision).",
+    "history_needed": "At least 10 seasons for regime mixture and covariance fits; 3 seasons minimum for team priors.",
+    "candidate_sources": [
+     {
+      "name": "Sports-Reference CBB",
+      "access": "free_scrape",
+      "note": "game logs and team schedules; check terms"
+     },
+     {
+      "name": "Bart Torvik game files",
+      "access": "free",
+      "note": "per-game efficiency and tempo"
+     },
+     {
+      "name": "KenPom",
+      "access": "paid",
+      "note": "ratings and FanMatch; subscription"
+     },
+     {
+      "name": "ESPN public JSON",
+      "access": "free_scrape",
+      "note": "undocumented API, unstable"
+     },
+     {
+      "name": "Sportradar / Genius Sports (official NCAA data)",
+      "access": "paid",
+      "note": "full feed, commercial license"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.ratings",
+     "cbb.adj_off",
+     "cbb.adj_def",
+     "cbb.four_factors",
+     "cbb.tempo",
+     "cbb.three_pt_dist",
+     "cbb.score_resid",
+     "cbb.margin_regime_mixture",
+     "cbb.margin_total_covariance",
+     "cbb.unrated_opponent_prior",
+     "cbb.pace_mismatch",
+     "cbb.rating_uncertainty"
+    ]
+   },
+   {
+    "dataset": "Daily rating and prior snapshots",
+    "grain": "one row per team per day",
+    "fields": [
+     "adj_off",
+     "adj_def",
+     "tempo",
+     "games_played",
+     "rank",
+     "preseason prior components (returning minutes, portal incoming BPM, recruiting rank, coach tenure)"
+    ],
+    "timestamp_requirement": "Captured before each day's games; timestamp stored; revisions flagged.",
+    "history_needed": "Every day from the current season forward; historical via time-machine pages where available.",
+    "candidate_sources": [
+     {
+      "name": "Bart Torvik time machine",
+      "access": "free_limited",
+      "note": "SOURCE_UNVERIFIED for full history and timestamps"
+     },
+     {
+      "name": "KenPom archive",
+      "access": "paid",
+      "note": "snapshot fidelity unverified"
+     },
+     {
+      "name": "Own daily scrape",
+      "access": "own_capture",
+      "note": "only way to guarantee vintage"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.point_in_time_rating_snapshot",
+     "cbb.preseason_prior",
+     "cbb.in_season_improvement",
+     "cbb.rating_uncertainty",
+     "cbb.venue",
+     "cbb.neutral_site",
+     "cbb.home_court_team"
+    ]
+   },
+   {
+    "dataset": "Play-by-play with game clock and score",
+    "grain": "one row per event",
+    "fields": [
+     "game id",
+     "clock",
+     "score home/away",
+     "event type",
+     "lineup on floor",
+     "foul events"
+    ],
+    "timestamp_requirement": "Post-game; used to build coach traits from prior games only.",
+    "history_needed": "5+ seasons to estimate coach-level decay with shrinkage.",
+    "candidate_sources": [
+     {
+      "name": "ESPN play-by-play (unofficial)",
+      "access": "free_scrape",
+      "note": "coverage uneven for small schools"
+     },
+     {
+      "name": "NCAA live stats archive",
+      "access": "free_limited",
+      "note": "SOURCE_UNVERIFIED for bulk export"
+     },
+     {
+      "name": "Sportradar / Genius Sports",
+      "access": "paid",
+      "note": "complete NCAA coverage"
+     },
+     {
+      "name": "Synergy Sports",
+      "access": "paid",
+      "note": "possession-level tagging, licensed to teams"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.blowout_garbage",
+     "cbb.coach_blowout_substitution_rate",
+     "cbb.late_game_foul_script",
+     "cbb.ot_model",
+     "cbb.lineups"
+    ]
+   },
+   {
+    "dataset": "Availability, roster and lineup status",
+    "grain": "one row per player per game per timestamp",
+    "fields": [
+     "status",
+     "source",
+     "timestamp",
+     "starter flag",
+     "minutes last 10 games",
+     "impact value"
+    ],
+    "timestamp_requirement": "Each status record carries its publish time so that only statuses visible before the decision time are used.",
+    "history_needed": "Two or more seasons to calibrate status-disclosure probabilities; sparse for college.",
+    "candidate_sources": [
+     {
+      "name": "Team and conference social/press releases",
+      "access": "own_capture",
+      "note": "no mandated league injury report; capture manually or by scraping"
+     },
+     {
+      "name": "ESPN injuries pages",
+      "access": "free_scrape",
+      "note": "coverage thin for non-power programs"
+     },
+     {
+      "name": "EvanMiya player ratings",
+      "access": "paid",
+      "note": "player impact; SOURCE_UNVERIFIED for exact fields"
+     },
+     {
+      "name": "Bart Torvik player tables",
+      "access": "free",
+      "note": "BPM-like player ratings"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.injuries",
+     "cbb.status_disclosure",
+     "cbb.starters",
+     "cbb.lineup_adj_rating",
+     "cbb.player_impact",
+     "cbb.roster_minutes",
+     "cbb.lineups"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "ml_ot_in_margin",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "None of the sampled full-game rules (spread, winning margin, parlay) states whether overtime points count toward the margin; the 2nd-half markets spell it out and the full-game ones only say 'official final result'. If OT is excluded, a tied-at-regulation game is a push-like void rather than a 1 to 6 point margin.",
+    "what_would_resolve": "The full rules text of KXNCAAMBGAME/KXNCAAMBSPREAD from Kalshi's contract terms PDF, or a historical OT game's settlement showing which margin was used."
+   },
+   {
+    "id": "ml_avail_gap",
+    "type": "DATA_UNAVAILABLE",
+    "category": "availability_news",
+    "description": "College basketball has no league-mandated injury report with timestamps, so the timing of undisclosed absences relative to Kalshi close is not recoverable from free sources; the lineup-adjusted rating can only be backtested with after-the-fact box scores.",
+    "what_would_resolve": "Own timestamped capture of team and beat-writer posts for a season, or a paid feed with status timestamps (SOURCE_UNVERIFIED which vendors have it)."
+   },
+   {
+    "id": "ml_d3_ratings",
+    "type": "DATA_UNAVAILABLE",
+    "category": "talent_strength",
+    "description": "D3 and NAIA opponents have no widely available adjusted-efficiency rating; the tier prior in this review is an assumption calibrated on a small number of D1 vs lower-division games per season.",
+    "what_would_resolve": "A multi-season table of D1 vs non-D1 results with scores and an estimate of the tier prior's out-of-sample margin error."
+   },
+   {
+    "id": "ml_luck_wiring",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "category": "efficiency_conversion",
+    "description": "Three-point luck and free-throw luck are catalog inputs that are not wired to this archetype; it is unclear whether the rating ensemble's shrinkage already handles them, which affects whether a separate luck term is a double count.",
+    "what_would_resolve": "Compare out-of-sample margin error of ratings with and without an explicit opponent-3P%-luck term in a held-out season."
+   }
+  ]
+ }
+}

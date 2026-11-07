@@ -155,7 +155,9 @@ class RefreshWorkflowIsResearchOnly(unittest.TestCase):
         raw = (ROOT / ".github/workflows/input-research-refresh.yml").read_text()
         wf = yaml.safe_load(raw)
         trig = wf.get("on") or wf.get(True)
-        self.assertEqual(sorted(trig), ["schedule", "workflow_dispatch"])                    # never on push / pull_request
+        from alpha_engine.input_research.phase import predictive_paused
+        # never on push / pull_request; while predictive experimentation is paused (catalog-completeness phase) there is no schedule at all
+        self.assertEqual(sorted(trig), ["workflow_dispatch"] if predictive_paused() else ["schedule", "workflow_dispatch"])
         self.assertEqual(wf["permissions"], {"contents": "read"})                            # cannot push, deploy or write anything
         job = wf["jobs"]["refresh"]
         self.assertLessEqual(job["timeout-minutes"], 60)

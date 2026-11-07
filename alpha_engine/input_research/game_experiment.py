@@ -98,6 +98,7 @@ def summarize(df):
 
 
 def main():
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('game_experiment')
     import argparse
     ap = argparse.ArgumentParser(); ap.add_argument("--data-dir", required=True); ap.add_argument("--cache-dir", required=True); a = ap.parse_args()
     cache = Path(a.cache_dir); cache.mkdir(parents=True, exist_ok=True)

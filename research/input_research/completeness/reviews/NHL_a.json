@@ -1,0 +1,621 @@
+{
+ "game_events": {
+  "contract": {
+   "settlement_definition": "KXNHLOT settles YES iff at least one overtime period actually commences in the single listed NHL game, i.e. the regulation score is level after 60:00 and the opening faceoff of OT is taken; the market is binary with floor_strike 0.5. Goals, shootout outcome and who wins are irrelevant to settlement. Postponed games stay open if they begin within 48h, otherwise the market resolves to a fair price. KXNHL2OT (double overtime) and KXNHLSERIESOT (series overtime) currently list no markets, so their settlement text is unseen. Source of truth is the official NHL game record.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNHLOT",
+     "quote": "play in that overtime period commences, meaning that the opening faceoff of that overtime period is taken",
+     "establishes": "The event is the overtime faceoff, not an overtime goal: a tie after 60 minutes is necessary and sufficient, so the target is P(regulation tie) incl. empty-net goals."
+    },
+    {
+     "ticker": "KXNHLOT",
+     "quote": "If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open",
+     "establishes": "Postponement within 48h keeps the contract live; beyond that it resolves to a fair price (a void-like outcome), so late postponements truncate exposure rather than resolve NO."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Regular season vs playoffs: in the regular season OT is one 5-minute 3v3 period then a shootout; in the playoffs OT periods are 20-minute 5v5 sudden death, so KXNHL2OT (title only) only exists in the playoffs and is a conditional on a first OT with no goal.",
+    "A scheduled or announced OT in which no faceoff happens does not count; a goal at 60:00 ends regulation so the faceoff-defined event excludes games decided by a goal in the final seconds.",
+    "KXNHLSERIESOT has no listed markets: it is unknown whether it counts the number of OT games in a series, any OT game in the series, or a specific game; marked CONTRACT_AMBIGUOUS.",
+    "BTTS, shootout, first-goal and early-goal families appear in this archetype's blueprint but have no live KXNHLOT-style series here; the only live early-goal series (KXNHLF10G) is filed under the player archetype."
+   ],
+   "settlement_data_source": "Official NHL game record (period scores, OT flag) as published on nhl.com / the NHL stats API; Kalshi settles from the league result."
+  },
+  "mechanism": {
+   "summary": "An overtime market is a binary on the event that regulation ends level. Mechanically: two teams draw regulation goal counts from correlated, mildly overdispersed processes whose means come from shot volume x shot quality x opposing goalie, plus special-teams goals; the tie probability is the diagonal of the joint score distribution, so it rises as the expected total falls and as the expected goal difference approaches zero. Superimposed on that is a late-game control process: a trailing team pulls its goalie, which raises the chance of an equalizer but also of a 2-goal loss via an empty-net goal, so the diagonal mass is moved by coaching policy and score state in the last 3-5 minutes. Only the regulation end state matters; what happens in OT is irrelevant for KXNHLOT but decisive for the double-OT and shootout siblings. Season type (regular vs playoff) shifts rates, and standings stakes may change late risk-taking when a tied game guarantees a point.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Regulation scoring means and the joint score distribution",
+     "description": "For each side, expected regulation goals = attempts x share that are on goal x goal probability per shot (xG, finishing, opposing goalie) summed over 5v5, PP and PK states, with PP time driven by penalties. The pair (H, A) is not independent: pace, penalty counts and game state make the goal counts weakly positively correlated early and negatively correlated late (leader sits, trailer presses). The tie probability is sum_k P(H=k, A=k) and is a convex function of the expected total and bell-shaped in the goal-difference mean; mis-specified dispersion misprices the 1-1, 2-2 and 3-3 cells most.",
+     "distribution": "Overdispersed bivariate count (negative-binomial or Poisson-mixture) with game-state-dependent correlation; tie mass concentrated on 2-2 and 3-3 with a thin right tail.",
+     "categories": [
+      "talent_strength",
+      "pace_volume",
+      "efficiency_conversion",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nhl.reg_tie_model",
+      "nhl.total_goal_dispersion",
+      "nhl.xg_for",
+      "nhl.xg_against",
+      "nhl.goalie_quality"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Starting goalie and lineup shock before puck drop",
+     "description": "The expected goals of both teams move by roughly a tenth to a third of a goal when the confirmed starter differs from the presumed one or a top-line forward or top-pair defenceman is out. Because the tie probability depends on the total and on the gap, a goalie change on the weaker side can raise or lower P(tie) depending on whether it closes the gap or lifts the total, so the sign of the effect is not fixed. Confirmation arrives 1-3 hours before puck drop, so the information vintage at trading time matters.",
+     "distribution": "Discrete mixture over starter identity (2-3 states per team) with different mean goals; each mixture component has its own tie probability and the market price is the weighted mixture.",
+     "categories": [
+      "role_personnel",
+      "availability_news"
+     ],
+     "input_ids": [
+      "nhl.goalie_start",
+      "nhl.goalie_quality",
+      "nhl.injuries_pit"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Late-regulation control: pulled goalie, equalizer and empty-net goals",
+     "description": "In the last 2-5 minutes a trailing team replaces its goalie; the 6v5 state raises the trailing team's scoring rate several-fold but exposes it to empty-net goals at a much higher rate than it scores. A one-goal deficit is converted to a tie with a modest probability or to a two-goal loss with a larger one, and the coach's pull time and the standings value of a loser point change the policy. Level games late may see more conservative play. Net effect: late dynamics move mass between the diagonal (ties) and +/-2 margins, so a team-specific pull policy changes P(OT) beyond what the 60-minute rates imply.",
+     "distribution": "Regime switch at about 3 minutes left in a one-goal game; equalizer success is a low-probability Bernoulli (order of 15-25 percent of pulls) whose rate is team- and coach-specific.",
+     "categories": [
+      "game_context_script",
+      "coaching_scheme",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "nhl.empty_net",
+      "nhl.game_script_prob",
+      "nhl.third_period_equalizer_hazard",
+      "nhl.tied_late_risk_posture",
+      "nhl.standings_stakes"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Settlement mapping: overtime commenced, season type and series structure",
+     "description": "The contract pays when the opening faceoff of OT occurs, so the settlement variable is simply the tie indicator at 60:00. For playoff-only siblings the second OT adds the conditional that a 20-minute 5v5 sudden-death period passed without a goal, a hazard that depends on 5v5 tied-state rates and fatigue; for the series contract the games in a series share team strength, goalies and coaching so OT occurrence is positively dependent across games. Postponement beyond 48h converts to a fair-price settlement, not a loss.",
+     "distribution": "Tie indicator is Bernoulli with p about 0.22-0.27 in the regular season; double-OT conditional is geometric in the 20-minute hazard; series OT count is beta-binomial rather than binomial.",
+     "categories": [
+      "settlement_contract",
+      "distribution_variance",
+      "environment"
+     ],
+     "input_ids": [
+      "m.rules_text",
+      "nhl.playoff_context",
+      "nhl.ot_sudden_death_hazard_5v5",
+      "nhl.series_ot_count_dependence"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.xg_for",
+      "nhl.xg_against",
+      "nhl.goalie_quality"
+     ],
+     "note": "see inputs"
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.xg_for",
+      "nhl.xg_against",
+      "nhl.series_ot_count_dependence"
+     ],
+     "note": "see inputs"
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.goalie_start",
+      "nhl.injuries_pit"
+     ],
+     "note": "see inputs"
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.goalie_start",
+      "nhl.injuries_pit"
+     ],
+     "note": "see inputs"
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.third_period_equalizer_hazard",
+      "nhl.tied_late_risk_posture"
+     ],
+     "note": "see inputs"
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.empty_net",
+      "nhl.game_script_prob",
+      "nhl.third_period_equalizer_hazard"
+     ],
+     "note": "see inputs"
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.pace",
+      "nhl.total_goal_dispersion"
+     ],
+     "note": "see inputs"
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.finishing",
+      "nhl.pdo_regression",
+      "nhl.goalie_quality"
+     ],
+     "note": "see inputs"
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.reg_tie_model",
+      "nhl.total_goal_dispersion",
+      "nhl.series_ot_count_dependence"
+     ],
+     "note": "see inputs"
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.standings_stakes",
+      "nhl.tied_late_risk_posture",
+      "nhl.rest_travel"
+     ],
+     "note": "see inputs"
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "nhl.penalty_rates",
+      "nhl.officials",
+      "nhl.playoff_context"
+     ],
+     "note": "see inputs"
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "m.lifecycle"
+     ],
+     "note": "see inputs"
+    },
+    "environment": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Rinks are indoors so weather is irrelevant, rink scoring factors enter through team home/away ratings, and the tie indicator is insensitive to small venue shifts in shot counting."
+    }
+   }
+  },
+  "new_inputs": {
+   "nhl.third_period_equalizer_hazard": {
+    "label": "Late-game equalizer and empty-net hazard by team and coach",
+    "category": "game_state",
+    "mechanism": "Converts a one-goal late deficit into tie or two-goal-loss outcomes using 6v5 rates and the coach's pull time.",
+    "rationale": "The existing empty_net input is a single bucket for 'pulled-goalie timing'; for tie probability the two competing outcomes of a pull (equalizer vs empty-net goal against) and their dependence on pull time are what move the diagonal of the score distribution. Pull time has drifted earlier league-wide and differs by coach.",
+    "measurement": "From play-by-play, for every regular-season and playoff game since 2015-16 find states with the trailing team down exactly one goal and the goalie pulled; per team-coach compute (a) median pull time in seconds remaining, (b) equalizer rate = goals for per 60 minutes of 6v5 time, (c) empty-net goals against per 60 of 6v5 time. Shrink each to league with k=20 pulls, weight seasons with 2-year half-life, and reset on a coaching change. Output pregame P(equalizer | trailing by 1 at T-3:00) and P(EN | trailing by 1) per team pair.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NHL API play-by-play (situationCode and event times)",
+     "Natural Stat Trick 6v5 splits",
+     "MoneyPuck game files"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play events: period, clock, strength situationCode, goalie-in-net flag, goal events",
+     "coach by game"
+    ],
+    "why": "Directly sets P(tie at 60:00) beyond the 55-minute state; two teams with identical 60-minute ratings but different pull policy get different OT probabilities.",
+    "role": "primary"
+   },
+   "nhl.ot_sudden_death_hazard_5v5": {
+    "label": "5v5 sudden-death overtime goal hazard (playoff OT)",
+    "category": "game_state",
+    "mechanism": "Hazard of a goal per 20-minute playoff overtime period at 5v5 given tied score, fatigue and style.",
+    "rationale": "Playoff overtime is 5v5 sudden death in 20-minute periods, not the 3v3 of the regular season, so the existing 3v3 rate does not transfer; double-OT markets depend on the first period producing no goal, which has a different hazard than 60-minute rates imply.",
+    "measurement": "Pool all playoff OT minutes since 2005-06 (about 450 games) at 5v5 and compute the goal rate per 60 for tied score; model hazard h(t) = h0 x tied-game 5v5 multiplier x team-pair factor, where the team-pair factor is the geometric mean of both teams' tied 5v5 xG rate shrunk to league with k=500 minutes. Fatigue multiplier estimated from period index (OT1 vs OT2) and rest differential. P(no goal in OT1) = exp(-h x 20/60). Do not use regular-season 3v3 minutes.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NHL API play-by-play (playoff OT events)",
+     "Hockey-Reference playoff game logs",
+     "Natural Stat Trick tied-state 5v5 splits"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff OT play-by-play: elapsed OT seconds, strength, goal time",
+     "team tied-state 5v5 xG rates"
+    ],
+    "why": "Needed for the KXNHL2OT sibling (no listed markets now): that market is a conditional on a goalless first OT.",
+    "role": "secondary"
+   },
+   "nhl.series_ot_count_dependence": {
+    "label": "Within-series dependence of overtime occurrence",
+    "category": "distribution",
+    "mechanism": "Intraclass correlation of per-game tie indicators within the same playoff series.",
+    "rationale": "Games in one series share goalies, coaches and defensive structure, so OT counts are overdispersed relative to independent Bernoulli; a binomial series-OT price is too thin-tailed.",
+    "measurement": "Fit a beta-binomial to the count of games reaching OT in each historical playoff series (2005-06 onward, series lengths 4-7 handled by conditioning on length), estimate overdispersion rho; then per series set p_game = reg_tie_model pregame tie probability and apply rho to get the pmf of OT-game count. Update rho with a prior of 0.05 and k=40 series.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Hockey-Reference series logs",
+     "NHL API schedule/results"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "series_id, game number, period scores, OT flag"
+    ],
+    "why": "Only series-level OT contracts need it; those series are not currently listed, so it is a gap-closing input rather than an active signal.",
+    "role": "context"
+   },
+   "nhl.tied_late_risk_posture": {
+    "label": "Tied-game closing posture (late risk aversion when a point is banked)",
+    "category": "motivation",
+    "mechanism": "Change in late 5v5 attempt share and danger in tied games relative to earlier tied-game play.",
+    "rationale": "A tied third period guarantees a standings point, which may lower risk-taking; if present it raises P(OT) above what 60-minute rates give. It is a hypothesis to measure, not an assumed effect.",
+    "measurement": "For each team and season compute shot-attempt share and high-danger attempts per 60 at 5v5 in the final 5:00 of regulation when the score is tied, minus the same team's rate in minutes 40:00-55:00 when tied; shrink to league with k=60 tied-late minutes and report per-team posture index; interact with standings leverage (points pct within 4 of a cutoff). Add the minimum of two teams' indices as the pair posture.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Natural Stat Trick score-and-time filtered splits",
+     "NHL API play-by-play"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "5v5 attempts and danger events by clock and score",
+     "standings points percentage by date"
+    ],
+    "why": "Tests whether level late games under-produce regulation goals relative to the tie model.",
+    "role": "context"
+   }
+  },
+  "input_audit": {
+   "nhl.reg_tie_model": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Correct core object for KXNHLOT (settles on the diagonal of the regulation score); must be fit on post-empty-net regulation scores and conditioned on total and spread rather than on any market price."
+   },
+   "nhl.total_goal_dispersion": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Parameterises the same bivariate model as reg_tie_model (variance, correlation) rather than adding an independent signal; keep as a hyperparameter block, not a separate primary feature."
+   },
+   "nhl.game_script_prob": {
+    "verdict": "WEAK",
+    "reason": "Win probability is the wrong summary for a tie event: tie mass depends on the absolute goal gap and total, not on who is favoured; also derived from the same ratings so it adds little beyond xG pair."
+   },
+   "nhl.ot_3v3_rate": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Irrelevant to KXNHLOT (settles at the OT faceoff) but needed by the shootout and multi-OT siblings; the 3v3 rate also does not describe playoff 5v5 overtime."
+   },
+   "nhl.shootout_record": {
+    "verdict": "IRRELEVANT",
+    "reason": "Shootout skill is near coin-flip noise and only affects who wins after OT; neither KXNHLOT nor any listed event depends on it."
+   },
+   "nhl.playoff_context": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Regime flag that changes overtime format, scoring rates and which siblings exist; needed because playoff tie rates and OT lengths differ structurally."
+   },
+   "nhl.xg_for": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Feeds each side's mean but the OT event depends only on the pair (total, gap); BTTS role named in the draft has no live series here, so secondary not primary."
+   },
+   "nhl.xg_against": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Same pair-level use as xg_for; the matchup combination of the two teams' xG for/against matters, not either alone."
+   },
+   "nhl.goalie_start": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "A starter swap shifts total and gap by tenths of a goal, moving P(tie) by a point or two; the 'shutout probability' rationale belongs to BTTS which has no live contract."
+   },
+   "nhl.goalie_quality": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Enters through expected goals against and total; shrunk GSAx has low persistence, so influence on tie probability is small."
+   },
+   "nhl.first_goal_hazard": {
+    "verdict": "IRRELEVANT",
+    "reason": "First-goal timing does not change whether the game is tied at 60:00; the live early-goal series is filed elsewhere, so this input is mis-attached to the OT contract."
+   },
+   "nhl.opening_shift_deployment": {
+    "verdict": "IRRELEVANT",
+    "reason": "Who starts the first shift has negligible effect on a 60-minute tie indicator; relevant only to early-goal windows."
+   },
+   "nhl.penalty_rates": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Penalties move expected total modestly; their effect on the tie indicator flows only through the mean, so the text about early PP and first goals does not apply."
+   },
+   "nhl.empty_net": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Mislabelled secondary: empty-net goals and pulls convert one-goal leads to two-goal wins and trailing deficits to ties, i.e. they directly move the diagonal mass."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The faceoff-based definition of 'played' and the 48h postponement rule are only visible in the text and define the target event."
+   },
+   "m.strike_hit_rates": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Kalshi settled-frequency history is an outcome of this market, not a cause; the regulation tie rate should instead be computed from 20 years of NHL results."
+   },
+   "nhl.pdo_regression": {
+    "verdict": "WEAK",
+    "reason": "PDO regression refines team strength but tie probability is insensitive to small strength shifts once the total and gap are set."
+   },
+   "nhl.finishing": {
+    "verdict": "WEAK",
+    "reason": "Finishing talent is already folded into xG-to-goals conversion in team ratings; its marginal effect on P(tie) is tiny and hard to separate from PDO."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nhl.reg_tie_model",
+     "nhl.total_goal_dispersion"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Tie probability is a joint function of the expected total and the expected gap: for a given gap it falls roughly with the square root of the total, and for a given total it peaks at gap zero; neither alone prices the diagonal.",
+    "how_to_test": "Bin historical games by (expected total, expected gap) and compare realised tie rate with the product of marginal tie rates at each bin; test a gap x total interaction term."
+   },
+   {
+    "inputs": [
+     "nhl.third_period_equalizer_hazard",
+     "nhl.empty_net",
+     "nhl.game_script_prob"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Below roughly three minutes with a one-goal deficit the process flips to 6v5; the same trailing team can produce an equalizer (adds to ties) or an empty-net goal against (removes the tie path), so the sign of the pull effect depends on the coach's pull time and on the team's 6v5 conversion.",
+    "how_to_test": "Split one-goal-deficit states at 3:00 left by team pull policy tercile and compare realised tie-at-60 frequency across terciles after controlling for 55-minute score."
+   },
+   {
+    "inputs": [
+     "nhl.playoff_context",
+     "nhl.ot_sudden_death_hazard_5v5",
+     "nhl.ot_3v3_rate"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Season type switches the overtime generator: 3v3 five-minute period then shootout in the regular season versus unlimited 20-minute 5v5 periods in the playoffs; the 3v3 rate must not be used for playoff double-OT hazard.",
+    "how_to_test": "Fit OT goal hazard separately by season type and test whether team 3v3 rate predicts team playoff OT hazard (expected near zero)."
+   },
+   {
+    "inputs": [
+     "nhl.series_ot_count_dependence",
+     "nhl.reg_tie_model"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Games in a series share goalies and defensive systems, so tie indicators across games are positively dependent and the count of OT games has a fatter tail than binomial with the same mean.",
+    "how_to_test": "Compare observed counts of OT games per series with binomial(n, p) predictions and estimate beta-binomial rho."
+   },
+   {
+    "inputs": [
+     "nhl.tied_late_risk_posture",
+     "nhl.standings_stakes",
+     "nhl.empty_net"
+    ],
+    "form": "conditional",
+    "mechanism": "When both teams are within reach of the playoff line a tied game late may be played for the guaranteed point, lowering shot attempts and delaying pulls; the effect should vanish when a team is eliminated or has clinched.",
+    "how_to_test": "Within tied-late states, contrast attempts and pull timing between high-leverage and low-leverage standings situations in the same teams."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nhl.reg_tie_model",
+    "shape": "Bell-shaped in expected goal gap, decreasing convex in expected total",
+    "why": "Tie probability is maximal when gap is zero and falls off with squared gap while higher totals spread mass across more cells; a linear feature in the spread or total mis-orders games near the extremes."
+   },
+   {
+    "input_id": "nhl.empty_net",
+    "shape": "Threshold below about 3:00 left, then steep increase",
+    "why": "Pull probability is near zero until the final minutes and then jumps toward one; time-linear or period-level averages hide that tie conversion happens almost entirely in a short window."
+   },
+   {
+    "input_id": "nhl.total_goal_dispersion",
+    "shape": "Convex at low totals",
+    "why": "At totals below five goals the 0-0, 1-1 and 2-2 cells dominate and small changes in dispersion move tie mass more than at higher totals."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Game results with period scores, OT/SO flags and final regulation score",
+    "grain": "one row per NHL game (regular season and playoffs)",
+    "fields": [
+     "game_id",
+     "date",
+     "season_type",
+     "home/away goals by period",
+     "ot_played",
+     "so_played",
+     "regulation goals",
+     "postponement flag"
+    ],
+    "timestamp_requirement": "Known at puck drop for features; settlement fields known after the final horn.",
+    "history_needed": "2005-06 onward (post-lockout, shootout era) with 2015-16 onward flagged for 3v3.",
+    "candidate_sources": [
+     {
+      "name": "NHL stats API (api-web.nhle.com schedule/boxscore)",
+      "access": "free",
+      "note": "undocumented but stable public endpoint"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "game logs by season"
+     },
+     {
+      "name": "MoneyPuck game data",
+      "access": "free",
+      "note": "downloadable CSV"
+     }
+    ],
+    "feeds_inputs": [
+     "nhl.reg_tie_model",
+     "nhl.total_goal_dispersion",
+     "nhl.playoff_context",
+     "nhl.xg_for",
+     "nhl.xg_against",
+     "nhl.pace",
+     "nhl.finishing",
+     "nhl.pdo_regression"
+    ]
+   },
+   {
+    "dataset": "Play-by-play with strength state and goalie-in-net flag",
+    "grain": "one row per event",
+    "fields": [
+     "event type",
+     "period",
+     "clock",
+     "situationCode (skater/goalie counts)",
+     "goal scorer/assists",
+     "shot coordinates",
+     "score before event"
+    ],
+    "timestamp_requirement": "Event timestamps as of final record; for training use only games completed before the as-of date.",
+    "history_needed": "2015-16 onward for 3v3 and modern pull timing; 2005-06 onward for playoff OT.",
+    "candidate_sources": [
+     {
+      "name": "NHL API play-by-play",
+      "access": "free",
+      "note": "situationCode field believed present, SOURCE_UNVERIFIED for early seasons"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "score/time filtered splits"
+     },
+     {
+      "name": "Evolving-Hockey",
+      "access": "paid",
+      "note": "xG and RAPM"
+     },
+     {
+      "name": "Sportradar / Stats Perform",
+      "access": "paid",
+      "note": "licensed event feed"
+     }
+    ],
+    "feeds_inputs": [
+     "nhl.third_period_equalizer_hazard",
+     "nhl.ot_sudden_death_hazard_5v5",
+     "nhl.tied_late_risk_posture",
+     "nhl.empty_net",
+     "nhl.ot_3v3_rate",
+     "nhl.penalty_rates",
+     "nhl.officials",
+     "nhl.goalie_quality",
+     "nhl.game_script_prob"
+    ]
+   },
+   {
+    "dataset": "Starting goalie and lineup confirmations with timestamps",
+    "grain": "one row per team-game per source report",
+    "fields": [
+     "team",
+     "goalie named",
+     "source",
+     "reported_at",
+     "morning skate lines",
+     "scratch list"
+    ],
+    "timestamp_requirement": "Store first-report time and confirmation time; never overwrite earlier vintages.",
+    "history_needed": "2018 onward if scraped; otherwise capture live from now.",
+    "candidate_sources": [
+     {
+      "name": "Daily Faceoff",
+      "access": "free_scrape",
+      "note": "projected lines and starter confirmations"
+     },
+     {
+      "name": "LeftWingLock",
+      "access": "free_scrape",
+      "note": "starter and injury news"
+     },
+     {
+      "name": "Team/beat-writer posts",
+      "access": "own_capture",
+      "note": "archive timestamps live"
+     }
+    ],
+    "feeds_inputs": [
+     "nhl.goalie_start",
+     "nhl.injuries_pit",
+     "nhl.rest_travel",
+     "nhl.standings_stakes"
+    ]
+   },
+   {
+    "dataset": "Playoff series results and standings points race",
+    "grain": "one row per series; one row per team-date for standings",
+    "fields": [
+     "series id",
+     "games with OT",
+     "series length",
+     "points pct",
+     "distance to playoff line"
+    ],
+    "timestamp_requirement": "Standings as of morning of game.",
+    "history_needed": "2005-06 onward.",
+    "candidate_sources": [
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "series and standings tables"
+     },
+     {
+      "name": "NHL standings API",
+      "access": "free",
+      "note": "daily snapshots"
+     }
+    ],
+    "feeds_inputs": [
+     "nhl.series_ot_count_dependence",
+     "nhl.standings_stakes",
+     "nhl.tied_late_risk_posture"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "ge1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNHL2OT and KXNHLSERIESOT list no markets and have no rules text, so whether 'double overtime' means the second OT faceoff is taken and what 'series overtime' counts are unknown.",
+    "what_would_resolve": "Capture the rules text the first time a market lists or ask Kalshi; until then keep these out of the verified set."
+   },
+   {
+    "id": "ge2",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Whether tied games late are played for the guaranteed point (lower attempt share) is a hypothesis; published evidence is mixed and the magnitude relative to ordinary variance is unknown.",
+    "what_would_resolve": "Measure tied-late attempt share against matched earlier tied minutes across 10 seasons with stakes interaction.",
+    "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "ge3",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Playoff 5v5 overtime has only a few hundred games, too few for stable team-pair hazard; team-specific values will be shrunk heavily and may carry no information.",
+    "what_would_resolve": "Pool playoff and regular-season tied-state 5v5 minutes and test predictive power out of sample.",
+    "category": "game_context_script"
+   },
+   {
+    "id": "ge4",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The play-by-play situationCode field that encodes goalie-in-net for 6v5 identification is assumed from memory of the NHL API; early-season coverage is unchecked.",
+    "what_would_resolve": "Download one 2016-17 and one 2025-26 play-by-play JSON and confirm the field and values."
+   }
+  ],
+  "reviewer": "author-NHL_a (Claude Sonnet 5.5)",
+  "review_date": "2026-11-07"
+ }
+}

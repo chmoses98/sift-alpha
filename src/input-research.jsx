@@ -3,6 +3,7 @@ import index from "../research/audit/input_research/index.json";
 import queue from "../research/audit/input_research/queue.json";
 import {ComputableInputsPanel, ScaledSearchPanel} from "./research-milestone2.jsx";
 import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch, UnregisteredArchetypes, DataReadinessPanel} from "./research-experiments.jsx";
+import {CatalogCompleteness} from "./catalog-completeness.jsx";
 import "./input-research.css";
 
 // Everything is rendered from research/audit/input_research/*.json (alpha_engine.input_research). Nothing is hand-typed.
@@ -52,7 +53,9 @@ export function InputResearch() {
   const myQueue = queue.items.filter(q => q.sport === sport).slice(0, 5);
   const idx = index.sports[sport];
 
-  return <section className="ir" aria-label="Input research: what predicts each market">
+  return <>
+  <CatalogCompleteness/>
+  <section className="ir" aria-label="Input research: what predicts each market">
     <div className="eyebrow">INPUT RESEARCH / WHAT PREDICTS EACH MARKET</div>
     <h2>Which inputs predict the market, how much, and does the combination beat the price?</h2>
     <p className="ir-fine"><b>RESEARCH ONLY.</b> {index.notice} Data vintage: latest completed game {index.vintage.latest_completed_game}; generated {index.generated_utc}. Evidence levels: {Object.values(LV).join(" › ")}.</p>
@@ -127,7 +130,8 @@ export function InputResearch() {
       <ol>{queue.items.slice(0, 15).map(q => <li key={q.id}><b>{q.sport} · {q.label}</b> — score {q.score}: {q.question}</li>)}</ol></details>
     <p className="ir-fine">Catalog quality ({sport}): {doc ? pct(doc.catalog_quality.share_formulaic) : "–"} of per-market rationale strings are formulaic/machine-padded; treat the catalog as hypotheses to review, not settled reasoning.</p>
     <p className="ir-fine">{idx.families} {sport} families · {idx.markets_now.toLocaleString()} live markets in the last inventory · levels: {Object.entries(idx.levels).filter(([, n]) => n).map(([k, n]) => `${n} ${LV[k].split(" ").slice(0, 2).join(" ")}`).join(", ")}</p>
-  </section>;
+  </section>
+  </>;
 }
 
 function PathCard({p}) {

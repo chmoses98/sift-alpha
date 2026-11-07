@@ -48,7 +48,9 @@ def compute() -> dict:
     arch_counts = {s: dict(collections.Counter(v["readiness"] for v in dr["archetype_readiness"].values() if v["sport"] == s)) for s in SPORTS}
     cs = rd(IN / "computable_summary.json")
     ss = rd(IR / "scaled_search_summary.json")
-    return {"schema_version": "tracker-2.0", "status": "RESEARCH_ONLY",
+    comp_f = IN / "completeness/summary.json"
+    return {"schema_version": "tracker-2.1", "status": "RESEARCH_ONLY", "phase": rd(IN / "phase_control.json"),
+            "completeness": rd(comp_f) if comp_f.exists() else None,
             "computable_inputs": {"n_inputs": cs["n_inputs"], "n_non_market": cs["n_non_market"], "verified_computed": cs["verified_computed"], "verified_by_level": cs["verified_by_level"], "totals": cs["totals"], "by_sport": cs["by_sport"], "blocker_classes": cs["blocker_classes"], "verification": cs["verification"]},
             "scaled_search": {"totals": ss["totals"], "ledger": ss["ledger"], "multiple_testing": ss["multiple_testing"], "rows": [r for r in ss["rows"] if r["status"] == "TESTED"], "not_tested": [r for r in ss["rows"] if r["status"] != "TESTED"]},
             "catalog": {"by_sport": cat_rows, "inputs_total": sum(r["inputs"] for r in cat_rows.values()), "archetypes_total": sum(r["archetypes"] for r in cat_rows.values()),
@@ -73,8 +75,40 @@ def compute() -> dict:
                              "pr_60": "this branch: single milestone PR, draft"}}
 
 
+SHORT = {"NOT_STARTED": "not started", "STRUCTURE_INCOMPLETE": "structure incomplete", "AUTHORED_NOT_INDEPENDENTLY_REVIEWED": "authored, awaiting independent review",
+         "INDEPENDENT_REVIEW_OPEN_FINDINGS": "independent review: open findings", "READY_FOR_USER_APPROVAL": "ready for your approval"}
+
+
+def _completeness_md(p: dict) -> list[str]:
+    ph, g = p["phase"], p.get("completeness")
+    L = ["> **PHASE: CATALOG COMPLETENESS. Predictive experimentation is PAUSED** (" + ph["predictive_experiments"]["state"] + "; `research/input_research/phase_control.json`). "
+         "Every predictive result in this tracker (combination search, benchmarks, weights) is **PRELIMINARY**, preserved from PR #60 / #62 and not being expanded. "
+         "Nothing here authorises orders, spending, deployments or merges. RESEARCH_ONLY.", ""]
+    if not g:
+        return L + ["## Catalog completeness gate", "Not yet generated (`python -m alpha_engine.input_research.completeness`).", ""]
+    t = g["totals"]
+    L += ["## Catalog completeness gate (the sole active research priority)",
+          f"{t['archetypes']} market archetypes (registered + unregistered contract types) across the eight sports. **{t['READY_FOR_USER_APPROVAL']} are ready for your approval; none is declared complete.** "
+          f"Approval recorded: **{'YES' if g['approval'].get('approved') else 'NO'}**. A populated list or a passing automated check is necessary, never sufficient; the ceiling the code can award is *ready for your approval*.", "",
+          "Acceptance criteria (all must hold per archetype): " + "; ".join(g["criteria"]) + ".", "",
+          "| Sport | Archetypes | Not started | Structure incomplete | Authored, awaiting independent review | Independent review: open findings | Ready for your approval | Inputs in catalog |", "|---|---|---|---|---|---|---|---|"]
+    L += [f"| {s_} | {v['archetypes']} | {v['NOT_STARTED']} | {v['STRUCTURE_INCOMPLETE']} | {v['AUTHORED_NOT_INDEPENDENTLY_REVIEWED']} | {v['INDEPENDENT_REVIEW_OPEN_FINDINGS']} | {v['READY_FOR_USER_APPROVAL']} | {v['inputs']} |" for s_, v in g["by_sport"].items()]
+    L += ["", "### Per-archetype status", "Stages = mechanism stages; New = inputs discovered by this review; Audit = existing inputs individually judged; Ix/NL = interactions / non-linearities; Data = required datasets; Open = unresolved gaps declared; Rules = contract text verification; Ind = independent review.", "",
+          "| Sport | Archetype | Status | Live series (rules read) | Stages | New | Audit | Ix/NL | Data | Open | Rules | Ind (open findings) |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in g["rows"]:
+        L.append(f"| {r['sport']} | {r['archetype']} | {SHORT[r['status']]} | {r['live_series']} ({r['rules_text_series']}) | {r.get('stages', '–')} | {r.get('new_inputs', '–')} | {r.get('existing_inputs_audited', '–')} | "
+                 f"{r.get('interactions', '–')}/{r.get('nonlinearities', '–')} | {r.get('datasets', '–')} | {r.get('unresolved', '–')} | {(r.get('rules_verification') or '–').replace('_', ' ').lower()} | {r.get('independent', '–')} ({r.get('open_findings', '–')}) |")
+    L += ["", "### Contract universe behind the review (exact ledger; the review cannot cover what has no readable contract)",
+          "| Sport | Series | Covered (registered) | Covered (unregistered type) | No listed market (contract unreadable, unresolved) | Classified, no archetype | Evidence (rules text / title only) |", "|---|---|---|---|---|---|---|"]
+    for s_, v in g["contract_universe"].items():
+        L.append(f"| {s_} | {v['series']} | {v.get('COVERED_REGISTERED', 0)} | {v.get('COVERED_UNREGISTERED', 0)} | {v.get('NO_LISTED_MARKETS', 0)} | {v.get('CLASSIFIED_NO_ARCHETYPE', 0)} | {v['evidence'].get('RULES_TEXT', 0)} / {v['evidence'].get('TITLE_ONLY', 0)} |")
+    L += ["", "Series whose classification rests on the title only, and series that list no market, are **explicitly unresolved**, not complete. Per-archetype detail (mechanism stages, inputs, formulas, interactions, raw data, gaps, independent findings): `research/input_research/completeness/` and the dashboard Catalog completeness panel.", ""]
+    return L
+
+
 def render(p: dict) -> str:
     L = ["# SIFT Alpha research progress tracker (RESEARCH_ONLY)", "", "Generated by `python -m alpha_engine.input_research.tracker` from committed artifacts; do not edit by hand. One authoritative tracker; carried by PR #60 and its stacked milestone-2 PR.", ""]
+    L += _completeness_md(p)
     c = p["catalog"]
     L += ["## P0 candidate-input catalog", f"{c['inputs_total']} candidate inputs, {c['archetypes_total']} registered-market archetypes and {c['unregistered_archetypes_total']} archetypes for listed-but-unregistered contract types. **Not claimed complete**: a populated list is not evidence of completeness.", "",
           "| Sport | Inputs | Archetypes | Unregistered archetypes | Interactions |", "|---|---|---|---|---|"]
@@ -98,7 +132,7 @@ def render(p: dict) -> str:
         L.append(f"| {s_} | {okc} | {v.get('NOT_PREGAME_ELIGIBLE', 0) + v.get('UNVERIFIED_LEAK_TEST', 0) + v.get('LEAK_FAIL', 0)} | {v.get('NOT_COMPUTED', 0)} | {v.get('EXCLUDED_BENCHMARK_ONLY', 0)} |")
     L += ["", "Raw data classes that block the not-computed inputs (count of inputs): " + ", ".join(f"{k.lower()} {n}" for k, n in list(ci["blocker_classes"].items())[:10]) + ". Per-input status, coverage, history and what is missing: `research/input_research/computable_inputs.json` (dashboard: Verified computable inputs).", ""]
     sc = p["scaled_search"]
-    L += ["## Scaled market-free combination testing (milestone 2)", f"{sc['totals']['n_tested']} markets tested across the eight sports on verified inputs only; **{sc['ledger']['rows_logged']:,} configuration x block records logged** ({sc['ledger']['unique_market_configurations']:,} unique market-configurations; ledger schema identical to PR #59, whose {sc['ledger']['lab59_experiments_read_only']:,} experiments are read from its branch, not copied). Verdicts: {sc['totals'].get('verdicts')}. Multiple testing: {sc['multiple_testing']}.", "",
+    L += ["## Scaled market-free combination testing (milestone 2) — PRELIMINARY, PAUSED", f"{sc['totals']['n_tested']} markets tested across the eight sports on verified inputs only; **{sc['ledger']['rows_logged']:,} configuration x block records logged** ({sc['ledger']['unique_market_configurations']:,} unique market-configurations; ledger schema identical to PR #59, whose {sc['ledger']['lab59_experiments_read_only']:,} experiments are read from its branch, not copied). Verdicts: {sc['totals'].get('verdicts')}. Multiple testing: {sc['multiple_testing']}.", "",
           "| Market | Rows | Groups | Gain | 95% CI | Holm p | Blocks + | Null | Verdict |", "|---|---|---|---|---|---|---|---|---|"]
     L += [f"| {r['market']} | {r['n']:,} | {r['groups']} | {r['gain']:.2f}% | [{r['ci'][0]:.3g}, {r['ci'][1]:.3g}] | {r['holm_p']:.3f} | {r['pos']}/{r['blocks']} | {', '.join(f'{x:.2f}%' for x in r['null'])} | {r['verdict']} |" for r in sc["rows"]]
     if sc["not_tested"]:
@@ -119,10 +153,10 @@ def render(p: dict) -> str:
     L += ["## Raw data in hand", "From the project's own repositories (`git show`, no new host): " + "; ".join(f"{k} {v['rows']:,} rows ({v['date_min']}..{v['date_max']})" for k, v in dc["repo_archives"].items() if v.get("rows")) + ".", "",
           "Collected from free APIs this round: " + "; ".join(f"{k} {v['rows']:,}" for k, v in dc["api_collectors"].items() if v.get("rows")) + ".", ""]
     if p["search_experiments_cross_sport"]:
-        L += ["## Cross-sport market-free search (nested chronological, permutation null)", "| Market | n | Gain vs baseline | Positive blocks | Null gain |", "|---|---|---|---|---|"]
+        L += ["## Cross-sport market-free search (nested chronological, permutation null) — PRELIMINARY, PAUSED", "| Market | n | Gain vs baseline | Positive blocks | Null gain |", "|---|---|---|---|---|"]
         L += [f"| {v['market']} | {v['n']:,} | {v['gain_pct']:.2f}% | {v['seasons_positive']}/{v['seasons']} | {', '.join(f'{x:.2f}%' for x in v['null_pct'])} |" for v in p["search_experiments_cross_sport"].values()]
         L += [""]
-    L += ["## P2/P3 experiments", *[f"- {k}: {v}" for k, v in p["search_experiments"].items()], "", "## Coordination", *[f"- {k}: {v}" for k, v in p["coordination"].items()], ""]
+    L += ["## P2/P3 experiments (PRELIMINARY, PAUSED)", *[f"- {k}: {v}" for k, v in p["search_experiments"].items()], "", "## Coordination", *[f"- {k}: {v}" for k, v in p["coordination"].items()], ""]
     return "\n".join(L)
 
 

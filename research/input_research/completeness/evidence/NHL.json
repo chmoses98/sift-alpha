@@ -1,0 +1,3068 @@
+{
+ "game_events": {
+  "blueprint": "game_event",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "distribution",
+    "id": "nhl.reg_tie_model",
+    "label": "Regulation tie probability (bivariate Skellam/Poisson model)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "P(tie after 60) base for OT and shootout."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.total_goal_dispersion",
+    "label": "Goal-total dispersion and home/away goal correlation (incl. empty-net contribution)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Distribution shape for ties and shutouts."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.game_script_prob",
+    "label": "Pregame score-script distribution (win probability, lead/trail probabilities)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "A close expected game raises tie and OT chances; script probabilities feed the tie model."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.ot_3v3_rate",
+    "label": "3v3 overtime scoring rate and star-driven OT deployment",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "3v3 resolution probability decides shootout reach."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.shootout_record",
+    "label": "Shootout/OT record and shooter/goalie shootout talent",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Shootout win probability with shrinkage."
+   },
+   {
+    "category": "environment",
+    "id": "nhl.playoff_context",
+    "label": "Playoff vs regular-season environment (tighter benches, fewer penalties, continuous OT)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Playoffs have no shootout and 20-minute sudden-death overtimes, changing event definitions and rates."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Each team's probability of scoring at least once (BTTS)."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_against",
+    "label": "Team expected goals against (shot suppression quality)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Defensive suppression reduces each team's chance to score at least once, relevant for BTTS and shutouts."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Shutout probability depends on goalie."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_quality",
+    "label": "Goalie quality: goals saved above expected (GSAx), danger-zone save rates, workload-adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Converts shots into goals; shutout rates."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.first_goal_hazard",
+    "label": "First-goal timing hazard and early-game scoring rate",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Early-game hazard for first/early goal markets."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.opening_shift_deployment",
+    "label": "Opening shift lines and faceoff deployment",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Starting lines determine who is on the ice in the first minutes for early-goal contracts."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.penalty_rates",
+    "label": "Penalties taken/drawn per 60 and referee crew tendencies",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Early penalties give early power plays that raise first-goal and early-goal probability."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.empty_net",
+    "label": "Empty-net goals and pulled-goalie timing",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Late EN goals add to BTTS-like thresholds if counted."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Definition of OT/SO, own goals, EN goals for BTTS, disallowed goals."
+   },
+   {
+    "category": "distribution",
+    "id": "m.strike_hit_rates",
+    "label": "Historical realized frequency by strike/rung per family (from settlements)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Base rates by market type and season type."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.pdo_regression",
+    "label": "Team PDO (SH% + SV%) and on-ice luck component",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Team PDO (shooting plus save percentage) luck regresses, so rare-event counts inherit noise a rating cannot predict."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.finishing",
+    "label": "Shooting percentage / finishing talent (regressed)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Finishing talent versus luck separates repeatable shooting from variance in rare-event counts."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Shootout probability = P(tie) x P(OT not decisive): low-scoring tight games raise the first factor, team 3v3 scoring lowers the second; both must be modelled.",
+    "inputs": [
+     "nhl.reg_tie_model",
+     "nhl.ot_3v3_rate",
+     "nhl.shootout_record"
+    ]
+   },
+   {
+    "hypothesis": "BTTS: P(team scores >=1) depends on goalie quality of the opponent and own xG; strong-goalie, low-pace games have a materially higher shutout chance than independent Poisson suggests.",
+    "inputs": [
+     "nhl.xg_for",
+     "nhl.goalie_quality",
+     "nhl.total_goal_dispersion"
+    ]
+   },
+   {
+    "hypothesis": "First goal: the race between hazards depends on early PP draws and starting lines; interacting penalties and opening deployment shifts the first-team probability.",
+    "inputs": [
+     "nhl.first_goal_hazard",
+     "nhl.penalty_rates",
+     "nhl.opening_shift_deployment"
+    ]
+   },
+   {
+    "hypothesis": "Season type changes the contract structure: playoffs remove the shootout and add multi-OT events, so the playoff flag interacts with OT scoring rates.",
+    "inputs": [
+     "nhl.playoff_context",
+     "nhl.ot_3v3_rate",
+     "m.rules_text"
+    ]
+   }
+  ],
+  "existing_mechanism": "Overtime and shootout markets are functions of regulation-tie probability (a bivariate goal model with total and spread as inputs) and the 3v3 overtime resolution rate; playoffs change structure (no shootout, 20-minute 5v5 overtimes). BTTS depends on each team's probability of not being shut out (goalie quality, chances), and first/early-goal markets depend on opening hazards. These are low-information markets where rules text and base rates by season type dominate.",
+  "families": [
+   "NHL/game_overtime",
+   "NHL/game_shootout",
+   "NHL/game_multi_overtime",
+   "NHL/game_both_teams_score",
+   "NHL/first_goal",
+   "NHL/game_early_goal"
+  ],
+  "key": "game_events",
+  "label": "Overtime, shootout, multi-OT, BTTS, first goal and early goal",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLOT",
+    "title": "NHL Overtime",
+    "type": "first_team_or_event"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL2OT",
+    "title": "NHL Double Overtime",
+    "type": "first_team_or_event"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLSERIESOT",
+    "title": "NHL Series Overtime",
+    "type": "first_team_or_event"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLOT": {
+    "floor_strike": 0.5,
+    "market_type": "binary",
+    "rules_primary": "If at least 1 overtime period is played in the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "For the purposes of this market, an overtime period is \"played\" if and only if play in that overtime period commences, meaning that the opening faceoff of that overtime period is taken. An overtime period that is scheduled, announced, or begun but in which no play commences is not considered to be played.\n\nIf the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fai",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLOT-26NOV08PITANA-1",
+    "title": "Game goes to overtime",
+    "yes_sub_title": "Game goes to overtime"
+   }
+  },
+  "sport": "NHL",
+  "target": "Event occurrence in the game: reaches overtime/shootout/multiple overtimes, both teams score, which team scores first, or an early goal within a time window."
+ },
+ "game_moneyline_puckline": {
+  "blueprint": "game_side",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Offensive process after opponent and score adjustment."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_against",
+    "label": "Team expected goals against (shot suppression quality)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Defensive process, lineup-adjusted."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Confirmed goalie is the largest single swing."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_quality",
+    "label": "Goalie quality: goals saved above expected (GSAx), danger-zone save rates, workload-adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Shrunk GSAx for the confirmed goalie."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.special_teams",
+    "label": "Power-play and penalty-kill efficiency (xG-based) and special-teams matchup",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "PP/PK net effect given penalty expectation."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Key absences adjust team ratings."
+   },
+   {
+    "category": "schedule_context",
+    "id": "nhl.rest_travel",
+    "label": "Rest, back-to-back, travel distance/time zone, schedule density",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Back-to-back affects goalie rotation and skaters."
+   },
+   {
+    "category": "environment",
+    "id": "nhl.venue",
+    "label": "Rink effects (shot counting bias), home advantage, building specifics",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Home-ice advantage and last-change matchups give a modest persistent boost to the home team's win probability."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.pdo_regression",
+    "label": "Team PDO (SH% + SV%) and on-ice luck component",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Recent results include shooting and save luck that should be regressed before they inform win probability."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.reg_tie_model",
+    "label": "Regulation tie probability (bivariate Skellam/Poisson model)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Tie probability to translate regulation to full-game probabilities."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.ot_so",
+    "label": "Overtime and shootout model and rules",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "OT/SO split for including-OT contracts."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.empty_net",
+    "label": "Empty-net goals and pulled-goalie timing",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "EN goals shift margin and cover probabilities."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.total_goal_dispersion",
+    "label": "Goal-total dispersion and home/away goal correlation (incl. empty-net contribution)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Goal difference distribution width."
+   },
+   {
+    "category": "motivation",
+    "id": "nhl.standings_stakes",
+    "label": "Standings stakes and motivation (clinched, eliminated, seeding)",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Rest of stars in late-season low-stakes games."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.quote_history",
+    "label": "Kalshi bid/ask/last time series (pre-game through close)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Move after goalie/lineup news."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.external_lines",
+    "label": "Sportsbook / exchange reference prices with timestamps",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "De-vigged sharp lines are a strong baseline and their mapping to the Kalshi rule shows stale quotes."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Which settlement path counts OT/SO."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Goalie confirmation x opponent shot-danger mix: the benefit of a better goalie is proportional to high-danger volume faced, so start news should be scaled by opponent profile.",
+    "inputs": [
+     "nhl.goalie_start",
+     "nhl.goalie_danger_split",
+     "nhl.shot_location"
+    ]
+   },
+   {
+    "hypothesis": "Regulation-only vs including-OT prices differ by P(tie): the same rating gap implies different probabilities across contracts, so total and spread feed the tie model.",
+    "inputs": [
+     "nhl.reg_tie_model",
+     "nhl.total_goal_dispersion",
+     "m.rules_text"
+    ]
+   },
+   {
+    "hypothesis": "Puck-line cover depends on empty-net goals: a one-goal lead late converts to a two-goal win via EN, so pull timing interacts with game script.",
+    "inputs": [
+     "nhl.empty_net",
+     "nhl.game_script_prob",
+     "nhl.total_goal_dispersion"
+    ]
+   },
+   {
+    "hypothesis": "Rest/back-to-back effect is mostly through backup goalie; condition the rest flag on starter identity before using it as an independent edge.",
+    "inputs": [
+     "nhl.rest_travel",
+     "nhl.goalie_workload",
+     "nhl.goalie_start"
+    ]
+   }
+  ],
+  "existing_mechanism": "Team goal differential is the difference of two overdispersed count processes with means set by team xG quality, goalie, special teams and home ice; moneyline including OT adds a near-coin-flip resolution of regulation ties, puck line and margin markets depend on the full goal-difference distribution (including the empty-net goal that pushes margin by one). The edge from public information is small because lines are efficient; value arises from fast reaction to goalie/lineup news and rule-structure differences across contracts.",
+  "families": [
+   "NHL/game_winner",
+   "NHL/game_regulation_winner",
+   "NHL/game_spread",
+   "NHL/game_win_margin"
+  ],
+  "key": "game_moneyline_puckline",
+  "label": "Game winner, regulation winner, puck line and win margin",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLSPREAD",
+    "title": "NHL Spread",
+    "type": "spread"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLGAME",
+    "title": "NHL Game",
+    "type": "winner"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLPRES",
+    "title": "NHL President's Trophy Winner",
+    "type": "winner"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLSERIES",
+    "title": "NHL Series Winner",
+    "type": "winner"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLMVP",
+    "title": "NHL Hart Memorial Trophy Winner",
+    "type": "winner"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLGAME": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Vancouver wins the New York R vs Vancouver NHL game originally scheduled for Nov 13, 2026, then the market resolves to Yes.",
+    "rules_secondary": "If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLGAME-26NOV13NYRVAN-VAN",
+    "title": "Vancouver wins",
+    "yes_sub_title": "Vancouver"
+   },
+   "KXNHLPRES": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Washington Capitals win the 2026-27 NHL Presidents' Trophy, then the market resolves to Yes.",
+    "rules_secondary": "If teams finish tied in points, the Presidents\u2019 Trophy tiebreakers are:\n\n1) Regulation wins\n2) Regulation and overtime wins\n3) Total wins\n4) Head-to-head points\n5) Goal differential\n6) Goals scored",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLPRES-27-WSH",
+    "title": "Will the Washington Capitals win the Presidents' Trophy?",
+    "yes_sub_title": "Washington Capitals"
+   },
+   "KXNHLSPREAD": {
+    "floor_strike": 2.5,
+    "market_type": "binary",
+    "rules_primary": "If New York R wins by over 2.5 goals in the New York R vs Edmonton NHL game originally scheduled for Nov 9, 2026, then the market resolves to Yes.",
+    "rules_secondary": "If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLSPREAD-26NOV09NYREDM-NYR3",
+    "title": "New York R wins by over 2.5 goals",
+    "yes_sub_title": "New York R wins by over 2.5 goals"
+   }
+  },
+  "sport": "NHL",
+  "target": "Which team wins (including OT/SO or regulation only), covers a goal spread, or wins by a given margin."
+ },
+ "game_total_and_team_total": {
+  "blueprint": "game_total",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "pace_volume",
+    "id": "nhl.pace",
+    "label": "Shot-attempt rate / event pace (combined attempts per 60)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Joint shot volume determines number of chances."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Chance quality created by each team scales expected goals, split 5v5 and PP."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_against",
+    "label": "Team expected goals against (shot suppression quality)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Opponent's suppression quality reduces expected goals, and lineup-specific values matter more than season averages."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.shots_against",
+    "label": "Team shots-on-goal against, shot quality, score-effects adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "SOG allowed adjusts shot volume against the specific defence and its score-effect behavior."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Starter identity moves expected goals by tenths."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_quality",
+    "label": "Goalie quality: goals saved above expected (GSAx), danger-zone save rates, workload-adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Converts shot quality into goals."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_danger_split",
+    "label": "Goalie save% by shot danger, rebounds and shot type",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Danger-split of goalie against opponent shot mix."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.special_teams",
+    "label": "Power-play and penalty-kill efficiency (xG-based) and special-teams matchup",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "PP/PK efficiency converts expected penalty minutes into goals above 5v5 rates."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.penalty_rates",
+    "label": "Penalties taken/drawn per 60 and referee crew tendencies",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Expected PP minutes each side."
+   },
+   {
+    "category": "officiating",
+    "id": "nhl.officials",
+    "label": "Referee/linesman penalty-call tendencies",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Crew-level effect on penalties."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.empty_net",
+    "label": "Empty-net goals and pulled-goalie timing",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Empty-net goals add to totals in close late games, and their inclusion depends on the rules text."
+   },
+   {
+    "category": "schedule_context",
+    "id": "nhl.rest_travel",
+    "label": "Rest, back-to-back, travel distance/time zone, schedule density",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Fatigue raises goals against and increases backup-goalie starts, shifting team totals."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Absent skaters change both offence and defence and especially PP units, shifting the totals."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.pdo_regression",
+    "label": "Team PDO (SH% + SV%) and on-ice luck component",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Regress goal luck in recent samples."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.total_goal_dispersion",
+    "label": "Goal-total dispersion and home/away goal correlation (incl. empty-net contribution)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Over/under rungs in the tails price variance; dispersion and correlation determine rung probabilities."
+   },
+   {
+    "category": "environment",
+    "id": "nhl.venue",
+    "label": "Rink effects (shot counting bias), home advantage, building specifics",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Rink environment and counting differences shift scoring and shot-based features."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.ladder_structure",
+    "label": "Cross-rung consistency of the threshold ladder (monotonicity, implied distribution)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Total and team-total rungs consistency."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Whether overtime, shootout goals and empty-net goals count changes the target quantity itself."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.opp_supp",
+    "label": "Opponent shot suppression / goals-against by player position",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Opponent shot suppression sets expected attempts."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.shot_location",
+    "label": "Shot location/danger-zone mix for and against",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Danger-zone mix converts attempts to goals."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Pace x goalie: pace raises SOG but goals only if the goalie and shot quality convert; use xG-based pace for goals and keep SOG pace for saves/SOG markets.",
+    "inputs": [
+     "nhl.pace",
+     "nhl.goalie_quality",
+     "nhl.xg_for"
+    ]
+   },
+   {
+    "hypothesis": "Penalty expectation: teams' taken rates x opponent drawn rates x crew effect x PP efficiency; each factor is shrunk and the product is a PP-goal expectation.",
+    "inputs": [
+     "nhl.penalty_rates",
+     "nhl.officials",
+     "nhl.special_teams"
+    ]
+   },
+   {
+    "hypothesis": "Team total depends on the opposing goalie confirmed only close to puck drop, so team-total prices should jump on confirmation relative to game total which changes less.",
+    "inputs": [
+     "nhl.goalie_start",
+     "nhl.xg_for",
+     "nhl.goalie_quality"
+    ]
+   },
+   {
+    "hypothesis": "EN and OT inclusion rules change totals: contracts including OT/EN add goals mainly in tied/close games; match the model to wording.",
+    "inputs": [
+     "nhl.empty_net",
+     "nhl.ot_so",
+     "m.rules_text"
+    ]
+   }
+  ],
+  "existing_mechanism": "Expected goals for each team equal shot volume times shot quality times goalie conversion, with an additive special-teams component from expected penalties and an empty-net component from late close-game dynamics. Totals are the sum of two overdispersed counts with mild positive correlation through pace, officiating and style; team totals are single-team versions with goalie and opposing defence dominating. Thresholds at integer and half-goal rungs price tail probabilities requiring dispersion estimates.",
+  "families": [
+   "NHL/game_total",
+   "NHL/team_total"
+  ],
+  "key": "game_total_and_team_total",
+  "label": "Game total goals and team totals",
+  "live_series": [
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLTOTAL",
+    "title": "NHL Total Goals",
+    "type": "total"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLSERIESTOTALGOAL",
+    "title": "NHL Series Total Goals",
+    "type": "total"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLTEAMTOTAL",
+    "title": "NHL Team Goals Scored During Game",
+    "type": "team_total"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLTEAMTOTAL": {
+    "floor_strike": 5.5,
+    "market_type": "binary",
+    "rules_primary": "If Pittsburgh scores over 5.5 goals in the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Team totals include goals scored in overtime. If the game goes to a shootout, the shootout winner is credited with one additional goal, and that goal counts toward this market.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLTEAMTOTAL-26NOV08PITANA-PIT6",
+    "title": "Pittsburgh over 5.5 goals scored",
+    "yes_sub_title": "Pittsburgh over 5.5"
+   },
+   "KXNHLTOTAL": {
+    "floor_strike": 11.5,
+    "market_type": "binary",
+    "rules_primary": "If the teams collectively score more than 11.5 goals in the Florida vs Washington NHL game originally scheduled for Nov 7, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Goals scored during regulation and overtime count as normal. If the game is decided by a shootout, the shootout result will be recorded as one goal awarded to the winning team.\n\nIf the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "finalized",
+    "strike_type": "greater",
+    "ticker": "KXNHLTOTAL-26NOV07FLAWSH-12",
+    "title": "Full Game: Over 11.5 goals scored",
+    "yes_sub_title": "Over 11.5 goals scored"
+   }
+  },
+  "sport": "NHL",
+  "target": "Whether total goals (or a team's goals) in the game exceed a threshold under the contract's period and OT scope."
+ },
+ "goalie_saves": {
+  "blueprint": "goalie_saves",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "pace_volume",
+    "id": "nhl.shots_against",
+    "label": "Team shots-on-goal against, shot quality, score-effects adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Team SOG against is the main mean driver; score and lineup adjusted."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Opponent's volume and quality of attempts."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.pace",
+    "label": "Shot-attempt rate / event pace (combined attempts per 60)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Combined event rate of the game."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Which goalie plays determines eligibility and quality; confirmation timing is critical."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start_forecast",
+    "label": "Pre-confirmation starting goalie probability (morning skate, rest pattern, coach history)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Pregame mixture over starters for unconfirmed markets."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_workload",
+    "label": "Goalie rest, consecutive starts, recent save-pct and backup identity",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Rest and back-to-back determine start probability."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.goalie_pull_risk",
+    "label": "Probability the starter is pulled early/replaced and pull timing",
+    "pregame_knowable": "no",
+    "role": "primary",
+    "why": "Early pulls cut the lower tail of saves."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.score_state",
+    "label": "Game-script / score effects on shot volume, quality and pulled-goalie behavior",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Trailing opponents shoot more; leading ones less."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.game_script_prob",
+    "label": "Pregame score-script distribution (win probability, lead/trail probabilities)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Win probability tilts volume against."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.penalty_rates",
+    "label": "Penalties taken/drawn per 60 and referee crew tendencies",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Penalties give opponents PP shots."
+   },
+   {
+    "category": "officiating",
+    "id": "nhl.officials",
+    "label": "Referee/linesman penalty-call tendencies",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Referee crew tendencies change penalties and therefore power plays and shots faced by the goalie."
+   },
+   {
+    "category": "environment",
+    "id": "nhl.venue",
+    "label": "Rink effects (shot counting bias), home advantage, building specifics",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "SOG counting bias at the rink changes counted saves."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_quality",
+    "label": "Goalie quality: goals saved above expected (GSAx), danger-zone save rates, workload-adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Lower save% converts shots into goals, trimming saves."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Absent opposing/defensive skaters shift shot volume."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Dispersion for rung probabilities."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "DNP, pulled-goalie and OT counting rules."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Saves mean = expected SOG faced x (1 - expected goal probability), but variance is dominated by shot volume and pull risk; combine volume distribution with pull mixture.",
+    "inputs": [
+     "nhl.shots_against",
+     "nhl.goalie_pull_risk",
+     "nhl.stat_dist"
+    ]
+   },
+   {
+    "hypothesis": "Favourite goalies: strong teams concede fewer shots and may lead late; interacting win probability with opponent shooting volume tilts the mean down for favourites.",
+    "inputs": [
+     "nhl.game_script_prob",
+     "nhl.score_state",
+     "nhl.shots_against"
+    ]
+   },
+   {
+    "hypothesis": "Unconfirmed starter: the ladder is a mixture across starters with different expected volume (starters vs backup facing the same team), so price jumps on confirmation.",
+    "inputs": [
+     "nhl.goalie_start_forecast",
+     "nhl.goalie_workload",
+     "m.quote_history"
+    ]
+   },
+   {
+    "hypothesis": "Rink SOG counting bias and opponent attempt volume jointly set official shots faced; venue effects matter more for high-volume opponents.",
+    "inputs": [
+     "nhl.venue",
+     "nhl.xg_for",
+     "nhl.pace"
+    ]
+   }
+  ],
+  "existing_mechanism": "Saves equal shots on goal faced minus goals against, so the mean is the opponent's expected SOG against this defence adjusted for script, penalties and rink counting. Goalie quality only matters at the margin (a few shots), while volume matters most. The largest tail risks are an early pull (truncating saves) and goalie identity uncertainty before confirmation; overtime adds shots if included.",
+  "families": [
+   "NHL/goalie_saves"
+  ],
+  "key": "goalie_saves",
+  "label": "Goalie saves thresholds",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLSAVE",
+    "title": "Goaltender Saves",
+    "type": "player_prop:saves"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLSAVE": {
+    "floor_strike": 24.5,
+    "market_type": "binary",
+    "rules_primary": "If Lukas Dostal records 25+ saves in the Anaheim vs Calgary NHL game originally scheduled for Nov 6, 2026, then the market resolves to Yes.",
+    "rules_secondary": "The following market refers to a player in the Anaheim vs Calgary NHL game originally scheduled for Nov 6, 2026. If a player is active but never enters the game, the market settles to the last fair market price before game start. Once a player enters the game, the market settles based on the player's saves recorded.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLSAVE-26NOV06ANACGY-ANALDOSTAL1-25",
+    "title": "Lukas Dostal: 25+ saves",
+    "yes_sub_title": "Lukas Dostal: 25+"
+   }
+  },
+  "sport": "NHL",
+  "target": "Whether a goalie records at least k saves; eligibility conditional on the goalie playing per the wording."
+ },
+ "offfield_markets": {
+  "blueprint": "off_field",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "other",
+    "id": "nhl.offfield_base_rate",
+    "label": "Reference-class base rate for off-ice/office markets",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Reference-class frequency is the prior for novelty markets with no statistical model."
+   },
+   {
+    "category": "schedule_context",
+    "id": "nhl.announcement_calendar",
+    "label": "League calendar of scheduled events (draft, free agency, deadline, awards)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Fixed league dates bound when events can occur and concentrate hazard near them."
+   },
+   {
+    "category": "other",
+    "id": "nhl.news",
+    "label": "Trades, coaching changes, transactions, roster news",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Insider reporting and official announcements."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Resolution source and wording."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.quote_history",
+    "label": "Kalshi bid/ask/last time series (pre-game through close)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Price reaction after reports shows how much information the market assigned to the news."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.volume_oi",
+    "label": "Volume and open interest",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Thin volume means quoted prices are noisy, which limits any inference from them."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.lifecycle",
+    "label": "Open/close/halt/postponement lifecycle events",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Close time relative to the event date defines how much of the hazard is inside the window."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.external_lines",
+    "label": "Sportsbook / exchange reference prices with timestamps",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Other venues' prices on the same event provide a cross-check when they exist."
+   },
+   {
+    "category": "distribution",
+    "id": "m.strike_hit_rates",
+    "label": "Historical realized frequency by strike/rung per family (from settlements)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Historical realized frequency for this market type provides a calibration check on listed strikes."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Base rate x time remaining: hazard rises toward deadline dates, so reference-class frequency must be time-conditioned.",
+    "inputs": [
+     "nhl.offfield_base_rate",
+     "nhl.announcement_calendar",
+     "m.lifecycle"
+    ]
+   },
+   {
+    "hypothesis": "Insider report to official announcement: price after reports measures their credibility and the rules decide what counts.",
+    "inputs": [
+     "nhl.news",
+     "m.quote_history",
+     "m.rules_text"
+    ]
+   },
+   {
+    "hypothesis": "Thin liquidity makes quotes noisy; volume interacts with price moves to separate information from noise.",
+    "inputs": [
+     "m.volume_oi",
+     "m.quote_history",
+     "nhl.news"
+    ]
+   }
+  ],
+  "existing_mechanism": "These markets are driven by organizational decisions and news flow, not on-ice performance; there is little statistical structure and the best-supported hypotheses are reference-class base rates, calendar constraints (deadlines, draft, free agency) and insider-report timing relative to the stated resolution source. Many of these markets are effectively unpredictable from sports data and should be treated as novelty markets.",
+  "families": [
+   "NHL/non_hockey_or_office"
+  ],
+  "key": "offfield_markets",
+  "label": "Non-hockey and office/personnel markets",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLLINDSAY",
+    "title": "NHL Ted Lindsay Winner",
+    "type": "off_field"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLNEXTTEAM",
+    "title": "NHL Next Team",
+    "type": "person_event"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLEXPANSION",
+    "title": "NHL Expansion",
+    "type": "business_off_field"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLEXPANSION": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the NHL officially announces the award of an expansion team franchise to Houston before Jan 1, 2027, then the market resolves to Yes.",
+    "rules_secondary": "The league must officially announce that the city has been awarded an expansion franchise. This requires formal approval by the league's Board of Governors or equivalent governing body specifically naming the city. Preliminary discussions, stadium approvals without franchise awards, feasibility studies, or being named as a potential market do not qualify. Franchise relocations only count if specifically designated as \"expansion\" by the league. The announcement must come after market issuance. Even if the team won't begin play until after the target date, the market resolves Yes upon the offici",
+    "status": "active",
+    "strike_type": null,
+    "ticker": "KXNHLEXPANSION-27JAN01HOU-Y",
+    "title": "Will Houston receive an NHL expansion team before 2027?",
+    "yes_sub_title": "Houston to get an expansion team before 2027"
+   },
+   "KXNHLLINDSAY": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If William Nylander wins the NHL Ted Lindsay Award in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "If multiple participants tie for the award, \u201cYes\u201d positions will pay $1/N (rounded down to the nearest cent), where N is the number of tied participants, and \u201cNo\u201d positions will pay $1 minus the \u201cYes\u201d payout.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLLINDSAY-27-WNYLANDER88",
+    "title": "Ted Lindsay Award: William Nylander wins",
+    "yes_sub_title": "William Nylander"
+   },
+   "KXNHLNEXTTEAM": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Quinn Hughes' \nnext team is the Washington Capitals\n before Nov 1, 2026, then the market resolves to Yes.",
+    "rules_secondary": "If Quinn Hughes officially retires before Nov 1, 2026 or is not signed to any team on Nov 1, 2026, \"Retires / No Team\" resolves to Yes. \nIf Quinn Hughes remains on the team they were on upon issuance on Nov 1, 2026, then the market for that team will resolve Yes.\nIf Quinn Hughes is a free agent, whether restricted or unrestricted, for any period of time and signs a contract with any team, including their previous team, the market for that team will resolve Yes.\nIf Quinn Hughes signs a contract extension or re-signs while under contract with that same team, that does not trigger an early resolu",
+    "status": "finalized",
+    "strike_type": "structured",
+    "ticker": "KXNHLNEXTTEAM-26QHUGHES43-WSH",
+    "title": "Quinn Hughes' next team before Nov 1, 2026: Washington Capitals",
+    "yes_sub_title": "Washington Capitals"
+   }
+  },
+  "sport": "NHL",
+  "target": "Event in the league or organization outside the game (transactions, announcements, business questions)."
+ },
+ "parlay_combo": {
+  "blueprint": "combo",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "distribution",
+    "id": "nhl.joint_outcome_correlation",
+    "label": "Cross-market correlation (player stat with team result/total, between players)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Empirical and simulated correlation between legs."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Marginal distributions per leg."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.game_script_prob",
+    "label": "Pregame score-script distribution (win probability, lead/trail probabilities)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Latent game script shared across legs."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.total_goal_dispersion",
+    "label": "Goal-total dispersion and home/away goal correlation (incl. empty-net contribution)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Team and total goals correlation."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "A goalie change shifts opposing scoring, totals and win legs in a correlated manner."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "A late scratch changes several legs simultaneously, so lineup state is a shared latent factor."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Team scoring level for the goal-related legs."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_against",
+    "label": "Team expected goals against (shot suppression quality)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Opponent scoring drives the totals and win legs in the opposite direction from own scoring."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi",
+    "label": "Projected time on ice by strength state (EV, PP, PK, late-game)",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Player volume for player legs."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Each leg's settlement and whether a voided leg reduces the combo changes the payoff structure."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.ladder_structure",
+    "label": "Cross-rung consistency of the threshold ladder (monotonicity, implied distribution)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Leg-level prices in the ladder must be consistent before combining; inconsistent legs give spurious edge."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Team win x player points: the correlation is via team goals; conditioning on total expectation and the player's PP share sets the joint uplift over independence.",
+    "inputs": [
+     "nhl.joint_outcome_correlation",
+     "nhl.xg_for",
+     "nhl.toi"
+    ]
+   },
+   {
+    "hypothesis": "Goalie shock moves all legs in the same direction (opposing scoring, totals, win legs); correlated shocks need a latent goalie-quality variable.",
+    "inputs": [
+     "nhl.goalie_start",
+     "nhl.joint_outcome_correlation",
+     "nhl.total_goal_dispersion"
+    ]
+   },
+   {
+    "hypothesis": "Script-based negative correlation: favourite wins by large margins reduce its stars' late shots, so a win leg and a shots leg are less correlated than assumed.",
+    "inputs": [
+     "nhl.game_script_prob",
+     "nhl.stat_dist",
+     "nhl.xg_for"
+    ]
+   }
+  ],
+  "existing_mechanism": "The contract price must equal the joint probability, which depends on marginal accuracy of each leg and on common latent drivers: game pace, script, goalie quality shocks and lineup changes. Positive correlations (team win and own player's points) make the joint probability exceed the product of marginals, negative correlations the opposite, and leg-void rules change the effective payoff. Modelling this requires a game-level simulation that generates all legs from shared latent variables.",
+  "families": [
+   "NHL/parlay_combo"
+  ],
+  "key": "parlay_combo",
+  "label": "Parlay / combo contracts",
+  "live_series": [],
+  "registered": true,
+  "rules_samples": {},
+  "sport": "NHL",
+  "target": "Joint outcome of multiple legs (team results, totals, player stats) in one contract."
+ },
+ "period_markets": {
+  "blueprint": "period",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "distribution",
+    "id": "nhl.period_split",
+    "label": "Period-level scoring and shot distribution",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Period-specific scoring shape by team vs league."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Chance quality per 20 minutes."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_against",
+    "label": "Team expected goals against (shot suppression quality)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Chance suppression per 20 minutes drives conceded goals in that period."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.pace",
+    "label": "Shot-attempt rate / event pace (combined attempts per 60)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Event rate in a given period depends on team style and score state and sets the number of chances."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Goalie identity and warm state."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.special_teams",
+    "label": "Power-play and penalty-kill efficiency (xG-based) and special-teams matchup",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "A single PP in a 20-minute period can decide the period, so special-team strength is concentrated."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.penalty_rates",
+    "label": "Penalties taken/drawn per 60 and referee crew tendencies",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Penalty draws in the period give PP time that is a large share of period scoring."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.score_state",
+    "label": "Game-script / score effects on shot volume, quality and pulled-goalie behavior",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Third-period behaviour changes sharply with lead or deficit, altering shot rates and goal risk."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.game_script_prob",
+    "label": "Pregame score-script distribution (win probability, lead/trail probabilities)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Probability of lead/trail entering the period."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.empty_net",
+    "label": "Empty-net goals and pulled-goalie timing",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Empty-net goals concentrate in the last minutes of the third period and affect third-period totals."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.long_change_effect",
+    "label": "Second-period long change effect",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Second-period long change is associated with different chance patterns in that frame."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.opening_shift_deployment",
+    "label": "Opening shift lines and faceoff deployment",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Starting units and early deployment shape first-period scoring chances."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.coach_deployment_style",
+    "label": "Coach deployment style (TOI concentration, line juggling, PP time allocation)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Coaches' line usage and PP time allocation by period affect which players generate chances."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.total_goal_dispersion",
+    "label": "Goal-total dispersion and home/away goal correlation (incl. empty-net contribution)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "A zero-heavy count requires an overdispersed model to price 0 goal, 1 goal and over rungs."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Period tie handling; does OT count; shootout."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.pdo_regression",
+    "label": "Team PDO (SH% + SV%) and on-ice luck component",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "A team's shooting and save percentage beyond expectation regress; period markets inherit the noise."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Period winner needs the tie probability: with few goals per period, P(tie) is large, so tie-handling in the contract sets the baseline as much as team strength.",
+    "inputs": [
+     "nhl.period_split",
+     "nhl.total_goal_dispersion",
+     "m.rules_text"
+    ]
+   },
+   {
+    "hypothesis": "Third-period outcomes are a mixture over entering score state; the pregame win probability interacts with pull timing and score-effect shot rates.",
+    "inputs": [
+     "nhl.score_state",
+     "nhl.empty_net",
+     "nhl.game_script_prob"
+    ]
+   },
+   {
+    "hypothesis": "First-period goals rely on starting units against the starting goalie, so the interaction of opening deployments and goalie quality is more informative than full-game averages.",
+    "inputs": [
+     "nhl.opening_shift_deployment",
+     "nhl.goalie_start",
+     "nhl.xg_for"
+    ]
+   },
+   {
+    "hypothesis": "Second-period scoring: long change effect interacts with line-shuffle tendencies and team skating depth.",
+    "inputs": [
+     "nhl.long_change_effect",
+     "nhl.coach_deployment_style",
+     "nhl.period_split"
+    ]
+   }
+  ],
+  "existing_mechanism": "A period is a short sample from the full-game process with period-specific shape: low-event first periods, long-change second periods and score-state-dominated third periods. Since few goals occur (few per period) the distribution is dominated by zeros and ones and ties are common, so winner markets are heavily affected by tie-handling and the tail shape of Poisson-like counts. Goalie identity and first-minute deployments matter proportionally more than in the full game.",
+  "families": [
+   "NHL/period_winner",
+   "NHL/period_total",
+   "NHL/period_spread",
+   "NHL/period_btts"
+  ],
+  "key": "period_markets",
+  "label": "Period winner, total, spread and both-teams-to-score",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL2P",
+    "title": "NHL 2nd Period Winner",
+    "type": "winner"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL3PSPREAD",
+    "title": "NHL 3rd Period Spread",
+    "type": "spread"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL1PSPREAD",
+    "title": "1st Period Spread",
+    "type": "spread"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL2PTOTAL",
+    "title": "2nd Period Total",
+    "type": "total"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL3PTOTAL",
+    "title": "3rd Period Total",
+    "type": "total"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL3P",
+    "title": "NHL 3rd Period Winner",
+    "type": "winner"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL1PBTTS",
+    "title": "NHL Both Teams to Score in 1st Period",
+    "type": "btts"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL1PTOTAL",
+    "title": "NHL 1st Period Total",
+    "type": "total"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL2PSPREAD",
+    "title": "2nd Period Spread",
+    "type": "spread"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "period",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL1P",
+    "title": "NHL 1st Period Winner",
+    "type": "winner"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHL1P": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If neither team wins the 1st period of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: Only goals scored during the 1st period of play count towards this market. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHL1P-26NOV08PITANA-TIE",
+    "title": "1st period tie",
+    "yes_sub_title": "Tie"
+   },
+   "KXNHL1PSPREAD": {
+    "floor_strike": 1.5,
+    "market_type": "binary",
+    "rules_primary": "If Pittsburgh wins by more than 1.5 goals in the 1st period of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: 3rd period markets do not include overtime. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHL1PSPREAD-26NOV08PITANA-PIT2",
+    "title": "Pittsburgh wins 1st Period by over 1.5 goals",
+    "yes_sub_title": "Pittsburgh wins by over 1.5 goals"
+   },
+   "KXNHL1PTOTAL": {
+    "floor_strike": 3.5,
+    "market_type": "binary",
+    "rules_primary": "If the teams collectively score more than 3.5 goals in the 1st Period of the St. Louis vs Nashville NHL game originally scheduled for Nov 7, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: 3rd Period markets do not include overtime. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "finalized",
+    "strike_type": "greater",
+    "ticker": "KXNHL1PTOTAL-26NOV07STLNSH-4",
+    "title": "1st Period: Over 3.5 goals scored",
+    "yes_sub_title": "Over 3.5 goals"
+   },
+   "KXNHL2P": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If neither team wins the 2nd period of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: Only goals scored during the 2nd period of play count towards this market. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHL2P-26NOV08PITANA-TIE",
+    "title": "2nd period tie",
+    "yes_sub_title": "Tie"
+   },
+   "KXNHL2PSPREAD": {
+    "floor_strike": 2.5,
+    "market_type": "binary",
+    "rules_primary": "If Washington wins by more than 2.5 goals in the 2nd period of the Florida vs Washington NHL game originally scheduled for Nov 7, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: 3rd period markets do not include overtime. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "finalized",
+    "strike_type": "greater",
+    "ticker": "KXNHL2PSPREAD-26NOV07FLAWSH-WSH3",
+    "title": "Washington wins 2nd Period by over 2.5 goals",
+    "yes_sub_title": "Washington wins by over 2.5 goals"
+   },
+   "KXNHL2PTOTAL": {
+    "floor_strike": 2.5,
+    "market_type": "binary",
+    "rules_primary": "If the teams collectively score more than 2.5 goals in the 2nd Period of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: 3rd Period markets do not include overtime. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHL2PTOTAL-26NOV08PITANA-3",
+    "title": "2nd Period: Over 2.5 goals scored",
+    "yes_sub_title": "Over 2.5 goals"
+   },
+   "KXNHL3P": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If neither team wins the 3rd period (excluding overtime) of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: Only goals scored during the 3rd period (excluding overtime) of play count towards this market. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHL3P-26NOV08PITANA-TIE",
+    "title": "3rd period tie",
+    "yes_sub_title": "Tie"
+   },
+   "KXNHL3PSPREAD": {
+    "floor_strike": 1.5,
+    "market_type": "binary",
+    "rules_primary": "If Pittsburgh wins by more than 1.5 goals in the 3rd period (excluding overtime) of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: 3rd period markets do not include overtime. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHL3PSPREAD-26NOV08PITANA-PIT2",
+    "title": "Pittsburgh wins 3rd Period by over 1.5 goals",
+    "yes_sub_title": "Pittsburgh wins by over 1.5 goals"
+   },
+   "KXNHL3PTOTAL": {
+    "floor_strike": 2.5,
+    "market_type": "binary",
+    "rules_primary": "If the teams collectively score more than 2.5 goals in the 3rd Period of the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Note: 3rd Period markets do not include overtime. If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result. If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHL3PTOTAL-26NOV08PITANA-3",
+    "title": "3rd Period: Over 2.5 goals scored",
+    "yes_sub_title": "Over 2.5 goals"
+   }
+  },
+  "sport": "NHL",
+  "target": "Outcome within a single 20-minute period (winner including tie handling, goal total, spread, or both teams scoring)."
+ },
+ "player_h2h": {
+  "blueprint": "player_other",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi",
+    "label": "Projected time on ice by strength state (EV, PP, PK, late-game)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Minutes of each player by state."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.shot_rate",
+    "label": "Individual shot-attempt / SOG rate (per 60) by strength state",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Per-60 shot rates are the base for comparing two players on shots on goal."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.ixg_player",
+    "label": "Individual expected goals per 60 (shot quality of the shooter's attempts)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Chance quality for points/goals comparisons."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.pp_role",
+    "label": "Power-play unit assignment (PP1/PP2) and role (shooter/quarterback/net-front)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Difference in PP roles gives one player a large share of the high-yield minutes."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.lines",
+    "label": "Line combinations and defence pairings (forward lines, D pairs, PP/PK units)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Linemate and deployment differences."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.opp_supp",
+    "label": "Opponent shot suppression / goals-against by player position",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Players face different opponents or positions; the matchup difference shifts the expected gap."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Opposing goalie for each player."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.joint_outcome_correlation",
+    "label": "Cross-market correlation (player stat with team result/total, between players)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Correlation between the two players' counts."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Distribution for tie probability."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Either player's lineup news (linemate absence, injury) shifts the comparison."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.scratch_void_risk",
+    "label": "Scratch/DNP risk and settlement treatment (void, zero or loss)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "The contract may void or settle on a scratched player, which changes the effective probability."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Tie handling and DNP treatment decide who wins ties, which are common for small counts."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.score_state",
+    "label": "Game-script / score effects on shot volume, quality and pulled-goalie behavior",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Trailing teams shoot more; leading teams protect leads, shifting both players' volume."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Teammate comparisons: shared game script and linemates mean correlation reduces difference variance; opposing players have different correlation sign via script.",
+    "inputs": [
+     "nhl.joint_outcome_correlation",
+     "nhl.game_script_prob",
+     "nhl.lines"
+    ]
+   },
+   {
+    "hypothesis": "Tie probability matters for small-count stats: with discrete means small, P(tie) can be large; the rules decide who wins ties.",
+    "inputs": [
+     "nhl.stat_dist",
+     "m.rules_text",
+     "nhl.toi"
+    ]
+   },
+   {
+    "hypothesis": "PP roles: the comparison hinges on who gets PP minutes, so penalty expectation interacts with each player's PP slot.",
+    "inputs": [
+     "nhl.pp_role",
+     "nhl.penalty_rates",
+     "nhl.toi"
+    ]
+   }
+  ],
+  "existing_mechanism": "The outcome is the sign of the difference of two correlated count variables. Expected values come from the single-player models (TOI, rates, role, opponent), correlation comes from the shared game environment (same team: script, goalie; opponents: opposing script), and ties are common for small counts so tie handling heavily influences prices. Lineup news on either player can void or flip the comparison.",
+  "families": [
+   "NHL/player_h2h"
+  ],
+  "key": "player_h2h",
+  "label": "Player head-to-head comparisons",
+  "live_series": [],
+  "registered": true,
+  "rules_samples": {},
+  "sport": "NHL",
+  "target": "Whether player A records more of a stat (points, shots, saves) than player B, with tie and DNP rules per the contract."
+ },
+ "player_points_goals_assists": {
+  "blueprint": "player_points",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi",
+    "label": "Projected time on ice by strength state (EV, PP, PK, late-game)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Minutes by EV/PP/PK are the volume multiplier; projected from the confirmed lineup and expected script."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.pp_role",
+    "label": "Power-play unit assignment (PP1/PP2) and role (shooter/quarterback/net-front)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "PP1 vs PP2 membership and slot (shooter, quarterback, bumper) produces most of the variance between similarly rated players."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.ixg_player",
+    "label": "Individual expected goals per 60 (shot quality of the shooter's attempts)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Individual xG/60 is the lowest-noise baseline for goals; regress to finishing-adjusted level."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.assist_rate",
+    "label": "Primary/secondary assist involvement rate",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Primary assist rate is the skill-linked part; secondary assists should be given little persistence."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.linemate_quality",
+    "label": "Linemate and centre quality (passing partners, finishing around the player)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Linemates' shot quality and finishing determine conversion of the player's passes."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.onice_shpct",
+    "label": "Player on-ice shooting% and on-ice goals vs expected (point/assist luck)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Strips lucky/unlucky on-ice shooting%; regress to xG-implied value."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.finishing",
+    "label": "Shooting percentage / finishing talent (regressed)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Persistent finishing talent after shrinkage separates elite shooters from average."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.goalie_start",
+    "label": "Confirmed starting goalie (timestamped) and its pregame probability",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Opposing starter identity shifts goal probability for all skaters; confirmation timing matters."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.opp_supp",
+    "label": "Opponent shot suppression / goals-against by player position",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Opponent suppression by position adjusts shot volume and chance quality."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.pk_structure_opp",
+    "label": "Opponent penalty-kill structure and PK shot concession",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Opponent PK shape determines PP unit effectiveness."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.penalty_rates",
+    "label": "Penalties taken/drawn per 60 and referee crew tendencies",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Expected opponent penalties set the player's PP minutes."
+   },
+   {
+    "category": "officiating",
+    "id": "nhl.officials",
+    "label": "Referee/linesman penalty-call tendencies",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Crew effect on number of penalties called, small but scaled to PP-heavy players."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Absences promote or demote players to PP1/top lines; late scratches settle or void per rules."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.game_script_prob",
+    "label": "Pregame score-script distribution (win probability, lead/trail probabilities)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Expected total and team goals scale all team skater outcomes."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Zero-inflated/NB shape needed to translate mean to threshold probability."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.scratch_void_risk",
+    "label": "Scratch/DNP risk and settlement treatment (void, zero or loss)",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "DNP treatment changes effective probability."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.ladder_structure",
+    "label": "Cross-rung consistency of the threshold ladder (monotonicity, implied distribution)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Goals/assists/points ladders for a player are nested and correlated."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.rules_text",
+    "label": "Versioned rules_primary / settlement wording (OT, ties, postponement, void)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Counts of empty-net goals, OT and shootout goals vary by wording."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "PP minutes x PP point rate x opponent PK structure: expected PP production is the product of unit share of PP time, projected penalties drawn, and the PK concession pattern, not any one of them.",
+    "inputs": [
+     "nhl.pp_role",
+     "nhl.penalty_rates",
+     "nhl.pk_structure_opp"
+    ]
+   },
+   {
+    "hypothesis": "Assists = linemates' conversion x player's primary-assist rate; regress on-ice SH% before use, so linemate xG interacts with on-ice luck regression.",
+    "inputs": [
+     "nhl.assist_rate",
+     "nhl.linemate_quality",
+     "nhl.onice_shpct"
+    ]
+   },
+   {
+    "hypothesis": "Goal probability = ixG-based chance volume x finishing x opponent goalie quality adjustments; goalie danger-split matters most for shooters of high-danger shots.",
+    "inputs": [
+     "nhl.ixg_player",
+     "nhl.finishing",
+     "nhl.goalie_danger_split"
+    ]
+   },
+   {
+    "hypothesis": "Multi-point thresholds are driven by team-level goal environment: team total and empty-net share raise the odds that the star is on ice for several goals.",
+    "inputs": [
+     "nhl.game_script_prob",
+     "nhl.stat_dist",
+     "nhl.toi"
+    ]
+   }
+  ],
+  "existing_mechanism": "Each goal is a Bernoulli outcome on every shot, so goals follow from shots x shot quality x finishing x opposing goalie; assists require being the passer on a teammate goal and so depend on linemates' finishing and on the player's playmaking role. Points are the union, so volume (TOI, especially PP1 time) dominates, while on-ice shooting luck is noise. The distribution is zero-heavy with thin tails, so thresholds above 1 need joint information on game total and team goals.",
+  "families": [
+   "NHL/player_points",
+   "NHL/player_goals",
+   "NHL/player_assists"
+  ],
+  "key": "player_points_goals_assists",
+  "label": "Skater goals / assists / points thresholds",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLGOAL",
+    "title": "NHL Goalscorer",
+    "type": "player_prop:goalscorer"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLAST",
+    "title": "Pro Hockey Assists",
+    "type": "player_prop:assists"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLSEASONPPTS",
+    "title": "Season Player Points",
+    "type": "player_prop:points"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLF10G",
+    "title": "NHL Goal in First 10 Minutes",
+    "type": "player_prop:goalscorer"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLPTS",
+    "title": "Pro Hockey Points",
+    "type": "player_prop:points"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLFIRSTGOAL",
+    "title": "NHL First Goal",
+    "type": "player_prop:goalscorer"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLANYGOAL",
+    "title": "Pro Hockey Goalscorer",
+    "type": "player_prop:goalscorer"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLAST": {
+    "floor_strike": 1.5,
+    "market_type": "binary",
+    "rules_primary": "If Dmitry Orlov records 2+ assists in the San Jose vs Minnesota NHL game originally scheduled for Nov 6, 2026, then the market resolves to Yes.",
+    "rules_secondary": "The following market refers to a player in the San Jose vs Minnesota NHL game originally scheduled for Nov 6, 2026. If a player is active but never enters the game, the market settles to the last fair market price before game start. Once a player enters the game, the market settles based on the player's assists recorded.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLAST-26NOV06SJMIN-SJDORLOV9-2",
+    "title": "Dmitry Orlov: 2+ assists",
+    "yes_sub_title": "Dmitry Orlov: 2+"
+   },
+   "KXNHLF10G": {
+    "floor_strike": 1,
+    "market_type": "binary",
+    "rules_primary": "If at least 1 goal is scored by either Pittsburgh or Anaheim during the first 10 minutes of the first period (from 0:00 elapsed up to, but not including, 10:00 elapsed) in the Pittsburgh vs Anaheim NHL game originally scheduled for Nov 8, 2026, then the market resolves to Yes.",
+    "rules_secondary": "Only goals officially credited during the first period before 10:00 minutes have elapsed count. A goal recorded at exactly 10:00 elapsed (10:00 remaining in the first period) does not count. The market resolves to Yes if either team scores at least one qualifying goal, and resolves to No if the entire 10-minute window is completed without a goal. Goals scored outside this window do not count.",
+    "status": "active",
+    "strike_type": "greater_or_equal",
+    "ticker": "KXNHLF10G-26NOV08PITANA-Y",
+    "title": "Either team to score in the first 10 minutes",
+    "yes_sub_title": "Goal in first 10 min"
+   },
+   "KXNHLFIRSTGOAL": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Alex Turcotte scores the 1st goal in the Pittsburgh vs Los Angeles NHL game originally scheduled for Nov 7, 2026, then the market resolves to Yes.",
+    "rules_secondary": "The following market refers to a player in the Pittsburgh vs Los Angeles NHL game originally scheduled for Nov 7, 2026. If a player is active but never enters the game, the market settles to the last fair market price before game start. If neither team scores a goal in regulation or overtime, then the market titled \"No Goalscorer\" resolves to Yes. Shootout goals do not count. If either team scores at any point in regulation or overtime, then the \"No Goal\" market resolves to No.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLFIRSTGOAL-26NOV07PITLA-LAATURCOTTE15",
+    "title": "Alex Turcotte: First Goalscorer",
+    "yes_sub_title": "Alex Turcotte"
+   },
+   "KXNHLGOAL": {
+    "floor_strike": 2.5,
+    "market_type": "binary",
+    "rules_primary": "If Josh Norris records 3+ goals in the Columbus vs Buffalo NHL game originally scheduled for Nov 6, 2026, then the market resolves to Yes.",
+    "rules_secondary": "The following market refers to a player in the Columbus vs Buffalo NHL game originally scheduled for Nov 6, 2026. If a player is active but never enters the game, the market settles to the last fair market price before game start. Once a player enters the game, the market settles based on the player's goals recorded.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLGOAL-26NOV06CBJBUF-BUFJNORRIS9-3",
+    "title": "Josh Norris: 3+ goals",
+    "yes_sub_title": "Josh Norris: 3+"
+   },
+   "KXNHLPTS": {
+    "floor_strike": 2.5,
+    "market_type": "binary",
+    "rules_primary": "If Josh Norris records 3+ points in the Columbus vs Buffalo NHL game originally scheduled for Nov 6, 2026, then the market resolves to Yes.",
+    "rules_secondary": "The following market refers to a player in the Columbus vs Buffalo NHL game originally scheduled for Nov 6, 2026. If a player is active but never enters the game, the market settles to the last fair market price before game start. Once a player enters the game, the market settles based on the player's points recorded.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLPTS-26NOV06CBJBUF-BUFJNORRIS9-3",
+    "title": "Josh Norris: 3+ points",
+    "yes_sub_title": "Josh Norris: 3+"
+   },
+   "KXNHLSEASONPPTS": {
+    "floor_strike": 109.5,
+    "market_type": "binary",
+    "rules_primary": "If Zach Werenski scores at least 110 points during the 2026-27 NHL regular season, then the market resolves to Yes.",
+    "rules_secondary": "Points = Goals + Assists. This market refers to regular season stats only.",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLSEASONPPTS-27C110-ZWERENSKI8",
+    "title": "Zach Werenski: 110+ points in 2026-27 NHL regular season?",
+    "yes_sub_title": "Zach Werenski"
+   }
+  },
+  "sport": "NHL",
+  "target": "Whether a skater records at least k goals, assists or points in the game (typically 1+, 2+, 3+), subject to the contract's DNP rule."
+ },
+ "player_shots_on_goal": {
+  "blueprint": "player_shots",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "player_role",
+    "id": "nhl.shot_rate",
+    "label": "Individual shot-attempt / SOG rate (per 60) by strength state",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "SOG/60 by strength state is the core rate; EWMA with shrinkage and linemate adjustment."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi",
+    "label": "Projected time on ice by strength state (EV, PP, PK, late-game)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Projected EV/PP minutes from lineup; blowouts change TOI."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.pp_role",
+    "label": "Power-play unit assignment (PP1/PP2) and role (shooter/quarterback/net-front)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "PP shooter slot yields much higher shot rates per minute than EV."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.shot_block_miss",
+    "label": "Attempt-to-SOG conversion: block and miss rates by shooter type and opponent",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "SOG/attempt conversion depends on shooter and opponent block rates."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.dman_shot_profile",
+    "label": "Defenceman offensive role: point shots, PP usage, offensive-zone starts",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "D-man SOG is point-shot based and PP-dependent."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.opp_supp",
+    "label": "Opponent shot suppression / goals-against by player position",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Position-specific opponent shots allowed."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.shots_against",
+    "label": "Team shots-on-goal against, shot quality, score-effects adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Opponent's shot volume allowed overall."
+   },
+   {
+    "category": "environment",
+    "id": "nhl.venue",
+    "label": "Rink effects (shot counting bias), home advantage, building specifics",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Scorer counting bias changes official SOG at some arenas."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.score_state",
+    "label": "Game-script / score effects on shot volume, quality and pulled-goalie behavior",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Trailing teams shoot more; leading teams shoot less late."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.game_script_prob",
+    "label": "Pregame score-script distribution (win probability, lead/trail probabilities)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Win probability and expected total change script."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.penalty_rates",
+    "label": "Penalties taken/drawn per 60 and referee crew tendencies",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Penalty expectation sets PP shot opportunities."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.lines",
+    "label": "Line combinations and defence pairings (forward lines, D pairs, PP/PK units)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Linemates and zone deployment affect shot share."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.zone_start_share",
+    "label": "Zone-start share and faceoff deployment (offensive vs defensive usage)",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Offensive-zone usage lifts attempts per minute."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi_trend",
+    "label": "Recent TOI trend and workload (last 5-10 games, blowout compression)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Recent role changes before season averages catch up."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Lineup news changes TOI and role; late scratch handled by settlement rule."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "NB shape for rung probabilities."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.ladder_structure",
+    "label": "Cross-rung consistency of the threshold ladder (monotonicity, implied distribution)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Shot rungs share the same latent mean; stale rungs are detectable."
+   },
+   {
+    "category": "matchup",
+    "id": "nhl.shot_location",
+    "label": "Shot location/danger-zone mix for and against",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Danger-zone versus perimeter shot mix separates volume shooters from high-quality shooters and shows whether opponents force low-value shots on goal."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Expected SOG = EV TOI x EV rate + PP TOI x PP rate; PP TOI is uncertain because it depends on the number of penalties drawn, so PP-heavy shooters have fatter right tails.",
+    "inputs": [
+     "nhl.toi",
+     "nhl.pp_role",
+     "nhl.penalty_rates"
+    ]
+   },
+   {
+    "hypothesis": "Block/miss conversion x shooter type: defencemen face higher block rates at the point and forwards' SOG depend on slot volume, so the opponent block rate has different effects by position.",
+    "inputs": [
+     "nhl.shot_block_miss",
+     "nhl.dman_shot_profile",
+     "nhl.opp_supp"
+    ]
+   },
+   {
+    "hypothesis": "Rink counting bias scales official SOG for both teams; adjust the player's rate by home/away venue factor, interacting with the player's home share.",
+    "inputs": [
+     "nhl.venue",
+     "nhl.shot_rate",
+     "nhl.shots_against"
+    ]
+   },
+   {
+    "hypothesis": "Script x TOI: for a favoured team's star, leading late reduces minutes and shots; for an underdog star, trailing raises both.",
+    "inputs": [
+     "nhl.game_script_prob",
+     "nhl.score_state",
+     "nhl.toi"
+    ]
+   }
+  ],
+  "existing_mechanism": "Shots on goal result from TOI by state times attempt rate times the fraction of attempts that are not blocked or missed. Role differences are large: forwards in the slot, defencemen at the point and PP1 shooters generate shots at very different rates per minute, and the count is overdispersed because script, penalties and linemates change both volume and accuracy. Official counting varies by rink, so venue bias is a direct measurement effect on settlement.",
+  "families": [
+   "NHL/player_shots"
+  ],
+  "key": "player_shots_on_goal",
+  "label": "Skater shots on goal thresholds",
+  "live_series": [],
+  "registered": true,
+  "rules_samples": {},
+  "sport": "NHL",
+  "target": "Whether a skater records at least k official shots on goal in the game."
+ },
+ "season_awards_and_stats": {
+  "blueprint": "season_award",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "player_role",
+    "id": "nhl.award_stats",
+    "label": "Awards/season-stat candidate production to date and projection",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "To-date production and projection."
+   },
+   {
+    "category": "market_structure",
+    "id": "nhl.award_voting_rules",
+    "label": "Award voting structure, electorate, ballot timing and criteria",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Voter pool and ballot timing determine what information can influence the award result."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi_trend",
+    "label": "Recent TOI trend and workload (last 5-10 games, blowout compression)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "A stable or rising role sustains per-game production for the rest of the season."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.pp_role",
+    "label": "Power-play unit assignment (PP1/PP2) and role (shooter/quarterback/net-front)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "PP role is a stable driver of points that survives regression better than finishing."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.ixg_player",
+    "label": "Individual expected goals per 60 (shot quality of the shooter's attempts)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Underlying chance quality for regression."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.finishing",
+    "label": "Shooting percentage / finishing talent (regressed)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Finishing above skill regresses, so hot leaders should be discounted for rest-of-season projections."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_quality",
+    "label": "Goalie quality: goals saved above expected (GSAx), danger-zone save rates, workload-adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Goalie awards and saves/wins leaderboards depend on goaltender quality and team defence."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.career_trajectory",
+    "label": "Age curves, career trajectory and rookie/sophomore ramp",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Age and development priors anchor rest-of-season rate and the award narrative."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Games remaining depend on health; late injuries can end an award or leader race."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.ratings",
+    "label": "Team ratings, standings and season simulation",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Team success correlates with award voting and with player opportunity."
+   },
+   {
+    "category": "schedule_context",
+    "id": "nhl.announcement_calendar",
+    "label": "League calendar of scheduled events (draft, free agency, deadline, awards)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Finalist and ballot dates decide when new information stops affecting the result."
+   },
+   {
+    "category": "other",
+    "id": "nhl.news",
+    "label": "Trades, coaching changes, transactions, roster news",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Narrative-driving events can change voter preferences between close candidates."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Season totals are sums of over-dispersed per-game counts."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Projected stat total = rest-of-season rate x games remaining x health: PP role and TOI trend determine the rate, while injury hazard determines games.",
+    "inputs": [
+     "nhl.pp_role",
+     "nhl.toi_trend",
+     "nhl.injuries_pit"
+    ]
+   },
+   {
+    "hypothesis": "Award probability = production rank x team rank x narrative under ballot rules; finalists and ballot deadlines create step changes.",
+    "inputs": [
+     "nhl.award_stats",
+     "nhl.ratings",
+     "nhl.award_voting_rules"
+    ]
+   },
+   {
+    "hypothesis": "Hot finishing mean-reverts: a leader whose goals exceed ixG is likelier to slide, which interacts with the remaining schedule.",
+    "inputs": [
+     "nhl.finishing",
+     "nhl.ixg_player",
+     "nhl.award_stats"
+    ]
+   }
+  ],
+  "existing_mechanism": "For stat markets, the outcome is rate x opportunity accumulated through the end of the season with health risk, so rest-of-season projection and competitor distribution matter. For awards, voters respond to production, team success and narrative under a specific electorate and ballot timing; a historical voter model with finalist announcements as information events is the natural structure. Both are slow, low-frequency markets where small information steps move prices.",
+  "families": [
+   "NHL/season_awards",
+   "NHL/season_player_stats"
+  ],
+  "key": "season_awards_and_stats",
+  "label": "Season awards and season player stat leaders",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLADAMS",
+    "title": "NHL Jack Adams Award",
+    "type": "awards_leaders"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLDRAFTTOP",
+    "title": "Pro Hockey Top Pick",
+    "type": "awards_leaders"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLDRAFTPICK",
+    "title": "Pro Hockey Draft Pick",
+    "type": "awards_leaders"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLADAMS": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Todd McLellan wins the NHL Jack Adams Award in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "If multiple participants tie for the award, \u201cYes\u201d positions will pay $1/N (rounded down to the nearest cent), where N is the number of tied participants, and \u201cNo\u201d positions will pay $1 minus the \u201cYes\u201d payout.",
+    "status": "active",
+    "strike_type": "custom",
+    "ticker": "KXNHLADAMS-27-TMCL",
+    "title": "Jack Adams Award: Todd McLellan wins",
+    "yes_sub_title": "Todd McLellan"
+   }
+  },
+  "sport": "NHL",
+  "target": "Winners of league awards (Hart, Vezina, Norris, Calder, etc.) or leaders/totals for season player stats."
+ },
+ "season_futures": {
+  "blueprint": "season_outcome",
+  "contract_types": null,
+  "existing_inputs": [
+   {
+    "category": "team_strength",
+    "id": "nhl.ratings",
+    "label": "Team ratings, standings and season simulation",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Team strength distribution for simulation."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_for",
+    "label": "Team expected goals for (shot quality created), strength-split and adjusted",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Offensive process in the rating."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.xg_against",
+    "label": "Team expected goals against (shot suppression quality)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Defensive process in the rating."
+   },
+   {
+    "category": "team_strength",
+    "id": "nhl.goalie_quality",
+    "label": "Goalie quality: goals saved above expected (GSAx), danger-zone save rates, workload-adjusted",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Largest single-player driver, especially in the playoffs."
+   },
+   {
+    "category": "availability",
+    "id": "nhl.injuries_pit",
+    "label": "Injury/scratch/return status with point-in-time vintages",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Long-term injuries to key skaters/goalies."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.pdo_regression",
+    "label": "Team PDO (SH% + SV%) and on-ice luck component",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Regression of lucky standings."
+   },
+   {
+    "category": "schedule_context",
+    "id": "nhl.sos_remaining",
+    "label": "Remaining strength of schedule, games in hand and standings position",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Remaining schedule and home/away split alter expected points toward qualification."
+   },
+   {
+    "category": "market_structure",
+    "id": "nhl.standings_tiebreakers",
+    "label": "NHL playoff qualification and tiebreaker rules (regulation wins, ROW, points %)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Seeding ties resolve by regulation wins and other rules that the simulation must replicate."
+   },
+   {
+    "category": "game_state",
+    "id": "nhl.series_context",
+    "label": "Playoff series state (games played, home ice, rest, injuries, lineup changes)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Current series score, home pattern and rest feed per-game probabilities for series prices."
+   },
+   {
+    "category": "environment",
+    "id": "nhl.playoff_context",
+    "label": "Playoff vs regular-season environment (tighter benches, fewer penalties, continuous OT)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Playoff environment parameters."
+   },
+   {
+    "category": "other",
+    "id": "nhl.news",
+    "label": "Trades, coaching changes, transactions, roster news",
+    "pregame_knowable": "partial",
+    "role": "context",
+    "why": "Trades and coaching changes shift strength after ratings were fitted and market reacts first."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.external_lines",
+    "label": "Sportsbook / exchange reference prices with timestamps",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Sportsbook futures prices are the benchmark against which model probabilities are compared."
+   },
+   {
+    "category": "market_structure",
+    "id": "m.quote_history",
+    "label": "Kalshi bid/ask/last time series (pre-game through close)",
+    "pregame_knowable": "yes",
+    "role": "context",
+    "why": "Time series of probability to infer news reaction."
+   },
+   {
+    "category": "distribution",
+    "id": "nhl.season_sim_distribution",
+    "label": "Season simulation distribution (points, playoffs, division)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Points and playoff markets are tails of an 82-game simulation with overtime-point rules and injury uncertainty."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Short series amplify variance: the same rating gap yields different series win probabilities depending on goalie quality variance and injuries, so goalie uncertainty interacts with series length.",
+    "inputs": [
+     "nhl.goalie_quality",
+     "nhl.series_context",
+     "nhl.ratings"
+    ]
+   },
+   {
+    "hypothesis": "Regress standings luck before simulation but apply NHL tie-break rules to the simulated points to get seeding right.",
+    "inputs": [
+     "nhl.pdo_regression",
+     "nhl.standings_tiebreakers",
+     "nhl.sos_remaining"
+    ]
+   },
+   {
+    "hypothesis": "A long-term injury changes both rating and its uncertainty; the effect on a championship price compounds across rounds.",
+    "inputs": [
+     "nhl.injuries_pit",
+     "nhl.ratings",
+     "nhl.playoff_context"
+    ]
+   }
+  ],
+  "existing_mechanism": "Futures probabilities come from simulating the remaining schedule/bracket with team strength distributions: game win probabilities from xG-based ratings adjusted for goaltending and injuries, aggregated through the playoff format. Short series amplify goalie variance and injuries, while long-horizon markets are dominated by rating uncertainty and the information arrival rate (trades, injuries). Settlement rules (tiebreakers, bracket structure) matter in close races.",
+  "families": [
+   "NHL/season_champion",
+   "NHL/playoff_series"
+  ],
+  "key": "season_futures",
+  "label": "Championship, division/conference and playoff series futures",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLWEST",
+    "title": "Western Conference Champion",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLCALDER",
+    "title": "NHL Calder Memorial Trophy",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLFINALSEXACT",
+    "title": "NHL Championship Series Score",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLROSS",
+    "title": "NHL Art Ross Trophy",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLNORRIS",
+    "title": "NHL James Norris Memorial Trophy",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLRECORDWORST",
+    "title": "Worst NHL Record",
+    "type": "season_future"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLVEZINA",
+    "title": "NHL Vezina Trophy",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLEAST",
+    "title": "Eastern Conference Championship",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHL",
+    "title": "Stanley Cup",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLHART",
+    "title": "NHL Hart Memorial Trophy",
+    "type": "outright_futures"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLPLAYOFF",
+    "title": "Playoff Qualifier",
+    "type": "playoff_advancement"
+   },
+   {
+    "evidence": "TITLE_ONLY",
+    "period": "full",
+    "status": "COVERED_REGISTERED",
+    "ticker": "KXNHLRICHARD",
+    "title": "NHL Maurice \"Rocket\" Richard Trophy",
+    "type": "outright_futures"
+   }
+  ],
+  "registered": true,
+  "rules_samples": {
+   "KXNHLCALDER": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Zeev Buium wins the NHL Calder Memorial Trophy in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "If multiple participants tie for the award, \u201cYes\u201d positions will pay $1/N (rounded down to the nearest cent), where N is the number of tied participants, and \u201cNo\u201d positions will pay $1 minus the \u201cYes\u201d payout.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLCALDER-27-ZBUIUM24",
+    "title": "Calder Memorial Trophy: Zeev Buium wins",
+    "yes_sub_title": "Zeev Buium"
+   },
+   "KXNHLNORRIS": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Zach Werenski wins the NHL James Norris Memorial Trophy in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "If multiple participants tie for the award, \u201cYes\u201d positions will pay $1/N (rounded down to the nearest cent), where N is the number of tied participants, and \u201cNo\u201d positions will pay $1 minus the \u201cYes\u201d payout.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLNORRIS-27-ZWERENSKI8",
+    "title": "James Norris Memorial Trophy: Zach Werenski wins",
+    "yes_sub_title": "Zach Werenski"
+   },
+   "KXNHLPLAYOFF": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Washington Capitals qualify for the playoffs in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLPLAYOFF-27-WSH",
+    "title": "Will the Washington Capitals qualify for the playoffs in the 2026-27 NHL season?",
+    "yes_sub_title": "Washington Capitals"
+   },
+   "KXNHLRECORDWORST": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Washington Capitals have the worst regular season record in the NHL in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "If two or more teams are tied for the best (or worst) regular-season record, the Governing League's official tie-breaking procedures will be applied until a single team remains. If multiple teams remain tied after all applicable tiebreakers, dead-heat rules apply and each tied team\u2019s market will resolve at 1 / N, where N is the number of tied teams.\n",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLRECORDWORST-27-WSH",
+    "title": "Will the Washington Capitals have the worst regular season record in the 2026-27 season?",
+    "yes_sub_title": "Washington Capitals"
+   },
+   "KXNHLROSS": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If William Nylander wins the NHL Art Ross Trophy in the 2026-27 NHL season, then the market resolves to Yes.",
+    "rules_secondary": "If multiple participants tie for the award, \u201cYes\u201d positions will pay $1/N (rounded down to the nearest cent), where N is the number of tied participants, and \u201cNo\u201d positions will pay $1 minus the \u201cYes\u201d payout.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLROSS-27-WNYLANDER88",
+    "title": "Art Ross Trophy: William Nylander wins",
+    "yes_sub_title": "William Nylander"
+   },
+   "KXNHLWEST": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Winnipeg Jets win the 2026-27 NHL Western Conference Finals, then the market resolves to Yes.",
+    "rules_secondary": "Kalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the Governing League. All trademarks, logos, and brand names are the property of their respective owners.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLWEST-27-WPG",
+    "title": "Will the Winnipeg Jets win the Western Conference Finals?",
+    "yes_sub_title": "Winnipeg Jets"
+   }
+  },
+  "sport": "NHL",
+  "target": "Team wins the Cup, a conference/division, qualifies, or wins a playoff series."
+ },
+ "unreg:team_and_player_season_counting": {
+  "blueprint": "season_stat",
+  "contract_types": [
+   "Season point totals",
+   "Player goals scored in season",
+   "All-NHL team"
+  ],
+  "existing_inputs": [
+   {
+    "category": "distribution",
+    "id": "nhl.stat_dist",
+    "label": "Per-stat count distributions and correlations (Poisson/NB, joint)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Count distributions over a season."
+   },
+   {
+    "category": "pace_volume",
+    "id": "nhl.toi",
+    "label": "Projected time on ice by strength state (EV, PP, PK, late-game)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Time on ice by strength state."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.pp_role",
+    "label": "Power-play unit assignment (PP1/PP2) and role (shooter/quarterback/net-front)",
+    "pregame_knowable": "partial",
+    "role": "primary",
+    "why": "Power-play unit role multiplies even-strength ice time into points; PP1 players earn a large share of their totals there."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.ixg_player",
+    "label": "Individual expected goals per 60 (shot quality of the shooter's attempts)",
+    "pregame_knowable": "yes",
+    "role": "primary",
+    "why": "Individual expected goals rate."
+   },
+   {
+    "category": "variance_luck",
+    "id": "nhl.finishing",
+    "label": "Shooting percentage / finishing talent (regressed)",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Finishing talent versus luck: shrunk shooting percentage predicts goals better than raw totals over a season."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.lines",
+    "label": "Line combinations and defence pairings (forward lines, D pairs, PP/PK units)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Line combinations determine linemates and ice time, so a promotion or demotion shifts the whole scoring rate."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.linemate_quality",
+    "label": "Linemate and centre quality (passing partners, finishing around the player)",
+    "pregame_knowable": "partial",
+    "role": "secondary",
+    "why": "Playing with elite centres or wingers raises assist and goal rates independent of the player's own talent."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.career_trajectory",
+    "label": "Age curves, career trajectory and rookie/sophomore ramp",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Age curves set the expected change in rate from last season: young players rise and veterans decline on average."
+   },
+   {
+    "category": "player_role",
+    "id": "nhl.shot_rate",
+    "label": "Individual shot-attempt / SOG rate (per 60) by strength state",
+    "pregame_knowable": "yes",
+    "role": "secondary",
+    "why": "Shot-attempt rate per 60 is the most stable component of goal scoring and anchors the projection."
+   }
+  ],
+  "existing_interactions": [
+   {
+    "hypothesis": "Power-play share multiplies even-strength time on ice into points.",
+    "inputs": [
+     "nhl.pp_role",
+     "nhl.toi"
+    ]
+   },
+   {
+    "hypothesis": "Expected goals with shrunk finishing talent beats raw goals for season totals.",
+    "inputs": [
+     "nhl.finishing",
+     "nhl.ixg_player"
+    ]
+   },
+   {
+    "hypothesis": "Age declines show first in ice time, then production.",
+    "inputs": [
+     "nhl.career_trajectory",
+     "nhl.toi"
+    ]
+   }
+  ],
+  "existing_mechanism": "Season totals are games played times per-game rates, where rates depend on ice time, power-play role, linemates and shot quality, and games played depend on injury hazard. Over-dispersion and age curves matter; early-season to-date totals are weak evidence relative to talent priors.",
+  "families": null,
+  "key": "unreg:team_and_player_season_counting",
+  "label": "NHL season point/goal totals and counting leaders",
+  "live_series": [
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLWSTREAK",
+    "title": "Longest NHL win streak in regular season",
+    "type": "team_stat_special"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLMETROPOLITAN",
+    "title": "NHL Metropolitan Division Winner",
+    "type": "team_stat_special"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLPSEASONGOALS",
+    "title": "Player Goals Scored in Season",
+    "type": "team_stat_special"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLSEASONPTS",
+    "title": "NHL Season Point Totals",
+    "type": "team_stat_special"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLSEASONGOALS",
+    "title": "Player to score X Goals in Season",
+    "type": "season_player_count"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLPACIFIC",
+    "title": "NHL Pacific Division Winner",
+    "type": "team_stat_special"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLATLANTIC",
+    "title": "NHL Atlantic Division Winner",
+    "type": "team_stat_special"
+   },
+   {
+    "evidence": "RULES_TEXT",
+    "period": "full",
+    "status": "COVERED_UNREGISTERED",
+    "ticker": "KXNHLCENTRAL",
+    "title": "NHL Central Division Winner",
+    "type": "team_stat_special"
+   }
+  ],
+  "registered": false,
+  "rules_samples": {
+   "KXNHLATLANTIC": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Toronto Maple Leafs win the 2026-27 NHL Atlantic Division, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLATLANTIC-27-TOR",
+    "title": "Will the Toronto Maple Leafs win the Atlantic Division?",
+    "yes_sub_title": "Toronto Maple Leafs"
+   },
+   "KXNHLCENTRAL": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Winnipeg Jets win the 2026-27 NHL Central Division, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLCENTRAL-27-WPG",
+    "title": "Will the Winnipeg Jets win the Central Division?",
+    "yes_sub_title": "Winnipeg Jets"
+   },
+   "KXNHLMETROPOLITAN": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Washington Capitals win the 2026-27 NHL Metropolitan Division, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLMETROPOLITAN-27-WSH",
+    "title": "Will the Washington Capitals win the Metropolitan Division?",
+    "yes_sub_title": "Washington Capitals"
+   },
+   "KXNHLPACIFIC": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If the Vegas Golden Knights win the 2026-27 NHL Pacific Division, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLPACIFIC-27-VGK",
+    "title": "Will the Vegas Golden Knights win the Pacific Division?",
+    "yes_sub_title": "Vegas Golden Knights"
+   },
+   "KXNHLPSEASONGOALS": {
+    "floor_strike": 59.5,
+    "market_type": "binary",
+    "rules_primary": "If Macklin Celebrini scores at least 60 goals during the 2026-27 NHL regular season, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLPSEASONGOALS-27MCELEBRINI71-60",
+    "title": "Macklin Celebrini: 60+ goals in 2026-27 NHL regular season?",
+    "yes_sub_title": "60+ goals"
+   },
+   "KXNHLSEASONGOALS": {
+    "floor_strike": 39.5,
+    "market_type": "binary",
+    "rules_primary": "If Brady Tkachuk scores at least 40 goals during the 2026-27 NHL regular season, then the market resolves to Yes.",
+    "rules_secondary": "",
+    "status": "active",
+    "strike_type": "greater",
+    "ticker": "KXNHLSEASONGOALS-27C40-BTKACHUK8",
+    "title": "Brady Tkachuk: 40+ goals in 2026-27 NHL regular season?",
+    "yes_sub_title": "Brady Tkachuk"
+   },
+   "KXNHLSEASONPTS": {
+    "floor_strike": 95,
+    "market_type": "binary",
+    "rules_primary": "If the WSH Capitals earn at least 95 points in the 2026-27 regular season, then the market resolves to Yes.",
+    "rules_secondary": "This market resolves based on the WSH Capitals official NHL standings points, awarded for wins and overtime or shootout losses in the 2026-27 NHL regular season",
+    "status": "active",
+    "strike_type": "greater_or_equal",
+    "ticker": "KXNHLSEASONPTS-27WSH-95",
+    "title": "Will the WSH Capitals NHL team earn at least 95 points in the 2026-27 regular season?",
+    "yes_sub_title": "95+ points"
+   },
+   "KXNHLWSTREAK": {
+    "floor_strike": null,
+    "market_type": "binary",
+    "rules_primary": "If Washington Capitals has the longest winning streak in the NHL 2026-27 regular season, then the market resolves to Yes.",
+    "rules_secondary": "If two or more teams share the longest winning streak (i.e., they have win streaks of the same length, and no other team has a longer one), then the markets for each of those tied teams will resolve to $1/(the number of tied teams), rounded down.\n\nKalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the Governing League. All trademarks, logos, and brand names are the property of their respective owners.",
+    "status": "active",
+    "strike_type": "structured",
+    "ticker": "KXNHLWSTREAK-27-WSH",
+    "title": "Will the Washington Capitals have the longest winning streak in the 2026-27 NHL regular season?",
+    "yes_sub_title": "Washington Capitals"
+   }
+  },
+  "sport": "NHL",
+  "target": "A player's season total (goals, points) or team points relative to a threshold."
+ }
+}

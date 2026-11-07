@@ -105,6 +105,7 @@ def study(d: pd.DataFrame, target: str, n_configs=120, null_reps=1) -> dict:
 
 
 def main():
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('search_soccer')
     import argparse
     ap = argparse.ArgumentParser(); ap.add_argument("--data-dir", required=True); ap.add_argument("--n-configs", type=int, default=120); a = ap.parse_args()
     m = features(load(Path(a.data_dir)))

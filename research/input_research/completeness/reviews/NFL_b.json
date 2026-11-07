@@ -1,0 +1,1475 @@
+{
+ "qb_passing_yards": {
+  "reviewer": "NFL_b author (Claude)",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "Per-game ladder (KXNFLPASSYDSPRECISE, KXNFLPASSYDSPROT) settles YES when the named quarterback's official passing yards in the named game are at or above the integer rung (floor_strike is the half-yard below, e.g. 98.5 for '99+'); H2H settles YES if player A has strictly more passing yards than player B, 50/50 on equal yards; season ladders settle on regular-season totals; weekly-most settles 1/N on ties. A quarterback who is active but never takes a snap (precise) settles at fair price before game start, once he takes one snap (even nullified by penalty) it settles on recorded yards. Overtime inclusion is not stated in any sampled passing-yards text.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNFLPASSYDSPRECISE",
+     "quote": "Once Trevor Lawrence takes at least one snap, even if nullified by penalty, the market settles based on passing yards recorded.",
+     "establishes": "A single snap locks the contract to the statistical outcome, so a QB who throws one pass then leaves is a normal loss on every rung; only a never-snapping active QB is voided to fair price."
+    },
+    {
+     "ticker": "KXNFLPASSYDSPROT",
+     "quote": "this Contract resolves to the fair price prior to the opening kickoff of the game unless the player records the required number of passing yards",
+     "establishes": "Protected variant refunds at pre-kickoff fair value when the QB plays in the first half but not after halftime (including overtime), except that already-reached rungs still pay YES, so the protected payoff is asymmetric to benching and injury."
+    },
+    {
+     "ticker": "KXNFLPASSYDSH2H",
+     "quote": "then all markets will resolve to 50/50",
+     "establishes": "H2H equal-yardage tie pays half, and the full text also voids to fair price if either QB does not enter the game; the YES event is the difference of two correlated yardage totals, not a threshold."
+    },
+    {
+     "ticker": "KXNFLWEEKMOSTPASSYDS",
+     "quote": "If multiple players tie for the most yards, the markets will resolve to 1/N",
+     "establishes": "Weekly-most is a league-wide max over every quarterback in the week (dead-heat 1/N), and non-participation settles No rather than void, so availability risk is a real loss here."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "PRECISE and PROT share the same 'N+' construction (greater, floor_strike = N-0.5), but only PROT carries the first-half-only refund; KXNFLPASSYDS, KXNFLCAREERPASSYDS and KXNFLPASSYDSH2H main series have no rungs text sampled for the main ladder (TITLE_ONLY), so their DNP wording must be assumed to match the sampled siblings.",
+    "Sampled passing-yards texts never say whether overtime yards count or which statistics provider is the source of truth; the existing draft's 'regulation-and-overtime' is an inference, recorded as CONTRACT_AMBIGUOUS.",
+    "Season ladder (KXNFLSEASONPASSYDS, 3000+ for the 2026-27 regular season) has no DNP or mid-season-injury clause in the sample: a QB who misses the year simply fails the rung, which makes it a games-played problem rather than a per-game one.",
+    "NFL official passing yards are gross yards (sack yardage is deducted only from team net passing), plays nullified by penalty are not credited, and a kneel-down is a rush, so dropbacks that end in sacks or scrambles add zero to this contract.",
+    "Weekly-most is a max over all QBs in the week and gives Nos to a non-participant; the H2H and ladder variants instead refund, so identical injury news changes expected value differently across variants."
+   ],
+   "settlement_data_source": "Not stated in the sampled rules text for passing yards (only the 'Governing League' official statistics are implied); Sleeper is named only in the fantasy series. Treat official NFL game-book/GSIS yardage as the assumed source and capture the Kalshi expiration value to check stat-correction drift."
+  },
+  "mechanism": {
+   "summary": "A quarterback's passing yards in one game is a compound sum: the number of completed passes times yards per completion, where completions are a thinned binomial of attempts, attempts are dropbacks minus sacks, scrambles and spikes, and dropbacks are team plays times a script-dependent pass rate. Each layer has its own noise. Plays are set by both offenses' tempo and clock behaviour; pass rate swings with the score path (trailing offenses throw, leaders run); a pass's yield depends on the QB's accuracy, receiver separation, depth of target and the defence's pressure and shell; and a small number of explosive completions create a heavy right tail around any rung. Before the number of attempts is even defined, the quarterback must start, stay on the field and not be pulled in a blowout, which is a discrete scenario switch with a left-hand mass at low yardage and, for protected contracts, a refund.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Starter status, snap ceiling and removal scenarios",
+     "description": "Whether this passer is the QB1 for the whole game, plays part of it or never plays sets the mass at zero-to-low yards and decides which contract variants refund. The inputs are the practice and game-day inactive vintages, how the coach handles a bench-in-blowout, and the base rate of in-game concussion or throwing-hand exits. It is a mixture: full game, truncated game after injury, truncated game after benching, backup start. Each scenario carries its own attempt ceiling and the contract variant (precise, protected, H2H, weekly-most) pays differently in each.",
+     "distribution": "Discrete mixture with an atom at 0-40 yards for exits; benching depends on margin and minute, injury exit is near-memoryless (~3-6% per game for QBs, assumption).",
+     "categories": [
+      "availability_news",
+      "role_personnel",
+      "coaching_scheme"
+     ],
+     "input_ids": [
+      "nfl.qb",
+      "nfl.in_game_exit_risk",
+      "nfl.qb_blowout_pull_threshold",
+      "nfl.ol"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Team plays and neutral pass tendency",
+     "description": "Total offensive plays come from both teams' pace and how long each drive lasts (own tempo, opponent's clock drain, penalties, two-minute situations); the pass share of those plays is the team's neutral pass rate over expected, modified by play-caller regime. Early-season sample sizes are small, so the offensive coordinator and the quarterback change since last year matter more than raw last-season rate. This stage produces dropbacks before game state is applied.",
+     "distribution": "Plays per game roughly normal (sd ~7 plays), dropbacks ~45-70, mild positive skew from overtime; pass-rate regimes are coordinator-specific and persistent within a season.",
+     "categories": [
+      "pace_volume",
+      "coaching_scheme"
+     ],
+     "input_ids": [
+      "nfl.pace",
+      "nfl.proe",
+      "nfl.coaching",
+      "nfl.two_minute_tempo"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Score path, game script and dropback inflation",
+     "description": "The score path rewrites the stage above: trailing teams raise pass rate and play faster until the final minutes, leaders run the clock, large leads can end with the starter benched. Because passing yards are positively linked to deficit but only until prevent-defence and late-lead compression bite, the mapping from pre-game margin to expected dropbacks is hump-shaped, not linear. Overtime and two-minute drills add short high-density volume.",
+     "distribution": "Margin is roughly normal (sd ~13 points) around the spread; attempts respond concavely, with the heaviest right-tail mass from trailing-by-10-to-17 paths.",
+     "categories": [
+      "game_context_script",
+      "pace_volume"
+     ],
+     "input_ids": [
+      "nfl.script",
+      "nfl.garbage_time",
+      "nfl.proe"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Dropback outcome split: sack, scramble, throwaway, attempt",
+     "description": "Only attempts can produce passing yards, so the leakage of dropbacks to sacks (yardage lost on team net but not QB gross), scrambles, spikes and kneels shrinks the count before efficiency applies. A pressured pocket either converts to a sack, a scramble or a rushed attempt depending on the passer's mobility and release time, and offensive-line health shifts the split. This is separate from, and not captured by, overall EPA per dropback.",
+     "distribution": "Binomial leakage per dropback (sack ~6-8% league average, scramble 2-5% by passer), jointly dependent on pressure rate; adds attempt-count variance of a few throws.",
+     "categories": [
+      "opponent_matchup",
+      "pace_volume",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nfl.pressure_qb",
+      "nfl.pass_rush",
+      "nfl.ol",
+      "nfl.qb_dropback_to_attempt_leakage"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Per-attempt yield: completion, depth and yards after catch",
+     "description": "Given an attempt, yardage is completion probability times yards per completion. The QB's accuracy and decision prior, the target depth distribution, the quality of the receiving corps (separation, yards after catch over expected) and the defensive shell decide the mean; opponent adjustment must be done on a per-unit basis. Receiver and defensive-back absences change both the mean and the skew.",
+     "distribution": "Yards per attempt ~6-8 with sd roughly 2 yards at the game level; completion count approximately binomial; yards per completion right-skewed.",
+     "categories": [
+      "talent_strength",
+      "opponent_matchup",
+      "role_personnel",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nfl.qb_efficiency",
+      "nfl.pass_efficiency",
+      "nfl.def_epa",
+      "nfl.coverage_scheme",
+      "nfl.air_yards_adot",
+      "nfl.skill_avail",
+      "nfl.def_personnel",
+      "nfl.receiving_corps_route_weighted_quality"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Explosive completions, weather and the heavy right tail",
+     "description": "Wind and rain remove deep shots, domes inflate them, and a single 50-70 yard play can add a fifth to a third of a typical rung distance. The long-completion rate is largely a team-and-receiver property and is more volatile than the mean yield, so tail probability for the highest rungs should be modelled separately rather than inferred from variance of yards per attempt.",
+     "distribution": "Heavy-tailed compound distribution; the top rung (300+) probability is dominated by the tail of both volume and one or two long plays.",
+     "categories": [
+      "environment",
+      "distribution_variance",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nfl.weather_pit",
+      "nfl.venue",
+      "nfl.player_stat_variance",
+      "nfl.long_completion_tail_rate"
+     ]
+    },
+    {
+     "id": "s7",
+     "name": "Settlement, stat provenance and rung coherence",
+     "description": "Rungs are nested events of one random variable, so their probabilities must be monotone and adjacent rungs are almost the same bet; official yardage can be corrected after the fact, and different variants refund in different ways. These contract mechanics decide how a model's single yardage distribution maps to prices per variant.",
+     "distribution": "Nested thresholds: P(Y>=k) is decreasing, increments are the discretized density of the yardage distribution.",
+     "categories": [
+      "settlement_contract",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "m.ladder_structure",
+      "m.rules_text",
+      "m.stat_correction_risk"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb_efficiency",
+      "nfl.pass_efficiency"
+     ],
+     "note": "QB prior and team passing efficiency; regression constants are not specified in the catalog."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.def_epa",
+      "nfl.coverage_scheme",
+      "nfl.pass_rush",
+      "nfl.pressure_qb",
+      "nfl.def_personnel"
+     ],
+     "note": "Opponent pass defence by shell, pressure and personnel; opponent-adjusted by unit."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.skill_avail",
+      "nfl.air_yards_adot",
+      "nfl.receiving_corps_route_weighted_quality"
+     ],
+     "note": "Receiver availability existed only as a flag; the new route-weighted corps quality makes the replacement effect numeric."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb",
+      "nfl.in_game_exit_risk",
+      "nfl.ol"
+     ],
+     "note": "Starter, in-game exit and line status; vintages relative to Kalshi quote time are not explicit in the existing text."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.coaching",
+      "nfl.qb_blowout_pull_threshold"
+     ],
+     "note": "Coordinator tendencies plus the new benching rule for the protected and unprotected variants."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.weather_pit",
+      "nfl.venue"
+     ],
+     "note": "Wind, precipitation and roof; stadium-specific wind direction relative to field axis is not modelled."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.script",
+      "nfl.garbage_time"
+     ],
+     "note": "Margin-dependent dropbacks; need the hump-shaped mapping rather than a linear spread term."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.pace",
+      "nfl.proe",
+      "nfl.two_minute_tempo"
+     ],
+     "note": "Plays times pass rate; own and opponent tempo."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb_efficiency",
+      "nfl.qb_dropback_to_attempt_leakage"
+     ],
+     "note": "Yield per attempt plus attempt leakage from sacks and scrambles."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.player_stat_variance",
+      "nfl.long_completion_tail_rate"
+     ],
+     "note": "Compound distribution with explosive-play tail modelled explicitly."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Short-week Thursday games, travel and time zone, divisional familiarity and playoff-clinch rest of starters are not attached to this archetype even though nfl.rest_travel and nfl.divisional_familiarity exist elsewhere in the catalog."
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Crews change passing yards only through nullified plays and defensive holding rates, which are second-order against volume and pressure; pass-interference yardage is not credited to the quarterback's passing yards in official stats."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "m.stat_correction_risk",
+      "m.ladder_structure"
+     ],
+     "note": "Variant-specific refund rules, tie handling and stat source; OT inclusion remains unresolved."
+    }
+   }
+  },
+  "new_inputs": {
+   "nfl.qb_blowout_pull_threshold": {
+    "label": "Quarterback benching rule: margin and clock at which the starter is pulled",
+    "category": "matchup",
+    "mechanism": "Head-coach-specific rule for resting the starter in lopsided games, which removes dropbacks on the winning side and sets the zero-attempt atom after halftime for the protected variant.",
+    "rationale": "Existing exit-risk input treats injury and benching together. For a quarterback on a heavy favourite, benching is a coach habit tied to margin and minutes remaining, not a physical hazard; it lowers the top rungs even when the pre-game model expects a high-yardage game and decides whether a protected contract refunds.",
+    "measurement": "For each head coach, over the last 3 seasons (min 8 qualifying games, shrink toward league mean with k=6 games), record the lead (points) and game-clock minute at which the starter QB's last snap occurred in games decided by 17+; fit a logistic: P(starter pulled | lead, minutes_remaining). Output pre-game: P(pull before Q4 ends) = integral over simulated margin paths, as-of the last pre-game depth chart. Unit: probability and expected minutes lost.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse play-by-play (last QB snap per game)",
+     "nflverse snap counts"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, qb_id, play order, score_differential, game_seconds_remaining",
+     "depth chart / inactives for the backup identity",
+     "head coach by game"
+    ],
+    "why": "Defines the left-tail mass for strong favourites and the refund trigger for KXNFLPASSYDSPROT that the generic exit-risk input cannot separate from injuries.",
+    "role": "secondary"
+   },
+   "nfl.qb_dropback_to_attempt_leakage": {
+    "label": "Dropback-to-attempt leakage rate (sack, scramble, spike, kneel) for the QB-offence pair",
+    "category": "team_strength",
+    "mechanism": "Share of dropbacks that never become passing attempts because they end in sacks, scrambles or clock-stopping spikes.",
+    "rationale": "Passing yards credit only attempts and official QB yardage is gross, so the attempts count is dropbacks times (1 - leakage). Leakage is the interaction of the opponent pressure rate and this passer's tendency to escape or hold the ball; two quarterbacks with equal EPA per dropback can differ by 4-6 attempts per game from this alone.",
+    "measurement": "Per QB over his last 17 starts, time-decayed with half-life 8 games: (sacks + scrambles + spikes) / dropbacks, shrunk toward the offence-level rate with k=150 dropbacks. Pre-game forecast = QB rate adjusted by opponent pressure rate allowed relative to league (log-odds additive), capped to 3 sd. Units: fraction of dropbacks.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play: qb_scramble, sack, qb_spike, qb_kneel flags"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, passer_id, qb_dropback, sack, qb_scramble, qb_spike, qb_kneel, pass_attempt",
+     "pressure rates from charting vendors"
+    ],
+    "why": "Converts the volume stage into attempts and explains why dropback forecasts overstate attempts for scramble-prone quarterbacks facing strong rushes.",
+    "role": "secondary"
+   },
+   "nfl.receiving_corps_route_weighted_quality": {
+    "label": "Route-weighted receiving-corps quality for the projected active set",
+    "category": "player_role",
+    "mechanism": "Aggregate of expected separation, catch-probability-over-expected and yards after catch over expected across the receivers and backs projected to run routes, weighted by projected route share.",
+    "rationale": "The passer's yield depends on who catches the ball. A binary flag for WR1 out ignores that a replacement with a much lower route share and weaker separation changes yards per attempt, and that the effect depends on the whole route tree. Need a number that moves when a name changes on the inactive list.",
+    "measurement": "For each receiver, rolling 12-game route-weighted separation, catch rate over expected and YACOE, shrunk toward position mean with k=60 targets; corps score = sum over projected active receivers of projected route share x player score, where route shares are redistributed from the declared inactive list using the last 3 games' conditional shares. Units: standardized yards per attempt over league mean, as-of inactive list time (about 90 minutes pre-kick) or last practice report.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse participation and FTN charting where available",
+     "NFL Next Gen Stats public tables (separation, cushion, YAC over expected)",
+     "nflverse depth charts and inactives"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "routes run by player-game",
+     "targets, receptions, air yards, YAC",
+     "expected-YAC and separation tracking fields",
+     "inactive lists with timestamps"
+    ],
+    "why": "Gives the receiving-corps leg of a passing-yards forecast a continuous quantity rather than the skill-availability flag.",
+    "role": "primary"
+   },
+   "nfl.long_completion_tail_rate": {
+    "label": "Long-completion (20+, 40+ yard) rate and its team-opponent matchup",
+    "category": "distribution",
+    "mechanism": "Probability per attempt of a 20+ or 40+ yard completion, which creates the right tail of a quarterback's yardage total.",
+    "rationale": "The over-rung probability for 300+ is governed by tail events, not the mean. Explosive-pass rate is more erratic than yards per attempt, depends on deep-target share, pass protection time and the opponent's safety play, and is the first thing wind removes.",
+    "measurement": "Per QB-offence, rate of completions >=20 and >=40 yards per attempt over the last 20 games with half-life 10 games, shrunk with k=200 attempts; opponent factor = opponent's allowed explosive-pass rate relative to league over last 12 games with k=150 attempts; combined multiplicatively on log scale; wind above 15 mph applied as a separate multiplier from nfl.weather_pit. Output: expected count of 20+ and 40+ completions and a compound-Poisson tail for yards.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play (passing_yards, air_yards, yards_after_catch)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: pass_attempt, complete_pass, yards_gained, air_yards, yards_after_catch, defteam",
+     "weather and roof by game"
+    ],
+    "why": "Directly shapes the probability of high rungs and the correlation between a QB's yards and his top receiver's yards.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nfl.proe": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Volume baseline independent of score; needs coordinator-regime handling and early-season shrinkage, but the right primary driver of dropbacks."
+   },
+   "nfl.pace": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Plays per game scales dropbacks, but must be built from both teams' tempo and clock drain, not own neutral pace alone."
+   },
+   "nfl.script": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Score path is the main source of volume variance; useful only if expressed as P(margin state) feeding attempts, not as a spread term."
+   },
+   "nfl.qb_efficiency": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Per-attempt yield prior; partial pregame because rookies and QBs with new coordinators lack history."
+   },
+   "nfl.pass_efficiency": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Team ANY/A mixes QB with receivers and protection; overlaps with qb_efficiency, so use as a team-context check not a second QB talent estimate."
+   },
+   "nfl.def_epa": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Opponent pass defence efficiency is needed, but it should be pass-specific (EPA per dropback allowed) not total defensive EPA, which includes rushing."
+   },
+   "nfl.coverage_scheme": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Shell and man/zone rates modulate completion depth; only matters in interaction with the quarterback's target depth, weak as a main effect."
+   },
+   "nfl.pressure_qb": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Pressure and time to throw drive sacks, scrambles and completion loss; central to leakage and to efficiency."
+   },
+   "nfl.pass_rush": {
+    "verdict": "DUPLICATE_OF:nfl.pressure_qb",
+    "reason": "Defensive pressure and sack rate and offensive pressure faced are two sides of the same quantity; compute one matchup pressure estimate from both rather than two inputs."
+   },
+   "nfl.ol": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Line continuity is a real driver of pressure but is partial and noisy; its value is as an input to expected pressure, not an independent effect."
+   },
+   "nfl.skill_avail": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Receiver availability is a major driver of yield, but as a flag it is weak; replaced in practice by the route-weighted corps score added here."
+   },
+   "nfl.air_yards_adot": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Depth profile controls the completion/yards trade-off; strongly overlaps long_completion_tail_rate on the right tail but is the better mean-depth measure."
+   },
+   "nfl.weather_pit": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Wind speed and precipitation are material for passing; value depends on using forecast vintages at the time of quote and a nonlinear wind threshold."
+   },
+   "nfl.venue": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Roof and altitude shift the environment modestly; small after weather is in, and home-field is not a separate yardage driver."
+   },
+   "nfl.garbage_time": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Describes tail volume when trailing big; overlaps script, and the benching of starters in lopsided games is the opposite effect, which the new pull-threshold input handles."
+   },
+   "nfl.two_minute_tempo": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Adds short bursts of volume; second-order except around halves and for trailing teams, and double counts with script."
+   },
+   "nfl.qb": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Starter status is the largest single switch; must be timed against the inactive list and handle limited-participation quarterbacks."
+   },
+   "nfl.in_game_exit_risk": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Combines injury exit with blowout benching; the two have different hazard shapes and should be separated (see new pull-threshold input)."
+   },
+   "nfl.coaching": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Play-caller identity drives pass rate and tempo, but the existing text is generic about fourth-down aggression which does not matter for this contract."
+   },
+   "nfl.player_stat_variance": {
+    "verdict": "WEAK",
+    "reason": "Generic boom-bust variance with no specification; the yardage distribution should be built from the compound structure (attempts, completion, tail), not a single shape parameter."
+   },
+   "m.ladder_structure": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Rungs are nested thresholds of one variable; enforce monotone probabilities across 199.5 to 349.5 rungs, but this is a consistency constraint, not information about the game."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Variant rules differ materially (protected refund, H2H tie and void, season total); versioned text is needed so the same forecast maps to the right payoff."
+   },
+   "nfl.def_personnel": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Missing edge rushers or corners shift pressure and coverage the passer sees; overlaps pass_rush and coverage_scheme and is only informative at full-season depth-chart vintages."
+   },
+   "m.stat_correction_risk": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Relevant only when the final yardage is within a yard or two of a rung; a settlement-risk adjustment, not a forecasting input."
+   },
+   "m.strike_hit_rates": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Realised frequency by strike conflates yardage mechanics with market bias at round numbers; useful for calibration checks only, not for deriving the game outcome."
+   },
+   "m.volume_oi": {
+    "verdict": "IRRELEVANT",
+    "reason": "Volume and open interest describe trading liquidity; they carry no information about a quarterback's passing yards."
+   },
+   "m.trade_tape": {
+    "verdict": "IRRELEVANT",
+    "reason": "Executed trade tape is execution context and market-derived; it does not inform the physical yardage distribution and would leak prices into inputs."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.script",
+     "nfl.qb_blowout_pull_threshold"
+    ],
+    "form": "threshold",
+    "mechanism": "For a heavy favourite the starter's dropbacks fall once the lead passes the coach's benching line: before that point the offence runs, after it the backup throws; for a mid-sized favourite the benching line is never reached and the starter finishes the game. The result is a discontinuity in expected attempts at a coach-specific margin, not a smooth decline in the spread.",
+    "how_to_test": "Fit P(starter plays 4th quarter) by coach and spread bucket; contrast starters' attempts in games with lead>=17 at the 3rd quarter versus lead<=10, by coach."
+   },
+   {
+    "inputs": [
+     "nfl.pressure_qb",
+     "nfl.qb_dropback_to_attempt_leakage",
+     "nfl.ol"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Pressure turns dropbacks into sacks and scrambles at a rate set by the passer's escape style; a mobile quarterback behind a poor line converts pressure into scrambles that lose attempts but not yardage-per-attempt, while a pocket passer converts the same pressure into sacks. The product of opponent pressure and leakage propensity is what removes attempts.",
+    "how_to_test": "Regress attempts per dropback on opponent pressure rate x passer scramble propensity; check the interaction coefficient is positive for scramble-prone passers."
+   },
+   {
+    "inputs": [
+     "nfl.receiving_corps_route_weighted_quality",
+     "nfl.coverage_scheme",
+     "nfl.air_yards_adot"
+    ],
+    "form": "conditional",
+    "mechanism": "Two-high shells give up short completions and take away depth: a deep-target corps loses yards per attempt against heavy two-high, while a short-area corps with high yards-after-catch holds up. The sign of the coverage effect depends on the corps' depth profile, so it only appears as a conditional contrast.",
+    "how_to_test": "Split per-attempt yield by opponent two-high rate terciles and by team aDOT terciles; look for a sign flip of the coverage coefficient between terciles."
+   },
+   {
+    "inputs": [
+     "nfl.weather_pit",
+     "nfl.long_completion_tail_rate"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Wind above roughly 15 mph removes deep completions and compresses the right tail much more than it reduces the mean; below that threshold the tail rate is unaffected. Cold and rain affect catch rate but not the tail in the same way.",
+    "how_to_test": "Estimate the long-completion rate by wind bin (0-8, 8-15, 15+ mph) for high versus low aDOT offences; test a break at ~15 mph."
+   },
+   {
+    "inputs": [
+     "nfl.proe",
+     "nfl.script",
+     "nfl.pace"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Dropbacks equal plays times pass rate, and plays and pass rate are both functions of the score path, so the variance of attempts is larger than product-of-marginals suggests: trailing paths raise pass rate and also the number of plays via clock stoppages, while leading paths lower both together. Treating volume terms as independent understates the right tail of yards.",
+    "how_to_test": "Simulate score paths and compare the dispersion of simulated dropbacks to realised dispersion by spread bucket; check whether independent draws under-dispersed by more than 10 percent."
+   },
+   {
+    "inputs": [
+     "nfl.def_epa",
+     "nfl.pass_rush",
+     "nfl.qb_efficiency"
+    ],
+    "form": "diminishing-returns",
+    "mechanism": "The extra yield from a great quarterback against a weak defence saturates because play-calling turns conservative with a lead and high efficiency yields early first downs and fewer snaps; a very good matchup does not translate linearly into more yards.",
+    "how_to_test": "Bin predicted efficiency edge into deciles and check realised yardage increments flatten above the 8th decile after conditioning on attempts."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.script",
+    "shape": "hump-shaped: attempts rise as the expected deficit grows to about 10-14 points, then flatten or fall as prevent defence, clock-killing and benching take over",
+    "why": "Passing volume is not monotone in the spread; for 17+ point underdogs yards per attempt fall faster than attempts rise, so a linear spread coefficient mis-prices both tails."
+   },
+   {
+    "input_id": "nfl.weather_pit",
+    "shape": "threshold near 15 mph sustained wind; low sensitivity below, steep above",
+    "why": "Deep-pass completion probability drops sharply once wind exceeds the throwing envelope, so the effect on yards is a regime switch and also hits the highest rungs hardest."
+   },
+   {
+    "input_id": "nfl.in_game_exit_risk",
+    "shape": "step/atom: a mass at very low yardage for any early exit, nearly independent of the pre-game mean",
+    "why": "A concussion or hand injury in the first half creates a discrete outcome far below every rung regardless of efficiency, which is why the left tail of the distribution is a mixture, not a thickened normal."
+   },
+   {
+    "input_id": "nfl.long_completion_tail_rate",
+    "shape": "convex in the top rungs: small increases in explosive rate move P(300+) far more than P(225+)",
+    "why": "A 60-yard completion is worth 20-25 percent of the distance to a 300-yard rung, so the tail probability grows multiplicatively with the explosive rate rather than additively."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "NFL play-by-play with charting overlay",
+    "grain": "play, per game, 2016 onward (as-of snapshots)",
+    "fields": [
+     "game_id",
+     "play_id",
+     "passer_id",
+     "receiver_id",
+     "qb_dropback",
+     "sack",
+     "qb_scramble",
+     "qb_spike",
+     "pass_attempt",
+     "complete_pass",
+     "yards_gained",
+     "air_yards",
+     "yards_after_catch",
+     "epa",
+     "cpoe",
+     "score_differential",
+     "game_seconds_remaining",
+     "posteam",
+     "defteam",
+     "pass_location",
+     "no_huddle",
+     "is_play_action",
+     "was_pressure",
+     "time_to_throw"
+    ],
+    "timestamp_requirement": "Frozen at the end of the previous game; features for a game use only plays with game_date earlier than that game's date; no same-week revisions.",
+    "history_needed": "8 seasons for rate priors, 3 for coach and coordinator regimes.",
+    "candidate_sources": [
+     {
+      "name": "nflverse play-by-play (nflfastR)",
+      "access": "free",
+      "note": "Contains most play-level fields incl. air yards, EPA, CPOE; was_pressure and time_to_throw are from vendor feeds and not in the free table (SOURCE_UNVERIFIED for the free release)."
+     },
+     {
+      "name": "FTN charting via nflverse",
+      "access": "free_limited",
+      "note": "Charting flags for play action, no huddle, screen; coverage starts 2022."
+     },
+     {
+      "name": "Pro Football Focus (PFF)",
+      "access": "paid",
+      "note": "Pressure, time to throw, coverage grades."
+     },
+     {
+      "name": "Sports Info Solutions",
+      "access": "paid",
+      "note": "Charting incl. blitz, coverage, pressure."
+     },
+     {
+      "name": "NFL Next Gen Stats",
+      "access": "free_limited",
+      "note": "Public tables only; full tracking is not public."
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.proe",
+     "nfl.pace",
+     "nfl.script",
+     "nfl.qb_efficiency",
+     "nfl.pass_efficiency",
+     "nfl.def_epa",
+     "nfl.coverage_scheme",
+     "nfl.pressure_qb",
+     "nfl.pass_rush",
+     "nfl.air_yards_adot",
+     "nfl.garbage_time",
+     "nfl.two_minute_tempo",
+     "nfl.coaching",
+     "nfl.player_stat_variance",
+     "nfl.qb_dropback_to_attempt_leakage",
+     "nfl.long_completion_tail_rate",
+     "nfl.qb_blowout_pull_threshold",
+     "nfl.def_personnel"
+    ]
+   },
+   {
+    "dataset": "Point-in-time availability, depth chart and personnel",
+    "grain": "player-game with timestamp vintages",
+    "fields": [
+     "player_id",
+     "team",
+     "status (Out/Doubtful/Questionable)",
+     "practice participation (DNP/limited/full)",
+     "inactive flag",
+     "depth chart position",
+     "report timestamp",
+     "snap counts",
+     "route counts"
+    ],
+    "timestamp_requirement": "Each record carries its publication time; features use the latest record at least 5 minutes before the Kalshi quote or the 90-minute inactive list for game-day state; no retroactive overwrites.",
+    "history_needed": "3 seasons of timestamped vintages (need own capture; official injury reports are published Wednesday to Friday).",
+    "candidate_sources": [
+     {
+      "name": "NFL official injury reports and inactives",
+      "access": "free_scrape",
+      "note": "Official reports are public but archives with timestamps must be captured by the user."
+     },
+     {
+      "name": "nflverse injuries, depth charts, snap counts",
+      "access": "free",
+      "note": "Weekly resolution, not intraday vintage."
+     },
+     {
+      "name": "Sportradar or Genius Sports feeds",
+      "access": "paid",
+      "note": "Intraday injury and lineup feeds."
+     },
+     {
+      "name": "Beat-writer reporting (X/Substack)",
+      "access": "unavailable_public",
+      "note": "No structured archive; manual or news-API capture only."
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.qb",
+     "nfl.in_game_exit_risk",
+     "nfl.skill_avail",
+     "nfl.ol",
+     "nfl.receiving_corps_route_weighted_quality",
+     "nfl.qb_blowout_pull_threshold"
+    ]
+   },
+   {
+    "dataset": "Weather, roof and schedule context",
+    "grain": "game",
+    "fields": [
+     "game_id",
+     "kickoff time",
+     "stadium",
+     "roof",
+     "surface",
+     "temperature",
+     "wind speed and direction",
+     "precipitation probability",
+     "forecast issue time",
+     "spread_line",
+     "total_line"
+    ],
+    "timestamp_requirement": "Forecast vintages at 48, 24 and 3 hours before kickoff, never the observed weather; spread and total are used only to seed the script distribution, not as inputs to the outcome model.",
+    "history_needed": "3 seasons of archived forecast vintages (own capture) and observed weather for calibration.",
+    "candidate_sources": [
+     {
+      "name": "National Weather Service API",
+      "access": "free",
+      "note": "Hourly forecasts; archives of past forecasts are not kept, so forecasts must be captured prospectively."
+     },
+     {
+      "name": "Visual Crossing historical forecasts",
+      "access": "paid",
+      "note": "Archived forecast vintages."
+     },
+     {
+      "name": "nflverse schedules (roof, surface, temp, wind)",
+      "access": "free",
+      "note": "Observed values and betting lines, not forecasts."
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.weather_pit",
+     "nfl.venue",
+     "nfl.script"
+    ]
+   },
+   {
+    "dataset": "Kalshi contract rules and settlement values",
+    "grain": "market ticker",
+    "fields": [
+     "ticker",
+     "rules_primary",
+     "rules_secondary",
+     "floor_strike",
+     "strike_type",
+     "status",
+     "expiration_value",
+     "settlement_ts",
+     "result_revision"
+    ],
+    "timestamp_requirement": "Rules text versioned at first sighting and at each change; settlement value captured at expiration and 24 hours later to measure corrections.",
+    "history_needed": "All series since launch, captured each season.",
+    "candidate_sources": [
+     {
+      "name": "Kalshi public API",
+      "access": "own_capture",
+      "note": "Rules text and settlement value; versioned archive must be built by the user."
+     },
+     {
+      "name": "Official NFL game book (GSIS)",
+      "access": "unavailable_public",
+      "note": "Authoritative yardage; public access is limited to summaries."
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text",
+     "m.ladder_structure",
+     "m.stat_correction_risk"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "None of the sampled passing-yards rules texts say whether overtime yards count or which statistics provider is the source of truth; the existing draft asserted regulation-and-overtime without text support, and the main KXNFLPASSYDS series has no sampled rules.",
+    "what_would_resolve": "Obtain and archive the full rules_primary and rules_secondary of the main per-game ladder KXNFLPASSYDS and compare settlements for games that went to overtime."
+   },
+   {
+    "id": "u2",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Pressure rate, time to throw and coverage shell are only available from paid charting vendors; free play-by-play does not contain them reliably, so the pressure and leakage matchup cannot be built from open data alone.",
+    "what_would_resolve": "License one charting vendor (PFF or SIS) or build approximations from sack, hit and scramble flags and test how much signal is lost.",
+    "category": "opponent_matchup"
+   },
+   {
+    "id": "u3",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "How to estimate a quarterback's benching rule is data-thin: only a handful of lopsided games per coach per season exist, and the rule is probably also tied to the quality of the backup and injury rest; the shrinkage constant and window are guesses.",
+    "what_would_resolve": "Back-test the pull-threshold model on 5 seasons and compare calibration of attempt forecasts for favourites by coach with and without it.",
+    "category": "coaching_scheme"
+   },
+   {
+    "id": "u4",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Situational and schedule factors (Thursday short weeks, travel across time zones, clinched-seed rest) affect quarterbacks' yardage only weakly in the literature, and the size of the effect on passing yards specifically is not established here.",
+    "what_would_resolve": "Attach nfl.rest_travel and nfl.divisional_familiarity to this archetype and test whether they add explanatory power to attempts and yards after volume and script are in the model.",
+    "category": "situational_schedule_motivation"
+   }
+  ]
+ },
+ "receiving_yards_and_receptions": {
+  "reviewer": "NFL_b author (Claude)",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "Per-game 'N+' receiving-yards and receptions rungs (KXNFLRECYDS, KXNFLRECYDSPROT, KXNFLREC) resolve YES when the named player's official total reaches the integer rung; a player who is active but appears in no live play is settled at fair price before kickoff, and one live play (even nullified by a penalty) locks settlement to recorded stats. KXNFLLONGREC settles on the player's longest single reception over the strike. Escalator and ladder series are scalar: the YES payout is a function of the final count or yards, not a binary event. H2H pays 50/50 on equal yards and voids to fair price if either player does not enter. Overtime is not mentioned in the sampled receiving texts.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNFLRECYDS",
+     "quote": "Once DJ Moore appears in at least one live play, even if nullified by penalty, the market settles based on receiving yards recorded.",
+     "establishes": "Appearing in one live play, such as a single target or even a nullified play, locks the contract to yards; only players who are active but never play are voided at pre-game fair price."
+    },
+    {
+     "ticker": "KXNFLESCALATORREC",
+     "quote": "Payout Formula = floor(10000 x (min(s, 14) / 14)^3) / 10000",
+     "establishes": "The receptions escalator pays the cube of progress to 14 receptions, so value is an expectation of a convex function of the whole distribution and is capped at 14; mean alone does not determine the price."
+    },
+    {
+     "ticker": "KXNFLLADDERREC",
+     "quote": "The Yes payout per contract is $0.05 per reception constrained between $0.00",
+     "establishes": "The receptions ladder is a linear scalar capped at 20 receptions, so its fair value is the truncated mean of receptions (about 20 times the expected count over 20), unlike the convex escalator on the same player-game."
+    },
+    {
+     "ticker": "KXNFLLADDERRECYDS",
+     "quote": "The Yes payout per contract is $0.0025 per receiving yard",
+     "establishes": "Yards ladder is linear at 0.0025 per yard capped at 400 yards, so value tracks mean receiving yards with almost no tail weighting."
+    },
+    {
+     "ticker": "KXNFLLONGREC",
+     "quote": "If T.J. Hockenson is active but does not appear in any live play, the market settles to the fair market price before game start.",
+     "establishes": "The longest-reception market is a max over the player's receptions, with a void (not a loss) only for never-appearing players; a player with no catch but a live play settles on a longest reception of zero."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Four different payoff shapes share one statistic: binary N+ (KXNFLRECYDS/REC), convex cubic escalator (KXNFLESCALATORRECYDS: yards bucketed to tens, capped at 200, negative totals pay 0; KXNFLESCALATORREC: capped at 14), linear ladder (cap 400 yards, cap 20 receptions) and longest-play over/under (KXNFLLONGREC).",
+    "Escalator yards use y = min(200, max(0, 10 x floor(s/10))): bucket rounding down to tens makes the payoff a step function of final yards, so yardage between 190 and 199 pays the same 0.8573.",
+    "KXNFLRECYDSH2H voids to fair price if either player does not enter the game, and pays 50/50 on equal yards; KXNFLRECYDSPROT adds the first-half-only refund; weekly-most and season variants (KXNFLWEEKMOSTRECYDS, KXNFLSEASONRECYDS, KXNFLCAREERRECYDS, KXNFLRECYDSRECORD) are title-only here and cannot be settled from the sample.",
+    "Sampled texts do not state overtime handling or the official statistics source for receptions/yards; reception credited on a play nullified by penalty is not credited under standard NFL scoring, but the 'live play' appearance rule counts it for activation only.",
+    "Rush-and-receiving combined yards (KXNFLRRYDS) and the career/record series are in the same archetype in the ledger but follow different mechanisms (running-back usage, season horizons) and have no sampled rules text."
+   ],
+   "settlement_data_source": "Official NFL statistics are implied by the 'Governing League' wording but the sampled rules do not name a provider or a correction rule; capture the Kalshi expiration value and compare with the game book."
+  },
+  "mechanism": {
+   "summary": "A receiver's yards and receptions are the product of three counts that need separate modelling: how many routes he runs, how many targets he draws per route, and what each target yields. Routes follow snaps, offensive formation and the team's passing volume (which is itself a function of tempo, pass tendency and score path). Targets per route depend on his role (alignment, depth), competition from teammates, the quarterback's tendency to concentrate reads, and the defender and coverage he sees. Targets convert to catches at a rate depending on depth and quarterback accuracy, and catches to yards through air yards and yards after the catch, with a heavy right tail from one long play. Receptions are a small count with strong overdispersion; yards are a compound of receptions and per-catch distance. Contract shape then matters: binary rungs need tail probabilities, linear ladders need means, the cubic escalator needs the upper tail, and the longest-reception contract needs the maximum of the receiver's catch lengths.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Availability, snap and route participation",
+     "description": "Whether the receiver is active and for what fraction of the offence's dropbacks he is running a route is the base of everything. Practice-status vintages, return-from-injury snap caps, the depth chart behind him, and in-game injury drive the route count. A returning player on a pitch count or a third receiver in 12-personnel behaves very differently from a full-time starter; route participation is not equal to snap share because blocking snaps and screens do not count.",
+     "distribution": "Route participation is bounded (0 to ~100% of dropbacks) with a mass near 0 for inactive, a ramp for returning players, and near-constant for ironclad starters.",
+     "categories": [
+      "availability_news",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nfl.routes",
+      "nfl.limited_player_discount",
+      "nfl.formation"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Team pass attempts available to be targeted",
+     "description": "The team's dropbacks and pass attempts form the pool: tempo, pass tendency over expectation and the score path define it, and the defence's tendency to force the opponent into passing or running changes the pool. Pool size is a stable function of coordinator regime plus a game-script component, and the receiver's expected share is applied to it, so the pool and the share multiply.",
+     "distribution": "Attempts ~28-45 per team-game with positive skew from trailing scripts; overdispersed Poisson-like count.",
+     "categories": [
+      "pace_volume",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nfl.proe",
+      "nfl.script"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Target share and who absorbs a teammate's vacated targets",
+     "description": "Given routes, targets per route run depends on alignment, separation skill, role (primary read versus decoy), the quarterback's progression habits and competing receivers. When a teammate is out, targets flow nonuniformly: to the slot, to the tight end or to the back depending on the role the missing player filled and the scheme. The with-without evidence for a specific team is thin, and the redistribution is the largest single source of error for second and third options.",
+     "distribution": "Target counts are overdispersed (negative binomial-like), team-share fractions are Dirichlet-like across receivers with strong negative correlation among teammates.",
+     "categories": [
+      "role_personnel",
+      "opponent_matchup"
+     ],
+     "input_ids": [
+      "nfl.targets",
+      "nfl.target_competition",
+      "nfl.cb_coverage_matchup",
+      "nfl.with_without_target_redistribution"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Defensive allocation of targets and coverage",
+     "description": "The defence funnels targets by position and alignment (which units it tolerates being thrown at) and uses shell, man or zone coverage and possible shadowing of the top receiver. The effect on a single receiver is conditional on alignment (slot versus outside versus inline) rather than only on position, and a shadow assignment removes both share and efficiency for the covered player.",
+     "distribution": "Share and yield effects are modest (a few percentage points of share) but lumpy for shadow assignments; position-level aggregates mask alignment-level variation.",
+     "categories": [
+      "opponent_matchup",
+      "coaching_scheme"
+     ],
+     "input_ids": [
+      "nfl.coverage_scheme",
+      "nfl.dvp",
+      "nfl.defense_target_funnel_share"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Catch probability and yards per target",
+     "description": "Catch probability depends on target depth, receiver hands and separation, quarterback accuracy and pressure; yards per catch splits into air yards and yards after the catch (tackle breaking, scheme). Receptions and yards are linked negatively through depth: deep threats have fewer catches but more yards per catch, so a receptions rung and a yards rung on the same player respond differently to the same inputs.",
+     "distribution": "Receptions binomial in targets (variance ~ n p(1-p)); yards per reception log-normal-like with heavy right tail; negative correlation between catches and yards per catch across players.",
+     "categories": [
+      "efficiency_conversion",
+      "talent_strength",
+      "environment"
+     ],
+     "input_ids": [
+      "nfl.catch_rate_oe",
+      "nfl.air_yards_adot",
+      "nfl.ngs",
+      "nfl.qb_efficiency",
+      "nfl.pressure_qb",
+      "nfl.weather_pit"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Single-play extremes and longest-reception structure",
+     "description": "The longest reception is a maximum of that player's catches, so it depends on the number of receptions and on the length distribution of each, with a right tail dominated by yards after the catch. For yards escalators, a single 60-yard play moves the value by ten buckets. This stage is separate from the mean because the extreme-length behaviour is a property of the player and offence, not of the average yield.",
+     "distribution": "Maximum of N heavy-tailed lengths: with N around 4-6 the longest is often 20-35 yards with a long right tail (>60 about 5-8% for a WR1, assumption).",
+     "categories": [
+      "distribution_variance",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nfl.player_stat_variance",
+      "nfl.player_reception_length_distribution"
+     ]
+    },
+    {
+     "id": "s7",
+     "name": "Contract payoff mapping and ladder coherence",
+     "description": "The same predictive distribution must be translated into four payoff shapes: threshold probability, cubic expectation, linear capped mean, and maximum-over-strike. Rungs of one variable are nested, receptions and yards ladders share information, and the void rules determine how availability news is priced.",
+     "distribution": "Payoffs: indicator, convex cubic with cap, linear with cap, maximum statistic.",
+     "categories": [
+      "settlement_contract",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "m.ladder_structure",
+      "m.rules_text"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.catch_rate_oe",
+      "nfl.ngs",
+      "nfl.qb_efficiency"
+     ],
+     "note": "Receiver hands and separation plus quarterback accuracy; skill prior regression is unspecified."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.coverage_scheme",
+      "nfl.cb_coverage_matchup",
+      "nfl.dvp",
+      "nfl.defense_target_funnel_share"
+     ],
+     "note": "Coverage shell, shadowing, position yield and target funnel share by alignment."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.targets",
+      "nfl.routes",
+      "nfl.target_competition",
+      "nfl.with_without_target_redistribution",
+      "nfl.formation"
+     ],
+     "note": "Share, route role and redistribution when teammates are out."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.limited_player_discount",
+      "nfl.routes"
+     ],
+     "note": "Return-from-injury caps and participation; inactive timing relative to quote time is not specified in the catalog text."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.formation",
+      "nfl.coverage_scheme"
+     ],
+     "note": "Personnel groupings and motion from the offence side, and defensive schemes; coordinator-regime effects on target distribution are only implied."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.weather_pit"
+     ],
+     "note": "Wind and rain cut deep targets; dome and surface not attached to this archetype."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.script"
+     ],
+     "note": "Trailing scripts raise targets, especially to backs and short routes."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.proe"
+     ],
+     "note": "Pass attempts pool; plays-per-game input (nfl.pace) exists but is not attached here."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.catch_rate_oe",
+      "nfl.air_yards_adot",
+      "nfl.player_reception_length_distribution"
+     ],
+     "note": "Catch rate, depth and yards-after-catch; the length distribution is new."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.player_stat_variance",
+      "nfl.player_reception_length_distribution",
+      "nfl.corr"
+     ],
+     "note": "Overdispersion of targets and catch lengths; within-game correlations to the quarterback exist as nfl.corr in the catalog but are not attached here."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "No schedule, rest or motivation input is attached for receivers; late-season rest of starters when seeds are clinched and short-week effects on route participation are unmodelled."
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Crew tendencies affect receivers through pass-interference and holding calls that nullify plays; those effects are small and noisy relative to target share and are not credited as receiving yards."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "m.ladder_structure"
+     ],
+     "note": "Four payoff shapes, activation rule and tie handling; overtime and data source remain unresolved."
+    }
+   }
+  },
+  "new_inputs": {
+   "nfl.with_without_target_redistribution": {
+    "label": "With/without target redistribution matrix for the projected inactive set",
+    "category": "player_role",
+    "mechanism": "Conditional split of routes, targets and air yards among remaining receivers when a given teammate does not play.",
+    "rationale": "The generic target-competition input says teammates matter; what a model needs is the share each remaining player gains when a specific player is out, because slot, outside and tight end absorbers behave differently and the gain is not proportional to current share.",
+    "measurement": "For each team-season from 2018, compute each receiver's target share and TPRR in games without teammate X versus with X (X = a top-3 target earner), requiring at least 4 games without X over the last 3 seasons, else use a position-role template pooled across teams (shrink with k=40 targets). Apply to the projected inactive list at the last available timestamp. Output: expected target share vector summing to 1 and a standard error per receiver.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse play-by-play and rosters",
+     "nflverse inactives and injuries"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: receiver_id, target flag, air_yards, game_id",
+     "weekly inactive lists",
+     "team depth chart roles"
+    ],
+    "why": "Directly addresses the largest error source for WR2/WR3/TE/RB reception and yards rungs when a starter is out and prices change within hours.",
+    "role": "primary"
+   },
+   "nfl.player_reception_length_distribution": {
+    "label": "Player reception-length distribution (air yards plus yards after catch), incl. longest-play probability",
+    "category": "distribution",
+    "mechanism": "Empirical distribution of this receiver's yards per reception and probability that any single reception exceeds 20, 30, 40 and 60 yards.",
+    "rationale": "The longest-reception market and the escalator tails need the upper tail of catch lengths, which differs from the mean yards per catch; YAC-heavy slot players and deep WRs have the same mean and very different tails.",
+    "measurement": "For each receiver, take receptions from the last 24 games (min 40; pooled to position-alignment template with k=30 receptions otherwise), fit a log-normal/ Pareto splice at the 85th percentile; then P(longest >= x | N catches) = 1 - F(x)^N with N drawn from the projected receptions distribution. Opponent factor = opposing defence's allowed explosive-reception rate vs league (k=120). Units: probabilities for each strike.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play (receiver, air_yards, yards_after_catch)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: receiver_id, complete_pass, yards_gained, air_yards, yards_after_catch, defteam"
+    ],
+    "why": "Required for KXNFLLONGREC and for tails of escalator yardage contracts, neither of which can be priced from mean and variance.",
+    "role": "secondary"
+   },
+   "nfl.defense_target_funnel_share": {
+    "label": "Defensive target funnel: share of opponent targets allowed by alignment and position",
+    "category": "matchup",
+    "mechanism": "Fraction of opposing pass targets a defence allows to WRs (slot and outside), TEs and RBs, relative to league and adjusted for the offences it faced.",
+    "rationale": "Defence-versus-position yield tells how efficient receivers are against a defence but not how many targets it sends to each group, which sets a receiver's share before efficiency matters.",
+    "measurement": "For each defence: over the last 12 games (half-life 6 games) compute target shares by alignment, adjusted for opponent offence's usual share using a ridge model (alpha tuned by cross-season validation); shrink toward league with k=100 targets. Output: log ratio of expected share vs the receiver's usual share. Needs alignment tags from charting data.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse FTN charting (limited alignment fields), play-by-play"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "target by position/alignment, defteam, play type"
+    ],
+    "why": "Moves a receiver's expected share at the target stage, independently of dvp efficiency, and is the reason RB/TE reception rungs often shift with opponent scheme.",
+    "role": "secondary"
+   },
+   "nfl.qb_target_concentration": {
+    "label": "Quarterback target concentration and first-read lean",
+    "category": "player_role",
+    "mechanism": "Gini or Herfindahl of the quarterback's targets across his receivers, plus the share to the primary read in the last 20 starts.",
+    "rationale": "A quarterback who locks onto one receiver gives that receiver both a higher mean and a higher variance, and when the primary receiver is out the concentration determines how widely targets spread.",
+    "measurement": "For each quarterback, compute target-share Herfindahl over his last 20 starts (half-life 10 games, min 200 targets; shrink to team-level with k=150 targets) and the primary receiver's share. Apply to the receiver under study as a multiplier on expected target share relative to neutral dispersion: share_adj = share x (1 + b x (conc - league_conc)) with b estimated by out-of-sample regression.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse play-by-play"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: passer_id, receiver_id, targets, game_id"
+    ],
+    "why": "Explains differences in reception overdispersion between teams with equal average shares and controls the second-option response when a primary receiver is out.",
+    "role": "context"
+   }
+  },
+  "input_audit": {
+   "nfl.targets": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Target share and TPRR are the core volume drivers; air-yards share overlaps air_yards_adot and should be kept as a separate depth measure."
+   },
+   "nfl.routes": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Route participation separates role from usage and is the denominator of TPRR; partial pregame because it needs the inactive list."
+   },
+   "nfl.proe": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Pool of pass attempts for targets; stable by coordinator; the contract is more sensitive to it than to receiving history alone."
+   },
+   "nfl.script": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Trailing script raises targets, particularly to backs and slot receivers; a hump-shaped effect, secondary to the role terms."
+   },
+   "nfl.target_competition": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Competition is crucial but the generic form says only 'teammate availability redistributes targets'; superseded in practice by the with-without matrix added here."
+   },
+   "nfl.coverage_scheme": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Shell affects slot versus outside yield, but only conditional on alignment; a weak main effect."
+   },
+   "nfl.cb_coverage_matchup": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Shadow assignments matter for WR1 and are partial pregame; cornerback quality effects are often smaller than the existing text implies."
+   },
+   "nfl.dvp": {
+    "verdict": "WEAK",
+    "reason": "Defence-versus-position yields are confounded by opponent offences and mix share with efficiency; use the funnel share and alignment-level yield instead of position totals."
+   },
+   "nfl.catch_rate_oe": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Catch probability is mostly depth and quarterback driven; receivers' own skill is a small portion; moderate value on receptions rungs."
+   },
+   "nfl.air_yards_adot": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Depth sets yards per catch and variance and drives the opposite signs for receptions versus yards."
+   },
+   "nfl.qb_efficiency": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Accuracy changes completion probability and yards per attempt; for a receiver it acts through catch rate and target quality, and is a modest weight."
+   },
+   "nfl.pressure_qb": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pressure shortens routes and shifts targets short; overlaps with the offence's own volume but meaningful for deep receivers only."
+   },
+   "nfl.formation": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Personnel grouping tells which receivers are on the field for a play; stronger for tight ends and third receivers than for stars."
+   },
+   "nfl.limited_player_discount": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Snap and route caps for returning players are a first-order effect when the status is questionable, though the discount magnitude is not specified."
+   },
+   "nfl.weather_pit": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Cuts deep targets and yards; threshold effect near 15 mph; limited effect on short-area receivers."
+   },
+   "nfl.player_stat_variance": {
+    "verdict": "WEAK",
+    "reason": "A generic boom-bust label; receptions are overdispersed counts and yards compound, so variance should come from route, target and length components."
+   },
+   "m.ladder_structure": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Nested rungs for both statistics and the linking of receptions and yards ladders is a consistency check, not outcome information."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Four different payoff shapes and the activation rule make the rules text a necessary input to pricing, not a footnote."
+   },
+   "nfl.ngs": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Tracking-based separation and cushion are valuable but only available as public aggregates; partial coverage across players and weeks."
+   },
+   "m.strike_hit_rates": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Realised rung frequencies by family mix player quality with market selection; useful for diagnostics, not an input to the physical process."
+   },
+   "m.volume_oi": {
+    "verdict": "IRRELEVANT",
+    "reason": "Open interest and volume describe how much is traded, not how many yards a receiver gains."
+   },
+   "m.trade_tape": {
+    "verdict": "IRRELEVANT",
+    "reason": "Trade tape is a market-derived execution record; including it would feed prices back in as inputs for a receiving-yards forecast."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.proe",
+     "nfl.routes",
+     "nfl.targets"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Expected targets equal team pass attempts times route participation times targets per route run; an error in any term scales the entire expectation, and each is estimated with separate noise. A receiver with strong TPRR on a run-heavy team can have fewer targets than a lesser receiver on a pass-heavy team.",
+    "how_to_test": "Decompose realised targets into attempts, route rate and TPRR, and compare the explained variance of the product model to a model using lagged target counts."
+   },
+   {
+    "inputs": [
+     "nfl.with_without_target_redistribution",
+     "nfl.target_competition",
+     "nfl.qb_target_concentration"
+    ],
+    "form": "conditional",
+    "mechanism": "The target gain of a remaining receiver when a teammate is out depends on which role the missing player filled and on how concentrated the quarterback's reads are: a concentrated passer gives the next read a larger boost, a spread passer distributes gain across several receivers.",
+    "how_to_test": "Estimate share change by receiver role in games without the top target, split by quarterback concentration terciles."
+   },
+   {
+    "inputs": [
+     "nfl.cb_coverage_matchup",
+     "nfl.coverage_scheme",
+     "nfl.defense_target_funnel_share"
+    ],
+    "form": "conditional",
+    "mechanism": "A shadowing cornerback against the WR1 lowers his share and his yield, but the same defence's funnel toward the slot or tight end offsets for others; the net effect on a given receiver depends on alignment, so position-level opponent features flip sign across alignments.",
+    "how_to_test": "Compare target share changes for slot, outside and TE under shadow versus zone defences using play-level alignment tags."
+   },
+   {
+    "inputs": [
+     "nfl.catch_rate_oe",
+     "nfl.air_yards_adot",
+     "nfl.player_reception_length_distribution"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Receptions and yards per reception are negatively correlated at the player level, since deep targets are caught less often; the joint distribution matters for the cubic escalator and for yards rungs because a high-yardage game for a deep threat arrives with few catches, and for a slot receiver with many.",
+    "how_to_test": "Estimate correlation of per-game receptions and yards per reception by aDOT tercile; test whether product-of-marginals mis-prices the yards 80th percentile."
+   },
+   {
+    "inputs": [
+     "nfl.script",
+     "nfl.formation",
+     "nfl.routes"
+    ],
+    "form": "conditional",
+    "mechanism": "When trailing, pass volume rises and running backs and slot receivers get more routes while tight ends in 12 personnel lose them; the sign of the script effect on routes depends on the receiver's usual personnel role.",
+    "how_to_test": "Regress route share on expected margin by position and personnel role and check heterogeneity by role."
+   },
+   {
+    "inputs": [
+     "nfl.player_stat_variance",
+     "m.rules_text"
+    ],
+    "form": "other-nonlinear",
+    "mechanism": "The cubic escalator payoff makes the contract's value an expectation of a convex function: with fixed mean, a larger variance or heavier tail increases fair value, and the bucketed yards schedule creates steps at multiples of ten. Two receivers with the same expected yards have different fair values.",
+    "how_to_test": "Compute fair value by integrating the yardage distribution against the payout schedule for receivers with equal means and different tail weights."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.limited_player_discount",
+    "shape": "piecewise: near-zero route share while inactive, ramped fraction (e.g. 40-70 percent of normal) in return games, normal after",
+    "why": "Returning players are on routes caps that do not scale smoothly with the injury designation, so the expected route share is a piecewise function with a jump at the first game back."
+   },
+   {
+    "input_id": "nfl.player_reception_length_distribution",
+    "shape": "heavy upper tail: longest reception exceeding strike rises sublinearly in the number of catches",
+    "why": "The maximum of N heavy-tailed lengths grows with log N, so doubling expected receptions raises P(longest over 40) far less than doubling."
+   },
+   {
+    "input_id": "nfl.targets",
+    "shape": "saturating: receptions rise concavely with targets at the high end because catch rate falls as target depth and contested rate rise",
+    "why": "Players with extreme target share are asked to take lower-quality targets, so extra targets convert at a lower rate than the average target."
+   },
+   {
+    "input_id": "nfl.weather_pit",
+    "shape": "threshold near 15 mph: little effect below, rapid drop in deep targets and yards above",
+    "why": "Wind removes deep targets and the yardage tail; receptions of short routes are insensitive, so the effect concentrates in high yards rungs of deep receivers."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Play-level target, route and alignment data",
+    "grain": "play and player, 2018 onward",
+    "fields": [
+     "game_id",
+     "play_id",
+     "passer_id",
+     "receiver_id",
+     "target flag",
+     "complete_pass",
+     "yards_gained",
+     "air_yards",
+     "yards_after_catch",
+     "routes run flag",
+     "alignment (slot, wide, inline, backfield)",
+     "offense_personnel",
+     "defense coverage type",
+     "defenders_in_box",
+     "was_pressure"
+    ],
+    "timestamp_requirement": "As-of last completed game; alignment and route data are charting vintages that may be revised within 48 hours of the game.",
+    "history_needed": "6 seasons for with-without matrices and the length distribution; routes require 2018 or later participation data.",
+    "candidate_sources": [
+     {
+      "name": "nflverse play-by-play and participation",
+      "access": "free",
+      "note": "Targets and yards; participation includes offence and defence personnel, formation; route-level data is not in the free release (SOURCE_UNVERIFIED)."
+     },
+     {
+      "name": "FTN charting via nflverse",
+      "access": "free_limited",
+      "note": "Some charting flags."
+     },
+     {
+      "name": "Pro Football Focus",
+      "access": "paid",
+      "note": "Routes, alignment, coverage and matchup data (cornerback shadowing)."
+     },
+     {
+      "name": "Sports Info Solutions",
+      "access": "paid",
+      "note": "Route and coverage charting."
+     },
+     {
+      "name": "NFL Next Gen Stats",
+      "access": "free_limited",
+      "note": "Separation and cushion for public tables."
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.targets",
+     "nfl.routes",
+     "nfl.proe",
+     "nfl.script",
+     "nfl.target_competition",
+     "nfl.coverage_scheme",
+     "nfl.cb_coverage_matchup",
+     "nfl.dvp",
+     "nfl.catch_rate_oe",
+     "nfl.air_yards_adot",
+     "nfl.pressure_qb",
+     "nfl.formation",
+     "nfl.ngs",
+     "nfl.qb_efficiency",
+     "nfl.player_stat_variance",
+     "nfl.with_without_target_redistribution",
+     "nfl.player_reception_length_distribution",
+     "nfl.defense_target_funnel_share",
+     "nfl.qb_target_concentration"
+    ]
+   },
+   {
+    "dataset": "Timestamped injury, inactive and practice-participation vintages",
+    "grain": "player-game with report timestamp",
+    "fields": [
+     "player_id",
+     "team",
+     "status",
+     "practice participation",
+     "report timestamp",
+     "game-day inactive",
+     "return-from-injury flag",
+     "snap and route counts in prior games"
+    ],
+    "timestamp_requirement": "Each report carries the time it was posted; features use the most recent report at least 5 minutes before the quote; inactive list approximately 90 minutes pre-kick.",
+    "history_needed": "3 seasons of captured vintages; with-without needs 6 seasons of final inactive lists.",
+    "candidate_sources": [
+     {
+      "name": "NFL official injury reports",
+      "access": "free_scrape",
+      "note": "Public; must be archived with timestamps."
+     },
+     {
+      "name": "nflverse injuries and inactives",
+      "access": "free",
+      "note": "Weekly, not intraday."
+     },
+     {
+      "name": "Rotowire/Sportradar injury feeds",
+      "access": "paid",
+      "note": "Intraday status changes and beat-writer news."
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.limited_player_discount",
+     "nfl.routes",
+     "nfl.with_without_target_redistribution"
+    ]
+   },
+   {
+    "dataset": "Weather forecast and game environment",
+    "grain": "game",
+    "fields": [
+     "game_id",
+     "stadium",
+     "roof",
+     "wind",
+     "temp",
+     "precip",
+     "forecast issue time"
+    ],
+    "timestamp_requirement": "Forecast vintage at 24 and 3 hours pre-kick, never observed weather.",
+    "history_needed": "3 seasons of captured forecasts.",
+    "candidate_sources": [
+     {
+      "name": "National Weather Service API",
+      "access": "free",
+      "note": "Forecasts only for current dates; archive by own capture."
+     },
+     {
+      "name": "nflverse schedules",
+      "access": "free",
+      "note": "Observed values only"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.weather_pit"
+    ]
+   },
+   {
+    "dataset": "Kalshi rules and expiration values for receiving series",
+    "grain": "market ticker",
+    "fields": [
+     "ticker",
+     "rules_primary",
+     "rules_secondary",
+     "strike",
+     "payout schedule parameters",
+     "expiration value"
+    ],
+    "timestamp_requirement": "Version rules at first sighting; payout parameters (caps, exponent, bucket) parsed into fields.",
+    "history_needed": "All receiving series since launch.",
+    "candidate_sources": [
+     {
+      "name": "Kalshi public API",
+      "access": "own_capture",
+      "note": "Rules text and settlement; parse payout formulas for escalator and ladder series."
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text",
+     "m.ladder_structure"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "Overtime handling, the statistics source of truth and the correction policy are not stated in any sampled receiving text, and 13 of the 17 series in this archetype, including weekly-most, season, career and record markets, are title-only.",
+    "what_would_resolve": "Archive full rules for each series and compare settled values against the game book for overtime games."
+   },
+   {
+    "id": "u2",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Route-level participation and shadow-coverage assignments are proprietary (PFF, SIS) or tracking-only (NFL NGS full data); free play-by-play lacks routes run, so TPRR for most players must be approximated from targets and snaps.",
+    "what_would_resolve": "License a charting vendor or approximate routes from pass-play snap participation and test the loss in explanatory power.",
+    "category": "role_personnel"
+   },
+   {
+    "id": "u3",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Combined rush-and-receiving yards (KXNFLRRYDS), career, record and season receiving markets are grouped in this archetype but follow different mechanisms (running back dual-role usage, multi-year horizons); one mechanism chain does not cover them.",
+    "what_would_resolve": "Split these into their own archetype keys and author a separate chain for each, including a running-back receiving-role stage."
+   },
+   {
+    "id": "u4",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "No schedule or motivation input exists for receivers: late-season starter rest, short-week route participation and trade-deadline role changes are plausible drivers with unmeasured size.",
+    "what_would_resolve": "Test adding rest and clinch flags to route-share models using three seasons of data.",
+    "category": "situational_schedule_motivation"
+   }
+  ]
+ }
+}

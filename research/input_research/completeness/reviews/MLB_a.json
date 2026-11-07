@@ -1,0 +1,711 @@
+{
+ "pitcher_strikeouts": {
+  "reviewer": "MLB_a author (claude-sonnet-5-5)",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "Yes if the named starting pitcher is credited with at least N strikeouts in the one listed game (ladder of 'N+' rungs, one market per N). The pitcher must be the game's starting pitcher and face at least one batter; if he is scratched or is not a starter the market pays the fair market price (a void-style refund, not a No); relief appearances never count even if the same man enters later. Strikeouts are the official-scorer count for that pitcher (a strike three that is dropped and lets the batter reach still counts for the pitcher). The sampled text is silent on postponement/suspension and names no explicit data source.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "rules_evidence": [
+    {
+     "ticker": "KXMLBKS",
+     "quote": "If Drew Rasmussen is scratched or is not a starting pitcher, the market will resolve to the fair market price.",
+     "establishes": "Non-start or scratch is not a No: it refunds at fair price, so the tradable distribution is conditional on the pitcher starting."
+    },
+    {
+     "ticker": "KXMLBKS",
+     "quote": "If Drew Rasmussen is a starting pitcher and records at least one batter faced the market will settle based on strikeouts recorded.",
+     "establishes": "Settlement trigger is one batter faced (not one out or one pitch), so an opener or an injured starter after one batter settles on a tiny count, which is a real No for any high rung."
+    },
+    {
+     "ticker": "KXMLBKS",
+     "quote": "relief appearances will not count towards this market",
+     "establishes": "Only the starting appearance counts; a pitcher who relieves is excluded entirely."
+    },
+    {
+     "ticker": "KXMLBKS",
+     "quote": "Drew Rasmussen: 9+ strikeouts?",
+     "establishes": "Strike construction is an 'N+' (at-least) ladder per pitcher; each rung is a nested event."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Opener or bulk-guy usage: an opener who starts and faces 3-4 batters is still 'a starting pitcher with a batter faced', so the market settles No on 5+/6+ rungs rather than voiding; the 'bulk' reliever who follows is excluded by the relief rule.",
+    "Void asymmetry: scratch before first pitch refunds at fair price, but an in-game injury after one batter settles on whatever count exists, so injury-exit risk is a priced tail, not a void.",
+    "Postponement, suspension, rain-shortened games and extra innings are not addressed in the sampled rules_secondary (CONTRACT_AMBIGUOUS); a rain-shortened start that reaches few innings still settles on the count recorded.",
+    "Counting rule: only strikeouts charged to this pitcher count; dropped-third-strike and strikeout-throw-out plays follow official scoring; Postseason games use the same ladder with shorter hooks."
+   ],
+   "settlement_data_source": "Official MLB box score / play-by-play strikeouts for the pitcher (MLB Stats API gamefeed or Retrosheet-equivalent). The sampled rules do not name the source, so this is the presumed source of truth."
+  },
+  "mechanism": {
+   "summary": "A starter's strikeout total is a compound count: the number of batters he faces times a per-batter strikeout probability that is re-drawn at every plate appearance. Batters faced is itself the outcome of three competing stopping rules: a pitch budget (rehab or season cap), a performance hook (runs and baserunners allowed trigger a pull), and a managerial inning/trip-through-the-order gate. The per-batter probability comes from the pitcher's pitch-type whiff and called-strike skill applied to the specific nine hitters, their handedness, their whiff by pitch type, and the count dynamics (how often a PA reaches two strikes and how often a two-strike PA ends in K). Umpire zone, catcher and park shift it at the margin. The two pieces are negatively coupled through pitch cost (a strikeout takes more pitches than a ground out) and positively coupled through shared latent 'stuff day' quality, so the output is a joint distribution, with rung probabilities set by the right tail of batters faced multiplied by an overdispersed K-per-batter law. Because Kalshi refunds non-starts but settles injury exits and openers on the small count, the start-confirmation stage creates a conditional mixture that must be modelled separately from pure performance.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Start status and role gate",
+     "description": "Before anything else the pitcher must be the listed starter. A scratch refunds at fair price, so it is outside the settled distribution, but an opener or a short-bulk plan means the pitcher starts, faces three or four batters and settles on a tiny count. The gate therefore has three regimes (conventional starter, planned short outing, non-start) and everything downstream is a mixture over regimes weighted by the probability each regime is true at the time the market is traded, which changes when the lineup card and probable-pitcher updates post.",
+     "distribution": "Discrete 3-regime categorical; regime probabilities move from near-prior (days before) to near 0/1 at lineup posting. Heavy mass at 'conventional' for most rotation starters, rare but extreme opener regime.",
+     "categories": [
+      "role_personnel",
+      "availability_news"
+     ],
+     "input_ids": [
+      "mlb.opener_bulk_flag",
+      "mlb.injuries_pit",
+      "mlb.news",
+      "mlb.postseason_leverage_usage"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Batters-faced budget and hook hazard",
+     "description": "Given a conventional start, the exit point is a first-passage time: each batter faced carries a hazard of removal that depends on cumulative pitch count, trip through the order, runs and baserunners allowed so far, bullpen freshness and the specific manager's policy. The pitch budget (return from injury, workload cap) is a hard ceiling that truncates the right tail. Because K rungs sit in the right tail (8+, 9+, 10+), what matters is not the mean innings but the probability of surviving to 25-30 batters faced.",
+     "distribution": "Right-skewed, truncated discrete (about 12-30 batters faced) with a point mass at the cap and a left tail of early blow-up exits; start-to-start variance larger than rate uncertainty.",
+     "categories": [
+      "pace_volume",
+      "coaching_scheme",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "mlb.sp_workload",
+      "mlb.leash",
+      "mlb.pitch_count_limit",
+      "mlb.sp_efficiency",
+      "mlb.opp_pitches_per_pa",
+      "mlb.bullpen",
+      "mlb.velo_trend",
+      "mlb.sp_hook_hazard_curve"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Per-batter strikeout probability",
+     "description": "Within a PA the strikeout is a sequence: reach two strikes, then convert a two-strike count with a swing-and-miss, a called third strike or a foul tip. The pitcher's arsenal (usage by count and batter hand, whiff and chase by pitch) meets each batter's whiff and chase profile by pitch type; the odds-ratio combination of two rates is not additive. The confirmed lineup order matters because the nine hitters are not interchangeable and the top of the order is seen more often when the pitcher goes deep. Times-through-the-order decay lowers the rate on trips two and three.",
+     "distribution": "Bernoulli per batter with probability roughly 0.15 to 0.40 depending on matchup; heterogeneity across the nine batters creates a Poisson-binomial rather than a binomial count.",
+     "categories": [
+      "opponent_matchup",
+      "talent_strength",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "mlb.k_rates",
+      "mlb.pitch_type_whiff",
+      "mlb.lineup_whiff_by_pitch",
+      "mlb.lineup_k_platoon",
+      "mlb.pitch_mix",
+      "mlb.tto",
+      "mlb.sp_two_strike_putaway"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Zone, catcher and environment shifts",
+     "description": "The home-plate umpire's called zone and the catcher's receiving change the share of borderline pitches called strikes, which converts to strike-three-looking events and to count leverage on every PA; cold air and altitude change spin and movement slightly. These shifts are small relative to the matchup but are known only late (umpire and catcher assignments), so they are timing-sensitive adjustments applied on top of s3.",
+     "distribution": "Small multiplicative shift on per-batter K probability (a few percent of rate); effect heterogeneous by pitcher's looking-strikeout share.",
+     "categories": [
+      "officiating_rules",
+      "environment",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "mlb.umpire",
+      "mlb.umpire_k_bb_effect",
+      "mlb.catcher_framing",
+      "mlb.battery_assignment",
+      "mlb.park",
+      "mlb.weather_pit"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Count distribution and start-level latent state",
+     "description": "Realised strikeouts vary more than a binomial with the right mean because pitchers have good and bad days that move whiff rate for all batters at once (grip, command, release), and because K and batters faced are coupled by pitch cost. The settled probability of each rung is the upper tail of this overdispersed, coupled distribution, and neighbouring rungs are nested so a single latent explains the whole ladder.",
+     "distribution": "Overdispersed count (Beta-binomial-like) with positive within-start correlation and negative K-vs-BF coupling via pitch cost; fat right tail relative to binomial.",
+     "categories": [
+      "distribution_variance",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "mlb.sp_k_dispersion_start_effect",
+      "mlb.sp_workload",
+      "mlb.pa_sim"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.k_rates",
+      "mlb.pitch_type_whiff"
+     ],
+     "note": "Pitcher swing-and-miss and called-strike talent."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.lineup_whiff_by_pitch",
+      "mlb.lineup_k_platoon",
+      "mlb.sp_two_strike_putaway"
+     ],
+     "note": "Confirmed-lineup whiff by pitch and by count."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.opener_bulk_flag",
+      "mlb.battery_assignment",
+      "mlb.catcher_framing"
+     ],
+     "note": "Starter role and who catches."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.injuries_pit",
+      "mlb.news",
+      "mlb.velo_trend"
+     ],
+     "note": "Scratches, IL returns and velocity-based fatigue flags."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.leash",
+      "mlb.sp_hook_hazard_curve"
+     ],
+     "note": "Manager hook policy."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.park",
+      "mlb.weather_pit"
+     ],
+     "note": "Park and temperature effects on movement."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.sp_hook_hazard_curve",
+      "mlb.postseason_leverage_usage"
+     ],
+     "note": "Score-state-triggered pulls and postseason shortening."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.sp_workload",
+      "mlb.pitch_count_limit",
+      "mlb.sp_efficiency",
+      "mlb.opp_pitches_per_pa"
+     ],
+     "note": "Batters faced budget."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.sp_two_strike_putaway",
+      "mlb.pitch_type_whiff"
+     ],
+     "note": "Putaway conversion on two-strike counts."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.sp_k_dispersion_start_effect",
+      "mlb.pa_sim"
+     ],
+     "note": "Overdispersed K count with start-level latent."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.umpire_k_bb_effect",
+      "mlb.umpire"
+     ],
+     "note": "Plate umpire zone."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text"
+     ],
+     "note": "One-batter-faced trigger, fair-price refund on non-start, relief excluded."
+    },
+    "situational_schedule_motivation": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Rest days and workload enter through the pitch budget and velocity trend already, and no rest-of-season motivation changes a single start's strikeout rate except clinched-team rotation resets, which show up as pitch_count_limit and opener flags rather than as a separate factor."
+    }
+   }
+  },
+  "new_inputs": {
+   "mlb.sp_two_strike_putaway": {
+    "label": "Two-strike putaway decomposition: P(reach 2 strikes) x P(K | 2 strikes) by batter hand",
+    "category": "matchup",
+    "mechanism": "A strikeout needs two sub-events: the PA reaches a two-strike count, then the pitcher converts. The two pieces are driven by different pitches (first-pitch and early-count strikes versus chase/whiff pitches).",
+    "rationale": "Aggregate K% and CSW hide that a pitcher can have a high K% from elite putaway on few two-strike PAs (fragile to lineup contact skill) or from reaching two strikes constantly (stable). Opposing hitters differ separately on 'gets to two strikes' (takes, fouls) and 'strikes out once there' (whiff on the chase pitch), so the matchup must be applied to each sub-event, not to the end rate.",
+    "measurement": "For each pitcher, 3 seasons of pitch-level data with half-life 120 batters faced: r2 = share of PAs that reach 2 strikes (by batter hand); c2 = K / PAs reaching 2 strikes. For each batter: his own r2_b and c2_b, shrunk to league-by-hand with k = 150 PAs for r2 and k = 120 two-strike PAs for c2. Combine with odds-ratio (log5) per sub-event: logit(r2_match) = logit(r2_p) + logit(r2_b) - logit(r2_league), same for c2; matchup P(K) = r2_match * c2_match. Sum over the confirmed order weighted by expected PA per slot. Units: probability per PA; as-of the lineup-post timestamp using only games dated before the game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Baseball Savant / pybaseball Statcast pitch-level (balls, strikes, events)",
+     "MLB Stats API play-by-play"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "statcast pitches: pitcher, batter, stand, p_throws, balls, strikes, description, events, game_date, at_bat_number"
+    ],
+    "why": "Strikeout rungs at 8+ to 10+ are sensitive to which sub-event drives a pitcher's K%, and a lineup of patient fouling hitters is a different test than a lineup of free swingers; this keeps the matchup count-state-aware.",
+    "role": "primary"
+   },
+   "mlb.sp_hook_hazard_curve": {
+    "label": "Starter removal hazard per batter faced (discrete-time survival curve)",
+    "category": "pace_volume",
+    "mechanism": "Batters faced is a first-passage time with removal hazard depending on pitch count, trip through the order, runs allowed and manager.",
+    "rationale": "The existing 'leash' label names the idea but gives no estimand. A K ladder cares about P(survive to batter 25+) and the hook is not a function of innings alone: a starter at 85 pitches with a 4-run deficit is removed at a different rate than one with a lead, and managers differ in whether they pull at the third-time-through boundary or at a pitch count. A measured hazard curve turns leash into a number the strikeout model can integrate over.",
+    "measurement": "Discrete-time logistic hazard h(b) = P(removed after batter b | still in) estimated on 5 seasons of starts (regular season; separate postseason intercept). Predictors: batters faced b (spline, knots at 9, 18, 27), pitch count (spline), runs allowed so far (0,1,2,3+), runners on at b, team lead/deficit bucket, days rest, season-to-date average pitches per start (shrunk to league with k = 8 starts), manager random effect (shrunk, k = 40 starts), bullpen-freshness index (relievers used last 2 days). Output: survival S(b) for b = 1..36 and E[BF]. As-of: manager and pitcher effects fit through the prior game; game-state predictors enter only inside a simulation, not as pregame data.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Retrosheet game logs / event files",
+     "MLB Stats API play-by-play",
+     "Baseball-Reference box scores"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "start-level: pitcher, manager, batters faced, pitches, exit inning/out, runs allowed, runners at exit, score at exit, bullpen usage prior 2 days"
+    ],
+    "why": "The Kalshi ladder pays on the right tail of strikeouts, and the right tail is exit-time driven; a hazard curve makes the hook policy of this manager and this bullpen state an explicit, testable factor.",
+    "role": "primary"
+   },
+   "mlb.sp_k_dispersion_start_effect": {
+    "label": "Start-level dispersion of strikeouts beyond Poisson-binomial (rho parameter)",
+    "category": "distribution",
+    "mechanism": "Strikeouts across the nine batters share a pitcher-day latent state, so counts are more dispersed than independent Bernoulli draws.",
+    "rationale": "The ladder prices neighbouring rungs from one distribution; if the variance is too small the 10+ and 11+ rungs are systematically underpriced and the 4+ rungs overpriced for high-K arms. A per-pitcher (or per-archetype) intra-start correlation parameter is the cheapest way to calibrate the width.",
+    "measurement": "From 4 seasons of starts: for each start compute standardized residual of K given modelled expected K per batter faced (Pearson z = (K - sum p_i)/sqrt(sum p_i(1-p_i))). Estimate rho by moment matching: Var(K) = sum p_i(1-p_i) + rho*sum_{i!=j} sqrt(p_i(1-p_i)p_j(1-p_j)); pool pitchers by arsenal cluster (fastball-heavy, breaking-ball-heavy, finesse) and shrink to the pooled value with k = 25 starts. Report rho by cluster and by temperature bucket. As-of: estimated through the prior season, refreshed weekly in-season.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Statcast pitch-level and game logs (free)",
+     "Retrosheet"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "start-level K, batters faced, per-batter expected K from the matchup model"
+    ],
+    "why": "Rungs are nested thresholds on one count; without the dispersion parameter the model cannot price both tails of the ladder consistently.",
+    "role": "secondary"
+   },
+   "mlb.battery_assignment": {
+    "label": "Pitcher-catcher battery effect (actual catcher assigned) on K%-over-expected",
+    "category": "player_role",
+    "mechanism": "The catcher selected for the start changes framing, pitch-calling and blocking; some pitchers have personal catchers.",
+    "rationale": "Existing catcher_framing is a team-season catcher metric; what moves a single start is which catcher is in the lineup card and whether the pitcher is paired with him. Backup catchers have a materially different framing level and often start day games after night games, so it is partly predictable from the schedule.",
+    "measurement": "For each pitcher-catcher pair over 3 seasons: K%-over-expected = (K - sum p_i)/BF using the matchup-model expectation excluding the catcher; shrink the pair effect to the catcher's overall framing runs per 1000 called pitches with k = 250 BF. Pre-lineup: P(catcher = c) from the team's rotation of catchers conditioned on rest pattern; post-lineup: realised catcher. Units: K probability points per BF. As-of: lineup post timestamp.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Baseball Savant catcher framing leaderboard",
+     "MLB Stats API lineups"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "catcher framing runs per pitch; lineup card catcher; pitcher-catcher game pairs"
+    ],
+    "why": "A backup catcher can shift the called-strike share enough to move a 7+/8+ rung, and the information arrives with the lineup.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "mlb.k_rates": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Core rate input, but the label fuses two objects (pitcher K%/whiff and lineup K%) and the lineup half duplicates lineup_k_platoon; use as pitcher-side talent only."
+   },
+   "mlb.pitch_type_whiff": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Pitch-by-pitch whiff by batter hand is the actual K generator; needs shrinkage by pitch-type sample (small for sweepers and splitters)."
+   },
+   "mlb.lineup_whiff_by_pitch": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Confirmed-lineup whiff by pitch type converts arsenal into expected Ks; sparse per hitter so must be shrunk to hitter-hand-level whiff."
+   },
+   "mlb.lineup_k_platoon": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Lineup K% by hand is the low-variance anchor that lineup_whiff_by_pitch is shrunk toward; partially redundant once that exists."
+   },
+   "mlb.pitch_mix": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Supplies the usage weights multiplied against pitch whiff; by itself says nothing about outcomes, and arsenal changes mid-season matter."
+   },
+   "mlb.sp_workload": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Expected batters faced is the multiplier; but a mean is not enough, the survival distribution is needed (see sp_hook_hazard_curve)."
+   },
+   "mlb.leash": {
+    "verdict": "WEAK",
+    "reason": "Described as a tendency but has no estimand or unit; superseded by sp_hook_hazard_curve which is measurable and manager-specific."
+   },
+   "mlb.pitch_count_limit": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Matters only for rehab/return starts or hard innings caps, but there it truncates the right tail sharply; needs an announced-cap field."
+   },
+   "mlb.sp_efficiency": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pitches per PA converts the pitch budget to batters faced; high-K profiles are pitch-expensive so it is correlated with k_rates."
+   },
+   "mlb.opp_pitches_per_pa": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Opponent patience raises pitch cost per batter and shortens outings; weak when lineup is unknown."
+   },
+   "mlb.tto": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Per-trip K decay and hook gate are both visible in the third trip; pitcher-specific decay is more informative than league average."
+   },
+   "mlb.umpire": {
+    "verdict": "DUPLICATE_OF:mlb.umpire_k_bb_effect",
+    "reason": "Identity of the umpire and his tendency is the same information that umpire_k_bb_effect already quantifies with adjustment."
+   },
+   "mlb.umpire_k_bb_effect": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Adjusted umpire K/BB effect is small but systematic; vintage matters since assignments post late."
+   },
+   "mlb.catcher_framing": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Framing is a catcher-season measure; the actual-assigned catcher (battery_assignment) is what moves a given start."
+   },
+   "mlb.velo_trend": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Velocity loss relative to the pitcher's own baseline predicts both lower whiff and earlier exit and flags injury; measured in last 3 starts."
+   },
+   "mlb.opener_bulk_flag": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Under this contract an opener who faces one batter still settles (no void), so the flag decides whether high rungs are near-certain No; it is a gate, not a secondary factor."
+   },
+   "mlb.bullpen": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Works only through the hook hazard; keep as an input to sp_hook_hazard_curve rather than a standalone driver."
+   },
+   "mlb.park": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Park effect on K is modest; mostly altitude and sightlines, and indirectly through run environment and exit risk."
+   },
+   "mlb.weather_pit": {
+    "verdict": "WEAK",
+    "reason": "Claimed cold-weather velocity effect is small and untested; only extreme temperature or roof status plausibly matters."
+   },
+   "mlb.platoon": {
+    "verdict": "DUPLICATE_OF:mlb.lineup_k_platoon",
+    "reason": "Handedness composition of the lineup is the same information as lineup K% by hand once the confirmed order is used."
+   },
+   "mlb.injuries_pit": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Scratch refunds, so the value is in lineup absences and in in-game injury risk of a pitcher returning from IL."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Cross-rung price consistency is derived from market quotes; useful as a check on model monotonicity, not as an input."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The one-batter-faced settlement trigger and relief exclusion define the conditional population; wording must be versioned."
+   },
+   "m.quote_history": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Price path after lineup confirmation is a market reaction, not information about the pitcher."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "mlb.sp_two_strike_putaway",
+     "mlb.sp_hook_hazard_curve",
+     "mlb.opp_pitches_per_pa"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A high-strikeout style raises the number of two-strike pitches and fouls, so the same pitcher who gains Ks per batter also spends more pitches per batter and survives fewer batters. Strikeouts and batters faced are therefore negatively coupled through the pitch budget, and the coupling is strongest against patient lineups that foul off two-strike pitches.",
+    "how_to_test": "Fit K and BF jointly (copula or simulation) versus independent product; compare tail calibration of 8+/9+ rungs for high-whiff pitchers against patient lineups."
+   },
+   {
+    "inputs": [
+     "mlb.opener_bulk_flag",
+     "mlb.sp_hook_hazard_curve",
+     "m.rules_text"
+    ],
+    "form": "regime-switch",
+    "mechanism": "The contract settles an opener on the small count but voids a scratch, so the distribution is a mixture over three regimes whose weights move with news. The hazard curve differs by regime (about 3-4 batters for an opener versus a normal starter curve), and the mixture weight, not the performance model, dominates high-rung probability whenever opener risk is above a few percent.",
+    "how_to_test": "Compare model log loss on starts flagged opener-risk versus not; test whether adding a regime indicator removes miscalibration at 7+ rungs."
+   },
+   {
+    "inputs": [
+     "mlb.umpire_k_bb_effect",
+     "mlb.catcher_framing",
+     "mlb.battery_assignment"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Called strikes contribute only to the looking-strikeout share of a pitcher's Ks, so a wider zone and a better framer help most the pitchers who live on the edges and hurt least those who get strikeouts swinging. Adjustments must be scaled by the pitcher's looking-K share rather than added flat.",
+    "how_to_test": "Add terms umpire_effect x looking_K_share and framing x edge_pitch_share; check coefficient sign and out-of-sample gain."
+   },
+   {
+    "inputs": [
+     "mlb.tto",
+     "mlb.pitch_mix",
+     "mlb.lineup_whiff_by_pitch"
+    ],
+    "form": "piecewise",
+    "mechanism": "On the second and third trips pitchers lean away from their best pitch and hitters have seen it, so the effective whiff rate steps down at batter 19 and 28 while lineup whiff by pitch type changes sign of importance (the offspeed whiff matters more later). The decay is a step at trip boundaries, not smooth in batters faced.",
+    "how_to_test": "Include trip-indexed pitch-mix usage and trip dummies; test slope discontinuity at BF 18/27 in per-batter K logistic."
+   },
+   {
+    "inputs": [
+     "mlb.sp_k_dispersion_start_effect",
+     "mlb.sp_workload",
+     "mlb.velo_trend"
+    ],
+    "form": "convex",
+    "mechanism": "Start-level latent quality widens the K distribution as batters faced grows (variance of a correlated sum scales with BF squared), so on long outings a good day produces 11+ Ks far more often than independence implies. Early velocity relative to baseline is the only pregame-adjacent signal of the latent state.",
+    "how_to_test": "Estimate rho by BF bucket and by first-inning velocity deviation (post-hoc check); compare rung calibration with and without the rho term."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "mlb.sp_workload",
+    "shape": "S-shaped threshold in batters faced: P(K>=k) rises steeply across the BF range where k/K% falls (about 27-33 BF for a 9+ rung at 30% K), nearly zero below 20 BF and saturating above 33",
+    "why": "Strikeouts are bounded by batters faced, so rung probabilities are a steep logistic in BF near the rung's requirement and flat elsewhere; linear workload terms mis-price the middle rungs."
+   },
+   {
+    "input_id": "mlb.tto",
+    "shape": "Step function at the batter-18/19 and 27/28 boundaries, not a slope",
+    "why": "Times-through-the-order penalties and the managerial gate act at trip boundaries; a smooth innings term spreads a discrete change and hides the hook cliff."
+   },
+   {
+    "input_id": "mlb.velo_trend",
+    "shape": "Threshold: negligible below about -1 mph from baseline, sharply negative beyond (injury/fatigue regime)",
+    "why": "Velocity noise start to start is large; only a sustained multi-start decline separates a sick arm, so a linear velocity term is dominated by noise."
+   },
+   {
+    "input_id": "mlb.k_rates",
+    "shape": "Odds-ratio (log5-type) combination rather than additive; saturating at extreme pitcher K% against high-whiff lineups",
+    "why": "Per-batter K probability combines pitcher and batter propensities multiplicatively on the odds scale, so adding K% differences over-predicts at the extremes."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Pitch-level tracking and PA events",
+    "grain": "one row per pitch",
+    "fields": [
+     "game_pk",
+     "game_date",
+     "pitcher_id",
+     "batter_id",
+     "stand",
+     "p_throws",
+     "pitch_type",
+     "release_speed",
+     "spin_rate",
+     "balls",
+     "strikes",
+     "description",
+     "events",
+     "zone",
+     "plate_x",
+     "plate_z",
+     "at_bat_number",
+     "inning",
+     "outs_when_up"
+    ],
+    "timestamp_requirement": "Training only on games strictly before the target game_date; pitch-type classification vintage must be the one available at that time (Statcast reclassification risk).",
+    "history_needed": "2019-present for pitch-level (2015+ Statcast); at least 3 seasons per pitcher and batter for shrinkage anchors.",
+    "candidate_sources": [
+     {
+      "name": "Baseball Savant Statcast Search / pybaseball",
+      "access": "free",
+      "note": "Pitch-level CSV, rate-limited"
+     },
+     {
+      "name": "MLB Stats API gamefeed (statsapi.mlb.com)",
+      "access": "free",
+      "note": "Play-by-play and pitch data"
+     },
+     {
+      "name": "Sportradar MLB or Stats Perform (Opta) feeds",
+      "access": "paid",
+      "note": "Licensed low-latency tracking and lineups"
+     },
+     {
+      "name": "Hawk-Eye raw tracking",
+      "access": "unavailable_public",
+      "note": "Only derived Statcast fields are public"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.k_rates",
+     "mlb.pitch_type_whiff",
+     "mlb.lineup_whiff_by_pitch",
+     "mlb.lineup_k_platoon",
+     "mlb.pitch_mix",
+     "mlb.sp_two_strike_putaway",
+     "mlb.tto",
+     "mlb.pa_sim"
+    ]
+   },
+   {
+    "dataset": "Starting-pitcher start log with exit state",
+    "grain": "one row per start",
+    "fields": [
+     "game_pk",
+     "pitcher_id",
+     "manager_id",
+     "batters_faced",
+     "pitches",
+     "outs",
+     "K",
+     "runs",
+     "exit_inning",
+     "exit_out",
+     "runners_at_exit",
+     "score_diff_at_exit",
+     "days_rest",
+     "IL_return_flag",
+     "opener_flag"
+    ],
+    "timestamp_requirement": "Row visible only after game end; probable-starter field must carry an announcement timestamp, lineup card timestamp for the actual starter.",
+    "history_needed": "Last 5 seasons for hazard fits; opener flag from 2018.",
+    "candidate_sources": [
+     {
+      "name": "Retrosheet / Baseball-Reference game logs",
+      "access": "free",
+      "note": "Start logs; exit state derived from event files"
+     },
+     {
+      "name": "MLB Stats API schedule hydrate=probablePitcher,lineups",
+      "access": "free",
+      "note": "Probable and posted lineups, vintage unclear"
+     },
+     {
+      "name": "Own pre-game snapshot capture",
+      "access": "own_capture",
+      "note": "Needed to keep point-in-time lineup, probable and umpire vintages"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.sp_workload",
+     "mlb.leash",
+     "mlb.sp_hook_hazard_curve",
+     "mlb.pitch_count_limit",
+     "mlb.opener_bulk_flag",
+     "mlb.sp_k_dispersion_start_effect",
+     "mlb.sp_efficiency",
+     "mlb.opp_pitches_per_pa",
+     "mlb.bullpen"
+    ]
+   },
+   {
+    "dataset": "Injury, news, park and weather context",
+    "grain": "one row per game plus one row per news item",
+    "fields": "game_pk, park_id, roof_status, first-pitch temperature, wind, IL transactions, probable-pitcher changes, postseason round, injury/transaction news timestamps",
+    "timestamp_requirement": "Each item stamped with its publication time; weather forecast vintage at lineup post.",
+    "history_needed": "3 seasons for park factors; news from own capture.",
+    "candidate_sources": [
+     {
+      "name": "MLB Stats API transactions and schedule",
+      "access": "free",
+      "note": "Transactions with dates"
+     },
+     {
+      "name": "Open-Meteo / NWS forecast archives",
+      "access": "free_limited",
+      "note": "Forecast vintages are patchy"
+     },
+     {
+      "name": "Baseball Savant park factors",
+      "access": "free",
+      "note": "Season-level park K factor"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.park",
+     "mlb.weather_pit",
+     "mlb.news",
+     "mlb.injuries_pit",
+     "mlb.postseason_leverage_usage"
+    ]
+   },
+   {
+    "dataset": "Umpire, catcher and framing assignments",
+    "grain": "one row per game-umpire and per pitcher-catcher pair",
+    "fields": "game_pk, hp_umpire_id, umpire called-strike zone residuals, catcher_id, framing runs per 1000 pitches, pair BF",
+    "timestamp_requirement": "As-of the time assignments are visible; historical vintage of umpire assignment unknown.",
+    "history_needed": "3 seasons.",
+    "candidate_sources": [
+     {
+      "name": "UmpScorecards",
+      "access": "free_scrape",
+      "note": "Historical zone accuracy and favor metrics"
+     },
+     {
+      "name": "Baseball Savant catcher framing",
+      "access": "free",
+      "note": "Season framing runs"
+     },
+     {
+      "name": "MLB Stats API officials in gamefeed",
+      "access": "free_limited",
+      "note": "Posted pregame for some games; vintage unverified"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.umpire",
+     "mlb.umpire_k_bb_effect",
+     "mlb.catcher_framing",
+     "mlb.battery_assignment"
+    ]
+   },
+   {
+    "dataset": "Kalshi KXMLBKS contract metadata",
+    "grain": "one row per market per rung",
+    "fields": "ticker, floor_strike, strike_type, rules_primary, rules_secondary, status, open/close time, settlement value",
+    "timestamp_requirement": "Capture rules text at issuance and at close to detect wording changes.",
+    "history_needed": "Since series launch.",
+    "candidate_sources": [
+     {
+      "name": "Kalshi API",
+      "access": "free_limited",
+      "note": "Market metadata and rules text"
+     },
+     {
+      "name": "Own snapshot store",
+      "access": "own_capture",
+      "note": "Version wording and lineup/probable timestamps"
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "ks_postponement_rule",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled KXMLBKS rules say nothing about postponement, suspension, rain-shortened games or a start interrupted by a long delay; whether the market stays open, voids or settles on the partial count is not stated and cannot be inferred from the text.",
+    "what_would_resolve": "Fetch the full rules PDF/terms for the series and a settled sample of a rain-shortened or postponed game to see actual treatment."
+   },
+   {
+    "id": "ks_source_of_truth",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "No data source is named in the sampled rules; later official scoring changes (dropped third strike, scorer changes) could alter a count after settlement and it is unknown whether Kalshi re-reads.",
+    "what_would_resolve": "Obtain the series' source agency wording and compare settlement values with box scores on edge cases."
+   },
+   {
+    "id": "ks_lineup_vintage",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Public MLB feeds expose posted lineups and umpire assignments but historical timestamps of when each appeared are not reliably archived, which makes point-in-time backtests of the lineup-confirmation edge impossible without own capture.",
+    "what_would_resolve": "Run own snapshot capture of statsapi schedule/lineup endpoints for a season, or buy a licensed historical feed with timestamps.",
+    "category": "availability_news"
+   },
+   {
+    "id": "ks_latent_state_size",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Magnitude of the within-start latent 'stuff day' correlation is assumed to be positive but its size by arsenal type is not established from public evidence; if near zero the dispersion input is wasted effort.",
+    "what_would_resolve": "Estimate rho from pitch-level data on held-out seasons and compare ladder calibration with and without it."
+   }
+  ]
+ }
+}

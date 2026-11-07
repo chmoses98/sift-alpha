@@ -1,0 +1,1345 @@
+{
+ "awards_draft": {
+  "reviewer": "NBA_a author",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "Each award, selection or draft market settles Yes only if the named player (or team/pick slot) is the one officially announced by the league for the stated season or draft; the sampled award rules say Yes if the player 'wins' the award in the 2026-27 season, and the draft-pick rule says Yes if the named prospect is selected at the stated overall slot in the 2027 draft. There is no OT/DNP concept; the settlement source is the league's official announcement (voting results, draft record), with a pro-rata $1/N payout (rounded down to the cent) if several players are jointly awarded. Postponement/void wording for individual series was not sampled beyond three series.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNBACLUTCH",
+     "quote": "wins the Pro Basketball Clutch Player of the Year in the 2026-27 season, then the market resolves to Yes",
+     "establishes": "Award markets are single-winner-by-name with the season stated explicitly; no minimum-games or eligibility condition is restated, so eligibility is resolved by the league, not by Kalshi."
+    },
+    {
+     "ticker": "KXNBACUPMVP",
+     "quote": "positions will pay $1/N (rounded down to the nearest cent), where N is the number of awarded players",
+     "establishes": "Ties/co-winners split the Yes payout equally and round down, so a tie lowers the realised value of a Yes below $1 and makes P(win) different from expected payout."
+    },
+    {
+     "ticker": "KXNBADRAFTPICK",
+     "quote": "is selected as the 1st overall pick in the 2027 Pro Basketball Draft, then the market resolves to Yes",
+     "establishes": "Draft markets settle on the player actually selected at the stated slot, so a pick traded before the draft still settles on the player chosen; the rule is silent on a prospect withdrawing or draft being re-scheduled."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Co-winner or tie: Yes pays $1/N rounded down, No pays 1 minus that; matters for monthly awards given per conference and for Hall of Fame classes with several inductees.",
+    "Eligibility gates are enforced by the league, not Kalshi: the 65-game / 20-minute rule can disqualify an MVP-calibre candidate after the market has priced him.",
+    "Draft-slot markets (KXNBADRAFT1..10, KXNBADRAFTPICK) settle on who is picked at slot N whichever team holds it; team-to-draft and lottery markets settle on pick ownership or lottery result instead.",
+    "Group markets (All-NBA teams, All-Star starters, award finalists, lottery picks) are nested or cumulative sets of the same latent ranking, so rung probabilities must be monotone and sum to the set size.",
+    "Only 3 of 55 series have sampled rules; the 52 others (stat leader, Hall of Fame, draft comparison/category/international/conference) are TITLE_ONLY and their tie and cutoff wording is not visible."
+   ],
+   "settlement_data_source": "League official announcements: voting-result releases for awards and All-NBA, All-Star starters announcement, draft lottery broadcast and the draft transaction record."
+  },
+  "mechanism": {
+   "summary": "These contracts resolve through human processes whose inputs arrive at different clocks. Awards are a ranked-ballot election: a panel of media voters ranks five candidates (points 10-7-5-3-1) after the season, so the winner is the candidate with the greatest points, which depends on (a) who is eligible after the games/minutes minimum, (b) the candidates' perceived production relative to the field, (c) team success which voters treat as a prerequisite, and (d) vote splitting among near-equal candidates and voter fatigue for repeat winners. Selection markets (All-NBA, All-Star, All-Defensive, All-Rookie) are nested cut lines on the same points ranking. Monthly awards depend on the games actually played in a calendar window. Draft markets are a different chain: lottery draw and pick ownership (protections, swaps) decide which team holds slot N, then team preference, workouts and trade activity decide who is selected. Outcomes are lumpy (one winner), early prices drift on narrative, and the most informative single observable is eligibility, which can flip an outcome from near-certain to impossible.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Eligibility and games-played gate",
+     "description": "A candidate must clear league thresholds (65 games with at least 20 minutes in the current CBA for major awards and All-NBA, role rules such as bench-starts for Sixth Man, rookie status for ROY, clutch minimum for Clutch POY, qualifying-games rule for stat leaders). The state is a running ledger that moves with each injury, rest night and minute total, and the cost of a missed qualifying game is permanent. Probability of crossing the line depends on games remaining and injury hazard, not on the season-to-date average.",
+     "distribution": "Bimodal near the line: mass near 0 or 1 for most players, with a narrow band of players with zero slack whose probability is a binomial-style survival over remaining games and injury hazard.",
+     "categories": [
+      "availability_news",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.games_played_eligibility",
+      "nba.injury_risk_season",
+      "nba.eligibility_minutes_ledger"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Perceived production versus the field",
+     "description": "Voters rank on points, rebounds, assists, efficiency summaries and advanced numbers, but also on role-specific awards: defensive reputation and block/steal counts for DPOY, improvement delta versus the previous season for MIP, rookie rank for ROY. The relevant quantity is the gap to the next-best candidate on the stats voters actually look at, not the candidate's absolute level, and the stats used by voters are not identical to RAPM-type impact models.",
+     "distribution": "Heavy right tail in the leader's margin; the winner's vote share is typically concentrated (first-place votes dominated by one or two names) so P(win) behaves like a softmax over a small candidate set.",
+     "categories": [
+      "talent_strength",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nba.award_stats",
+      "nba.player_impact",
+      "nba.award_role_filters"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Team success and narrative conditioning",
+     "description": "Historical winners overwhelmingly come from top seeds, and the penalty for a lower seed is steep for MVP/DPOY while smaller for ROY; coach and executive awards are driven by wins relative to preseason expectation, not wins alone. Late-season stories (a surge, a record chase, a voter-fatigue narrative about a repeat winner) can reverse a small metric gap, and voters' ballots are submitted before the playoffs.",
+     "distribution": "Step-like in team seed and approximately logistic in the gap between win total and preseason expectation; narrative shocks are rare and large.",
+     "categories": [
+      "situational_schedule_motivation",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nba.standings_sim",
+      "nba.voting_narrative",
+      "nba.expectation_overperformance"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Ballot aggregation and cut lines",
+     "description": "Final standings are the sum of points across about 100 ballots, with ties broken by rule or shared payout; All-NBA and similar teams are cut lines on the same ranking (positionless since 2023-24), so P(1st team) is nested inside P(any team). Vote splitting between two similar candidates (two centers, two rookies) reduces both below what each would earn alone.",
+     "distribution": "Discrete, bounded sum of ranks; winner and cut-line events are strongly negatively correlated across candidates; nested sets must satisfy monotone sums.",
+     "categories": [
+      "distribution_variance",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.allnba_points_ladder",
+      "nba.voting_narrative"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Draft order and selection",
+     "description": "Lottery order is a draw from published odds that depend on final standings (and tie-break coin flips); pick ownership then passes through protections, swaps and conveyance rules that may take years to resolve. Given owner and slot, selection depends on consensus board rank and its dispersion, team need, workout and medical information, and the probability that the pick is traded and the trade partner picks a different player. Settlement is on the player actually named.",
+     "distribution": "Lottery is a known discrete probability table; selection among the top few prospects is a categorical mixture whose entropy falls sharply in the final 48 hours.",
+     "categories": [
+      "role_personnel",
+      "availability_news",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nba.draft_board",
+      "nba.draft_pick_ownership_graph",
+      "nba.prospect_board_dispersion",
+      "nba.news"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.award_stats",
+      "nba.player_impact"
+     ],
+     "note": "Candidate production and impact; impact metrics are secondary because voters use box-score and reputation."
+    },
+    "opponent_matchup": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Awards and draft slots are season-long or one-off events decided by a ballot or a lottery, so no head-to-head opponent exists; the nearest analogue is field competition, handled in s4 under nba.allnba_points_ladder."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.award_role_filters",
+      "nba.prospect_board_dispersion"
+     ],
+     "note": "Role definitions (bench, rookie, clutch minutes) and prospect fit decide who is in the candidate set."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.games_played_eligibility",
+      "nba.eligibility_minutes_ledger",
+      "nba.injury_risk_season",
+      "nba.news"
+     ],
+     "note": "Eligibility ledger and injury hazard determine whether the candidate remains in the field."
+    },
+    "coaching_scheme": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Coach of the Year is voted on win totals versus expectation rather than on a measurable scheme variable; scheme effects enter through wins in nba.expectation_overperformance, so no separate scheme input is warranted for award or draft ballots."
+    },
+    "environment": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Venue, altitude and weather play no part in a vote or a lottery draw; the only environmental channel is schedule strength feeding wins, covered by nba.standings_sim."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.voting_narrative",
+      "nba.expectation_overperformance"
+     ],
+     "note": "Late-season trajectory and storyline before ballots are cast."
+    },
+    "pace_volume": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Volume matters only through counting-stat totals inside nba.award_stats; there is no per-event opportunity count that a pace input would scale in these markets."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.award_stats"
+     ],
+     "note": "Shooting efficiency and defensive metrics are summary inputs voters read."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.allnba_points_ladder",
+      "nba.prospect_board_dispersion"
+     ],
+     "note": "Ballot-sum distribution and board dispersion define tails and cut-line probabilities."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.standings_sim",
+      "nba.monthly_window_schedule"
+     ],
+     "note": "Seeding and games-in-window for monthly awards."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.games_played_eligibility",
+      "nba.award_role_filters"
+     ],
+     "note": "League eligibility rules act as the rule layer for awards."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "nba.draft_pick_ownership_graph"
+     ],
+     "note": "Co-winner pro-rata and slot-based settlement; remaining series are TITLE_ONLY."
+    }
+   }
+  },
+  "new_inputs": {
+   "nba.eligibility_minutes_ledger": {
+    "label": "Qualifying-games ledger (65 games with 20+ minutes) and slack",
+    "category": "availability",
+    "mechanism": "The award eligibility count is a deterministic ledger that only the league's definition of a qualifying game updates; slack to the line plus injury hazard gives the probability of staying eligible.",
+    "rationale": "The existing eligibility input restates the rule but not the arithmetic; a player at 50 qualifying games with 20 left has a very different conditional risk from one at 62 with a nagging injury, and games of 15-20 minutes count only in a small allowance.",
+    "measurement": "Per player: qualifying = games with minutes >= 20 (allow up to 2 games of 15-20 minutes per league rule, SOURCE_UNVERIFIED for the 2026-27 rule); slack = games_remaining - (65 - qualifying); P(eligible) = P(missed games among remaining <= slack) under a Poisson-binomial with per-game miss probability = player-season availability rate shrunk with k=20 games toward position prior, updated nightly after the 6pm ET injury report; as-of timestamp = last completed game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api boxscore minutes",
+     "Basketball-Reference game logs",
+     "NBA schedule"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player-game minutes",
+     "schedule remaining",
+     "injury status history"
+    ],
+    "why": "MVP, All-NBA, DPOY and Clutch markets can flip from near-certain to impossible on one game, so the ledger is the first gate for every candidate price.",
+    "role": "primary"
+   },
+   "nba.award_role_filters": {
+    "label": "Award-specific candidate filters (bench-start ratio, rookie status, clutch minimum)",
+    "category": "player_role",
+    "mechanism": "Each award has a definitional filter (Sixth Man must come off the bench in more games than he starts, ROY needs rookie status, Clutch POY needs clutch minutes/games, MIP needs improvement versus prior year) that decides who is in the candidate set.",
+    "rationale": "A single input called award_stats treats all awards alike, but the candidate set is built by the filter first; a starter promoted mid-season loses Sixth Man eligibility, and a rookie who played overseas may or may not be a rookie.",
+    "measurement": "Per award: boolean membership computed from the league definition on as-of date: sixth man requires games_off_bench > games_started; ROY requires rookie flag from the league rookie list; Clutch POY requires clutch minutes (last 5 min, score within 5) >= league minimum; produce candidate list and the gap in the stat the award names (clutch net points, improvement delta in PER/BPM, defensive win shares) with 10-game shrinkage to season value.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com clutch splits",
+     "Basketball-Reference rookies and starts",
+     "Official award criteria"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player-game starts/bench flag",
+     "clutch splits",
+     "rookie registry"
+    ],
+    "why": "The candidate field and the named statistic differ per series, so a single production metric misranks Sixth Man, Clutch and MIP contenders.",
+    "role": "primary"
+   },
+   "nba.expectation_overperformance": {
+    "label": "Wins minus preseason expectation (own, non-market)",
+    "category": "team_strength",
+    "mechanism": "Coach, Executive, MIP and team-driven awards reward results above what the roster implied before the season, so voters compare wins to a preseason baseline.",
+    "rationale": "Total wins alone ranks the best teams first, but Coach of the Year goes to the largest positive surprise; the baseline must be an own rating-based preseason projection and not a sportsbook win total to avoid a market-derived input.",
+    "measurement": "exp_wins_pre = 82 x (own preseason team rating converted via Pythagorean with exponent 14, using returning minutes-weighted player ratings with 0.6 weight on last season, 0.4 on career, regressed 30% to league mean); surprise = wins_to_date - exp_wins_pre scaled by sd 6 wins; recompute on the as-of date using games played to date + 82 - GP times current rating.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference team ratings",
+     "own preseason rating"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "team season results",
+     "prior-season player minutes"
+    ],
+    "why": "Coach of the Year, Executive of the Year and MIP prices should key off surprise rather than wins; the existing catalog has no baseline for it.",
+    "role": "primary"
+   },
+   "nba.allnba_points_ladder": {
+    "label": "All-NBA points ladder and cut-line margins (positionless)",
+    "category": "distribution",
+    "mechanism": "All-NBA teams are three five-player cut lines on a single points ranking (5/3/1 for first/second/third team); a candidate's probabilities across team markets are nested.",
+    "rationale": "Candidates with similar profiles split votes and a margin of a few points moves a player between teams; ballots are positionless since 2023-24, so the old guard/forward/center constraints no longer bind and should not be modelled.",
+    "measurement": "Simulate 100 ballots: each voter draws a ranked 15-player list from a Dirichlet-perturbed consensus of candidates' production and team-success scores (concentration alpha=8 per candidate, calibrated to 2023-25 published vote totals); output P(rank<=5), P(rank<=10), P(rank<=15), enforce sums of 5, 10, 15; as-of nightly after the eligibility filter.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Official All-NBA voting totals (published after announcement)",
+     "Basketball-Reference awards voting"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "historical ballot totals per player",
+     "candidate score table"
+    ],
+    "why": "Rung markets on 1st/2nd/3rd team are cumulative on the same ranking and need an enforced consistent ladder, which the market's independent quotes may violate.",
+    "role": "secondary"
+   },
+   "nba.draft_pick_ownership_graph": {
+    "label": "Draft pick ownership graph with protections and swaps",
+    "category": "player_role",
+    "mechanism": "Which franchise holds slot N depends on lottery results filtered through traded-pick protections, swap rights and conveyance order across years.",
+    "rationale": "Team-to-draft and slot markets require knowing owner(s) and conditions; an unconditional top-4 protected pick converts to a future obligation and changes incentives of both teams in the standings race.",
+    "measurement": "Table per pick: original team, current owner, protection (top-N range), swap counterpart and conveyance date; for each lottery outcome, determine slot and holder using the protection rules; as-of timestamp = latest completed trade; join with simulated standings to yield P(owner holds slot k).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "RealGM draft pick ownership",
+     "Tankathon",
+     "Spotrac"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "trade transactions",
+     "pick protection terms"
+    ],
+    "why": "Pick-slot and team-to-draft markets settle on ownership as much as on prospect choice, and traded protections create incentives that move standings.",
+    "role": "primary"
+   },
+   "nba.prospect_board_dispersion": {
+    "label": "Prospect consensus rank and cross-board dispersion",
+    "category": "distribution",
+    "mechanism": "Selection at slot N is a categorical outcome over the top prospects; disagreement across public boards and team-specific mocks signals entropy and information arrival.",
+    "rationale": "A single consensus rank hides that the second pick is nearly deterministic in some drafts and a coin flip among four prospects in others; measuring dispersion is the correct uncertainty input.",
+    "measurement": "For each prospect: mean and sd of rank across at least 6 boards (ESPN, The Athletic, Tankathon, NBADraft.net, Bleacher Report, Yahoo) with weights proportional to each source's historical rank-error; convert to P(selected at slot k) by a Plackett-Luce model fit on 2015-2025 drafts; update after each workout/medical report with 48h half-life.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Tankathon consensus",
+     "NBADraft.net",
+     "public board posts"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "board snapshots with timestamps",
+     "historical draft slots"
+    ],
+    "why": "Draft slot markets on picks 1-10 are priced as separate coins; the Plackett-Luce structure enforces that one prospect fills one slot.",
+    "role": "primary"
+   },
+   "nba.monthly_window_schedule": {
+    "label": "Games-in-window and schedule for monthly awards",
+    "category": "motivation",
+    "mechanism": "Monthly player/rookie/coach/defender awards depend on games played inside the window, with fewer games for a candidate lowering his total counting stats and chance of an extreme month.",
+    "rationale": "Players on teams with 12 games in the window versus 16 have different expected volume; the conference split of winners and ties matters for pro-rata payout.",
+    "measurement": "games_in_window per candidate team from the league schedule; expected counting stats = per-game mean x games with 10-game shrinkage; probability of winning within conference = softmax over candidates of standardized (points, wins, efficiency) with temperature fit on past months; update on the as-of date.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA schedule",
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "schedule",
+     "player-game box scores"
+    ],
+    "why": "Monthly series are decided in a fixed short window where a schedule difference of three games matters.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nba.award_stats": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Production is the base of every ballot but the entry mixes box-score output with narrative and is not award-specific; split by award via nba.award_role_filters."
+   },
+   "nba.games_played_eligibility": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Hard gate that creates bimodal outcomes; as written it names the 65-game rule but not the 20-minute qualifying definition or slack arithmetic, now supplied by nba.eligibility_minutes_ledger."
+   },
+   "nba.voting_narrative": {
+    "verdict": "WEAK",
+    "reason": "Not measurable as defined; voter composition and narrative need an observable proxy such as past ballot behaviour and repeat-winner history, otherwise it is a placeholder."
+   },
+   "nba.standings_sim": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Seed matters through a step in historical MVP/DPOY winners and sets lottery odds for draft markets; relevant but works only after conversion to P(top seed) and lottery odds."
+   },
+   "nba.player_impact": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "RAPM/EPM-style impact describes true value but voters read box-score and reputation, so use it to explain mispricing rather than as the main predictor of vote share."
+   },
+   "nba.injury_risk_season": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Drives the probability of finishing under the games threshold; useful only combined with the exact qualifying slack."
+   },
+   "nba.draft_board": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Lottery odds and consensus order are the core draft input; relevant only for the draft/lottery series and ignored for awards, and dispersion across boards is missing."
+   },
+   "nba.news": {
+    "verdict": "WEAK",
+    "reason": "Undefined 'transactions, trades, coaching news'; for the draft the actionable subset is trade/pick-conveyance and workout/medical reports, which now have their own inputs."
+   },
+   "nba.minutes": {
+    "verdict": "IRRELEVANT",
+    "reason": "Per-game projected minutes (blowout, foul trouble) belong to single-game props; season awards use season totals and the 20-minute qualifying rule only."
+   },
+   "m.quote_history": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Kalshi price path for award and draft ballots; useful to see when information was absorbed and for calibration labels, but it is an observation of the market, never an explanatory driver of the outcome."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Versioned rules text defines the settled quantity for award and draft ballots; wording changes between series are the only way to know the target variable, so it is a required contract input, not a feature."
+   },
+   "m.external_lines": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Sportsbook price for award and draft ballots is a market-derived quantity; keep as a comparison benchmark to measure disagreement, do not use as an input to the probability model."
+   },
+   "m.strike_hit_rates": {
+    "verdict": "WEAK",
+    "reason": "Award and draft markets have one resolution a year per series, so realised frequency by rung is a handful of observations and cannot calibrate anything."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nba.award_stats",
+     "nba.standings_sim"
+    ],
+    "form": "conditional",
+    "mechanism": "Voters treat team success as a gate: production wins only when the team is a top-two seed, and below that seed the same production sees a sharp discount, especially for MVP and DPOY; the effect is much smaller for ROY and MIP.",
+    "how_to_test": "Fit vote share on production gap with a seed-bucket dummy and compare slopes by award across 2000-2025 results; test seed-bucket x gap coefficient."
+   },
+   {
+    "inputs": [
+     "nba.games_played_eligibility",
+     "nba.eligibility_minutes_ledger"
+    ],
+    "form": "threshold",
+    "mechanism": "At zero slack a single missed game removes a candidate completely, so the probability is a step in games remaining rather than a smooth penalty; players with high slack are insulated.",
+    "how_to_test": "Compare realised winner rate across slack buckets 0, 1-3, 4-8, 9+ on historical candidates; look for a discontinuity at slack 0."
+   },
+   {
+    "inputs": [
+     "nba.allnba_points_ladder",
+     "nba.award_stats"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Similar candidates split ballot ranks: two centres with equal metrics both fall relative to a lone candidate with the same metrics, and a surplus of strong forwards lowers P(third team) for a marginal one.",
+    "how_to_test": "Add the count of candidates with a similar profile within 1 sd as a feature, or simulate ballots to see whether pairwise vote-share correlation is negative."
+   },
+   {
+    "inputs": [
+     "nba.expectation_overperformance",
+     "nba.standings_sim"
+    ],
+    "form": "saturating",
+    "mechanism": "Coach of the Year rewards positive surprise but saturates once a team is already a top seed, because a title favourite cannot overperform much; a mid-seed team with a large surprise beats a top seed with a small one.",
+    "how_to_test": "Regress COY winner on surprise and seed with a saturating term; compare predictions of winners for teams above 60 wins."
+   },
+   {
+    "inputs": [
+     "nba.draft_pick_ownership_graph",
+     "nba.draft_board"
+    ],
+    "form": "conditional",
+    "mechanism": "Slot probabilities for prospects depend on who holds the pick: a team with a veteran roster, a rebuilding team and a team trading the pick pick differently, so P(prospect at slot k) is conditional on the holder.",
+    "how_to_test": "Fit selection model with owner-type features on past drafts; measure rank-error of consensus by pick holder."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nba.games_played_eligibility",
+    "shape": "Step function at the threshold (65 qualifying games)",
+    "why": "The rule is a hard threshold, so effect on P(win) is zero until the player is within a few games of the line and then collapses; linear injury-risk adjustment would misprice players near the line."
+   },
+   {
+    "input_id": "nba.standings_sim",
+    "shape": "Step in seed (top-2 vs rest), saturating above",
+    "why": "Winners cluster in top seeds, so probability changes little between seed 1 and 2 but falls sharply beyond seed 4; response is closer to a gate than a slope."
+   },
+   {
+    "input_id": "nba.award_stats",
+    "shape": "Softmax in the gap to the next candidate",
+    "why": "Vote share is concentrated; a candidate's win probability depends on the margin over the runner-up on voter-visible stats rather than the absolute level."
+   },
+   {
+    "input_id": "nba.prospect_board_dispersion",
+    "shape": "Entropy collapse near draft night",
+    "why": "Selection probability concentrates quickly as boards converge and insiders report, so the dispersion measure should be time-weighted rather than static."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Award voting history and results",
+    "grain": "player-season-award",
+    "fields": [
+     "player",
+     "season",
+     "award",
+     "points_won",
+     "first_place_votes",
+     "share",
+     "rank",
+     "finalist"
+    ],
+    "timestamp_requirement": "Season of announcement; snapshot dated after official release.",
+    "history_needed": "2000-2026 for MVP/DPOY/ROY/6MOY/MIP/All-NBA",
+    "candidate_sources": [
+     {
+      "name": "Basketball-Reference awards voting pages",
+      "access": "free_scrape",
+      "note": "Includes share and first-place votes; scrape allowed with rate limiting, terms unverified"
+     },
+     {
+      "name": "NBA.com voting results releases",
+      "access": "free",
+      "note": "Published post-announcement with per-voter ballots for major awards (SOURCE_UNVERIFIED for all awards)"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.allnba_points_ladder",
+     "nba.award_stats"
+    ]
+   },
+   {
+    "dataset": "Player game logs with minutes, starts and clutch splits",
+    "grain": "player-game",
+    "fields": [
+     "player_id",
+     "game_id",
+     "minutes",
+     "started",
+     "points",
+     "rebounds",
+     "assists",
+     "clutch_minutes",
+     "clutch_net"
+    ],
+    "timestamp_requirement": "Final box score as of last game; stat corrections lag up to 24h.",
+    "history_needed": "2000-2026",
+    "candidate_sources": [
+     {
+      "name": "NBA Stats API (nba_api client)",
+      "access": "free_limited",
+      "note": "Rate-limited, endpoints change; commonly accessible"
+     },
+     {
+      "name": "Basketball-Reference game logs",
+      "access": "free_scrape",
+      "note": "Daily updated"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.eligibility_minutes_ledger",
+     "nba.award_role_filters",
+     "nba.award_stats",
+     "nba.monthly_window_schedule",
+     "nba.games_played_eligibility",
+     "nba.injury_risk_season",
+     "nba.player_impact"
+    ]
+   },
+   {
+    "dataset": "Draft pick ownership and lottery table",
+    "grain": "pick-year",
+    "fields": [
+     "original_team",
+     "owner",
+     "protection",
+     "swap_rights",
+     "conveyance_year",
+     "lottery_odds_by_seed"
+    ],
+    "timestamp_requirement": "Transaction date; as-of the latest trade and the final standings.",
+    "history_needed": "2015-2026 drafts plus future picks to 2033",
+    "candidate_sources": [
+     {
+      "name": "RealGM draft pick tracker",
+      "access": "free_scrape",
+      "note": "Team-by-year ownership table"
+     },
+     {
+      "name": "Spotrac draft pick ownership",
+      "access": "free_scrape",
+      "note": "Includes protection text"
+     },
+     {
+      "name": "NBA.com lottery odds",
+      "access": "free",
+      "note": "Odds table published annually"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.draft_pick_ownership_graph"
+    ]
+   },
+   {
+    "dataset": "Prospect board snapshots",
+    "grain": "prospect-source-date",
+    "fields": [
+     "prospect",
+     "source",
+     "rank",
+     "date",
+     "workouts",
+     "medicals",
+     "age",
+     "league"
+    ],
+    "timestamp_requirement": "Timestamp each snapshot; use only snapshots dated before quote time.",
+    "history_needed": "2015-2026 boards",
+    "candidate_sources": [
+     {
+      "name": "Tankathon / NBADraft.net",
+      "access": "free_scrape",
+      "note": "Public consensus"
+     },
+     {
+      "name": "ESPN Draft Insider, The Athletic big board",
+      "access": "paid",
+      "note": "Behind subscription; scrapable text not guaranteed"
+     },
+     {
+      "name": "Team workout lists",
+      "access": "unavailable_public",
+      "note": "Many team workouts reported inconsistently"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.prospect_board_dispersion",
+     "nba.draft_board",
+     "nba.news",
+     "nba.voting_narrative"
+    ]
+   },
+   {
+    "dataset": "Team results and preseason ratings",
+    "grain": "team-season-game",
+    "fields": [
+     "team",
+     "date",
+     "result",
+     "margin",
+     "own_preseason_rating",
+     "schedule_strength"
+    ],
+    "timestamp_requirement": "As-of game date; preseason rating frozen at tip of opening night.",
+    "history_needed": "2000-2026",
+    "candidate_sources": [
+     {
+      "name": "Basketball-Reference",
+      "access": "free_scrape",
+      "note": "Standings and ratings"
+     },
+     {
+      "name": "own rating derived from returning minutes",
+      "access": "derived",
+      "note": "Needs minutes-weighted prior"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.expectation_overperformance",
+     "nba.standings_sim"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "52 of 55 live awards/draft series have no sampled rules, so tie handling, finalist definitions (KXNBAAWARDFIN), stat-leader qualification (KXNBASTATLEADER) and per-conference monthly awards cannot be confirmed from text.",
+    "what_would_resolve": "Sample rules_primary and rules_secondary for each series family, especially monthly awards, Hall of Fame and draft comparison/category markets.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Voter ballots are public only after announcement, and the electorate composition and any strategic voting (fatigue, ballot pre-commitment before the playoffs) cannot be observed during the season.",
+    "what_would_resolve": "Collect past ballot-level data and test whether voter-level fatigue and homers add information; accept residual uncertainty otherwise."
+   },
+   {
+    "id": "u3",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Current 2026-27 eligibility details (20-minute definition, two 15-20 minute allowance) and positionless All-NBA ballot rules are from memory of the 2023 CBA and have not been re-read in the 2026-27 league rulebook.",
+    "what_would_resolve": "Read the league's published award criteria for the 2026-27 season and confirm each threshold."
+   },
+   {
+    "id": "u4",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Leak timing: reporters often release award or draft results hours before the official announcement, and it is unclear whether Kalshi settles on the leak or the official release.",
+    "what_would_resolve": "Compare settlement timestamps of past awards with leak times; confirm from rules_primary text."
+   }
+  ]
+ },
+ "combo_props": {
+  "reviewer": "NBA_a author",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "The sampled live series (KXNBAPRAPROT, a protected points+rebounds+assists contract) settles Yes if the named player records at least the 'N+' combined total (strike 24.5 means 25+) in the single named game. The protected clause converts the contract to the fair price prior to the opening tip when the player enters during the first half but never again after halftime (including overtime) and has not already reached the required total; a player who enters only after halftime settles on actual stats. The sampled text is silent on whether overtime stats count in the total, so inclusion is inferred from official box-score practice, not verified. Postponement within 48 hours stays open; otherwise it resolves to fair price.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNBAPRAPROT",
+     "quote": "records 25+ combined points, rebounds, and assists in the San Antonio vs Sacramento Pro Basketball game originally scheduled for Nov 6, 2026",
+     "establishes": "Settled quantity is the sum of three box-score stats for one named game at an 'N+' integer threshold (floor_strike 24.5), so it is a count of a sum, with the date of the original schedule governing the match."
+    },
+    {
+     "ticker": "KXNBAPRAPROT",
+     "quote": "this Contract resolves to the fair price prior to the opening tip of the game unless the player records the required number",
+     "establishes": "Protected variant: a first-half-only appearance is void at the pre-tip fair price unless the strike is already reached, so early exit by injury is not a loss for a Yes holder; the distribution of the settled event conditions on playing past halftime."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Protected versus unprotected: only one series (KXNBAPRAPROT) was sampled, and unprotected PR/PA/RA subsets (the archetype label includes them) are not in the live ledger, so their DNP wording is unseen.",
+    "Early-exit void: a player who plays the first half and is hurt at halftime produces a fair-price settlement rather than No, which removes the lower tail that otherwise exists.",
+    "Strike on a half point: floor_strike 24.5 with 'N+' means a total of exactly 24 is No and 25 is Yes; the integer sum of three counts has no push.",
+    "Overtime: the sampled rule text does not say overtime statistics are included; box-score totals normally include them, adding 5 minutes to starters in about 6% of games.",
+    "Stat corrections after the game by the league's scorer can alter an assist or rebound and flip a boundary result."
+   ],
+   "settlement_data_source": "Official league box score (NBA.com game box score) for points, rebounds and assists; the protected clause uses substitution/play-by-play records to determine first-half entry and second-half entry."
+  },
+  "mechanism": {
+   "summary": "A combo prop settles on S = PTS + REB + AST over the minutes the player is on court, so the outcome is the sum of three count processes that share one multiplier (minutes) and one environment (possessions) but compete for the same player-level resources. The chain is: does he play and for how long (a mixture over full-length, blowout-truncated, foul-limited and early-exit scenarios), how many team possessions occur in those minutes, which share of them runs through him as shooter, passer or rebounder, how efficiently each opportunity converts, and how the discrete sum lands relative to a half-point threshold. Components are positively correlated through minutes and pace but negatively through role allocation (a creator who scores more shoots instead of assisting; a perimeter-oriented big rebounds fewer), so the variance of the sum is not the sum of variances. The protected clause removes the early-exit lower tail, while overtime and close games add a right tail. Points carry most of the variance, rebounds the least.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Participation and protected-state",
+     "description": "The first gate is whether the player appears. Unprotected contracts void on inactive or never-on-court, while the protected contract voids a first-half-only appearance unless the strike is already met. So the probability mass is cut at 'minutes = 0' and at 'exit before the halftime return', and what remains is the participation scenario where the player plays at least a second-half minute. Late scratches (inactive 30 minutes before tip), minute restrictions on return and in-game injuries all shape the cut and arrive from official reports and reporter posts at different times.",
+     "distribution": "Spike at zero (void) plus a thin early-exit spike; remaining mass is a continuous minutes distribution. Conditional on playing, the probability of an in-game exit is a small hazard per minute, higher for players with recent injuries.",
+     "categories": [
+      "availability_news",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.injuries_pit",
+      "nba.early_exit_hazard"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Minutes scenario mixture",
+     "description": "Minutes are not one number: a starter on a team projected to win by 14 faces a high probability of a 26-minute night, in a competitive game he plays 36, and with foul trouble he is clipped at 28 and then returns. The scenarios mix with different weights depending on spread, coach rotation habits and bench quality, and each scenario has its own stat rate because garbage-time minutes are low-usage. OT adds a fixed block of minutes in roughly one game in sixteen.",
+     "distribution": "Multimodal mixture (blowout 22-28, normal 32-38, OT 40+) rather than a normal; sd of minutes for starters about 5 and sharply state-dependent, tail truncated at 48+5k.",
+     "categories": [
+      "game_context_script",
+      "role_personnel",
+      "coaching_scheme"
+     ],
+     "input_ids": [
+      "nba.minutes",
+      "nba.minutes_scenario_mixture",
+      "nba.garbage"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Opportunity volume per minute",
+     "description": "Per minute, the player has shot attempts and free-throw trips (usage), rebound chances (position of shots and team missed shots in his zone), and potential assists (touches and passes). These depend on pace of the game and on which teammates share the floor: missing the primary creator raises usage but also changes who receives the passes. Rebound chances depend on both teams' miss rates and the number of bigs on court.",
+     "distribution": "Overdispersed counts per minute; opportunity totals are roughly negative-binomial with a variance that grows with team pace variability and lineup churn.",
+     "categories": [
+      "pace_volume",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nba.usage",
+      "nba.reb_chances",
+      "nba.pot_ast",
+      "nba.pace",
+      "nba.teammate_absence_shift",
+      "nba.lineup_conditional_component_rates"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Conversion and luck",
+     "description": "Points are a conversion of attempts (efficiency with high short-window noise on threes), rebounds convert chances at a rate dominated by position and opponent miss quality, assists convert potential assists at teammate shooting rate and the scorer's credit behaviour. Of the three, points carry the largest luck variance in a single game and assist conversion depends on whether teammates are hot; rebounds are comparatively stable. These conversion terms are partly independent, which softens the covariance of the sum.",
+     "distribution": "Points: binomial-like per attempt with extra shooting-luck variance; assists: binomial on potential assists with arena credit noise; rebounds: close to Poisson given chances. Sum of three non-identical overdispersed counts.",
+     "categories": [
+      "efficiency_conversion",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nba.shot_profile",
+      "nba.stat_dist",
+      "nba.teammate_conv",
+      "nba.scorer_bias"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Joint distribution and threshold",
+     "description": "The settled event is the sum crossing an integer line, so the covariance between components matters for the tails: minutes and pace give a positive common factor while role-share gives a negative one, and the net sign depends on the player type (a scoring wing versus a point-guard creator versus a centre). A scenario mixture on minutes plus component-specific residuals produces a right-skewed sum whose mass at the line depends on the mean and the sd.",
+     "distribution": "Right-skewed integer distribution with sd roughly 6-8 for a star at a mean near 30; the cumulative mass at the rung depends on scenario weights, not just the mean.",
+     "categories": [
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nba.combo_covariance",
+      "nba.stat_dist",
+      "nba.own_game_environment"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.usage",
+      "nba.shot_profile"
+     ],
+     "note": "Player-level production rates are the ability layer for each component."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.opp_def_pos",
+      "nba.shot_profile",
+      "nba.reb_chances"
+     ],
+     "note": "Opponent allowed points/rebounds/assists to position; nba.opp_def_pos exists in the catalog but is not attached to this archetype."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.teammate_absence_shift",
+      "nba.lineup_conditional_component_rates"
+     ],
+     "note": "Who shares the floor changes shot, pass and rebound opportunities in different directions."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.injuries_pit",
+      "nba.early_exit_hazard"
+     ],
+     "note": "Own and teammates' status plus in-game exit hazard feed the protected-state cut."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.minutes_scenario_mixture",
+      "nba.garbage"
+     ],
+     "note": "Rotation and garbage-time pull timing decide the minute scenario weights."
+    },
+    "environment": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Altitude, arena and weather act on a single player-game only through possessions and fatigue, which the pace and rest inputs capture; no separate environmental input would add information for a points+rebounds+assists sum."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.garbage",
+      "nba.own_game_environment"
+     ],
+     "note": "Spread/total environment drives minutes truncation and team scoring."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.pace",
+      "nba.own_game_environment"
+     ],
+     "note": "Possessions scale all three components."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.shot_profile",
+      "nba.teammate_conv"
+     ],
+     "note": "Scoring and assist conversion with luck regression."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.combo_covariance",
+      "nba.stat_dist"
+     ],
+     "note": "Covariance and marginals produce the sum distribution."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Back-to-back, return-from-injury restrictions and standings-driven rest are not an attached input; only nba.rest_travel exists in the catalog and is not tied to the minute mixture."
+    },
+    "officiating_rules": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Referee crew foul tendency changes free-throw points and foul trouble, hence minutes; it is not attached to this archetype even though nba.referee_crew exists in the catalog."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "nba.stat_corrections"
+     ],
+     "note": "Protected clause, strike construction and stat corrections define the settled quantity."
+    }
+   }
+  },
+  "new_inputs": {
+   "nba.minutes_scenario_mixture": {
+    "label": "Minutes scenario mixture weights and component rates",
+    "category": "player_role",
+    "mechanism": "Minutes are a mixture of regimes (blowout truncation, normal, foul-limited, OT, restricted) whose weights depend on game state and each regime has different per-minute stat rates.",
+    "rationale": "The existing nba.minutes is a point projection that hides the multimodality; for a threshold sum, P(S>=25) is driven by the weight of the full-minutes regime, not by the mean minutes.",
+    "measurement": "From 3+ seasons of play-by-play, classify each player-game into regimes by the minutes and score margin (blowout: |margin|>=18 with 4th-quarter minutes<8; foul-limited: >=4 fouls by Q3; OT; restriction: coach-announced); fit regime weights as a multinomial logit of (own-model spread, rest, opponent pace, bench depth) with ridge shrinkage; each regime's stat-per-minute rates estimated with 15-game half-life and a prior from players of the same role; as-of timestamp = last injury report vintage.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nba_api playbyplayv3",
+     "Basketball-Reference play-by-play"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play with substitutions",
+     "player-game minutes",
+     "own-model spread"
+    ],
+    "why": "A PRA rung's probability is dominated by P(full minutes), which the market prices with a single projected minute number.",
+    "role": "primary"
+   },
+   "nba.early_exit_hazard": {
+    "label": "In-game early-exit hazard (injury, ejection, illness)",
+    "category": "availability",
+    "mechanism": "Protected contracts void a first-half exit but pay on actual stats once he reappears after half; unprotected ones settle on the truncated actual.",
+    "rationale": "Early exit is the main cause of a low tail unrelated to rates; it is a hazard per minute which is higher for players returning from injury and for high-minutes players, and it is not in the injury-report status.",
+    "measurement": "Per-minute exit hazard h = exits (left and did not return) / minutes over player's last 3 seasons, shrunk to position prior with k=2000 minutes, scaled by 1.5 for the first 3 games after a listed injury; P(exit before half) = 1 - exp(-h*minutes_in_half1), P(exit after half) likewise; convert by contract wording (protected void vs actual).",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nba_api play-by-play (injury substitution)",
+     "Pro Sports Transactions injury notes"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play",
+     "injury history"
+    ],
+    "why": "Protected PRA contracts hinge on first-half versus second-half exit, so the hazard needs to be modelled separately from status.",
+    "role": "secondary"
+   },
+   "nba.lineup_conditional_component_rates": {
+    "label": "Lineup-conditional per-100 rates for points, rebounds and assists",
+    "category": "player_role",
+    "mechanism": "The three components move differently when teammates are on or off court: a creator off court raises the player's usage and assists, a big off court raises rebounds.",
+    "rationale": "Season-average per-minute rates blur lineup regimes, and teammate_absence_shift is a single directional signal; separate rates per partner set are needed for a sum that moves in offsetting directions.",
+    "measurement": "Per player: per-100-possession PTS, REB, AST computed by on-court partner set (with/without each of the top-3 teammates by minutes), minimum 300 possessions per cell, empirical-Bayes shrinkage toward the player's overall rate with k=400 possessions; applied to tonight's expected lineup from the confirmed or projected starters; as-of = latest lineup information.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com lineups (nba_api)",
+     "Cleaning the Glass (paid)",
+     "pbpstats"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "lineup-level on/off tables",
+     "play-by-play"
+    ],
+    "why": "A 'missing teammate' flag cannot tell whether PRA rises (scoring/assist boost) or just redistributes (points up, assists down).",
+    "role": "primary"
+   },
+   "nba.own_game_environment": {
+    "label": "Own-model game environment (team points, possessions)",
+    "category": "pace_volume",
+    "mechanism": "Both teams' scoring environment determines how many scoring chances exist in the minutes played.",
+    "rationale": "nba.implied_team_totals is derived from the sportsbook spread and total, which is market-derived, so it should be a benchmark; an own estimate from ratings and pace gives an independent environment.",
+    "measurement": "Team points = pace_own x (opponent-adjusted ORtg) / 100 using 20-game exponentially weighted ratings with opponent adjustment by ridge (lambda tuned on 2 prior seasons); possessions = geometric mean of the two teams' opponent-adjusted pace; adjustment for tonight's active set via lineup rating deltas; output team points and sd.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference team stats",
+     "NBA.com advanced team stats"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "team game logs",
+     "lineup ratings"
+    ],
+    "why": "The environment is needed independent of the market price; using spread-implied points would make the model a function of its own benchmark.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nba.minutes": {
+    "verdict": "WEAK",
+    "reason": "A single projected minute figure hides the multimodal truncation that drives the sum's tails; keep as a summary but replace the driver with a scenario mixture."
+   },
+   "nba.usage": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Usage is the right opportunity measure for points, but a usage rate says nothing about assist or rebound components, so it is only one third of the volume story."
+   },
+   "nba.combo_covariance": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Directly targets the key mechanism (covariance of components) but needs to be conditional on role type and minutes regime; a single covariance matrix per player over-states the minutes-driven part."
+   },
+   "nba.stat_dist": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Marginal count distributions are needed for the sum convolution; overlaps with combo_covariance in intent so should be fitted jointly, not separately."
+   },
+   "nba.teammate_absence_shift": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Redistribution is real but different per component; the coarse with/without delta needs the lineup-conditional rates to say which component moves."
+   },
+   "nba.reb_chances": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Rebound chances give a stable opportunity measure for one component; contested versus uncontested share needs tracking data that is not free."
+   },
+   "nba.pot_ast": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Potential assists are the opportunity measure for assists; available from tracking, so access is the limit."
+   },
+   "nba.shot_profile": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Shot location decides points per attempt and rebound location; useful for scoring efficiency, minor for assists."
+   },
+   "nba.garbage": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Blowout probability is the largest single driver of the lower tail of minutes; it is derived from a spread, so use an own-model spread, not the Kalshi/sportsbook line, to avoid circularity."
+   },
+   "nba.pace": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pace scales possessions for all three components; overlaps with implied team totals in what it carries."
+   },
+   "nba.injuries_pit": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Status vintage of the player and teammates sets availability and who is on the floor; timing relative to quote time is crucial."
+   },
+   "nba.implied_team_totals": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Derived from sportsbook spread and total, so market-derived; keep it as a comparison against the own-model environment rather than as a model input."
+   },
+   "nba.stat_corrections": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "A post-game correction can flip a boundary integer in a three-stat sum, so it matters mainly for settlement labels and not for pregame probability."
+   },
+   "m.quote_history": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Kalshi price path for the three-stat PRA contract; useful to see when information was absorbed and for calibration labels, but it is an observation of the market, never an explanatory driver of the outcome."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Versioned rules text defines the settled quantity for the three-stat PRA contract; wording changes between series are the only way to know the target variable, so it is a required contract input, not a feature."
+   },
+   "m.external_lines": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Sportsbook PRA lines are the strongest prior but they are market prices; use only as the benchmark and measure disagreement."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Cross-rung monotonicity of the three-stat PRA contract is derived from Kalshi prices, so it flags stale quotes (an execution diagnostic) and carries no information about the underlying result."
+   },
+   "m.strike_hit_rates": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Realised frequency by rung for the three-stat PRA contract is a calibration label set rather than a driver; thin samples per rung limit its use."
+   },
+   "nba.market_calibration_bias": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Price-bucket miscalibration for the three-stat PRA contract is measured on Kalshi prices, so it is a market-derived correction layer applied after a probability exists, not an input."
+   },
+   "m.volume_oi": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Volume/open interest for the three-stat PRA contract measures liquidity and attention; market-derived and not a driver of the outcome, usable only to discount thin quotes."
+   },
+   "m.trade_tape": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Trade prints for the three-stat PRA contract are market microstructure; informed-flow inference from them is speculative and cannot be a causal input."
+   },
+   "m.settlement_truth": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Settled value and timestamp for the three-stat PRA contract are labels for calibration and need reconciling against the named source; not a pregame input."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nba.minutes_scenario_mixture",
+     "nba.usage"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Expected opportunities are the product of minutes and per-minute volume, but the usage rate itself is lower in garbage minutes, so the product within the blowout regime is much smaller than average minutes times average usage.",
+    "how_to_test": "Estimate regime-specific usage and compare predicted sums with the naive product on historical games stratified by final margin."
+   },
+   {
+    "inputs": [
+     "nba.combo_covariance",
+     "nba.lineup_conditional_component_rates"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "With the primary creator off court, points and assists move in opposite directions for the scorer-passer while points and rebounds move together for a big, so the covariance sign by component pair flips with the lineup.",
+    "how_to_test": "Compute component correlations in on/off splits and test whether the sd of the sum differs from the pooled estimate."
+   },
+   {
+    "inputs": [
+     "nba.garbage",
+     "nba.minutes_scenario_mixture"
+    ],
+    "form": "threshold",
+    "mechanism": "Past a spread of about 10 points the probability of a truncated-minutes game rises steeply, creating a regime switch in the upper rungs while the lower rungs barely move.",
+    "how_to_test": "Bucket own-model spread and measure P(S>=strike) by rung across spread buckets; look for a knee near 9-12 points."
+   },
+   {
+    "inputs": [
+     "nba.injuries_pit",
+     "nba.teammate_absence_shift"
+    ],
+    "form": "conditional",
+    "mechanism": "A questionable teammate's resolution changes the player's usage and assists, and since the protected clause treats the player's own exit separately, the sequence of reports matters: the teammate's status effect is conditional on the player's status being active.",
+    "how_to_test": "Compare PRA outcomes by teammate status vintage (listed out before 5pm vs after) controlling for own minutes."
+   },
+   {
+    "inputs": [
+     "nba.early_exit_hazard",
+     "nba.minutes_scenario_mixture"
+    ],
+    "form": "regime-switch",
+    "mechanism": "A protected contract voids a first-half exit, so P(Yes | not void) is a conditional on survival to the second half, shifting probability up for high-hazard players relative to the unprotected equivalent.",
+    "how_to_test": "Compare realised hit rates of protected versus unprotected series once voided contracts are removed."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nba.garbage",
+    "shape": "Knee at |spread| near 10, concave beyond",
+    "why": "Minutes loss rises slowly for small spreads and then accelerates as the favourite pulls starters, so the effect on a high rung is convex in the spread up to the knee and then saturates."
+   },
+   {
+    "input_id": "nba.minutes_scenario_mixture",
+    "shape": "Non-Gaussian multimodal with an OT spike",
+    "why": "Minutes in the three regimes are 24, 35 and 42 rather than one bell curve; the sum's upper tail is generated mainly by the OT/competitive regime."
+   },
+   {
+    "input_id": "nba.usage",
+    "shape": "Diminishing returns in points per extra shot",
+    "why": "Higher usage reduces efficiency, so doubling shot share does not double points, which flattens the points component for stars."
+   },
+   {
+    "input_id": "nba.stat_dist",
+    "shape": "Right-skewed integer sum with overdispersion",
+    "why": "Count components are overdispersed; the three-component sum has a heavier right tail than a normal with the same sd."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Player-game box score with minutes",
+    "grain": "player-game",
+    "fields": [
+     "player_id",
+     "game_id",
+     "minutes",
+     "pts",
+     "reb",
+     "ast",
+     "fga",
+     "fta",
+     "started",
+     "team_pace"
+    ],
+    "timestamp_requirement": "Final box score; apply corrections up to 24h later.",
+    "history_needed": "3 seasons for rates, 8 seasons for regime weights",
+    "candidate_sources": [
+     {
+      "name": "NBA Stats API (nba_api)",
+      "access": "free_limited",
+      "note": "boxscoretraditionalv3 and advanced; rate-limited"
+     },
+     {
+      "name": "Basketball-Reference game logs",
+      "access": "free_scrape",
+      "note": "Daily"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.minutes",
+     "nba.usage",
+     "nba.stat_dist",
+     "nba.combo_covariance",
+     "nba.minutes_scenario_mixture"
+    ]
+   },
+   {
+    "dataset": "Play-by-play with substitutions and lineups",
+    "grain": "event",
+    "fields": [
+     "game_id",
+     "period",
+     "clock",
+     "event type",
+     "players on court",
+     "score",
+     "foul type"
+    ],
+    "timestamp_requirement": "Final, but substitution timestamps are required for first-half/second-half entry.",
+    "history_needed": "5 seasons",
+    "candidate_sources": [
+     {
+      "name": "nba_api playbyplayv3",
+      "access": "free_limited",
+      "note": "Includes substitutions"
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Lineup and possession data"
+     },
+     {
+      "name": "Second Spectrum / Sportradar",
+      "access": "paid",
+      "note": "Tracked data, league feeds"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.early_exit_hazard",
+     "nba.lineup_conditional_component_rates",
+     "nba.minutes_scenario_mixture",
+     "nba.garbage"
+    ]
+   },
+   {
+    "dataset": "Tracking: rebound chances and potential assists",
+    "grain": "player-game",
+    "fields": [
+     "player_id",
+     "game_id",
+     "reb_chances",
+     "contested_reb",
+     "potential_ast",
+     "touches",
+     "time_of_possession"
+    ],
+    "timestamp_requirement": "Post-game; same day.",
+    "history_needed": "4 seasons",
+    "candidate_sources": [
+     {
+      "name": "NBA.com tracking (leaguedashptstats)",
+      "access": "free_limited",
+      "note": "Season/game splits; SOURCE_UNVERIFIED that per-game granularity is exposed"
+     },
+     {
+      "name": "Second Spectrum",
+      "access": "paid",
+      "note": "League tracking provider"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.reb_chances",
+     "nba.pot_ast",
+     "nba.teammate_conv"
+    ]
+   },
+   {
+    "dataset": "Official injury report and starter confirmations",
+    "grain": "player-status-snapshot",
+    "fields": [
+     "player",
+     "team",
+     "status",
+     "reason",
+     "timestamp",
+     "source"
+    ],
+    "timestamp_requirement": "Timestamp each snapshot; as-of rule = last snapshot before quote time.",
+    "history_needed": "2 seasons",
+    "candidate_sources": [
+     {
+      "name": "NBA official injury report PDF",
+      "access": "free",
+      "note": "Published at scheduled times"
+     },
+     {
+      "name": "Team beat reporter feeds (X/Twitter)",
+      "access": "free_scrape",
+      "note": "Rate limits, API access paid"
+     },
+     {
+      "name": "RotoWire / Underdog lineup pages",
+      "access": "free_scrape",
+      "note": "Starter projections"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.injuries_pit",
+     "nba.teammate_absence_shift"
+    ]
+   },
+   {
+    "dataset": "Team ratings and pace",
+    "grain": "team-game",
+    "fields": [
+     "team",
+     "opponent",
+     "possessions",
+     "ortg",
+     "drtg",
+     "pace",
+     "lineup_active_set"
+    ],
+    "timestamp_requirement": "As of last completed game.",
+    "history_needed": "3 seasons",
+    "candidate_sources": [
+     {
+      "name": "Basketball-Reference",
+      "access": "free_scrape",
+      "note": "Team stats"
+     },
+     {
+      "name": "NBA.com advanced",
+      "access": "free_limited",
+      "note": "Lineup ratings"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.own_game_environment",
+     "nba.pace",
+     "nba.shot_profile",
+     "nba.implied_team_totals"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled protected rule does not say whether overtime statistics count toward the three-stat total, and unprotected PR/PA/RA variants named in the archetype have no live series sampled, so their DNP and OT wording is not visible.",
+    "what_would_resolve": "Sample rules_primary for unprotected combo series when they list, and read any statement on overtime in the rule text."
+   },
+   {
+    "id": "u2",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Per-game tracking data for potential assists and rebound chances is paid or rate-limited and the per-game grain of the free endpoint was not verified.",
+    "what_would_resolve": "Verify the nba_api tracking endpoint at game grain or price a Second Spectrum/Sportradar feed.",
+    "category": "pace_volume"
+   },
+   {
+    "id": "u3",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "The regime split of minutes (blowout, foul, OT, restriction) uses thresholds chosen from basketball judgement; cutoffs like margin 18 or 4 fouls by Q3 are not validated and may be coach-specific.",
+    "what_would_resolve": "Check the cutoffs against the empirical minute histograms per coach and relabel regimes from data.",
+    "category": "game_context_script"
+   },
+   {
+    "id": "u4",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Lineup-conditional rates need 300 possessions per partner set; for new rosters and trades this exceeds the sample, so the redistribution between components is partly guesswork until several weeks into the season.",
+    "what_would_resolve": "Evaluate how many games a new combination needs before its rates beat the season average, then set shrinkage by roster age.",
+    "category": "role_personnel"
+   },
+   {
+    "id": "u5",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Crew assignments are published the morning of the game, and whether the free official assignment page exposes the referee list in machine-readable form was not verified, so the officiating link to free throws and minutes is open.",
+    "what_would_resolve": "Test the NBA official referee assignment endpoint and archive timestamps.",
+    "category": "officiating_rules"
+   },
+   {
+    "id": "u6",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Back-to-back, return-from-injury restrictions and clinched-seed rest affect minutes mixture weights but are tied to the unsettled load-management policy; no input here quantifies the policy for 2026-27.",
+    "what_would_resolve": "Build a rest-probability model from the league's published player availability policy and history.",
+    "category": "situational_schedule_motivation"
+   }
+  ]
+ }
+}

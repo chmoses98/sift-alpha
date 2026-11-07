@@ -1,0 +1,611 @@
+{
+ "player_milestones": {
+  "reviewer": "NBA_b author (Claude Sonnet 5.5)",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "Binary contract on one named player: YES if he records 10 or more in two (double double) or three (triple double) of the five categories points, rebounds, assists, steals, blocks in the single game named in the contract (floor_strike 0.5, strike_type greater). Inactive players, and active players who never take the court, settle at a fair price rather than NO; once the player enters the game the market settles on actual box-score statistics. A game postponed but starting within 48 hours stays open; cancelled or not started within 48 hours settles to a fair price. The rules sample is silent on whether overtime statistics count and the sample text is cut off before naming the source agency.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "rules_evidence": [
+    {
+     "ticker": "KXNBA2D",
+     "quote": "A double-double is achieved when a player reaches 10 or more in two of the five main statistical categories in a single game",
+     "establishes": "Defines the DD event as two of five categories (pts, reb, ast, stl, blk) at >=10 in one game."
+    },
+    {
+     "ticker": "KXNBA3D",
+     "quote": "If a player is inactive, or active but never takes the court, the market settles to a fair price.",
+     "establishes": "Participation voiding: only players who actually enter the game carry binary risk, so inactive-branch probability is irrelevant to the settled outcome."
+    },
+    {
+     "ticker": "KXNBA3D",
+     "quote": "Once a player enters the game the market settles based on whether the player records a triple double.",
+     "establishes": "No protection against early exit: a player who enters and leaves after minutes settles on whatever he accumulated."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Triple double (KXNBA3D) requires three categories at >=10; same five-category list, same voiding text, but a far thinner positive class dominated by a handful of high-assist bigs and guards, so base-rate shrinkage matters more than any matchup variable.",
+    "Steals and blocks are valid categories, so a rim protector can complete a DD with points+blocks or a TD with reb+blk; the common 'pts/reb/ast' simplification misses these paths.",
+    "Overtime is not mentioned in the sampled text; 'in a single game' on the official box score ordinarily includes OT minutes, which adds roughly 5 minutes to starters in ~6% of games and shifts DD probability materially for players at 8-9.",
+    "Inactive or never-entered player settles at a fair price (not NO), so unconditional participation modelling is unnecessary but the conditional-on-entering distribution needs a left tail for early exits."
+   ],
+   "settlement_data_source": "Official game box score as reported by the sports data sources named in the full rules; the sampled rules_secondary is truncated before naming them, so the exact source agency and stat-correction policy are unverified (see unresolved)."
+  },
+  "mechanism": {
+   "summary": "A double or triple double is a conjunction over counting categories, each of which is (minutes on court) x (per-minute opportunity rate) x (conversion), so the event is the upper tail of a jointly distributed vector with a common minutes factor. The chain is: does he enter and how long does he stay (scenario mixture: normal starter load, blowout cut, foul trouble, in-game exit, overtime), which teammates share the floor (which determines board and assist shares), how many possessions occur (pace), the per-category counts conditional on minutes with the right dependence structure (positive through minutes and pace, negative between a guard's scoring and passing), the discreteness of crossing exactly ten, and settlement by official box score. Because a rare binary event is driven by a few tail scenarios, scenario weights and the choice of category pair matter more than season-average per-game stats.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Entry and early-exit truncation",
+     "description": "The market voids inactive or never-entered players, so participation only matters conditional on entering; but once he enters the contract settles on whatever he accumulates. The relevant first stage is therefore the probability mass on very short appearances: a questionable player on a minutes restriction, a player who rolls an ankle in the first quarter, an ejection or early foul-out. These branches deliver a near-zero chance of a DD and are priced as part of a normal game by anyone using average minutes.",
+     "distribution": "Mixture: majority mass at normal rotation minutes, a small discrete mass (a few percent, higher with injury designations) at under 15 minutes; not Gaussian.",
+     "categories": [
+      "availability_news",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nba.injuries_pit",
+      "nba.midgame_exit_hazard",
+      "nba.status_resolution_prob"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Minutes scenario given game script",
+     "description": "Conditional on a normal game, minutes depend on the projected margin: blowout favorites cut starters' fourth quarters, close games push stars past 38 minutes, overtime adds about five. Foul trouble forces bench stretches in the first half. DD probability is steeply increasing in minutes between roughly 26 and 36 and then flattens, so the distribution of minutes (not its mean) sets the probability.",
+     "distribution": "Right-skewed with a heavy left tail for blowouts and a point mass bump at 40+ for OT/close games; minutes and absolute margin are strongly (negatively) dependent.",
+     "categories": [
+      "game_context_script",
+      "coaching_scheme",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nba.minutes",
+      "nba.garbage",
+      "nba.late_threshold_assist_rebound_gifting"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Lineup-conditional opportunity shares",
+     "description": "Each category's opportunity count is a share of a team-level pool: rebound chances come from missed shots by both teams times the player's board share, which is lower when another big is on the floor; assist chances come from teammate made shots on passes, which are lower when the primary creator is on the floor beside him. Teammate absences therefore reallocate production unevenly across categories, which is what turns a 20% DD player into a 45% one when the co-big sits.",
+     "distribution": "Multinomial-style allocation: shares are bounded and negatively dependent among teammates; pool size (pace x misses) is overdispersed.",
+     "categories": [
+      "role_personnel",
+      "pace_volume",
+      "opponent_matchup"
+     ],
+     "input_ids": [
+      "nba.reb_chances",
+      "nba.pot_ast",
+      "nba.teammate_absence_shift",
+      "nba.dd_center_swap_share",
+      "nba.pace"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Category counts and their dependence",
+     "description": "Within minutes bucket, points, rebounds, assists, steals and blocks are discrete, overdispersed counts. They co-move positively through shared minutes and pace but trade off within player: a high-usage scorer's assists fall as shots rise. A DD needs two of them to clear ten, so the dependence structure (how often pts and reb are both high) matters as much as the marginals, and the category pair differs by player archetype.",
+     "distribution": "Overdispersed negative-binomial-like marginals with role-dependent correlation of roughly +0.2 to +0.35 between reb and pts for bigs and slightly negative between pts and ast for guards; discrete threshold at 10.",
+     "categories": [
+      "distribution_variance",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nba.stat_dist",
+      "nba.combo_covariance",
+      "nba.milestone_rates",
+      "nba.dd_category_pair_mix",
+      "nba.usage"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Threshold crossing, stat credit and settlement",
+     "description": "The final count is the official box score. A player at 9 with a few possessions left is a discrete lottery; late-game teammate gifting, intentional fouling and OT affect this tail. Assist and block credit are assigned by scorers with arena-specific habits, and post-game corrections can move a count across the line. The contract voids only inactive players, so no void protects an early-exit case.",
+     "distribution": "Binary indicator on integer counts; probability mass concentrated at 8-10 counts so single-event credit decisions flip outcomes.",
+     "categories": [
+      "settlement_contract",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "nba.stat_corrections",
+      "m.rules_text",
+      "nba.milestone_rates"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.milestone_rates",
+      "nba.dd_category_pair_mix"
+     ],
+     "note": "Player-level DD base rate and path-specific rates by minutes bucket carry the talent signal; team strength enters only through game script."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.opp_def_pos",
+      "nba.dd_center_swap_share"
+     ],
+     "note": "Positional allowance is weak; opposing frontcourt size and assist-suppressing schemes act mainly through the lineup-conditional shares."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.teammate_absence_shift",
+      "nba.dd_center_swap_share",
+      "nba.reb_chances",
+      "nba.pot_ast"
+     ],
+     "note": "Who shares the floor determines board and assist shares; this is the most important category for DD."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.injuries_pit",
+      "nba.midgame_exit_hazard"
+     ],
+     "note": "Own and teammate status, plus the in-game exit hazard that the voiding rule does not refund."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.minutes",
+      "nba.late_threshold_assist_rebound_gifting"
+     ],
+     "note": "Coach-specific rotation length and stat-chase tolerance in decided games."
+    },
+    "environment": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Altitude, arena and travel effects on a single player's DD probability are second-order and are only reachable through minutes and pace; no separate venue variable is justified for this contract."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.garbage",
+      "nba.minutes"
+     ],
+     "note": "Blowout and close-game minutes truncation and OT extension of the count window."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.pace",
+      "nba.reb_chances"
+     ],
+     "note": "Possession count scales rebound pool and assist chances."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.pot_ast",
+      "nba.usage"
+     ],
+     "note": "Assist conversion depends on teammate shot-making (potential assists strip it); scoring efficiency matters little for reaching ten points."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.stat_dist",
+      "nba.combo_covariance"
+     ],
+     "note": "Joint overdispersed counts and tail co-occurrence are the core of the model."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Back-to-back and clinch/rest effects on minutes for individual stars are not represented by any input of this archetype and are folded into projected minutes without an explicit variable."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.stat_corrections"
+     ],
+     "note": "Scorer credit for assists, rebounds and blocks and post-game corrections matter at the 9/10 boundary."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text"
+     ],
+     "note": "Five-category definition, voiding rule and postponement window are in the sampled rules."
+    }
+   }
+  },
+  "new_inputs": {
+   "nba.dd_category_pair_mix": {
+    "label": "Category-pair decomposition of a player's double-double paths (pts/reb/ast/stl/blk)",
+    "category": "distribution",
+    "mechanism": "A DD is a union over category pairs; each pair has its own minutes-sensitivity, so the player's probability is a mixture of path-specific probabilities.",
+    "rationale": "A center reaches DD mainly via points+rebounds, a point-forward via points+assists, a rim-protecting big via reb+blk; one scalar 'DD rate' averages over paths whose responses to minutes, blowouts and absences differ, and omits the blocks/steals paths that the contract explicitly counts.",
+    "measurement": "For each player-game with >=12 minutes over current + prior 2 seasons, flag each of 5 categories >=10; compute per-category P(>=10 | minutes bucket 12-20/20-28/28-34/34+) with exponential half-life of 45 games and beta shrinkage toward the position-archetype mean with prior weight 20 games; build pair-path rates P(pair) via joint empirical counts (not products). Output per player: vector of pair-path rates and the share of historical DDs coming from each pair. As-of: only games finished before the tip-off timestamp.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api boxscoretraditionalv2 / playergamelog",
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "boxscore traditional: player,game,min,pts,reb,ast,stl,blk",
+     "position/role archetype table"
+    ],
+    "why": "Lets the DD forecast respond correctly when a missing teammate changes which category pair is available (e.g. a guard's reb+ast path versus a big's pts+reb path).",
+    "role": "primary"
+   },
+   "nba.midgame_exit_hazard": {
+    "label": "In-game early-exit hazard (injury, ejection, foul-out, minutes cap)",
+    "category": "player_role",
+    "mechanism": "Once a player enters the game the contract settles on his stats even if he plays 5 minutes, so truncation by an early exit converts directly into NO.",
+    "rationale": "The rules void only players who are inactive or never take the court; an injury exit after 6 minutes settles NO at near-certainty. The hazard is player-specific (age, injury history, listed status, foul rate) and is distinct from planned blowout minutes cuts.",
+    "measurement": "From play-by-play, per player-season count games with >=1 minute where minutes < 0.55 x pregame-expected minutes and the exit was not a blowout rest (margin<15 at exit) divided by games entered; classify cause by sub-in/sub-out and injury report. Combine as hazard per 36 minutes with beta(2,40) prior shrinkage and a status multiplier (probable/questionable-return/minutes-restricted) estimated from historical status vintages. As-of: injury report at the latest vintage before tip.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nba_api playbyplayv3 / boxscore",
+     "NBA official injury report (PDF/CSV scrape)",
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "PBP substitutions/ejections",
+     "injury report vintages",
+     "box score minutes"
+    ],
+    "why": "DD is a threshold on cumulative production, so lost minutes from an in-game exit are not refunded; this tail is invisible in season-average minutes.",
+    "role": "primary"
+   },
+   "nba.late_threshold_assist_rebound_gifting": {
+    "label": "Late-game stat-chase and teammate-gifting effect near the 10 threshold",
+    "category": "game_state",
+    "mechanism": "When a player sits at 9 rebounds or assists in a decided game, teammates and coaches have been observed to funnel the last opportunity, so production near the threshold is not a smooth Poisson continuation.",
+    "rationale": "Garbage-time minutes are normally a pure loss for DD, but stat-chasing partially offsets it; the size is team and coach specific and can be estimated from play-by-play without any market data. It is subtle because it only applies at 8-9 counts with margin >12 late.",
+    "measurement": "From play-by-play, take all instances where a player enters the final 8 game minutes with margin >=12 and a category count of 8 or 9; compute observed rate of reaching 10 per remaining on-court minute divided by that player's baseline per-minute rate in the same category; pool by coach with empirical-Bayes shrinkage (prior weight 25 instances) and report the multiplier. Use as a pregame-fixed multiplier applied only inside the blowout branch.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api playbyplayv3",
+     "pbpstats.com"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "PBP event stream with score margin and player counts",
+     "coach tenure table"
+    ],
+    "why": "Corrects the mechanical over-penalty of blowout branches for near-threshold players; sign is opposite to the naive minutes-cut story.",
+    "role": "secondary"
+   },
+   "nba.dd_center_swap_share": {
+    "label": "Rebound/assist share conditional on which co-big or creator shares the floor",
+    "category": "matchup",
+    "mechanism": "Boards and assist chances are split among on-court teammates, so a player's DD path depends on which specific teammates occupy the other four slots in each rotation segment.",
+    "rationale": "Season rebound or assist percentage averages over very different lineups; the relevant quantity is the player's share when paired with tonight's expected 5-man units, weighted by expected minutes in each unit.",
+    "measurement": "From stint-level data compute the player's TRB% and AST% per lineup context (with each frequent teammate on/off, min 150 possessions) using ridge-regularised on/off coefficients (lambda tuned by rolling CV on prior season); then project tonight's expected minute-weighted lineup mix from rotation history and injury report and sum. Report a minutes-weighted expected board share and assist share with their standard errors.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "pbpstats.com lineup data",
+     "nba_api teamdashlineups",
+     "Cleaning the Glass (paid/freemium)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "lineup-level possessions, TRB, AST, on/off",
+     "projected rotation"
+    ],
+    "why": "A DD for a center is gated by whether the second big plays beside or behind him; the existing frontcourt competition input is not attached to this archetype.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nba.milestone_rates": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Right object (per-player P(>=10 in a category) by minutes bucket) but as written it is only the marginal base rate; it ignores blocks and steals as the second/third category for bigs and wings, so it must be rebuilt per category pair rather than as one DD flag."
+   },
+   "nba.minutes": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Minutes is the common multiplier of all three counting components and the DD indicator is steeply threshold-like in it; useful only if delivered as a scenario mixture (starter-normal, blowout-cut, foul-trouble, early exit, OT) not a single point projection."
+   },
+   "nba.stat_dist": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Per-stat marginals are needed but a product of marginals is exactly the wrong DD model; this input is subordinate to the joint model, and its overdispersion parameters should be conditional on minutes bucket."
+   },
+   "nba.combo_covariance": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Dependence is the heart of a conjunction, but a single covariance number is a poor summary of tail co-occurrence; needs conditional-on-minutes dependence or a copula, and sign differs by role (pts/ast trade off for guards, pts/reb co-move through pace and minutes for bigs)."
+   },
+   "nba.reb_chances": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Rebound chances are the stable driver behind the rebound component for centers and forwards; it is secondary here only because it cannot by itself produce a DD without a second category."
+   },
+   "nba.pot_ast": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Potential assists (passes leading to shots) strips teammate shot-making luck out of the assist component, which is the right variable for guards and point-forwards who reach 10 assists."
+   },
+   "nba.usage": {
+    "verdict": "WEAK",
+    "reason": "Usage explains the points component only; for the dominant DD path of a rebounding big (pts+reb) it adds little beyond minutes, and for assist-first guards it moves inversely with the ast component, so as a lone scalar it is mislabelled secondary signal."
+   },
+   "nba.garbage": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Blowout minute loss is the dominant reason favorites' stars miss DD; but the label says 'from spread' which is a market-derived quantity, so the input must be rebuilt from team ratings and rotation history, with the spread only as a benchmark."
+   },
+   "nba.teammate_absence_shift": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "A missing co-big or primary creator reallocates boards or assists to a specific player and can move DD probability by 15-25 points; with/without splits are small-sample, so shrinkage toward a role-based allocation prior is required."
+   },
+   "nba.injuries_pit": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Own and teammate status vintages are the main source of mispricing around a binary event; inactive players are voided at a fair price so only the active-but-limited branch matters for the settled outcome."
+   },
+   "m.quote_history": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "A price path is a market observable, not a causal driver of double-double production; useful only to date when news was absorbed relative to the injury-report vintage."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Settlement wording genuinely changes the event (five categories counted, inactive or never-entered players refunded at a fair price, 48h postponement window) and must be versioned per series."
+   },
+   "m.external_lines": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Sportsbook DD/TD prices are a benchmark to compare a fundamentals model against, not an input; including them would hide the model's own information content."
+   },
+   "nba.stat_corrections": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Official stat corrections (assist or rebound credit changed after review) can flip a player sitting exactly at 9 vs 10 in a category; rare but relevant to settlement timing, context-only."
+   },
+   "nba.opp_def_pos": {
+    "verdict": "WEAK",
+    "reason": "Opponent-allowed-by-position tables are noisy, confounded with pace and opponent shot mix, and DD events are far too rare for the positional allowance signal to be estimated per matchup; use only as a heavily shrunk adjustment."
+   },
+   "nba.pace": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pace scales all three components but the DD effect is second-order relative to minutes; useful through the rebound pool rather than as a standalone variable."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nba.minutes",
+     "nba.garbage"
+    ],
+    "form": "threshold",
+    "mechanism": "DD probability is nearly flat above ~34 minutes and falls steeply below ~26, so a blowout that trims a starter from 35 to 28 minutes costs far more than one trimming 38 to 33; the effect is largest for players whose second category is marginal (rebounds around 8).",
+    "how_to_test": "Fit P(DD) against projected minutes in 3-minute bins separately for blowout-probability terciles; look for a kink near 28-30 minutes that differs by tercile."
+   },
+   {
+    "inputs": [
+     "nba.dd_center_swap_share",
+     "nba.reb_chances"
+    ],
+    "form": "conditional",
+    "mechanism": "A center's rebound chances are shared with the other big only when both are on the floor, so the same rebound pool yields different counts depending on the fraction of minutes spent paired versus alone; direction is positive for the survivor when the co-big is out.",
+    "how_to_test": "Compare a center's DD rate in games with vs without each frequent co-big (matched on minutes, opponent pace) and test against the lineup-weighted share prediction."
+   },
+   {
+    "inputs": [
+     "nba.combo_covariance",
+     "nba.pace"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A fast game raises misses, possessions and assist chances together, which fattens the joint upper tail of rebounds and points more than the marginals alone; this correlates the two required components of a pts+reb DD and increases conjunction probability beyond the product of marginals.",
+    "how_to_test": "Estimate P(pts>=10 and reb>=10) versus the product of marginals by opponent-pair pace tercile; the excess ratio should rise with pace."
+   },
+   {
+    "inputs": [
+     "nba.midgame_exit_hazard",
+     "nba.injuries_pit"
+    ],
+    "form": "regime-switch",
+    "mechanism": "A designated player is in one of two regimes: normal-load or limited/returning; in the latter the exit hazard and minute cap shift probability mass to very short appearances which settle NO, and the voiding rule does not help.",
+    "how_to_test": "Split historical entries by pregame status vintage and compare the fraction of games with <55% of expected minutes and the resulting DD rate."
+   },
+   {
+    "inputs": [
+     "nba.late_threshold_assist_rebound_gifting",
+     "nba.garbage"
+    ],
+    "form": "conditional",
+    "mechanism": "Inside the blowout branch, a player at 9 in a category late is more likely than his per-minute rate implies to finish, because teammates funnel the last opportunity; this partially offsets the minutes loss, in the direction opposite to the naive blowout penalty.",
+    "how_to_test": "Among decided games, regress P(reach 10) from count 8-9 entering the last 8 minutes on baseline per-minute rate and a stat-chase coach indicator."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nba.minutes",
+    "shape": "S-shaped/saturating: steep between ~24 and ~34 projected minutes then flat",
+    "why": "The count window for every category scales with minutes but the ten-count threshold turns a linear mean into a sigmoid probability; extra minutes beyond 36 add little for a player who already clears 10 in one category."
+   },
+   {
+    "input_id": "nba.milestone_rates",
+    "shape": "convex in per-minute category rate near the threshold",
+    "why": "A per-minute rebound rate that implies a mean of 8.5 versus 10.5 in 34 minutes changes P(>=10) from ~35% to ~60%; conjunction of two such events makes the DD probability convex in each category mean."
+   },
+   {
+    "input_id": "nba.garbage",
+    "shape": "threshold: little effect below ~15% blowout probability, steep above ~35%",
+    "why": "Starters' minutes are cut only when the margin crosses ~15-20 with a few minutes left, so blowout probability matters mostly in the tail; the effect is non-linear in the team-rating gap."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Player-game box scores with minutes and the five categories",
+    "grain": "player x game",
+    "fields": [
+     "game_id",
+     "player_id",
+     "team_id",
+     "min",
+     "pts",
+     "reb",
+     "oreb",
+     "dreb",
+     "ast",
+     "stl",
+     "blk",
+     "starter_flag",
+     "ot_flag",
+     "final_margin"
+    ],
+    "timestamp_requirement": "Use only games with final status before the as-of tip time; stats as of one settlement-lag after the game to replicate corrections",
+    "history_needed": "4 seasons of regular season plus playoffs",
+    "candidate_sources": [
+     {
+      "name": "nba_api (stats.nba.com boxscoretraditionalv2)",
+      "access": "free_scrape",
+      "note": "Public endpoints, rate limited; field list believed correct but not re-verified here"
+     },
+     {
+      "name": "Basketball-Reference game logs",
+      "access": "free_scrape",
+      "note": "Terms restrict heavy scraping"
+     },
+     {
+      "name": "Sportradar NBA / Second Spectrum feeds",
+      "access": "paid",
+      "note": "Licensed league data"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.milestone_rates",
+     "nba.stat_dist",
+     "nba.combo_covariance",
+     "nba.dd_category_pair_mix",
+     "nba.minutes",
+     "nba.usage",
+     "nba.pace"
+    ]
+   },
+   {
+    "dataset": "Play-by-play with substitutions, score margin and ejections",
+    "grain": "event",
+    "fields": [
+     "game_id",
+     "period",
+     "clock",
+     "event_type",
+     "player_ids_on_court",
+     "score_home",
+     "score_away",
+     "sub_in",
+     "sub_out",
+     "ejection_flag"
+    ],
+    "timestamp_requirement": "Ordered event stream; features only from completed games; lineup inference from substitution events",
+    "history_needed": "3 seasons",
+    "candidate_sources": [
+     {
+      "name": "nba_api playbyplayv3",
+      "access": "free_scrape",
+      "note": "Includes substitutions; on-court lineups must be reconstructed"
+     },
+     {
+      "name": "pbpstats.com",
+      "access": "free_limited",
+      "note": "Possession and lineup derived stats"
+     },
+     {
+      "name": "Second Spectrum tracking",
+      "access": "paid",
+      "note": "Optical tracking, no public access"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.midgame_exit_hazard",
+     "nba.late_threshold_assist_rebound_gifting",
+     "nba.dd_center_swap_share",
+     "nba.garbage",
+     "nba.reb_chances",
+     "nba.pot_ast"
+    ]
+   },
+   {
+    "dataset": "Injury-report and starting-lineup vintages",
+    "grain": "player x game x report timestamp",
+    "fields": [
+     "game_id",
+     "player_id",
+     "status",
+     "reason",
+     "report_time",
+     "starter_confirmed_time"
+    ],
+    "timestamp_requirement": "Timestamp every vintage; model features take the last vintage at least X minutes before the order time",
+    "history_needed": "2 seasons of archived reports for calibration",
+    "candidate_sources": [
+     {
+      "name": "NBA official injury report (PDF/CSV)",
+      "access": "free_scrape",
+      "note": "Published several times daily; must be archived live"
+     },
+     {
+      "name": "ESPN injury pages / Rotowire",
+      "access": "free_scrape",
+      "note": "Aggregators; archiving required for vintage integrity"
+     },
+     {
+      "name": "own_capture of report snapshots",
+      "access": "own_capture",
+      "note": "Needed for point-in-time history"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.injuries_pit",
+     "nba.teammate_absence_shift",
+     "nba.status_resolution_prob",
+     "nba.midgame_exit_hazard"
+    ]
+   },
+   {
+    "dataset": "Kalshi rules text versions for KXNBA2D / KXNBA3D",
+    "grain": "series x snapshot",
+    "fields": [
+     "ticker",
+     "rules_primary",
+     "rules_secondary",
+     "capture_time"
+    ],
+    "timestamp_requirement": "Snapshot per market at listing and again at close",
+    "history_needed": "All listed games",
+    "candidate_sources": [
+     {
+      "name": "Kalshi API market endpoint",
+      "access": "free",
+      "note": "Rules fields; sample here is truncated"
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "pm-ot-inclusion",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled rules_secondary states what counts as a double/triple double and the void rule but does not say whether overtime statistics are included; the text sample is also truncated before the sources agencies are named.",
+    "what_would_resolve": "Pull the full rules_secondary / contract PDF for KXNBA2D and KXNBA3D and confirm OT and the source agency; check one settled OT game.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "pm-stat-chase-size",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Whether teammate gifting near 10 is a real, coach-specific behaviour large enough to be estimated, or noise; no verified public estimate exists and the sample of 8-9 count late-blowout situations per player is small.",
+    "what_would_resolve": "Estimate from 3 seasons of play-by-play pooled across coaches with empirical Bayes and test out-of-sample whether the multiplier differs from 1."
+   },
+   {
+    "id": "pm-situational-gap",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "No input captures second-night-of-back-to-back, minutes-restriction ramp-ups after injury and playoff-seeding rest on star DD probability beyond what projected minutes absorb, so a systematic minutes error would pass through undetected.",
+    "what_would_resolve": "Compare realized minutes versus pregame projection by rest state and clinch status to see whether a separate variable is needed.",
+    "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "pm-tracking-access",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Rebound chances, contested boards and potential assists come from tracking data (Second Spectrum / NBA tracking) that is only partly public; the free endpoints expose aggregates, not event-level chances with timestamps.",
+    "what_would_resolve": "Confirm which hustle/tracking dashboards are queryable per game; otherwise buy a licensed feed."
+   }
+  ]
+ }
+}

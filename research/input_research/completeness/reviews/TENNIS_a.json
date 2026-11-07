@@ -1,0 +1,1132 @@
+{
+ "exact_set_score": {
+  "contract": {
+   "settlement_definition": "Each market is a binary that one named player wins the named professional match by one specific set score, for example 'If Arthur Nagel wins the Jacob Fearnley vs Arthur Nagel ... match ... by a set score of 2-1, then the market resolves to Yes'. Yes requires both the winner and the loser's set tally to match, so the four best-of-three rungs (A 2-0, A 2-1, B 2-0, B 2-1) are mutually exclusive and sum to one for a completed match. Non-occurrence before the first ball resolves to a fair price, postponements stay open for up to two weeks, and the sampled retirement sentence says only that markets that can be unconditionally settled from play already completed settle on that play; the rest of the sentence is cut off in the sample. Games, tiebreak scores and margin inside sets are irrelevant. Source of truth is the governing league's recorded score.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXATPEXACTMATCH",
+     "quote": "by a set score of 2-1, then the market resolves to Yes.",
+     "establishes": "Yes needs the named winner and the exact set tally; the strike is winner-specific, not a total or spread."
+    },
+    {
+     "ticker": "KXWTAEXACTMATCH",
+     "quote": "If a retirement occurs, all markets that can be unconditionally settled",
+     "establishes": "On retirement, rungs that are already decided by completed sets settle and the remaining rungs are left to the rest of the clause (truncated in the sample)."
+    },
+    {
+     "ticker": "KXWTAEXACTMATCH",
+     "quote": "If the match does not occur (signaled by a ball being played) due to a player injury, walkover, forfeiture, or any other cancellation (all before the match starts), the market will resolve to a fair price",
+     "establishes": "A match that never starts pays a fair price, so pre-start withdrawal is not a Yes/No loss."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Best-of-three scores (2-0, 2-1) at WTA events and most ATP events versus best-of-five (3-0, 3-1, 3-2) at men's Slams; the rung set depends on the event format, which is not part of the strike text and must be read from the event.",
+    "Retirement mid-match: if the leader's opponent retires after set 1 the exact scores 2-1 for the leader and any score for the trailing player are decided No at once, but the leader's 2-0 is not unconditionally settled; the unobserved rest of the retirement clause decides it (CONTRACT_AMBIGUOUS).",
+    "Match tiebreak formats (10-point match tiebreak replacing a third set in doubles and some junior or exhibition events) make the 'set score' of 2-1 hinge on whether a tiebreak counts as a set; not stated in the rules sample.",
+    "Fair-price resolution applies only before the first ball, so a favourite who retires after one game leaves the 2-0 market in the 'can it be settled' branch rather than at a pre-start fair price."
+   ],
+   "settlement_data_source": "Governing league's recorded match score (set tally); the sampled rules do not name a specific data vendor or webpage."
+  },
+  "mechanism": {
+   "summary": "The exact set score is the match winner combined with a count of how many sets the loser took, so it is a distribution over the paths of a short race rather than a single probability. Each set outcome depends on the pair's point-level serve and return strengths, on who serves first in that set, and on whether the set reaches a tiebreak. The sets are not independent: a latent day-level form shock and in-match physical state push the same player to win consecutive sets, which fattens 2-0 and 3-0 mass relative to independent sets, while a rallying underdog's stamina or an opponent's late-set fade pushes mass into deciders. The favourite's 2-0 frequency also depends on the quality of the tail, not just the mean, because 2-1 and 2-0 for the same player differ only in whether the underdog snatches one set, which is the tail event of the first set. The contract itself adds a truncation layer: a retirement can decide some rungs but not others, so the settlement rule decides which rungs carry retirement risk.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Format and rung inventory",
+     "description": "Before probabilities exist, the format fixes which scorelines are possible: best-of-three gives four outcomes, best-of-five gives six, doubles with a match tiebreak give a different set structure. The deciding-set rule at 6-6 (tiebreak versus advantage) changes how long a deciding set can last but not the set tally, so format mostly acts by fixing the rung grid and the number of sets in which dependence can compound.",
+     "distribution": "Deterministic discrete support (4 or 6 outcomes) with the winner-specific split; no randomness at this stage but a wrong format coding is a total error.",
+     "categories": [
+      "settlement_contract",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "ten.format",
+      "ten.retirement_settlement_rules"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Set-one win probability for each player",
+     "description": "The first set is the cleanest read of the pair edge because no in-match history has accrued. The probability that A wins set 1 follows from A's and B's serve-point and return-point strengths and the chance that the set goes to a tiebreak. It is flatter than the match-win probability: a 75% match favourite may be only 62-65% to win the first set.",
+     "distribution": "Binomial-like around 0.5-0.7 for tour favourites; hold probabilities near 0.8 produce frequent 6-6 outcomes with a coin-flip-like tiebreak.",
+     "categories": [
+      "talent_strength",
+      "opponent_matchup",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "ten.surface_rating",
+      "ten.serve_return",
+      "ten.hold_break",
+      "ten.tiebreak"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "First-server sequence and serve-order advantage",
+     "description": "Who serves first in each set is deterministic given the starting server and the parity of games in prior sets, and a tiebreak resets the order. Serving first matters more when hold rates are high: a big server who serves first is a few points more likely to win the set, and the advantage rotates across sets so that sets one and three share the same first server in an even-game match but not after a tiebreak.",
+     "distribution": "Discrete deterministic assignment with a small probability shift (roughly 1-5 points of set-win probability) that scales with the server's hold rate.",
+     "categories": [
+      "game_context_script",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "ten.set_first_server_sequence",
+      "ten.hold_break"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Between-set dependence and state transitions",
+     "description": "The probability of winning set 2 depends on who won set 1. Part of this is latent: a player who plays well on the day plays well in both sets. Part is real in-match change: tactics adjustment by the loser, physical fade, momentum. The result is a 2x2 (or bo5 tree) of conditional set-win probabilities that cannot be reconstructed from the match-winner price alone.",
+     "distribution": "Positive correlation between set outcomes; the conditional probability for the favourite who loses set 1 usually stays above 50% but falls by several points; distribution is bimodal across player types.",
+     "categories": [
+      "distribution_variance",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "ten.set_dist",
+      "ten.within_match_dependence",
+      "ten.decider_record",
+      "ten.fatigue"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Length of match and decider incidence",
+     "description": "Whether the match reaches a deciding set depends on closeness of the pair and on expected length. Long sets, tiebreaks and slow courts raise the probability of 2-1 and 3-2 scorelines for either player while a very lopsided pair converts mass to 2-0 or 3-0. The expected number of service games sets the probability mass of tiebreaks in each set.",
+     "distribution": "Counts of sets with a heavy mass at the minimum; the decider probability is a smooth convex function of how even the pair is.",
+     "categories": [
+      "pace_volume",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "ten.match_length_expectation",
+      "ten.fatigue",
+      "ten.set_dist"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Retirement truncation and which rungs it settles",
+     "description": "If a player retires, completed sets fix some rungs as No while others stay unsettled, and the rest of the retirement clause governs them. The share of mass carried by retirement is small but concentrated in the trailing or injured player's rung and in the early-set cases where the unconditional rule helps least.",
+     "distribution": "Rare absorbing event with timing: more likely just after set 1 or in the middle of set 2; asymmetric between the leader and the trailer.",
+     "categories": [
+      "settlement_contract",
+      "availability_news"
+     ],
+     "input_ids": [
+      "ten.retirement_timing_profile",
+      "ten.retirement_settlement_rules",
+      "m.ladder_structure"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.surface_rating",
+      "ten.serve_return"
+     ],
+     "note": ""
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.serve_return",
+      "ten.set_first_server_sequence"
+     ],
+     "note": ""
+    },
+    "role_personnel": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Singles exact-score markets have no lineup or role variable; the participating players are fixed by the contract and any replacement voids the match to fair price before the first ball."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.retirement_timing_profile"
+     ],
+     "note": ""
+    },
+    "coaching_scheme": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Between-set coaching and tactical adjustment exist but have no observable pre-match proxy at set resolution; their aggregate effect is the between-set state transition measured in within_match_dependence."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.match_length_expectation"
+     ],
+     "note": ""
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.within_match_dependence",
+      "ten.set_first_server_sequence",
+      "ten.decider_record"
+     ],
+     "note": ""
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.match_length_expectation"
+     ],
+     "note": ""
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.hold_break",
+      "ten.tiebreak"
+     ],
+     "note": ""
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.set_dist",
+      "ten.within_match_dependence",
+      "ten.straight_set_share_curve"
+     ],
+     "note": ""
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.fatigue"
+     ],
+     "note": ""
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.format"
+     ],
+     "note": ""
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.retirement_settlement_rules",
+      "m.ladder_structure",
+      "ten.retirement_timing_profile"
+     ],
+     "note": ""
+    }
+   }
+  },
+  "new_inputs": {
+   "ten.set_first_server_sequence": {
+    "label": "First server in each set (serve-order sequence)",
+    "category": "game_state",
+    "mechanism": "Which player serves first in each set is a deterministic function of the start of the match and game parity, and first-serve shifts set-win probability.",
+    "rationale": "The existing catalog models hold and break but does not carry set-by-set serve order; for evenly matched big servers a coin-toss-driven first-serve advantage shifts the 2-0 versus 2-1 split. A tiebreak resets the rotation, so conditional on a tiebreak in set 1 the order in set 2 differs from the no-tiebreak case.",
+    "measurement": "Serve order after toss: set 1 first server S1 (from toss; unknown pre-match, treat as 0.5/0.5 until announced). Set k first server = opponent of the player who served the last game of set k-1 unless set k-1 ended with a tiebreak, in which case the player who received first in that tiebreak serves first. Compute P(set win | first server) by running the game-level chain for each of the 12-game sequences. Output per-set first-server probabilities conditional on tiebreak history. As-of: toss result (about 15 minutes before play) for the live case; pre-match treat unknown.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Sackmann point-by-point files (serve sequence)",
+     "ATP/WTA live scores"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "point-by-point serve indicators",
+     "toss result when announced"
+    ],
+    "why": "Turns a flat set-win probability into the true sequence-specific one for each rung.",
+    "role": "secondary"
+   },
+   "ten.straight_set_share_curve": {
+    "label": "Empirical straight-set share by pre-match edge",
+    "category": "distribution",
+    "mechanism": "Probability that the winner takes the match without dropping a set as a function of pair edge, tour and format.",
+    "rationale": "This is a calibration curve (not a market price): it tells how much of the match-win probability mass historically converts to the sweep versus decider scorelines, which a purely i.i.d. model gets wrong.",
+    "measurement": "From Sackmann match scores for the past ten years, compute for bins of pre-match Elo-implied win probability (in 5-point bins, split by tour, best_of, surface) the share of matches won 2-0/3-0 and the share reaching a decider; shrink bin shares toward a logistic fit with weight n/(n+40); report P(2-0 | A wins) and P(deciding set). As-of: ratings available before each historical match.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sackmann CSVs (score strings)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match score strings, pre-match Elo",
+     "best_of, tour, surface"
+    ],
+    "why": "Provides the empirical anchor for the 2-0 versus 2-1 split that the existing catalog leaves to a latent parameter.",
+    "role": "secondary"
+   },
+   "ten.retirement_timing_profile": {
+    "label": "Retirement timing distribution by set",
+    "category": "availability",
+    "mechanism": "When a retirement happens decides which exact-score rungs are already settled.",
+    "rationale": "A retirement after set 1 resolves different rungs than one in set 3; the existing retirement base rate does not carry timing.",
+    "measurement": "From Sackmann score strings containing RET, parse the number of completed sets and the set-score at retirement; estimate P(retire in set k | retirement) by tour, round, best_of and by which player was trailing; shrink toward tour pooled with n/(n+30). Output: P(retirement before completing set 1/2/3), P(retiring player trailing).",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Sackmann CSV score field with RET"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "score strings with partial sets",
+     "round, best_of"
+    ],
+    "why": "Sets how much of each rung's probability mass can be settled early versus left to the truncated retirement clause.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "ten.set_dist": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The joint set-score distribution is the object being priced; keep, but it is an output of the model rather than a raw input, so define the raw ingredients explicitly."
+   },
+   "ten.surface_rating": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Sets the pair edge from which set win probabilities are built; same role as in the winner market, adding nothing score-specific on its own."
+   },
+   "ten.within_match_dependence": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The parameter that moves mass between 2-0 and 2-1; weakly identified, so it needs calibration from point-by-point data."
+   },
+   "ten.hold_break": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Component for set win probabilities; not independently informative about the score split once set_dist is fit."
+   },
+   "ten.decider_record": {
+    "verdict": "WEAK",
+    "reason": "Players' deciding-set records are tiny samples and mostly noise around fitness; better as first-set-winner conversion rate pooled across the tour."
+   },
+   "ten.format": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Fixes the rung grid (best-of-three vs five) and match-tiebreak behaviour; a wrong format is a total error."
+   },
+   "ten.fatigue": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Fatigue matters for later sets and deciders only; weak for 2-0 rungs."
+   },
+   "ten.retirement_settlement_rules": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The retirement clause is truncated in the sample, so it decides which rungs settle; primary despite being a rules input."
+   },
+   "m.ladder_structure": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Sum-to-one across the four or six rungs is a structural constraint useful for consistency checks, but a market-structure check, not an input to outcome probability."
+   },
+   "ten.serve_return": {
+    "verdict": "DUPLICATE_OF:ten.surface_rating",
+    "reason": "Raw surface spw/rpw feed the same pair-edge estimate already represented by the rating and hold chain; keep as an ingredient only."
+   },
+   "ten.tiebreak": {
+    "verdict": "WEAK",
+    "reason": "Tiebreak win rates regress heavily to serve strength; only matters in how many sets reach 6-6, covered by hold probability."
+   },
+   "ten.match_length_expectation": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Expected service games per set determine tiebreak incidence; useful but derived from hold probabilities, so not a free variable."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "ten.within_match_dependence",
+     "ten.surface_rating"
+    ],
+    "form": "multiplicative",
+    "mechanism": "The correlation between sets scales with the size of the favourite's edge: for a large edge a shared form shock raises 2-0 mass more than for an even pair, because the shock moves a larger spread of the pair gap.",
+    "how_to_test": "Fit set-2 win probability given set-1 result separately by Elo-gap bin and test whether the conditional uplift grows with the gap."
+   },
+   {
+    "inputs": [
+     "ten.set_first_server_sequence",
+     "ten.hold_break"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Serving first adds an early game lead, and the lead is worth more when break chances are rare; for two big servers the first-server advantage in set win is larger than for return-dominant clay pairs.",
+    "how_to_test": "Regress set outcome on first-server flag interacted with the pair's average hold probability in point-by-point data."
+   },
+   {
+    "inputs": [
+     "ten.fatigue",
+     "ten.decider_record"
+    ],
+    "form": "threshold",
+    "mechanism": "Deciders favour the fitter player only after both players have already played two long sets; below a total-games threshold the fitness difference is irrelevant.",
+    "how_to_test": "Condition on total games played in sets 1-2 and compare deciding-set win rate of the lower-fatigue player by bin."
+   },
+   {
+    "inputs": [
+     "ten.format",
+     "ten.within_match_dependence"
+    ],
+    "form": "conditional",
+    "mechanism": "In best-of-five the dependence between sets compounds across more transitions, so the same latent shock raises 3-0 and 3-2 mass differently than it does in best-of-three.",
+    "how_to_test": "Simulate bo3 and bo5 with the same shock variance and compare the scoreline distribution to historical Slam and tour frequencies."
+   },
+   {
+    "inputs": [
+     "ten.retirement_timing_profile",
+     "ten.retirement_settlement_rules"
+    ],
+    "form": "regime-switch",
+    "mechanism": "The rung affected by a retirement depends on when it happens: a retirement before set 2 settles no 2-1 rung while one in set 3 leaves 2-1 open; the regime is set by timing.",
+    "how_to_test": "Enumerate historical retirements by completed sets and count which exact-score rungs would have been settled unconditionally."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "ten.surface_rating",
+    "shape": "concave in the 2-0 share given a win",
+    "why": "As the rating gap grows, P(2-0 | favourite wins) rises quickly at first then saturates near 1 because the underdog only needs one set to avoid it, and that saturation is flatter than in the match-win probability."
+   },
+   {
+    "input_id": "ten.tiebreak",
+    "shape": "mean-reverting toward 0.5",
+    "why": "A tiebreak between near-equal servers is close to a coin flip, so the set-win probability is nearly flat in tiebreak record even when the player records are extreme."
+   },
+   {
+    "input_id": "ten.match_length_expectation",
+    "shape": "convex in decider probability",
+    "why": "Decider incidence rises faster than linearly as expected games per set grow because each additional 6-6 set both lengthens the match and keeps it closer."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Match scores with set-level detail",
+    "grain": "one row per match",
+    "fields": "player ids, winner, set scores per set with tiebreak scores, best_of, retirement flag, round, surface, tour",
+    "timestamp_requirement": "As-of ratings and scores before each historical match; no leakage from results",
+    "history_needed": "10 years tour-level plus Challenger",
+    "candidate_sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (GitHub)",
+      "access": "free",
+      "note": "Tour-level, Challenger and ITF match rows with w_/l_ serve counts (ace, df, svpt, 1stIn, 1stWon, 2ndWon, SvGms, bpSaved, bpFaced), score string incl. RET/W/O, surface, round, best_of, tourney_level; no point-by-point and no court-speed field."
+     },
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, point score, winner of point) for a limited set of years; Slam tour-level only."
+     },
+     {
+      "name": "Tennis Abstract (tennisabstract.com Elo, player pages)",
+      "access": "free_scrape",
+      "note": "Public overall/hard/clay/grass Elo series and splits; scraping terms must be checked."
+     }
+    ],
+    "feeds_inputs": [
+     "ten.set_dist",
+     "ten.surface_rating",
+     "ten.within_match_dependence",
+     "ten.decider_record",
+     "ten.straight_set_share_curve",
+     "ten.retirement_timing_profile",
+     "ten.tiebreak",
+     "ten.hold_break",
+     "ten.match_length_expectation",
+     "ten.serve_return"
+    ]
+   },
+   {
+    "dataset": "Point-by-point sequences with server and toss",
+    "grain": "one row per point",
+    "fields": "server, points in game, game and set score, winner of point, toss result",
+    "timestamp_requirement": "Per point ordering; toss known 15 minutes before first ball",
+    "history_needed": "Slam point-by-point since 2011; as many tour events as available",
+    "candidate_sources": [
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, point score, winner of point) for a limited set of years; Slam tour-level only."
+     },
+     {
+      "name": "Jeff Sackmann tennis_MatchChartingProject",
+      "access": "free_limited",
+      "note": "Volunteer-charted shot-level rows; coverage skews to famous players and finals, so selection bias."
+     },
+     {
+      "name": "Sportradar Tennis API (live and historical)",
+      "access": "paid",
+      "note": "Commercial tennis feed with point-by-point and match statistics; field list not verified here (SOURCE_UNVERIFIED)."
+     },
+     {
+      "name": "Stats Perform / Opta tennis data",
+      "access": "paid",
+      "note": "Commercial match and point-level data; field list not verified here (SOURCE_UNVERIFIED)."
+     }
+    ],
+    "feeds_inputs": [
+     "ten.set_first_server_sequence",
+     "ten.within_match_dependence",
+     "ten.hold_break"
+    ]
+   },
+   {
+    "dataset": "Event format register",
+    "grain": "one row per tournament-edition and round",
+    "fields": "best_of, final-set rule, tiebreak points, no-ad, match tiebreak for doubles",
+    "timestamp_requirement": "Collected from the event rulebook before the event",
+    "history_needed": "10 years",
+    "candidate_sources": [
+     {
+      "name": "ITF and Grand Slam rulebooks (public PDF)",
+      "access": "free",
+      "note": "Format by year"
+     },
+     {
+      "name": "ATP Tour / WTA public sites (draws, order of play, scores, stats)",
+      "access": "free_scrape",
+      "note": "Draw sheets, daily order of play, live scores, rankings and entry lists; terms restrict bulk scraping."
+     }
+    ],
+    "feeds_inputs": [
+     "ten.format",
+     "ten.fatigue",
+     "m.ladder_structure",
+     "ten.retirement_settlement_rules"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "es_retire_tail",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The retirement sentence is truncated at 'based on play already co...' in both sampled exact-score rules, so how a retirement settles the rungs that cannot be decided unconditionally is not visible.",
+    "what_would_resolve": "Retrieve the complete rules_secondary text and settlement history of any retired matches in the series.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "es_dependence_estimation",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "The size of between-set dependence is not identified from set scores alone; separating latent form from momentum needs point-level data that exist for Slams only.",
+    "what_would_resolve": "Fit dependence on Slam point-by-point and test transfer to tour events with Sportradar or Stats Perform point data.",
+    "category": "distribution_variance"
+   },
+   {
+    "id": "es_toss_info",
+    "type": "DATA_UNAVAILABLE",
+    "description": "The toss (first server of set one) is public only shortly before play, and no free historical archive of toss outcomes was verified.",
+    "what_would_resolve": "Capture the toss from live scoring feeds or buy Sportradar point-by-point with serve-order fields.",
+    "category": "game_context_script"
+   }
+  ],
+  "reviewer": "TENNIS_a author (Claude)",
+  "review_date": "2026-11-07"
+ },
+ "match_winner": {
+  "contract": {
+   "settlement_definition": "Each market is a binary on one named side (a player or a doubles pair) winning one professional match, e.g. 'If Casper Ruud wins the Casper Ruud vs Carlos Alcaraz professional tennis match ... after a ball has been played'. Settlement is the match winner per the governing league record, not a set count or margin. If the match never starts (injury, walkover, forfeiture, cancellation before play) the market resolves to a fair price rather than Yes/No; postponed matches stay open up to two weeks. The sampled match-winner text contains no sentence on a mid-match retirement, so whether the opponent of a retiring player settles as the winner is inferred from tour convention only. No overtime concept exists; deciding-set format (tiebreak, match tiebreak) is part of the match and is not stated in the rules.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXATPMATCH",
+     "quote": "after a ball has been played, then the market resolves to Yes",
+     "establishes": "Winner contracts only become live once a ball is played; the winner resolves Yes at match completion under the league record."
+    },
+    {
+     "ticker": "KXATPCHALLENGERMATCH",
+     "quote": "If the match does not occur (signaled by a ball being played) due to a player injury, walkover, forfeiture, or any other cancellation (all before the match starts), the market will resolve to a fair price",
+     "establishes": "Pre-start walkover or cancellation does not settle Yes/No; it settles at a fair price, so participation risk is not a payoff risk for pre-start withdrawals."
+    },
+    {
+     "ticker": "KXWTADOUBLES",
+     "quote": "If this match is postponed or delayed, the market will remain open and close after the rescheduled match has finished (within two weeks).",
+     "establishes": "Rain delays and postponements keep the market alive for up to two weeks; the two-week cap is the only void-by-time boundary visible."
+    },
+    {
+     "ticker": "KXATPNATWINNER",
+     "quote": "The players’ nationalities reflect those designated by the Governing League.",
+     "establishes": "The nationality-winner series misfiled under this archetype uses the governing league's nationality designation, not citizenship or residence."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "Retirement after the first ball: the sampled winner rules say nothing about it (the retirement sentence appears only in the set/game/totals variants and is cut off in the sample), so the settlement of a retiring-favourite match is CONTRACT_AMBIGUOUS.",
+    "Doubles series (KXWTADOUBLES, KXATPDOUBLES, KXATPCHALLENGERDOUBLES) settle a pair; doubles use no-ad scoring and a 10-point match tiebreak in place of a third set, which compresses the match and raises the variance of the winner outcome per point of edge.",
+    "Series misfiled in this archetype by the ledger: tournament outrights (KXATP, KXWTA, KXATPMEN, KXATPWTA), nationality winner (KXATPNATWINNER), tiebreak occurrence (KXATPTIEBREAK), game winner (KXATPGWINNER), table tennis (KXWTABLETENNISMATCH) and exhibitions (KXTENNISEXHIBITION) share no common settlement logic with a plain match winner and are TITLE_ONLY except KXATPNATWINNER.",
+    "Lower-level matches (Challenger) have thinner data, sometimes no live scoring feed, so the 'after a ball has been played' trigger and the settlement source can lag the real result."
+   ],
+   "settlement_data_source": "Governing-league match result (ATP/WTA/ITF official score), resolved after the match completes; the exact named source is not stated in the sampled rules text."
+  },
+  "mechanism": {
+   "summary": "A tennis match winner is the end of a nested counting process. Each service point is won by the server with probability that depends on that specific server-returner pair on that court: the server's serve quality, the returner's return quality, the court speed and ball, and the player's physical state on the day. Points aggregate into games through a deuce-amplifying hold function, games into sets through six-all tiebreak rules, and sets into the match through the best-of-three or best-of-five target, so a small point-level edge becomes a large winner edge. Day-level form shocks shared across points create overdispersion that lowers the favourite's edge relative to an i.i.d. chain. Before any of that happens a participation gate decides whether the contract has a match at all, and after play starts a retirement hazard can truncate the match before the count completes. The winner market is also the most liquid one, which makes it the anchor the other tennis archetypes are priced against.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Participation and start gate",
+     "description": "Before the point model matters, a match must be played. Withdrawals after the draw, walkovers, late lucky-loser swaps and rain postponements decide whether the contract resolves at a fair price or runs to a result. The gate is almost entirely a function of news timing, order-of-play publication and entry-list status, and it is correlated with the injury state that also lowers a player's point-win rate if he does start.",
+     "distribution": "Bernoulli per player with a hazard that spikes in the 24 hours before order of play; strongly clustered by player-injury state and tournament round.",
+     "categories": [
+      "availability_news",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "ten.withdrawal_signals",
+      "ten.suspension_postponement_risk",
+      "ten.retirement_settlement_rules"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Latent strength on this specific court",
+     "description": "Each player has a latent ability on the match's court that is neither overall Elo nor raw surface Elo: it is a continuous function of court speed and ball behaviour. A big server's latent strength rises with court speed while a counter-puncher's falls, so two players with equal clay Elo are not equal at a fast indoor hard event. The estimate must also carry honest uncertainty for returners, juniors and players who recently moved between Challenger and tour level.",
+     "distribution": "Gaussian-like latent ability with heteroscedastic uncertainty; uncertainty is heavy-tailed for players with fewer than about 30 recent tour matches or after a layoff.",
+     "categories": [
+      "talent_strength",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "ten.surface_rating",
+      "ten.player_speed_slope",
+      "ten.level_transfer_offset",
+      "ten.rating_uncertainty",
+      "ten.surface_similarity"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Pair-specific serve and return point model",
+     "description": "Match probability is generated by two numbers: A's probability of winning a point on his serve against B's return and B's on his serve against A's return. They come from each player's serve quality and return quality relative to the tour average on this surface, plus pair interactions such as a big lefty slice serve into a weak ad-court backhand return. The pair of serve-point probabilities, not the gap in overall rating, drives games, sets and the match.",
+     "distribution": "Two correlated binomial rates; the two spw values are individually well estimated (0.60-0.70 on tour) but their difference is small, so estimation error of 1-2 points of spw already swings match probability by several percent.",
+     "categories": [
+      "opponent_matchup",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "ten.opp_adjusted_serve_return",
+      "ten.serve_return",
+      "ten.second_serve_vulnerability",
+      "ten.handedness",
+      "ten.h2h_style"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Day-of physical and scheduling modifiers",
+     "description": "Fatigue from the previous rounds, short turnaround, time-zone shift and in-tournament medical history move the two point-win probabilities down by small amounts on the day. These are modifiers to the s3 rates, not additional strength measures, and most of them are only observable as match minutes, rest days and public injury reports.",
+     "distribution": "Small mean shifts (about 0.5-2 points of spw) with a fat left tail for visibly injured players; correlated across rounds within a tournament.",
+     "categories": [
+      "situational_schedule_motivation",
+      "availability_news",
+      "environment"
+     ],
+     "input_ids": [
+      "ten.fatigue",
+      "ten.fitness",
+      "ten.court_cond",
+      "ten.travel_timezone",
+      "ten.form"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Points to games to sets to match with shared day shocks",
+     "description": "The two spw values are pushed through the game-hold function, set tiebreak rules and the sets-to-win target. A latent match-level form shock shared across points makes set outcomes positively correlated, which flattens the favourite's edge versus an i.i.d. chain, while best-of-five gives the stronger player more points to express the edge and doubles formats with match tiebreaks do the opposite.",
+     "distribution": "Discrete nested counts: games are geometric-like around deuce, sets are bounded random walks, match is a first-to-n race; overdispersion from the shared shock raises 2-1 and 3-2 frequency.",
+     "categories": [
+      "distribution_variance",
+      "game_context_script",
+      "pace_volume"
+     ],
+     "input_ids": [
+      "ten.hold_break",
+      "ten.format",
+      "ten.within_match_dependence"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Mid-match termination and settlement",
+     "description": "Retirements truncate the count: the player who is injured or physically spent stops, and the tour record gives the match to his opponent. This converts a stage-5 loss into a settled loss or an ambiguous outcome depending on wording. The hazard is higher in best-of-five, in heat, and for players who began the match visibly impaired, and it is the only stage where the winning side is chosen by an event unrelated to point-win rate.",
+     "distribution": "Rare absorbing event (roughly 1-3% of tour matches) concentrated in the trailing, injured player; tail risk is far larger for a favourite carrying a known injury.",
+     "categories": [
+      "settlement_contract",
+      "availability_news"
+     ],
+     "input_ids": [
+      "ten.retirement_settlement_rules",
+      "ten.suspension_postponement_risk",
+      "ten.fitness"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.surface_rating",
+      "ten.player_speed_slope",
+      "ten.level_transfer_offset",
+      "ten.rating_uncertainty"
+     ],
+     "note": ""
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.opp_adjusted_serve_return",
+      "ten.second_serve_vulnerability",
+      "ten.handedness",
+      "ten.h2h_style"
+     ],
+     "note": ""
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.doubles_pair_strength"
+     ],
+     "note": ""
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.fitness",
+      "ten.withdrawal_signals"
+     ],
+     "note": ""
+    },
+    "coaching_scheme": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Tennis has no in-match substitution, rotation or play-calling decision that a pre-match variable can observe; coaching-staff changes act slowly through the rating and are indistinguishable from form at the single-match horizon."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.court_cond",
+      "ten.suspension_postponement_risk"
+     ],
+     "note": ""
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.within_match_dependence",
+      "ten.format"
+     ],
+     "note": ""
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.hold_break"
+     ],
+     "note": ""
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.serve_return",
+      "ten.opp_adjusted_serve_return"
+     ],
+     "note": ""
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.rating_uncertainty",
+      "ten.within_match_dependence"
+     ],
+     "note": ""
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.fatigue",
+      "ten.travel_timezone",
+      "ten.exhibition_format_effort"
+     ],
+     "note": ""
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "The official only affects the winner through line-call overrules and code violations, whose effect on a single match winner is below estimation noise; rules differences (final-set format, no-ad) are carried by ten.format instead."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "ten.retirement_settlement_rules",
+      "ten.walkover_slot_hazard"
+     ],
+     "note": ""
+    }
+   }
+  },
+  "new_inputs": {
+   "ten.player_speed_slope": {
+    "label": "Player-specific court-speed response slope",
+    "category": "team_strength",
+    "mechanism": "A player's strength is a function of continuous court pace, not just a hard/clay/grass label.",
+    "rationale": "Overall Elo blends surfaces and surface Elo is a three-way categorical split. Court speed varies a lot inside 'hard' (Indian Wells slow, Paris indoor fast). Players differ in their sensitivity: big servers gain on fast courts, baseliners lose.",
+    "measurement": "For each player fit Elo_i(c)=Elo_i0 + beta_i*(CPI_c - mean CPI) with CPI from event ace-rate/hold-rate index over the previous three editions (hold% over tour average, with time-decay half-life one year). Estimate beta_i by ridge regression on that player's last ~120 tour matches using only matches completed before the as-of date; prior beta mean from serve profile (ace rate, height) with ridge penalty lambda ~ 20 matches. Output the speed-adjusted Elo for the match event.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sackmann CSV aggregates (hold%, ace rate by tourney_name)",
+     "Tennis Abstract surface splits"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match rows with tourney_name, surface, w_/l_ serve counts",
+     "event-level hold% by year"
+    ],
+    "why": "Swaps a three-way categorical surface label for a continuous pace response so the winner price separates specialists at fast vs slow hard courts.",
+    "role": "primary"
+   },
+   "ten.level_transfer_offset": {
+    "label": "Challenger/ITF to tour rating offset",
+    "category": "team_strength",
+    "mechanism": "Players move between Challenger/ITF and tour level, and ratings fitted on different pools are not on the same scale.",
+    "rationale": "Kalshi lists Challenger matches (KXATPCHALLENGERMATCH, KXWTACHALLENGERMATCH) where one player may have 80% of recent matches at ITF level and the other on tour; a pooled Elo with a single scale overstates the lower-level player.",
+    "measurement": "Estimate level offsets by fitting Elo on all levels with a level-dummy per player pool: offset_L estimated from players who played at both levels in the previous 24 months (mean rating change across a level crossing, shrunk with n/(n+25)). Apply offset_L to each player's rating before computing the gap. Recompute weekly with data available at the as-of timestamp.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sackmann CSV (tour, Challenger and ITF rows)",
+     "ITF world tennis rankings public pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match rows incl. tourney_level for ATP main, Challenger, ITF",
+     "player_id, date, result"
+    ],
+    "why": "Corrects a systematic scale mismatch that only affects Challenger/lower-tier winner contracts, where Kalshi lists many matches.",
+    "role": "secondary"
+   },
+   "ten.doubles_pair_strength": {
+    "label": "Doubles pair strength and partnership continuity",
+    "category": "player_role",
+    "mechanism": "A doubles winner is a pair-level outcome: net play, serve-plus-one patterns and chemistry matter beyond two individual singles ratings.",
+    "rationale": "KXWTADOUBLES, KXATPDOUBLES and KXATPCHALLENGERDOUBLES settle pairs that often formed days earlier. Singles rating is a weak proxy: doubles specialists with weak singles records dominate.",
+    "measurement": "Pair rating = 0.6*mean(doubles Elo of each player, shrunk with n/(n+15) toward 1500) + 0.25*pair Elo (zero if <5 shared matches) + 0.15*mean singles Elo scaled by 0.3. Add penalty term for first-time partnership (-20 Elo if 0 prior matches, linearly vanishing at 10). Use only matches before as-of timestamp; format modifiers for match tiebreak and no-ad.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sackmann doubles CSVs (atp_matches_doubles)",
+     "ATP doubles rankings public pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "doubles match rows with 4 player ids, score, round",
+     "partnership history"
+    ],
+    "why": "Winner contracts on doubles pairs cannot be priced from singles ratings; the dedicated series are listed and their pairs change week to week.",
+    "role": "secondary"
+   },
+   "ten.exhibition_format_effort": {
+    "label": "Exhibition format and effort proxy",
+    "category": "motivation",
+    "mechanism": "Exhibitions use shortened formats and non-binding stakes, so the usual ability-to-result mapping is distorted.",
+    "rationale": "KXTENNISEXHIBITION is a winner market whose format may be short sets, a match tiebreak or time limit; player effort is discretionary and favourites may coast.",
+    "measurement": "Binary flags for event class (exhibition, invitational, team exhibition) plus format descriptors (sets to win, games per set, match-tiebreak, no-ad) coded from the event announcement; shrink the Elo-implied win probability toward 50% by a factor estimated from historical exhibition results (target shrink 0.6-0.8, to be fit when data exist). As-of: announcement date.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "ATP/WTA and promoter announcements",
+     "Wikipedia exhibition pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "event class, format spec, entry list"
+    ],
+    "why": "Prevents applying tour-match calibration to exhibitions where effort and format differ from tour rules.",
+    "role": "context"
+   },
+   "ten.walkover_slot_hazard": {
+    "label": "Walkover and late-withdrawal hazard by slot",
+    "category": "availability",
+    "mechanism": "Pre-start walkovers and lucky-loser swaps remove a match from the payoff set or change the participants.",
+    "rationale": "The sampled rule sends non-occurrence to a fair price, so the exposure is to price drift in the final hours before a withdrawal becomes public, not to a final loss. Hazard varies by round, event tier and days since last match.",
+    "measurement": "Empirical hazard h(round, tier, days_since_last_match, last_match_minutes>150, age>=33) from Sackmann score 'W/O' rows (withdrawals recorded after draw); logistic with shrinkage toward round-level means; report P(WO) at T-48h, T-12h, T-2h before scheduled start. As-of timestamp: order-of-play publication.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Sackmann CSV score field W/O",
+     "ATP/WTA daily order of play pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "score='W/O' rows with round and date",
+     "order-of-play snapshots"
+    ],
+    "why": "Gives the probability the contract voids to fair price rather than resolving, and flags when a price move reflects a withdrawal.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "ten.surface_rating": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Right base quantity; the categorical surface blend still hides within-surface court speed, covered by the new player_speed_slope, and needs honest handling of Challenger scale."
+   },
+   "ten.opp_adjusted_serve_return": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Drives spw for the pair; must be the opponent-adjusted deviation form, not raw averages, and overlaps ten.serve_return as the raw ingredient."
+   },
+   "ten.hold_break": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "A transformation (spw to hold to match) rather than data; useful as a model component, not a separately measurable input for the winner market."
+   },
+   "ten.format": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Best-of-three versus five (Slams for men) and doubles match tiebreaks change the edge amplification; cheap and exact to code."
+   },
+   "ten.fitness": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Largest single-match shift when public; role fine, but timestamp vintage of the injury report matters more than the content."
+   },
+   "ten.fatigue": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Effect is real late in events but small; define as minutes and sets in the last 7 days rather than a vague composite."
+   },
+   "ten.court_cond": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Bundles altitude, ball, indoor and weather into one id; the speed component should be measured continuously, see player_speed_slope."
+   },
+   "ten.h2h_style": {
+    "verdict": "WEAK",
+    "reason": "Head-to-head records average under 6 matches and mostly proxy ratings; keep only handedness/style flags, not raw win-loss counts."
+   },
+   "ten.rating_uncertainty": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Matters for returners and Challenger names; operates as shrinkage on the gap rather than a level effect."
+   },
+   "ten.retirement_settlement_rules": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Sampled winner text is silent on retirement, so this must be treated as an open contract question, not as a solved input."
+   },
+   "ten.market_odds": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Bookmaker closing line is a price; per the brief a benchmark, not an input to evaluating the contract."
+   },
+   "ten.market_margin_bias": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "De-vig method concerns reading a market price, not the match mechanism; benchmark handling only."
+   },
+   "ten.serve_return": {
+    "verdict": "DUPLICATE_OF:ten.opp_adjusted_serve_return",
+    "reason": "Raw surface spw/rpw are the unadjusted ingredient of the adjusted components; keep one definition to avoid double counting."
+   },
+   "ten.form": {
+    "verdict": "WEAK",
+    "reason": "Recent results are already in Elo updates; as a separate input it double counts unless defined as residual vs rating with decay."
+   },
+   "ten.second_serve_vulnerability": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Specific pair channel: break chances concentrate on second-serve points; informative only after serve/return rates are controlled."
+   },
+   "ten.surface_similarity": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pooling weights are a modelling device that stabilises thin grass samples rather than a measurable input."
+   },
+   "ten.handedness": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Small effect (tenths of a point of spw) that is mostly reflected in lefties' own serve numbers; keep as a matchup flag."
+   },
+   "ten.travel_timezone": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Largest effect in first-round matches after intercontinental swings; negligible by quarter-finals."
+   },
+   "ten.suspension_postponement_risk": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Postponement keeps the market open for two weeks, so it changes timing and rest more than settlement; matters for fatigue carryover."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "ten.player_speed_slope",
+     "ten.court_cond"
+    ],
+    "form": "multiplicative",
+    "mechanism": "A big server's rating gain from court pace multiplies with the event's measured pace index; on a fast indoor court the same server gains several Elo points while a counter-puncher loses them, which the surface label alone cannot represent.",
+    "how_to_test": "Regress match outcome on Elo gap plus (beta_i - beta_j)*CPI_event and test the coefficient on the product against a model with surface dummies."
+   },
+   {
+    "inputs": [
+     "ten.format",
+     "ten.within_match_dependence"
+    ],
+    "form": "conditional",
+    "mechanism": "Best-of-five amplifies the favourite's edge, but a shared day-level form shock reduces that amplification; the net direction flips when the shock variance is large relative to the per-point edge.",
+    "how_to_test": "Compare calibration of winner probabilities for bo3 vs bo5 among equal-Elo-gap pairs with and without a latent form shock in the simulation."
+   },
+   {
+    "inputs": [
+     "ten.fitness",
+     "ten.retirement_settlement_rules"
+    ],
+    "form": "regime-switch",
+    "mechanism": "If a player starts injured, point-win rate falls and retirement probability rises; how the contract treats retirement decides whether that shifts the fair price in the same or opposite direction to the on-court outcome.",
+    "how_to_test": "Split matches with an injury flag by whether the injured player was the favourite and measure how often the opponent is recorded the winner via RET."
+   },
+   {
+    "inputs": [
+     "ten.fatigue",
+     "ten.format"
+    ],
+    "form": "threshold",
+    "mechanism": "Fatigue effects emerge only after long previous matches (about 3 hours or five sets) and are larger in best-of-five, so the response is near zero below a load threshold then steepens.",
+    "how_to_test": "Bin prior-match minutes and compare Elo-residuals by bin separately for bo3 and bo5."
+   },
+   {
+    "inputs": [
+     "ten.level_transfer_offset",
+     "ten.rating_uncertainty"
+    ],
+    "form": "conditional",
+    "mechanism": "A player recently promoted from ITF to Challenger carries both a scale offset and a wide rating error, and the two compound: the winner price should shrink toward 50% more for the cross-level pair than for two same-level players.",
+    "how_to_test": "Compare log loss of cross-level vs same-level Challenger matches under the offset-adjusted and unadjusted ratings."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "ten.hold_break",
+    "shape": "S-shaped amplification",
+    "why": "Hold probability is a steep logistic-like function of serve-point probability around 0.6-0.7, so a one-point spw error changes hold by roughly three points and match probability by more."
+   },
+   {
+    "input_id": "ten.rating_uncertainty",
+    "shape": "shrinkage toward 0.5 that decreases with sample size",
+    "why": "The winner probability for a heavy favourite is flattened more when its rating error is large; the shrink factor is roughly proportional to rating variance divided by variance plus pair noise."
+   },
+   {
+    "input_id": "ten.fatigue",
+    "shape": "threshold then linear",
+    "why": "Rest and minutes show little effect below a heavy-load cutoff (long match plus short turnaround) and a roughly linear penalty beyond it."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Tour/Challenger/ITF match results with serve stats",
+    "grain": "one row per match",
+    "fields": "player ids, date, tourney_level, surface, round, best_of, score string incl RET/W/O, w_/l_ ace df svpt 1stIn 1stWon 2ndWon SvGms bpSaved bpFaced, minutes",
+    "timestamp_requirement": "Only matches completed before the decision timestamp; ratings recomputed as-of; stats rows may be posted days late so use ingestion date",
+    "history_needed": "10+ years for rating calibration, 3 years for speed slope",
+    "candidate_sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (GitHub)",
+      "access": "free",
+      "note": "Tour-level, Challenger and ITF match rows with w_/l_ serve counts (ace, df, svpt, 1stIn, 1stWon, 2ndWon, SvGms, bpSaved, bpFaced), score string incl. RET/W/O, surface, round, best_of, tourney_level; no point-by-point and no court-speed field."
+     },
+     {
+      "name": "Tennis Abstract (tennisabstract.com Elo, player pages)",
+      "access": "free_scrape",
+      "note": "Public overall/hard/clay/grass Elo series and splits; scraping terms must be checked."
+     },
+     {
+      "name": "tennis-data.co.uk results and closing odds",
+      "access": "free",
+      "note": "Season spreadsheets with result and bookmaker closing odds; odds are benchmarks only, never model inputs."
+     },
+     {
+      "name": "Stats Perform / Opta tennis data",
+      "access": "paid",
+      "note": "Commercial match and point-level data; field list not verified here (SOURCE_UNVERIFIED)."
+     }
+    ],
+    "feeds_inputs": [
+     "ten.surface_rating",
+     "ten.opp_adjusted_serve_return",
+     "ten.serve_return",
+     "ten.second_serve_vulnerability",
+     "ten.player_speed_slope",
+     "ten.level_transfer_offset",
+     "ten.form",
+     "ten.rating_uncertainty",
+     "ten.surface_similarity",
+     "ten.hold_break",
+     "ten.h2h_style",
+     "ten.handedness",
+     "ten.fatigue",
+     "ten.format"
+    ]
+   },
+   {
+    "dataset": "Draw, order of play, entry and withdrawal timeline",
+    "grain": "event x round x match, timestamped snapshots",
+    "fields": "scheduled start, court, status changes (scheduled, delayed, W/O, RET), publication time",
+    "timestamp_requirement": "Every status change timestamped at observation time; do not backfill with the final record",
+    "history_needed": "5 years of snapshots (must be captured live; no known free archive)",
+    "candidate_sources": [
+     {
+      "name": "ATP Tour / WTA public sites (draws, order of play, scores, stats)",
+      "access": "free_scrape",
+      "note": "Draw sheets, daily order of play, live scores, rankings and entry lists; terms restrict bulk scraping."
+     },
+     {
+      "name": "Own capture of ATP/WTA order-of-play pages",
+      "access": "own_capture",
+      "note": "Poll every 15 minutes during event days; stores the vintage needed for the withdrawal hazard"
+     }
+    ],
+    "feeds_inputs": [
+     "ten.withdrawal_signals",
+     "ten.suspension_postponement_risk",
+     "ten.walkover_slot_hazard",
+     "ten.fitness",
+     "ten.travel_timezone",
+     "ten.court_cond"
+    ]
+   },
+   {
+    "dataset": "Doubles and exhibition event records",
+    "grain": "one row per match",
+    "fields": "pair composition, partnership history, format specification, event class",
+    "timestamp_requirement": "As-of the entry list; format from event announcement",
+    "history_needed": "3 years doubles; exhibition formats collected prospectively",
+    "candidate_sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (GitHub)",
+      "access": "free",
+      "note": "Tour-level, Challenger and ITF match rows with w_/l_ serve counts (ace, df, svpt, 1stIn, 1stWon, 2ndWon, SvGms, bpSaved, bpFaced), score string incl. RET/W/O, surface, round, best_of, tourney_level; no point-by-point and no court-speed field."
+     },
+     {
+      "name": "ATP/WTA doubles pages and promoter announcements",
+      "access": "free_scrape",
+      "note": "Format specs for exhibitions are not standardised; manual coding likely"
+     },
+     {
+      "name": "Sportradar Tennis API (live and historical)",
+      "access": "paid",
+      "note": "Commercial tennis feed with point-by-point and match statistics; field list not verified here (SOURCE_UNVERIFIED)."
+     }
+    ],
+    "feeds_inputs": [
+     "ten.doubles_pair_strength",
+     "ten.exhibition_format_effort"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "mw_retire_clause",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "The sampled match-winner rules (KXATPMATCH, KXATPCHALLENGERMATCH, KXWTADOUBLES) end after the postponement sentence with no retirement sentence, while set/game/totals variants carry a retirement clause. Whether a retired match settles to the opponent is unstated.",
+    "what_would_resolve": "Full current rules PDF or exchange rule filing for the winner series; archival settlement outcomes for retired matches.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "mw_misfiled_series",
+    "type": "OTHER",
+    "description": "Ledger puts tournament outrights, nationality winner, tiebreak occurrence, game winner, table tennis and exhibition series under match_winner; their mechanisms (path product, nationality union, 6-6 hazard, point-level game, table tennis rally) differ from a plain tennis match winner.",
+    "what_would_resolve": "Re-map the ledger so each of those series is assessed under its own archetype; the separate archetypes in this file cover most of them.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "mw_coverage_title_only",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "Twelve of the eighteen series here have no sampled rules text, including KXATPDOUBLES, KXWTAMATCH and KXTENNISEXHIBITION; their treatment of retirement, shortened formats and time limits is not visible.",
+    "what_would_resolve": "Fetch live rules_primary and rules_secondary for each title-only ticker.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "mw_speed_index_source",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "A public per-event court pace index (CPI or Hawk-Eye ball-speed) was not verified; the proposed player_speed_slope substitutes event-level hold% and ace-rate, which mixes court speed with field composition.",
+    "what_would_resolve": "Obtain ITF Court Pace Rating by event or Hawk-Eye bounce data and check that it is available as-of before each event.",
+    "category": "environment"
+   }
+  ],
+  "reviewer": "TENNIS_a author (Claude)",
+  "review_date": "2026-11-07"
+ }
+}

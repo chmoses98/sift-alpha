@@ -1,0 +1,749 @@
+{
+ "game_moneyline_spread": {
+  "reviewer": "CFB_a author (Claude Sonnet 5.5)",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "KXNCAAFSPREAD settles YES if the named team wins the game by more than the half-point strike (for example Florida Atlantic by more than 41.5 versus UTSA) using the official final result including overtime; KXNCAAFGAME and KXNCAAFCSGAME are winner markets (no ties possible because overtime continues until a winner). KXNCAAFWINMARGIN settles on bucketed final point differential including overtime. A postponed game that starts within 48 hours stays open and settles on the official result; if not started within 48 hours the market resolves to a fair price. The archetype also holds season-level count markets (conference teams reaching 10 wins, any Division I game above a total) whose settlement is regular-season-only.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNCAAFSPREAD",
+     "quote": "If Florida Atlantic wins by more than 41.5 points in the UTSA vs Florida Atlantic college football game",
+     "establishes": "Spread rung is a strict greater-than on a .5 strike, so no push exists and the question is P(margin >= 42)."
+    },
+    {
+     "ticker": "KXNCAAFSPREAD",
+     "quote": "If the game is postponed but begins within 48 hours of its originally scheduled start time, the market will remain open and resolve based on the official final result.",
+     "establishes": "Postponement under 48 hours does not void; after 48 hours the same rules text resolves to a fair price, so weather and scheduling delays matter only if they cross that line."
+    },
+    {
+     "ticker": "KXNCAAFWINMARGIN",
+     "quote": "Between 7 to 14 points against Miami (FL) in the Full game (including overtime)",
+     "establishes": "Margin buckets use the full game including overtime, so an overtime game caps the winner margin through the extra period score."
+    },
+    {
+     "ticker": "KXNCAAFSECWINS",
+     "quote": "Only wins recorded in the 2026 college football regular season count towards this market.",
+     "establishes": "Conference win-count markets are regular-season only and exclude title game, bowl and CFP wins."
+    },
+    {
+     "ticker": "KXNCAAFHIGHSCORE",
+     "quote": "If there is a Division I game (including overtime) with over 144.5 total points scored",
+     "establishes": "Season-extreme market over all Division I games including FCS and overtime, an extreme-value event not a single-game side."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "KXNCAAFGAME and KXNCAAFCSGAME (FBS and FCS winner markets) have no sampled rules text: whether the winner market is full-game including overtime is assumed from the absence of ties, not read.",
+    "KXNCAAFWINMARGIN buckets are custom strike_type (Notre Dame by 7 to 14); inclusive boundaries at 7 and 14 are inferred from the title, not from stated rounding text.",
+    "Conference-win markets (KXNCAAFSECWINS, BIGTENWINS, BIG12WINS, ACCWINS) resolve on a count of teams with 10+ wins, so they depend on every conference game and schedule, not on one matchup; these are season-futures in nature but filed under this archetype.",
+    "KXNCAAFHIGHSCORE is an extreme-value contract over every Division I game (FBS vs FCS mismatches included) and counts overtime points; it is not a single-game side.",
+    "A postponed game that starts after 48 hours resolves to a fair price rather than void, so exposure to weather postponements is capped but non-zero."
+   ],
+   "settlement_data_source": "Kalshi text cites the official final result of the game; the specific Source Agency or stats provider is not named in the sampled rules for the game markets. NCAA and conference box scores are the likely truth, but the exact provider is unresolved."
+  },
+  "mechanism": {
+   "summary": "Final margin = true strength difference (opponent-adjusted offense and defense, each uncertain) + site effect + situational and availability shifts, plus a game-level noise term whose size grows with fewer possessions, high variance styles and weather. College football has thin connectivity, a very wide spread of team strength (spreads above 30 are common), and no reliable injury feed, so the prior and its uncertainty matter as much as the mean. The realized margin is then truncated and reshaped by script: favourites with big leads pull starters and run clock, trailing teams chase, and scoring comes in lumps of 3, 6, 7 and 8, so probabilities at adjacent half-point rungs differ by key-number mass. Moneyline settles on the winner after overtime (no ties), spread rungs on margin including overtime.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Team-strength prior and its uncertainty",
+     "description": "Each team's true strength is a latent opponent-adjusted offensive and defensive efficiency, estimated from last season (shrunk by returning production, portal net gains and recruiting talent) and updated through the year. Connectivity across the 130-plus FBS teams is thin, so a Group-of-Five team's rating relative to a Power team is calibrated by few cross-conference games. The width of the estimate, not just its centre, matters for P(cover).",
+     "distribution": "Latent Gaussian rating with prior SD roughly 5-6 points in week 0 shrinking toward 2-3 by midseason; mean-reverting, heavy-tailed for teams with massive roster churn.",
+     "categories": [
+      "talent_strength"
+     ],
+     "input_ids": [
+      "cfb.sp_plus",
+      "cfb.off_ppa",
+      "cfb.def_ppa",
+      "cfb.cross_conf_calibration",
+      "cfb.talent",
+      "cfb.roster_continuity",
+      "cfb.transfer_roster",
+      "cfb.turnover_luck",
+      "cfb.rating_posterior_sd"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Availability and personnel substitution",
+     "description": "Starting quarterback, offensive line and a handful of high-snap defenders determine the actual units on the field. Information is released late and partially (there is no mandatory injury report in most conferences), so what matters is both the expected points value of each loss and the vintage at which it became knowable. A quarterback swap is a discrete shift with a wide posterior on the replacement.",
+     "distribution": "Discrete shocks (zero most weeks, 3-10 point magnitude for a QB) with a mixture of confirmed and doubtful states; replacement quality is itself uncertain.",
+     "categories": [
+      "availability_news",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "cfb.qb_status_pit",
+      "cfb.qb_replacement_value",
+      "cfb.snap_weighted_availability_loss",
+      "cfb.injuries",
+      "cfb.ol",
+      "cfb.suspension_eligibility",
+      "cfb.opt_out_departures"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Site, travel, weather and motivation adjustments",
+     "description": "A home-field term that differs by team (crowd, altitude, visiting travel and body clock), neutral-site games where it vanishes, short-week or bye effects, and games with unusual stakes such as rivalry, bowl eligibility or opt-outs. Weather mostly changes the variance and the run-pass balance of the game rather than the mean margin.",
+     "distribution": "Mostly small additive shifts (0.5-3 points) with a few large conditional ones (altitude visitors, bowl opt-outs); weather widens variance.",
+     "categories": [
+      "environment",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "cfb.venue",
+      "cfb.rest_travel",
+      "cfb.weather_pit",
+      "cfb.motivation"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Matchup-specific scoring process and variance",
+     "description": "Two teams of equal rating can produce different margin distributions: a pressure defence against a thin line, an explosive passing attack against a poor secondary, a run-heavy slow offence that shortens the game. Possession count and play style set how many independent scoring trials there are, which controls margin variance and thus underdog cover frequency, and head-coach aggression bends the tail of late scoring.",
+     "distribution": "Margin variance scales roughly with the number of possessions; style pairings create heteroscedastic, skewed margin errors rather than mean shifts.",
+     "categories": [
+      "opponent_matchup",
+      "coaching_scheme",
+      "pace_volume"
+     ],
+     "input_ids": [
+      "cfb.pass_rush",
+      "cfb.secondary_coverage",
+      "cfb.run_defense",
+      "cfb.offense_style",
+      "cfb.fourth_down_aggression"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Game-script truncation and score lattice",
+     "description": "Once a lead exceeds roughly three scores, college coaches substitute starters, run the ball and burn clock, and trailing teams score late garbage points, so realized margins compress at high spreads relative to a Gaussian. Football scoring is lumpy (3, 6, 7, 8), producing mass on margins of 3, 7, 10 and 14 and differences between rungs such as 6.5 and 7.5. The final result includes overtime, which cannot end tied.",
+     "distribution": "Truncated, key-number-lumpy margin distribution with a right tail that depends on opponent class (FBS vs FCS) and on coach behaviour.",
+     "categories": [
+      "game_context_script",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "cfb.blowout_management",
+      "cfb.mismatch_cover_curve",
+      "cfb.score_resid"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Contract mechanics and aggregate-contract variants",
+     "description": "The rung is a strict greater-than on a .5 strike, a postponement of under 48 hours keeps the market open, and over 48 hours produces a fair-price resolution. Conference win-count and highest-score contracts in this archetype are not single-game sides; they aggregate over a full schedule or over every Division I game and need the game-level distribution run many times.",
+     "distribution": "Binary payoff for sides; for season counts, a Poisson-binomial over game win probabilities; for the highest-score contract, a maximum over roughly 850 game totals.",
+     "categories": [
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "m.lifecycle",
+      "m.settlement_truth"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.sp_plus",
+      "cfb.off_ppa",
+      "cfb.def_ppa",
+      "cfb.talent",
+      "cfb.roster_continuity",
+      "cfb.rating_posterior_sd"
+     ],
+     "note": "Opponent-adjusted efficiency, talent and returning production feed the latent rating; rating_posterior_sd adds the uncertainty term the existing set lacked."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.pass_rush",
+      "cfb.secondary_coverage",
+      "cfb.run_defense",
+      "cfb.offense_style"
+     ],
+     "note": "Unit-on-unit matchups; value is in crosses (rush rate vs protection) not levels."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.qb_replacement_value",
+      "cfb.snap_weighted_availability_loss",
+      "cfb.ol"
+     ],
+     "note": "Replacement quality at quarterback and snap-weighted loss across positions."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.qb_status_pit",
+      "cfb.injuries",
+      "cfb.suspension_eligibility"
+     ],
+     "note": "Timestamped vintages; coverage is partial because no official injury report exists in most conferences (see unresolved)."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.fourth_down_aggression",
+      "cfb.offense_style"
+     ],
+     "note": "Aggression and clock management plus scheme identity; coach-change resets are an open definition issue."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.venue",
+      "cfb.weather_pit"
+     ],
+     "note": "Home field, altitude, neutral site and weather; kickoff body-clock effects are not separately defined."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.blowout_management",
+      "cfb.mismatch_cover_curve"
+     ],
+     "note": "Starter-removal and clock behaviour truncate large margins."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.offense_style",
+      "cfb.fourth_down_aggression"
+     ],
+     "note": "Possession count enters through tempo style and clock choices; cfb.pace and cfb.drives exist in the catalog but are not attached to this archetype (flagged in unresolved)."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.off_ppa",
+      "cfb.def_ppa",
+      "cfb.turnover_luck"
+     ],
+     "note": "Per-play efficiency with a luck adjustment for fumble recoveries."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.rating_posterior_sd",
+      "cfb.mismatch_cover_curve",
+      "cfb.score_resid"
+     ],
+     "note": "Margin SD, truncation and key-number mass."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "cfb.rest_travel",
+      "cfb.motivation",
+      "cfb.opt_out_departures"
+     ],
+     "note": "Rest, rivalry, bowl eligibility and opt-outs."
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Crew penalty tendencies move a game by about one or two penalties and under a point of margin; the one rule-driven item that matters (targeting ejection) is carried by cfb.suspension_eligibility, so no separate officiating input is justified for sides."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.lifecycle",
+      "m.settlement_truth"
+     ],
+     "note": "Strict greater-than rungs, overtime inclusion and 48-hour postponement rule read from the sampled rules; ML and FCS series text is missing."
+    }
+   }
+  },
+  "new_inputs": {
+   "cfb.qb_replacement_value": {
+    "label": "Quarterback replacement value in points",
+    "category": "player_role",
+    "mechanism": "Converts a confirmed or doubtful quarterback change into an expected-margin shift in points per game.",
+    "rationale": "Identity of the starter (cfb.qb_status_pit) is a vintage, not a number. A backup with 40 career dropbacks has a very wide EPA/play posterior, so the swap cost is both a mean shift and a variance increase; the market tends to over- or under-react depending on prior-year snaps.",
+    "measurement": "For each team-season, starter value = EPA per dropback (incl. designed rushes) over the last 2 seasons, opponent-adjusted, weighted by dropbacks with a 1-season half-life, shrunk to the recruiting-class prior (247/On3 composite rating mapped to expected EPA/play from historical FBS QBs) with k = 150 dropbacks. Swap value = (starter - replacement) EPA/dropback x team dropbacks per game (about 35 to 45) x 0.75 points per EPA-equivalent play; report mean and posterior SD. As-of timestamp = last confirmed depth-chart or beat-report vintage before kickoff.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "CFBD plays and PPA endpoints (free key)",
+     "247Sports / On3 composite rating pages (free scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play with passer id, EPA, dropbacks",
+     "recruiting composite by player",
+     "depth chart/availability vintages (own capture)"
+    ],
+    "why": "Quarterback change is the biggest discrete news item in a college spread, and the replacement pool is thin and unevenly observed, so a point value with uncertainty is required, not just a flag.",
+    "role": "primary"
+   },
+   "cfb.snap_weighted_availability_loss": {
+    "label": "Snap-weighted availability loss",
+    "category": "availability",
+    "mechanism": "Aggregates all known absences (any position) into a single points-per-game value using snap share times player value over replacement.",
+    "rationale": "College injury information is sparse, so the model needs a way to price a partial list (two starting linemen out, a corner doubtful) consistently; counting injuries is wrong because snap load and positional value differ by factors of five or more.",
+    "measurement": "For each missing or doubtful player i: loss_i = P(out_i) x snap_share_i(prior season or current season to date) x (grade_i - grade_replacement_pos) x positional_points_per_grade, with positional weights fitted from historical snap-weighted ratings (QB >> OT/CB > WR/DL > RB/TE/S). Sum over players, subtract nothing for the opponent. P(out) = 1.0 for confirmed out, 0.5 for doubtful or questionable, 0.15 for unreported-but-flagged. Grades from PFF where available, otherwise PPA-on-field proxy. Timestamp each source report.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "CFBD player usage and season stats (free key)",
+     "beat-reporter and team-release capture (own capture)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player snaps by game (PFF or proxy)",
+     "availability reports with timestamps",
+     "depth chart"
+    ],
+    "why": "Turns an unstructured injury list into the same unit as the spread, so a +/- 1.5 point late shift can be compared with the quote move rather than judged qualitatively.",
+    "role": "secondary"
+   },
+   "cfb.rating_posterior_sd": {
+    "label": "Team-rating posterior standard deviation",
+    "category": "distribution",
+    "mechanism": "Per-team uncertainty about true strength given games played, connectivity and roster churn; sets the width of the margin distribution.",
+    "rationale": "A rating gap of 7 with SDs of 2.0 and 2.0 gives a different win probability than the same gap with SDs of 5.0 and 5.0 early in the season; ignoring estimation error makes September favourites look too safe and moves cover probabilities at every rung.",
+    "measurement": "Bayesian state-space rating per team: prior mean from last season rating x returning-production shrinkage, prior SD 6 points at week 0 falling toward 2.5 by week 10 per the observed rating update; implement as posterior variance = 1 / (1/prior_var + n_eff / game_sd^2) with game_sd = 13 points and n_eff = sum of connectivity-weighted game weights. Add portal-churn variance inflation proportional to 1 - returning production. Use margin-difference SD sqrt(sd_home^2 + sd_away^2 + 13^2 x (1 + 0.3 x pace_variance_term)).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD games and returning production (free key)",
+     "own Bayesian rating fit"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "game results with margin",
+     "returning production share",
+     "schedule connectivity graph"
+    ],
+    "why": "Margin SD and the shape of P(cover) across rungs depend on rating uncertainty, which no existing input supplies.",
+    "role": "secondary"
+   },
+   "cfb.mismatch_cover_curve": {
+    "label": "Large-spread cover curve from non-market rating gap",
+    "category": "distribution",
+    "mechanism": "Empirical probability that the favourite's margin exceeds k, as a function of pre-game rating gap and opponent class (FBS vs FCS, G5 vs P4).",
+    "rationale": "Rungs such as FAU by more than 41.5 sit in a regime where starters are removed, the clock runs and margin growth is truncated; a Gaussian around the rating gap overstates the tail, and the truncation point differs for FCS opponents and for coaches who keep scoring.",
+    "measurement": "From historical FBS games (2014 onward), bin pre-game rating gap (non-market, SP+ or own rating) in 3-point buckets; for each bucket compute the empirical survival function P(margin >= k) for k in {1..60} with isotonic smoothing and a beta prior of strength 30 games on the pooled curve. Estimate separate curves for FCS opponents, neutral site, and for coaches in the top and bottom tercile of historical starter-pull time. Output is a vector of probabilities per rung, evaluated as-of kickoff.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD games (free key)",
+     "own computation"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "final scores by game",
+     "rating gap as-of kickoff",
+     "opponent division flag"
+    ],
+    "why": "The sampled KXNCAAFSPREAD and KXNCAAFWINMARGIN rungs reach 41.5 and 7-14 buckets; probabilities across 40 rungs must come from a calibrated truncated distribution, not a normal.",
+    "role": "secondary"
+   },
+   "cfb.fourth_down_aggression": {
+    "label": "Fourth-down aggression and clock-management index",
+    "category": "matchup",
+    "mechanism": "Coach tendency to go for it, onside, and to run or save clock, which changes margin variance and end-of-game scoring.",
+    "rationale": "Aggressive coaches convert field goals into possible touchdowns or turnovers on downs, widening the margin distribution; conservative leaders reduce late scoring. Two teams of equal rating but different aggression produce different cover rates for a rung.",
+    "measurement": "For each head coach, 4th-down go-for-it rate over expected from a fitted model (yard line, distance, score diff, time) = observed go rate - model go rate for the same situations, computed over last 2 seasons with k = 40 situations shrinkage; add mean seconds of clock burned per play when leading by 8-24 in Q4 versus the conference median. Coach change resets to a coach-career prior; compute as-of week.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD plays (free key)",
+     "own 4th-down model"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play down, distance, yard line, score, time",
+     "coach tenure"
+    ],
+    "why": "Coaching_scheme was uncovered for sides; aggression and clock management bend the margin distribution without changing its mean.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "cfb.market_ratings": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "A rating backed out of sportsbook or Kalshi prices already contains QB, weather and injury news; feeding it into a model that is then compared with the same price removes any chance of finding incremental information. Keep only as the comparator for edge measurement."
+   },
+   "cfb.sp_plus": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "SP+ is an opponent-adjusted, tempo-free rating with a preseason prior built partly from recruiting and returning production, so it is correlated with cfb.talent and cfb.roster_continuity; useful as a second independent strength estimate but must be lagged to the pre-kickoff publication date, not the season-end value."
+   },
+   "cfb.off_ppa": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Opponent-adjusted offensive PPA is the structural scoring component of the margin, but the label bundles PPA, success rate and explosiveness; needs pass/rush splits, garbage-time filtering and a decay window, otherwise blowout-inflated plays overstate teams that beat weak opponents badly."
+   },
+   "cfb.def_ppa": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Defensive counterpart of off_ppa with the same caveats (garbage time, FCS and low-connectivity opponents); also double counts part of pass_rush, secondary_coverage and run_defense, so those matchup rows should be modelled as deviations from this baseline, not added to it."
+   },
+   "cfb.cross_conf_calibration": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Needed because 12-game schedules inside 10 conferences give thin connectivity; matters most for Group-of-Five vs Power-conference games and early-season Week 1-4 ratings, nearly irrelevant by November within a conference."
+   },
+   "cfb.talent": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Recruiting composite gives a prior on depth and ceiling that is informative in September and decays as in-season efficiency accumulates; its weight should be a declining function of games played, which the label does not state."
+   },
+   "cfb.roster_continuity": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Returning production regresses last year's rating toward the mean and drives the early-season prior width; overlaps with cfb.transfer_roster which is its portal-adjusted extension, so the two should be merged into one net-production measure."
+   },
+   "cfb.qb_status_pit": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Starting QB identity with vintage is the single largest discrete late-news term in college spreads; however it supplies only identity, not the points value of the swap, which is why cfb.qb_replacement_value is added."
+   },
+   "cfb.injuries": {
+    "verdict": "WEAK",
+    "reason": "No official injury report exists in most conferences, so as defined this input is a wish rather than a feed; it only becomes usable with a self-captured, timestamped news archive, and even then coverage is partial."
+   },
+   "cfb.ol": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Offensive-line continuity (starts together, games missed) is a real driver of sack rate and rush efficiency; the label also lumps in the defensive line, which duplicates pass_rush and run_defense and should be split out."
+   },
+   "cfb.turnover_luck": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Fumble recovery is close to a coin flip (about 50 percent) so results-based ratings over-credit lucky teams; a regression-to-expected adjustment to rating is valid but only matters for teams with extreme turnover margin."
+   },
+   "cfb.venue": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Home-field value is team-specific (altitude, crowd, travel for the visitor) and absent at neutral sites; keep, but split neutral-site flag, altitude and visiting-team time-zone shift into separate fields."
+   },
+   "cfb.rest_travel": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Bye-week and short-week effects are real but small, around a point at most, and are partly priced; keep as a context adjustment, not a primary driver."
+   },
+   "cfb.motivation": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Rivalry, bowl eligibility and clinched or eliminated status shift effort and lineup choices in specific games; partial knowability and a thin sample of comparable situations mean the coefficient will be noisy."
+   },
+   "cfb.blowout_management": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Matters for large-spread rungs, where starters are pulled and clock is run, compressing the favourite's margin below what ratings imply; the effect is coach-specific and needs a measured pull-point, not an assumption."
+   },
+   "cfb.weather_pit": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Wind and precipitation mostly move totals; for the margin it changes variance and slightly favours the run-heavy side, so it is context for sides rather than a primary driver."
+   },
+   "cfb.score_resid": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Defined as residuals around lines, which makes it market-derived; the useful, non-market content is the empirical margin lattice (mass at 3, 7, 10, 14), which cfb.mismatch_cover_curve and the new margin-distribution work make explicit."
+   },
+   "m.external_lines": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "De-vigged sportsbook sides are the reference price to beat, not an input; use them to measure whether a fundamentals estimate adds information and to detect Kalshi staleness after news."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Cross-rung consistency of the spread ladder (KXNCAAFSPREAD rungs) is an arbitrage and staleness diagnostic derived from prices; it says nothing about game outcome."
+   },
+   "cfb.transfer_roster": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Portal arrivals reshape starters before the season and eligibility rulings can land mid-year; mostly a preseason prior input and effectively merged with roster_continuity once week 4 has passed."
+   },
+   "cfb.opt_out_departures": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Only relevant for bowl and CFP games and for four-game redshirt decisions; regular-season sides rungs are unaffected, so keep as a conditional input for postseason games."
+   },
+   "cfb.suspension_eligibility": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Suspensions and targeting first-half ejections remove players for part of a game; low frequency and partial knowability, but when known pregame (named suspension) it is a clean availability shock."
+   },
+   "m.quote_history": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Kalshi price history is the market's own output; it measures when information was absorbed (useful for timing studies and closing-line value) but is not a cause of the game side outcome and must not enter a fundamentals model."
+   },
+   "m.orderbook_depth": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Depth and spread govern whether a game side edge is tradable, not whether the event occurs; keep for execution and sizing, not as an outcome input."
+   },
+   "m.fees": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Fee schedule changes net edge on game side contracts (largest near 50c) but has no causal link to the result; an execution parameter, not an input."
+   },
+   "m.volume_oi": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Volume and open interest describe liquidity and price reliability for game side quotes; useful to weight benchmark trust, irrelevant to the outcome process."
+   },
+   "m.trade_tape": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Executed trades show informed flow and fill realism for game side contracts; it is market microstructure used to validate fills, not a determinant of the outcome."
+   },
+   "m.lifecycle": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Open/close/halt/postponement events matter here because the 48-hour postponement clause converts a delayed game side market to a fair-price settlement; needed to define the information set and void handling."
+   },
+   "cfb.pass_rush": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pressure rate for and against interacts with OL health; as an additive term it duplicates def_ppa pass splits, so its value is the matchup product (rush rate vs protection rate), not the level."
+   },
+   "cfb.secondary_coverage": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Explosive-pass-allowed rate is a component of def_ppa and success_explosiveness; keep as the matchup partner of the opponent's deep-pass rate, not as a standalone strength term."
+   },
+   "cfb.run_defense": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Front-seven run defence is a component of def_ppa rushing; adds information only when crossed with the opponent's rushing share and quarterback mobility."
+   },
+   "cfb.offense_style": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Option, tempo and RPO identity changes possession count and therefore margin variance more than margin mean; valuable mainly for the underdog-cover shape at constant rating gap."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "cfb.qb_status_pit",
+     "cfb.qb_replacement_value",
+     "cfb.ol"
+    ],
+    "form": "conditional",
+    "mechanism": "A backup quarterback behind a depleted offensive line loses more than the sum of the two separate effects because inexperienced passers rely on protection and play-action tied to a functioning run game; the penalty is largest when the replacement is a first-year player with fewer than 50 dropbacks.",
+    "how_to_test": "Fit margin residual on replacement value, OL games-missed index and their product; compare slope on the product term in games with both vs one shock."
+   },
+   {
+    "inputs": [
+     "cfb.mismatch_cover_curve",
+     "cfb.blowout_management",
+     "cfb.fourth_down_aggression"
+    ],
+    "form": "threshold",
+    "mechanism": "Past a lead of about 21 points in the second half the favourite's marginal scoring rate drops sharply for conservative coaches, while aggressive coaches keep scoring; this makes the cover rate for 30+ point rungs a coach-dependent step, not a smooth function of rating gap.",
+    "how_to_test": "Compare realised P(margin >= 30) for games with gap > 28 split by aggression tercile; test a step at pre-game gap 21-24."
+   },
+   {
+    "inputs": [
+     "cfb.rating_posterior_sd",
+     "cfb.roster_continuity",
+     "cfb.talent"
+    ],
+    "form": "regime-switch",
+    "mechanism": "In weeks 1-4 the prior dominates, so talent and returning production explain more of the margin than in-season efficiency and the posterior SD is wide; from about week 8 the weights flip and the same variables become nearly redundant.",
+    "how_to_test": "Rolling regression of margin on prior vs in-season rating by week; identify the crossing week and test stability across seasons."
+   },
+   {
+    "inputs": [
+     "cfb.offense_style",
+     "cfb.weather_pit",
+     "cfb.run_defense"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Wind or rain compresses passing, which helps a run-heavy option team against a weak front and hurts an air-raid favourite; the weather effect on margin depends on which side is pass-reliant and on opposing run defence.",
+    "how_to_test": "Interact style (pass share), wind speed above 15 mph and opponent run-defence rank in a margin residual model; check sign by pass-reliant favourite vs underdog."
+   },
+   {
+    "inputs": [
+     "cfb.venue",
+     "cfb.rest_travel",
+     "cfb.motivation"
+    ],
+    "form": "other-nonlinear",
+    "mechanism": "Home-field value is not constant: it grows with altitude and crowd for visitors on a short week and shrinks in rivalry games where both teams are fully motivated; opt-outs at neutral-site bowls remove it altogether.",
+    "how_to_test": "Estimate home-edge by team and test interactions with days of rest and rivalry flag; neutral-site bowls as a control group."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "cfb.mismatch_cover_curve",
+    "shape": "Concave in rating gap beyond ~21 points, with a floor from garbage-time scores",
+    "why": "Expected margin does not grow one-for-one with rating gap once starters sit, so P(margin >= 42) rises far more slowly than a Gaussian predicts and differs by opponent class."
+   },
+   {
+    "input_id": "cfb.rating_posterior_sd",
+    "shape": "Inverse-square-root decay in games played, with a jump after portal-heavy offseasons",
+    "why": "Rating uncertainty shrinks with sample size but resets with roster churn; it changes win probability by several points at constant rating gap."
+   },
+   {
+    "input_id": "cfb.qb_replacement_value",
+    "shape": "Convex in dropbacks of the replacement: very wide posterior below ~50 career dropbacks",
+    "why": "Swap cost for an unknown backup is a fat-tailed mixture, not a normal shift; the mean is little changed but the downside tail is heavy."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "FBS and FCS game results with team-level play-by-play advanced stats",
+    "grain": "game x team (and play)",
+    "fields": [
+     "game_id",
+     "kickoff_utc",
+     "home/away/neutral",
+     "venue_id",
+     "final points by period",
+     "plays",
+     "PPA/EPA",
+     "success",
+     "drive results",
+     "garbage-time flag"
+    ],
+    "timestamp_requirement": "Only games finished before kickoff; ratings recomputed as-of each Sunday and carried to the next game, never end-of-season values.",
+    "history_needed": "2014 onward (CFP era) for rating fits; 2005 onward for key-number lattice",
+    "candidate_sources": [
+     {
+      "name": "CollegeFootballData.com API",
+      "access": "free_limited",
+      "note": "Free key with monthly call cap; includes games, plays, drives, PPA, SP+, returning production, talent; paid Patreon tiers raise quotas"
+     },
+     {
+      "name": "sports-reference.com/cfb",
+      "access": "free_scrape",
+      "note": "Box scores and schedules; rate-limited and terms restrict bulk use"
+     },
+     {
+      "name": "Sportradar / Stats Perform",
+      "access": "paid",
+      "note": "Commercial feeds with official play data and player ids"
+     }
+    ],
+    "feeds_inputs": [
+     "cfb.sp_plus",
+     "cfb.off_ppa",
+     "cfb.def_ppa",
+     "cfb.cross_conf_calibration",
+     "cfb.rating_posterior_sd",
+     "cfb.mismatch_cover_curve",
+     "cfb.fourth_down_aggression",
+     "cfb.turnover_luck",
+     "cfb.score_resid"
+    ]
+   },
+   {
+    "dataset": "Roster, recruiting, portal and returning-production tables",
+    "grain": "player x season and team x season",
+    "fields": [
+     "player_id",
+     "class year",
+     "recruit composite",
+     "portal entry/commit date",
+     "snaps and starts prior season",
+     "returning production percent"
+    ],
+    "timestamp_requirement": "Portal and eligibility status as of the Saturday morning vintage; recruiting ratings frozen at signing.",
+    "history_needed": "2012 onward for talent composite; 2021 onward for portal data",
+    "candidate_sources": [
+     {
+      "name": "CollegeFootballData.com API",
+      "access": "free_limited",
+      "note": "Talent composite, returning production, portal endpoint (portal coverage SOURCE_UNVERIFIED for completeness)"
+     },
+     {
+      "name": "247Sports / On3",
+      "access": "free_scrape",
+      "note": "Composite recruit ratings and portal trackers"
+     },
+     {
+      "name": "Pro Football Focus College",
+      "access": "paid",
+      "note": "Snap counts and grades by player"
+     }
+    ],
+    "feeds_inputs": [
+     "cfb.talent",
+     "cfb.roster_continuity",
+     "cfb.transfer_roster",
+     "cfb.qb_replacement_value",
+     "cfb.snap_weighted_availability_loss"
+    ]
+   },
+   {
+    "dataset": "Availability and depth-chart news vintages",
+    "grain": "player x game x capture timestamp",
+    "fields": [
+     "player_id",
+     "status (out/doubtful/questionable/starter)",
+     "source",
+     "capture_time_utc",
+     "starter flag"
+    ],
+    "timestamp_requirement": "Every record carries its own capture time; features use only records captured at least 1 hour before kickoff, and lineup confirmation vintages are stored separately.",
+    "history_needed": "Self-captured from season start; no public history exists before capture begins",
+    "candidate_sources": [
+     {
+      "name": "Team releases, beat reporters, conference availability reports (Big Ten started one in 2025, details SOURCE_UNVERIFIED)",
+      "access": "own_capture",
+      "note": "Must be scraped and timestamped going forward"
+     },
+     {
+      "name": "Action Network / Rotowire college injury pages",
+      "access": "free_scrape",
+      "note": "Coverage uneven; no archive"
+     }
+    ],
+    "feeds_inputs": [
+     "cfb.qb_status_pit",
+     "cfb.injuries",
+     "cfb.ol",
+     "cfb.suspension_eligibility",
+     "cfb.opt_out_departures",
+     "cfb.snap_weighted_availability_loss"
+    ]
+   },
+   {
+    "dataset": "Venue, kickoff time and weather forecast vintages",
+    "grain": "game x forecast time",
+    "fields": [
+     "venue lat/long",
+     "altitude",
+     "kickoff local time",
+     "wind speed/direction",
+     "precipitation probability",
+     "temperature",
+     "forecast issue time"
+    ],
+    "timestamp_requirement": "Forecast fields stored with issue time; features use the last vintage at least 60 minutes before kickoff, not observed weather.",
+    "history_needed": "Forecast archive starts at first capture; observed weather for 2013 onward only as a labelled outcome",
+    "candidate_sources": [
+     {
+      "name": "NWS api.weather.gov",
+      "access": "own_capture",
+      "note": "Gridpoint forecasts must be captured live; no official archive of past forecasts"
+     },
+     {
+      "name": "Open-Meteo historical forecast API",
+      "access": "free_limited",
+      "note": "Provides model-based historical forecasts; exact vintage fidelity SOURCE_UNVERIFIED"
+     },
+     {
+      "name": "CFBD games weather endpoint",
+      "access": "free_limited",
+      "note": "Observed conditions, not forecast"
+     }
+    ],
+    "feeds_inputs": [
+     "cfb.venue",
+     "cfb.weather_pit",
+     "cfb.rest_travel",
+     "cfb.motivation"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "ml_fcs_rules_missing",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNCAAFGAME and KXNCAAFCSGAME carry no sampled rules text, so whether the winner market is full game including overtime, how a canceled game resolves and whether FCS games follow the same 48-hour clause cannot be confirmed.",
+    "what_would_resolve": "Fetch the live market rules for one KXNCAAFGAME and one KXNCAAFCSGAME ticker and read the rules_primary and rules_secondary text."
+   },
+   {
+    "id": "injury_feed_gap",
+    "type": "DATA_UNAVAILABLE",
+    "description": "There is no official per-player injury report in most conferences, so cfb.injuries and the snap-weighted loss can only be built from beat reporters and team releases; coverage and timeliness are unknown and vary by program.",
+    "what_would_resolve": "Run a season-long timestamped capture pipeline and measure coverage against post-game participation (who actually played) to estimate miss rate by conference.",
+    "category": "availability_news"
+   },
+   {
+    "id": "pace_attachment",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "cfb.pace and cfb.drives are in the catalog but not attached to this archetype, yet possession count controls margin variance; whether they should be primary or secondary here is untested, and the existing offense_style input partly overlaps them.",
+    "what_would_resolve": "Attach pace and drives, then test margin-variance heteroskedasticity against combined possession count on historical games."
+   },
+   {
+    "id": "conf_wins_mechanism",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Conference win-count and highest-score contracts are aggregate events (Poisson-binomial over schedules, extreme value over all games) that share this archetype key but need season-simulation inputs; the correlation among games within a conference is not described.",
+    "what_would_resolve": "Split these series into a dedicated aggregate archetype and define a correlated season simulation with shared rating uncertainty."
+   }
+  ]
+ }
+}

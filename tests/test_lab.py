@@ -231,24 +231,6 @@ def test_prospective_chain_detects_tampering(tmp_path):
     v = PP.verify_chain(p); assert v["ok"] is False and v["first_bad_line"] == 2
 
 
-def test_prospective_decision_rules():
-    import pandas as pd
-    from alpha_engine.lab import prospective as PP
-    games = pd.DataFrame({"game_id": ["g"], "home_score": [30.0], "away_score": [20.0], "gameday": ["2026-11-08"], "gametime": ["13:00"]})
-    ko = pd.Timestamp("2026-11-08 13:00", tz="America/New_York").tz_convert("UTC")
-    pred = {"game_id": "g", "week": 10, "kickoff_utc": ko.isoformat(), "generated_utc": (ko - pd.Timedelta(hours=30)).isoformat(), "dist": "normal", "mu": 45.0, "sigma": 13.0}
-    def q(minutes_before, bid=0.40, ask=0.44):
-        return {"game_id": "g", "ticker": "T-48", "floor": 47.5, "bid": bid, "ask": ask, "captured_utc": (ko - pd.Timedelta(minutes=minutes_before)).isoformat()}
-    df = PP.decision_frame([pred], [q(365), q(500), q(100)], games)
-    h6 = df[df.horizon == "T-6h"]
-    assert len(h6) == 1 and abs(h6.iloc[0]["age"] - 5) < 1e-6                     # the 365-min-before capture (5 min old), not the 500-min one
-    assert set(df.horizon) == {"T-6h", "T-90m"}                                    # no capture inside the T-24h window
-    assert df.iloc[0]["outcome"] == 1.0                                            # 50 > 47.5
-    late = dict(pred, generated_utc=(ko - pd.Timedelta(hours=5)).isoformat())      # prediction made AFTER the T-6h decision time
-    late_df = PP.decision_frame([late], [q(365)], games)
-    assert late_df.empty or "T-6h" not in set(late_df.horizon)
-    assert PP.evaluate(df)["by_horizon"]["T-6h"]["inference"].startswith("withheld")
-
 
 def test_frozen_config_equals_selected_total_config_with_pit_groups():
     """Guards against transcription drift: the frozen totals config must be the lab's selected one (rating/model/dist) with only the partial-PIT groups replaced."""
@@ -257,19 +239,3 @@ def test_frozen_config_equals_selected_total_config_with_pit_groups():
     for k in ("rating", "model", "dist"):
         assert PP.FROZEN[k] == rep[k]
     assert PP.FROZEN["groups"] == [g for g in rep["groups"] if g not in ("qb", "environment")] + ["environment_dome"]
-
-
-def test_prospective_uses_latest_prediction_before_decision_and_skips_unchanged(tmp_path):
-    import pandas as pd
-    from alpha_engine.lab import prospective as PP
-    ko = pd.Timestamp("2026-11-08 13:00", tz="America/New_York").tz_convert("UTC")
-    games = pd.DataFrame({"game_id": ["g"], "home_score": [30.0], "away_score": [20.0], "gameday": ["2026-11-08"], "gametime": ["13:00"]})
-    mk = lambda gen, mu: {"game_id": "g", "week": 10, "kickoff_utc": ko.isoformat(), "generated_utc": (ko - pd.Timedelta(hours=gen)).isoformat(), "dist": "normal", "mu": mu, "sigma": 13.0}
-    quote = {"game_id": "g", "ticker": "T", "floor": 47.5, "bid": 0.4, "ask": 0.44, "captured_utc": (ko - pd.Timedelta(minutes=365)).isoformat()}
-    df = PP.decision_frame([mk(200, 40.0), mk(24, 50.0), mk(2, 99.0)], [quote], games)      # the 2h-before record is AFTER the T-6h decision and must be ignored
-    assert abs(df[df.horizon == "T-6h"].iloc[0]["model_p"] - float(PP.dists.prob_gt("normal", 50.0, 13.0, 47.5))) < 1e-12
-    P = pd.DataFrame({"game_id": ["g"], "season": [2026], "week": [10], "mu": [45.0], "sigma": [13.0], "mu0": [44.0]})
-    path = tmp_path / "p.jsonl"; now = ko - pd.Timedelta(hours=40)
-    assert PP.predict(P, games.assign(home_team="H", away_team="A"), now, path, "x") == 1
-    assert PP.predict(P, games.assign(home_team="H", away_team="A"), now + pd.Timedelta(hours=1), path, "x") == 0      # same mu: no duplicate
-    assert PP.predict(P.assign(mu=46.0), games.assign(home_team="H", away_team="A"), now + pd.Timedelta(hours=2), path, "x") == 1

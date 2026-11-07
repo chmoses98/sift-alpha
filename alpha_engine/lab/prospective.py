@@ -5,10 +5,13 @@ Protocol (pre-registered in research/prospective/nfl_totals_v1/FREEZE.json befor
              the rolling team ratings (state as of the last strictly earlier game) -- no weekly refitting, no tuning.
   * inputs:  strict point-in-time (roof known; no realised starter, no observed weather).
   * records: append-only, hash-chained JSONL.  A prediction counts only if `generated_utc` is BEFORE the decision time of the quote it is scored against.
-  * decision: primary = last captured two-sided quote at or before kickoff-6h and no more than 30 min older; also kickoff-90min and kickoff-24h (secondary).
+  * decision: the book as of kickoff-6h (primary; also kickoff-90min and kickoff-24h, secondary) = the last quote row for the contract at or before the decision time, accepted only if the
+             series was observed COMPLETE (collector manifest) no more than 30 min before the decision time.  Freshness is the age of that observation, not of the row.
   * scoring: fair P(total >= k) from (mu, sigma); executable price = ask for YES / 1-bid for NO; Kalshi taker fee; held to settlement; game-clustered bootstrap.
-  * primary hypothesis (one-sided): mean net EV per contract > 0 when model expected net EV > 2c.  Secondary: log-loss gain over the market mid > 0.  Holm over the two.
-  * no inference is reported below MIN_GAMES decision games; interim output is descriptive only."""
+  * unit of analysis = the GAME (one net-EV number per game: mean over that game's selected contracts), never the contract: ladders of thresholds on one game are not independent.
+  * primary hypothesis (one-sided, T-6h): mean per-game net EV > 0 over contracts whose model expected net EV exceeds TAU.  Secondary: per-game log-loss gain over the market mid > 0.
+  * claim gate (`claim_gate`): >= MIN_GAMES independent games with bets AND scored, Holm over {primary, secondary}, Bonferroni over the pre-registered looks LOOKS, positive lower bound of the
+    one-sided 95% interval on the primary, chains verified, and no data-quality flags.  Output is PASS_PROVISIONAL / FAIL / INSUFFICIENT_N, never "profitable"; interim output is descriptive."""
 from __future__ import annotations
 import hashlib, json, time, urllib.request
 from pathlib import Path
@@ -17,8 +20,13 @@ import pandas as pd
 from . import dists, market as MK, recover as RV
 
 MIN_GAMES = 60
+LOOKS = (60, 120, 272)
+ALPHA = 0.05
 TAU = 0.02
 PRIMARY_AGE_MIN = 30
+SOURCE_CAPTURE = "market-data/kalshi/capture"
+SOURCE_SELF = "legacy_unverified"      # the first 266 quotes (single timestamp, completeness not verified): never used for decisions
+SOURCE_FALLBACK = "fallback_fail_closed"   # public REST book fetched by `capture`: accepted only as a COMPLETE book (every page fetched), observed at its last page time
 FROZEN = {"model": "ridge", "dist": "normal", "target": "total", "groups": ["strength", "explosive", "schedule", "environment_dome"],
           "rating": {"half_life": 4, "carry": 0.4, "adjust": True}, "fit_seasons": "<=2025", "first_test": 2014}
 KALSHI = "https://api.elections.kalshi.com/trade-api/v2/markets"
@@ -33,14 +41,37 @@ def _h(rec: dict) -> str:
     return hashlib.sha256(json.dumps({k: v for k, v in rec.items() if k != "hash"}, sort_keys=True, default=str).encode()).hexdigest()
 
 
+_TAIL: dict = {}
+
+
+def _tail_hash(path: Path) -> str:
+    """Hash of the last record, read from the end of the file (O(1) per append); cached per path and re-validated against file size."""
+    path = Path(path)
+    if not path.exists() or not path.stat().st_size:
+        return ""
+    size = path.stat().st_size
+    c = _TAIL.get(str(path))
+    if c and c[0] == size:
+        return c[1]
+    with open(path, "rb") as f:
+        f.seek(max(0, size - 65536)); last = f.read().decode().strip().splitlines()[-1]
+    h = json.loads(last)["hash"]; _TAIL[str(path)] = (size, h)
+    return h
+
+
 def append(path: Path, rec: dict) -> dict:
+    """Chained append, safe against concurrent writers (exclusive flock around read-tail + write)."""
+    import fcntl
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-    prev = ""
-    if path.exists() and path.stat().st_size:
-        prev = json.loads(path.read_text().strip().splitlines()[-1])["hash"]
-    rec = dict(rec, prev=prev); rec["hash"] = _h(rec)
-    with open(path, "a") as f:
-        f.write(json.dumps(rec, sort_keys=True, default=str) + "\n")
+    with open(path, "a+b") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            prev = _tail_hash(path)
+            rec = dict(rec, prev=prev); rec["hash"] = _h(rec)
+            f.write((json.dumps(rec, sort_keys=True, default=str) + "\n").encode()); f.flush()
+            _TAIL[str(path)] = (path.stat().st_size, rec["hash"])
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
     return rec
 
 
@@ -82,137 +113,254 @@ def predict(P: pd.DataFrame, games: pd.DataFrame, now: pd.Timestamp, path: Path,
     return n
 
 
-# ------------------------------------------------------------------ quotes
-def fetch_totals(limit=1000, pause=1.5, tries=4) -> list[dict]:
-    out, cursor = [], None
-    while True:
-        url = f"{KALSHI}?series_ticker=KXNFLTOTAL&status=open&limit=200" + (f"&cursor={cursor}" if cursor else "")
-        for a in range(tries):
-            try:
-                d = json.load(urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "sift-alpha-research"}), timeout=30))
-                break
-            except Exception:
-                time.sleep(pause * 2 ** a); d = None
-        if d is None:
-            break
-        out += d.get("markets", [])
+# ------------------------------------------------------------------ quotes: fallback capture (fail closed)
+class FetchError(RuntimeError):
+    pass
+
+
+def _get_json(url: str, tries: int, pause: float, opener=urllib.request.urlopen) -> dict:
+    last = None
+    for a in range(tries):
+        try:
+            return json.load(opener(urllib.request.Request(url, headers={"User-Agent": "sift-alpha-research"}), timeout=30))
+        except Exception as e:                          # network error, HTTP error (incl. 429), bad JSON
+            last = e; time.sleep(pause * 2 ** a)
+    raise FetchError(f"GET failed after {tries} tries: {url}: {last!r}")
+
+
+def fetch_totals(base: str = KALSHI, series: str = "KXNFLTOTAL", pause: float = 1.0, tries: int = 4, max_pages: int = 20, clock=None) -> dict:
+    """Full paginated book for one series.  FAIL CLOSED: any page failing after retries, a repeated cursor, running past max_pages, or an empty result raises FetchError -- a partial or empty
+    book is never returned.  Every page carries its own fetched-at timestamp (taken after the response arrives)."""
+    clock = clock or (lambda: pd.Timestamp.now(tz="UTC"))
+    pages, cursor, seen = [], None, set()
+    for _ in range(max_pages):
+        d = _get_json(f"{base}?series_ticker={series}&status=open&limit=200" + (f"&cursor={cursor}" if cursor else ""), tries, pause)
+        pages.append({"fetched_utc": clock().isoformat(), "markets": d.get("markets", [])})
         cursor = d.get("cursor")
-        if not cursor or len(out) >= limit:
+        if not cursor:
             break
-        time.sleep(pause)
-    return out
+        if cursor in seen:
+            raise FetchError("pagination cursor repeated")
+        seen.add(cursor); time.sleep(pause)
+    else:
+        raise FetchError(f"pagination did not finish within {max_pages} pages")
+    n = sum(len(p["markets"]) for p in pages)
+    if n == 0:
+        raise FetchError("empty book")
+    return {"series": series, "pages": pages, "n": n, "complete": True}
 
 
-def record_quotes(markets: list[dict], games: pd.DataFrame, now: pd.Timestamp, path: Path) -> int:
-    idx = RV.games_index(games); n = 0
-    for m in markets:
-        if m.get("yes_bid_dollars") is None or m.get("yes_ask_dollars") is None:
-            continue
-        rec = {"ticker": m["ticker"], "game_id": None}
-        RV.fill(rec, idx)
-        if rec["game_id"] is None:
-            continue
-        append(path, {"kind": "quote", "captured_utc": now.isoformat(), "ticker": m["ticker"], "game_id": rec["game_id"], "floor": m.get("floor_strike"),
-                      "bid": float(m["yes_bid_dollars"]), "ask": float(m["yes_ask_dollars"]), "status": m.get("status")}); n += 1
+def record_quotes(book: dict, games: pd.DataFrame, out_dir: Path) -> int:
+    """Append a COMPLETE fallback book: one `series_observation` (observed_at = the LAST page's fetched time, so every quote was already known then) and one `quote` per usable market, each quote
+    stamped with its own page time.  Quotes without a verifiable bid and ask, or that cannot be tied to a game, are skipped (and counted in the observation), never repaired."""
+    out_dir = Path(out_dir); idx = RV.games_index(games); n = skipped = 0; rows = []
+    for pg in book["pages"]:
+        for m in pg["markets"]:
+            rec = {"ticker": m["ticker"], "game_id": None}
+            RV.fill(rec, idx)
+            if m.get("yes_bid_dollars") is None or m.get("yes_ask_dollars") is None or rec["game_id"] is None:
+                skipped += 1; continue
+            rows.append({"kind": "quote", "source": SOURCE_FALLBACK, "observed_at": pg["fetched_utc"], "ticker": m["ticker"], "game_id": rec["game_id"], "floor": m.get("floor_strike"),
+                         "bid": float(m["yes_bid_dollars"]), "ask": float(m["yes_ask_dollars"]), "status": m.get("status"), "result": m.get("result") or "", "series": book["series"]})
+    last = book["pages"][-1]["fetched_utc"]
+    append(out_dir / "observations.jsonl", {"kind": "series_observation", "source": SOURCE_FALLBACK, "run_id": "fb-" + last, "series": book["series"], "observed_at": last, "complete": True,
+                                            "n": book["n"], "pages": len(book["pages"]), "tier": "PUBLIC_REST", "skipped_markets": skipped})
+    for r in rows:
+        append(out_dir / "quotes.jsonl", r); n += 1
     return n
 
 
-# ------------------------------------------------------------------ evaluation
+def record_failure(out_dir: Path, err: Exception, now=None) -> None:
+    append(Path(out_dir) / "capture_failures.jsonl", {"kind": "capture_failure", "at": (now or pd.Timestamp.now(tz="UTC")).isoformat(), "error": repr(err)[:300]})
+
+
+# ------------------------------------------------------------------ decision engine
 HORIZONS_MIN = {"T-24h": 24 * 60, "T-6h": 6 * 60, "T-90m": 90}
+REASONS = ("NO_PREDICTION_BEFORE_DECISION", "NO_COMPLETE_OBSERVATION_IN_WINDOW", "NO_QUOTE_ROW", "NOT_YET_DUE", "UNSETTLED", "ELIGIBLE")
 
 
-def decision_frame(preds: list[dict], quotes: list[dict], games: pd.DataFrame) -> pd.DataFrame:
-    """One row per (ticker, horizon): the last quote captured at/before kickoff-h within PRIMARY_AGE_MIN, scored only if the prediction was generated before that decision time."""
+def _ts(x) -> pd.Timestamp:
+    return pd.Timestamp(x).tz_convert("UTC") if pd.Timestamp(x).tzinfo else pd.Timestamp(x, tz="UTC")
+
+
+def _index(preds: list[dict], quotes: list[dict], obs: list[dict]):
     byg: dict = {}
     for p in preds:
         byg.setdefault(p["game_id"], []).append(p)
     for v in byg.values():
         v.sort(key=lambda p: p["generated_utc"])
-    q = pd.DataFrame(quotes)
-    if q.empty or not byg:
-        return pd.DataFrame()
-    q["captured"] = pd.to_datetime(q["captured_utc"], utc=True)
+    qt: dict = {}
+    for q in quotes:
+        if q.get("source", SOURCE_SELF) == SOURCE_SELF:
+            continue                                            # fallback self-captures are not verifiable as complete books: never used for decisions
+        qt.setdefault(q["ticker"], []).append(q)
+    for v in qt.values():
+        v.sort(key=lambda q: q["observed_at"])
+    ob = sorted((o for o in obs if o.get("complete") and o.get("series") == "KXNFLTOTAL"), key=lambda o: o["observed_at"])
+    return byg, qt, ob
+
+
+def audit_and_frame(preds, quotes, obs, games: pd.DataFrame, now, tickers_by_game: dict | None = None):
+    """Returns (frame, audit).  audit = one row per (game, horizon) with a reason code; frame = one row per (ticker, horizon) that is ELIGIBLE (prediction, complete fresh observation and a quote row exist),
+    with the realised outcome when the game has finished."""
+    byg, qt, ob = _index(preds, quotes, obs)
+    ob_t = [_ts(o["observed_at"]) for o in ob]
     g = games.set_index("game_id")
-    rows = []
-    for gid, x in q.groupby("game_id"):
-        if gid not in byg:
-            continue
-        ko = pd.Timestamp(byg[gid][0]["kickoff_utc"])
+    by_game_tickers: dict = {}
+    for tk, rows in qt.items():
+        by_game_tickers.setdefault(rows[-1]["game_id"], []).append(tk)
+    now = _ts(now); rows, audit = [], []
+    for gid, plist in byg.items():
+        ko = _ts(plist[0]["kickoff_utc"])
         for h, mins in HORIZONS_MIN.items():
-            dt = ko - pd.Timedelta(minutes=mins)
-            usable = [p for p in byg[gid] if pd.Timestamp(p["generated_utc"]) <= dt]      # the LATEST prediction generated before the decision time
+            dt = ko - pd.Timedelta(minutes=mins); a = {"game_id": gid, "horizon": h, "decision_utc": dt.isoformat(), "kickoff_utc": ko.isoformat()}
+            if dt > now:
+                audit.append({**a, "status": "NOT_YET_DUE"}); continue
+            usable = [p for p in plist if _ts(p["generated_utc"]) <= dt]
             if not usable:
-                continue
+                audit.append({**a, "status": "NO_PREDICTION_BEFORE_DECISION"}); continue
             p = usable[-1]
-            c = x[(x["captured"] <= dt) & (x["captured"] >= dt - pd.Timedelta(minutes=PRIMARY_AGE_MIN))]
-            for tk, y in c.groupby("ticker"):
-                r = y.sort_values("captured").iloc[-1]
-                fin = g.loc[gid]
-                if pd.isna(fin["home_score"]) or r["floor"] is None:
-                    outcome = np.nan
-                else:
-                    outcome = float(fin["home_score"] + fin["away_score"] > r["floor"])
-                rows.append({"game_id": gid, "week": p["week"], "family": "total", "ticker": tk, "horizon": h, "floor": r["floor"], "bid": r["bid"], "ask": r["ask"],
-                             "age": (dt - r["captured"]).total_seconds() / 60, "outcome": outcome, "model_p": float(dists.prob_gt(p["dist"], p["mu"], p["sigma"], r["floor"]))})
-    return pd.DataFrame(rows)
+            k = max([i for i, t in enumerate(ob_t) if t <= dt], default=None)
+            if k is None or (dt - ob_t[k]).total_seconds() / 60 > PRIMARY_AGE_MIN:
+                audit.append({**a, "status": "NO_COMPLETE_OBSERVATION_IN_WINDOW", "last_complete_obs_utc": ob_t[k].isoformat() if k is not None else None}); continue
+            age = (dt - ob_t[k]).total_seconds() / 60
+            got = 0
+            for tk in by_game_tickers.get(gid, []):
+                cand = [q for q in qt[tk] if _ts(q["observed_at"]) <= ob_t[k]]
+                if not cand:
+                    continue
+                q = cand[-1]
+                if q.get("status") not in (None, "active") or q.get("result") not in (None, ""):
+                    continue
+                fin = g.loc[gid] if gid in g.index else None
+                settled = fin is not None and not pd.isna(fin["home_score"])
+                outcome = float(fin["home_score"] + fin["away_score"] > q["floor"]) if settled and q["floor"] is not None else np.nan
+                rows.append({"game_id": gid, "week": p["week"], "family": "total", "ticker": tk, "horizon": h, "floor": q["floor"], "bid": q["bid"], "ask": q["ask"], "age": age, "outcome": outcome,
+                             "model_p": float(dists.prob_gt(p["dist"], p["mu"], p["sigma"], q["floor"])), "prediction_generated_utc": p["generated_utc"], "obs_utc": ob_t[k].isoformat()}); got += 1
+            if got == 0:
+                audit.append({**a, "status": "NO_QUOTE_ROW"}); continue
+            fin = g.loc[gid] if gid in g.index else None
+            audit.append({**a, "status": "ELIGIBLE" if (fin is not None and not pd.isna(fin["home_score"])) else "UNSETTLED", "tickers": got, "age_min": round(age, 2)})
+    return pd.DataFrame(rows), audit
 
 
-def evaluate(df: pd.DataFrame) -> dict:
-    if df.empty:
-        return {"status": "NO_DECISIONS_YET"}
-    d = df.dropna(subset=["outcome"])
-    d = d[(d["ask"] > d["bid"]) & (d["bid"] >= 0.01) & (d["ask"] <= 0.99) & ((d["ask"] - d["bid"]) <= MK.MAX_SPREAD)]
-    out = {"status": "OK", "decision_rows": int(len(d)), "decision_games": int(d["game_id"].nunique()), "by_horizon": {}}
-    if d.empty:
-        return {"status": "NO_SETTLED_DECISIONS_YET", "decision_rows": 0}
-    sc = MK.score(d)
-    for h, x in sc.groupby("horizon"):
-        r = {"rows": int(len(x)), "games": int(x["game_id"].nunique()), "mean_model_p": float(x["model_p"].mean()), "mean_mid": float(x["mid"].mean()), "base_rate": float(x["outcome"].mean()),
-             "logloss_model": float(x["ll_model"].mean()), "logloss_market": float(x["ll_mkt"].mean())}
-        if r["games"] >= MIN_GAMES:
-            r["logloss_gain_vs_market"] = MK.clustered((x["ll_mkt"] - x["ll_model"]).to_numpy(), x["game_id"].to_numpy())
-            z = x[x["pred_ev"] > TAU]
-            r["strategy_tau0.02"] = {"n": int(len(z)), "mean_pred_ev": float(z["pred_ev"].mean()) if len(z) else None, "mean_real_net": MK.clustered(z["real"].to_numpy(), z["game_id"].to_numpy()) if len(z) else None}
-        else:
-            r["inference"] = f"withheld: fewer than {MIN_GAMES} decision games"
-        out["by_horizon"][h] = r
+def audit_summary(audit: list[dict]) -> dict:
+    out: dict = {}
+    for a in audit:
+        out.setdefault(a["horizon"], {}).setdefault(a["status"], 0)
+        out[a["horizon"]][a["status"]] += 1
+    return out
+
+
+# ------------------------------------------------------------------ statistics and the claim gate
+def _boot_p_le0(vals: np.ndarray, n_boot: int = 4000, seed: int = 20261107) -> tuple[float, float, float]:
+    """One-sided p for H0: mean <= 0 (share of bootstrap means <= 0, +1 smoothing), mean, and the 5th percentile (lower bound of the one-sided 95% interval)."""
+    v = np.asarray(vals, float); rng = np.random.default_rng(seed)
+    b = v[rng.integers(0, len(v), size=(n_boot, len(v)))].mean(1)
+    return float((np.sum(b <= 0) + 1) / (n_boot + 1)), float(v.mean()), float(np.quantile(b, 0.05))
+
+
+def holm_adjust(p: dict) -> dict:
+    items = sorted(p.items(), key=lambda kv: kv[1]); m = len(items); out, run = {}, 0.0
+    for i, (k, v) in enumerate(items):
+        run = max(run, min(1.0, (m - i) * v)); out[k] = run
+    return out
+
+
+def per_game(x: pd.DataFrame) -> pd.DataFrame:
+    sc = MK.score(x)
+    sel = sc[sc["pred_ev"] > TAU]
+    bets = sel.groupby("game_id")["real"].mean().rename("net")
+    gain = (sc["ll_mkt"] - sc["ll_model"]).groupby(sc["game_id"]).mean().rename("ll_gain")
+    return pd.concat([gain, bets], axis=1)
+
+
+def claim_gate(frame: pd.DataFrame, chains_ok: bool, flags: list[str] | None = None) -> dict:
+    """The pre-registered claim gate.  Evaluated on T-6h decisions only; unit = game.  Never returns a profitability claim."""
+    flags = list(flags or [])
+    g = {"horizon": "T-6h", "alpha": ALPHA, "looks": list(LOOKS), "min_games": MIN_GAMES, "flags": flags}
+    d = frame[(frame["horizon"] == "T-6h")].dropna(subset=["outcome"]) if not frame.empty else frame
+    if not frame.empty:
+        d = d[(d["ask"] > d["bid"]) & (d["bid"] >= 0.01) & (d["ask"] <= 0.99) & ((d["ask"] - d["bid"]) <= MK.MAX_SPREAD) & (d["age"] <= PRIMARY_AGE_MIN)]
+    if frame.empty or d.empty:
+        return {**g, "status": "INSUFFICIENT_N", "games_scored": 0, "games_with_bets": 0, "reason": "no settled eligible decisions"}
+    pg = per_game(d)
+    n_scored, n_bets = int(pg["ll_gain"].notna().sum()), int(pg["net"].notna().sum())
+    g.update({"games_scored": n_scored, "games_with_bets": n_bets, "contracts": int(len(d))})
+    reached = [l for l in LOOKS if min(n_scored, n_bets) >= l]
+    if not reached:
+        return {**g, "status": "INSUFFICIENT_N", "reason": f"need >= {MIN_GAMES} independent games with bets and scored (have {min(n_scored, n_bets)} / {n_scored})"}
+    look = max(reached); a_look = ALPHA / len(LOOKS)
+    p1, m1, lo1 = _boot_p_le0(pg["net"].dropna().to_numpy())
+    p2, m2, lo2 = _boot_p_le0(pg["ll_gain"].dropna().to_numpy())
+    adj = holm_adjust({"primary_after_fee_ev": p1, "secondary_logloss_gain": p2})
+    g.update({"look": look, "alpha_per_look": a_look, "primary_after_fee_ev": {"mean_per_game": m1, "p_one_sided": p1, "p_holm": adj["primary_after_fee_ev"], "lower_95_one_sided": lo1},
+              "secondary_logloss_gain": {"mean_per_game": m2, "p_one_sided": p2, "p_holm": adj["secondary_logloss_gain"], "lower_95_one_sided": lo2}})
+    ok = chains_ok and not flags and adj["primary_after_fee_ev"] < a_look and lo1 > 0
+    return {**g, "status": "PASS_PROVISIONAL" if ok else "FAIL",
+            "note": "PASS_PROVISIONAL means the pre-registered statistical gate was met at this look; it is not a profitability claim and needs independent replication on later games."}
+
+
+def evaluate(frame: pd.DataFrame, audit: list[dict], chains_ok: bool, flags: list[str] | None = None) -> dict:
+    out = {"audit_by_horizon": audit_summary(audit), "gate": claim_gate(frame, chains_ok, flags), "descriptive": {}}
+    if frame.empty:
+        out["status"] = "NO_DECISIONS_YET"; return out
+    d = frame.dropna(subset=["outcome"])
+    d = d[(d["ask"] > d["bid"]) & (d["bid"] >= 0.01) & (d["ask"] <= 0.99) & ((d["ask"] - d["bid"]) <= MK.MAX_SPREAD) & (d["age"] <= PRIMARY_AGE_MIN)]
+    out["status"] = "OK" if len(d) else "NO_SETTLED_DECISIONS_YET"
+    if len(d):
+        sc = MK.score(d)
+        for h, x in sc.groupby("horizon"):
+            out["descriptive"][h] = {"rows": int(len(x)), "games": int(x["game_id"].nunique()), "mean_model_p": float(x["model_p"].mean()), "mean_mid": float(x["mid"].mean()), "base_rate": float(x["outcome"].mean()),
+                                     "logloss_model": float(x["ll_model"].mean()), "logloss_market": float(x["ll_mkt"].mean()), "mean_spread": float((x["ask"] - x["bid"]).mean()), "mean_obs_age_min": float(x["age"].mean())}
     return out
 
 
 # ------------------------------------------------------------------ CLI
-def _read(path: Path) -> list[dict]:
-    return [json.loads(l) for l in Path(path).read_text().splitlines()] if Path(path).exists() else []
-
-
 def main(argv=None):
     import argparse
-    ap = argparse.ArgumentParser(description="Prospective totals evaluation (RESEARCH_ONLY)")
+    ap = argparse.ArgumentParser(description="Frozen nfl_totals_v1 prospective experiment (RESEARCH_ONLY)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("capture", help="fetch open KXNFLTOTAL quotes (public read-only endpoint) into a timestamped snapshot file")
-    c.add_argument("--games", required=True); c.add_argument("--out", required=True)
-    i = sub.add_parser("ingest", help="append snapshot files to the hash-chained quotes ledger in capture-time order")
-    i.add_argument("--snapshots", required=True); i.add_argument("--dir", required=True)
-    r = sub.add_parser("report", help="evaluate settled decisions and write REPORT.json")
-    r.add_argument("--games", required=True); r.add_argument("--dir", required=True)
+    c = sub.add_parser("capture", help="FALLBACK fail-closed fetch of the public KXNFLTOTAL book; exits non-zero on any partial/empty result")
+    c.add_argument("--games", required=True); c.add_argument("--dir", required=True); c.add_argument("--api", default=KALSHI)
+    c.add_argument("--loop-minutes", type=float, default=0.0); c.add_argument("--interval", type=float, default=300.0)
+    i = sub.add_parser("ingest", help="append the verified collector's runs from a market-data clone")
+    i.add_argument("--md-repo", required=True); i.add_argument("--dir", required=True)
+    y = sub.add_parser("cycle", help="refresh nflverse, append predictions, ingest, evaluate")
+    y.add_argument("--data-dir", required=True); y.add_argument("--md-repo", required=True); y.add_argument("--dir", required=True); y.add_argument("--work", required=True); y.add_argument("--no-download", action="store_true"); y.add_argument("--md-ref", default="origin/market-data")
+    q = sub.add_parser("publish", help="append-only push of the ledgers to the data branch")
+    q.add_argument("--repo", required=True); q.add_argument("--dir", required=True)
     a = ap.parse_args(argv)
     if a.cmd == "capture":
-        now = pd.Timestamp.now(tz="UTC"); out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-        f = out / f"quotes_{now.strftime('%Y%m%dT%H%M%SZ')}.jsonl"
-        n = record_quotes(fetch_totals(), pd.read_csv(a.games), now, f)
-        print(f"captured {n} quotes -> {f}")
+        games = pd.read_csv(a.games); end = time.time() + 60 * a.loop_minutes; fails = 0
+        while True:
+            t0 = time.time()
+            try:
+                book = fetch_totals(base=a.api)               # raises FetchError on any partial/empty/failed result
+                n = record_quotes(book, games, Path(a.dir)); print(f"captured {n} quotes over {len(book['pages'])} pages", flush=True)
+            except FetchError as e:
+                fails += 1; record_failure(Path(a.dir), e); print(f"capture FAILED: {e}", flush=True)
+                if a.loop_minutes <= 0:
+                    raise SystemExit(1)
+            if time.time() + a.interval >= end:
+                break
+            time.sleep(max(0.0, a.interval - (time.time() - t0)))
+        if fails and a.loop_minutes > 0:
+            print(f"{fails} failed capture(s) recorded in capture_failures.jsonl")
     elif a.cmd == "ingest":
-        d = Path(a.dir); seen = {(r["captured_utc"], r["ticker"]) for r in _read(d / "quotes.jsonl")}; n = 0
-        rows = [json.loads(l) for f in sorted(Path(a.snapshots).rglob("quotes_*.jsonl")) for l in f.read_text().splitlines()]
-        for r in sorted(rows, key=lambda r: (r["captured_utc"], r["ticker"])):
-            if (r["captured_utc"], r["ticker"]) in seen:
-                continue
-            append(d / "quotes.jsonl", {k: v for k, v in r.items() if k not in ("prev", "hash")}); n += 1
-        print(f"ingested {n} new quotes; chain {verify_chain(d / 'quotes.jsonl')}")
+        from . import capture_ingest as CI
+        print(json.dumps(CI.ingest(CI.GitSource(Path(a.md_repo)), Path(a.dir)), indent=1))
+    elif a.cmd == "cycle":
+        from . import prospective_cycle as PC
+        r = PC.run_cycle(Path(a.data_dir), Path(a.md_repo), Path(a.dir), Path(a.work), download=not a.no_download, md_ref=a.md_ref)
+        print(json.dumps({k: r.get(k) for k in ("cycle_utc", "steps", "counts", "eligible_decision_games", "aborted")}, indent=1, default=str))
+        if r.get("aborted"):
+            raise SystemExit(2)
     else:
-        d = Path(a.dir)
-        rep = {"generated_utc": pd.Timestamp.now(tz="UTC").isoformat(), "config_id": config_id(), "chains": {"predictions": verify_chain(d / "predictions.jsonl"), "quotes": verify_chain(d / "quotes.jsonl")},
-               "evaluation": evaluate(decision_frame(_read(d / "predictions.jsonl"), _read(d / "quotes.jsonl"), pd.read_csv(a.games)))}
-        (d / "REPORT.json").write_text(json.dumps(rep, indent=1, default=float)); print(json.dumps(rep, indent=1, default=float))
+        from . import prospective_cycle as PC
+        r = PC.publish(Path(a.repo), Path(a.dir)); print(json.dumps(r))
+        if r.get("error"):
+            raise SystemExit(3)
 
 
 if __name__ == "__main__":

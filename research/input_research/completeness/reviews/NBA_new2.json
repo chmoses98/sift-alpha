@@ -10,7 +10,7 @@
     "Pro Basketball Series Points Spread"
    ],
    "target": "Combined points or cumulative point differential of two teams summed over all games of a playoff series vs a strike",
-   "mechanism": "Both contracts sum per-game quantities over a best-of-seven series that stops when one team reaches four wins. The total is approximately series length times a playoff-adjusted per-game total, so its distribution has one mode per possible length (4-7 games) and rungs between modes are mostly a bet on length. The differential sums game margins; margins also decide who wins each game, so the stopping rule couples them: lopsided series end quickly and accumulate a large differential in few games, while even series run long with margins that partly cancel. A shared matchup regime correlates games, mid-series injuries switch paths, close-out games and blowout truncation shape the decisive margin, and whether overtime counts is not stated in the rules.",
+   "mechanism": "Both contracts sum per-game quantities over a best-of-seven series that stops when one team reaches four wins. The total is approximately series length times a playoff-adjusted per-game total, so its distribution has one mode per possible length (4-7 games) and rungs between modes largely price length. The differential sums game margins; margins also decide who wins each game, so the stopping rule couples them: lopsided series end quickly and accumulate a large differential in few games, while even series run long with margins that partly cancel. A shared matchup regime correlates games, mid-series injuries switch paths, close-out games and blowout truncation shape the decisive margin, and whether overtime counts is not stated in the rules.",
    "inputs": [
     {
      "id": "nba.series_model",
@@ -19,8 +19,8 @@
     },
     {
      "id": "nba.series_length_distribution",
-     "why": "Number of games is the volume of the series total; each length creates its own mode.",
-     "role": "primary"
+     "why": "Number of games is the volume of the series total; read as a diagnostic and seed output of the simulator, whose joint draw replaces independent combination.",
+     "role": "secondary"
     },
     {
      "id": "nba.series_game_conditional_state",
@@ -154,7 +154,7 @@
     },
     {
      "id": "nba.series_sum_stopping_simulator",
-     "why": "Every rung of both series contracts is a tail probability of this joint distribution; it is the core aggregation step.",
+     "why": "Aggregation model whose joint law of length, total and differential prices every rung; not a raw information input.",
      "role": "primary"
     },
     {
@@ -181,6 +181,51 @@
      "id": "nba.playoff_whistle_regime",
      "why": "Shifts per-game points for every game of the series and is only partly knowable before each game.",
      "role": "secondary"
+    },
+    {
+     "id": "nba.series_banked_points_state",
+     "why": "Points and differential already banked in completed games shift every strike for a mid-series decision and can decide the total rung outright.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.ot_final_margin_pmf",
+     "why": "Overtime game margins are a folded small-margin distribution that sits inside the sum for the spread; used only if OT counts (u1), and supplies the OT-game margin point mass that s3 refers to.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.team_points_margin_curve",
+     "why": "Market-free map from expected margin to each team's points (garbage-time flattening of favourites, late fouling by underdogs); splits the simulated game total into team points for the differential contract.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.rating_blowout_minutes_curve",
+     "why": "Market-free blowout probability and starter-minutes-vs-margin curve; overlaps nba.margin_decay_after_pull, kept as context for P(lead >= 20 entering Q4) rather than a second margin-shrinkage estimate.",
+     "role": "context"
+    },
+    {
+     "id": "nba.playoff_matchup_assignment_shift",
+     "why": "Playoff defensive-assignment shift relevant to matchup scoring; the free source is a season-type aggregate and game-level playoff assignments are not shown to be available, so context only.",
+     "role": "context"
+    },
+    {
+     "id": "m.quote_history",
+     "why": "Executable price path of each rung is needed to evaluate edge and entry, but it is a market price and not a predictor; excluded from every stage and coverage claim.",
+     "role": "context"
+    },
+    {
+     "id": "m.external_lines",
+     "why": "External sportsbook series total or spread lines are an independent market estimate of the same distribution; benchmark for comparing simulator output, never a model input.",
+     "role": "context"
+    },
+    {
+     "id": "m.ladder_structure",
+     "why": "Rung monotonicity across strikes is needed to check that simulated P(total >= K) is non-increasing and to evaluate rung pairs; derived from prices, so it is a benchmark and evaluation check only.",
+     "role": "context"
+    },
+    {
+     "id": "nba.market_calibration_bias",
+     "why": "Reliability by price bucket is a market-family calibration diagnostic computed from prices and outcomes, not a pregame input to the score distribution.",
+     "role": "context"
     }
    ],
    "interactions": [
@@ -189,7 +234,7 @@
       "nba.series_length_distribution",
       "nba.own_model_team_totals"
      ],
-     "hypothesis": "Series total is length times per-game total, so sensitivity of a rung to the per-game total is high only near a length mode and near zero between modes."
+     "hypothesis": "Series total is length times per-game total, so sensitivity of a rung to the per-game total is highest near a length mode and lower, though not zero, between modes."
     },
     {
      "inputs": [
@@ -218,7 +263,7 @@
    ]
   },
   "contract": {
-   "settlement_definition": "Total: YES if the two teams 'collectively score at least' the strike (e.g. 900) over the series; integer points so at-least K is exact with no tie. Spread: YES if the named team scores 'more than' a half-point strike (e.g. 9.5) more points than the opponent, summed as 'cumulative points scored throughout the series'; half-point strikes rule out ties. Both sum every game actually played until the series ends. Rules do not state whether overtime points count (assumed included in official final scores), what happens if a game or the series is not completed, or the source of truth; these are open.",
+   "settlement_definition": "Total: YES if the two teams 'collectively score at least' the strike (sampled strike 900) over the series; the sampled strike is an integer, so at-least K is exact with no tie. Spread: YES if the named team scores 'more than' the strike (sampled strike 9.5, floor_strike 9.5, strike_type greater_or_equal) more points than the opponent, summed as 'cumulative points scored throughout the series'; with integer game scores a half-point strike cannot tie, but only the 9.5 strike was observed so this is not verified for other strikes. Both sum every game actually played until the series ends. Rules do not state whether overtime points count (assumed included in official final scores), what happens if a game or the series is not completed, or the source of truth; these are open.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -229,7 +274,7 @@
     {
      "ticker": "KXNBASERIESPTSSPREAD",
      "quote": "If San Antonio scores more than 9.5 more points than New York in the 2026 Pro Basketball Finals",
-     "establishes": "Spread contract is oriented on a named team and uses a half-point strike on the cumulative differential, so no ties."
+     "establishes": "Spread contract is oriented on a named team with a strike on the cumulative differential; the sampled 9.5 strike cannot tie with integer scores, other strikes were not observed."
     },
     {
      "ticker": "KXNBASERIESPTSSPREAD",
@@ -244,7 +289,8 @@
     "Only Finals series were sampled (NYK vs SAS 2026); earlier-round series may use different strikes, team naming or wording.",
     "Incomplete series (cancelled or forfeited game, suspended play) has no stated treatment."
    ],
-   "settlement_data_source": "Not named in the sampled rules; assumed official NBA final box scores (NBA.com) summed over all series games, OT inclusion unconfirmed."
+   "settlement_data_source": "Not named in the sampled rules; assumed official NBA final box scores (NBA.com) summed over all series games, OT inclusion unconfirmed.",
+   "series_mapping_issues": []
   },
   "mechanism": {
    "summary": "The outcome is a random sum over a random number of games. Per game, possessions (slower in the playoffs and matchup-specific) times points per possession (opponent-adjusted, lineup-dependent, partly shooting luck, plus a playoff whistle that cuts free throws) give each team's points; their sum is the game total and their difference the margin. The margin decides the game winner, and the series stops at four wins under a 2-2-1-1-1 home pattern, so the number of summed games is endogenous. For the total, length dominates: each game adds roughly a full game's combined points, so the distribution is a mixture with one mode per length and strikes between modes mainly price length. For the differential, the stopping rule couples margin size with length: a dominant team piles up margin but over fewer games, while a balanced series lasts longer with cancelling margins; the decisive game is always included and blowout truncation and close-out effort shape it. A shared matchup factor makes games correlated, in-series adjustments drift totals by game number, mid-series injuries switch the regime, and overtime adds a discrete jump if it counts.",
@@ -295,7 +341,8 @@
       "nba.rest_travel",
       "nba.travel_altitude",
       "nba.series_game_number_drift",
-      "nba.three_pt_luck"
+      "nba.three_pt_luck",
+      "nba.playoff_matchup_assignment_shift"
      ]
     },
     {
@@ -314,13 +361,16 @@
       "nba.clinch_elimination_margin_profile",
       "nba.ot_model",
       "nba.ot_period_distribution",
-      "nba.series_game_conditional_state"
+      "nba.series_game_conditional_state",
+      "nba.ot_final_margin_pmf",
+      "nba.team_points_margin_curve",
+      "nba.rating_blowout_minutes_curve"
      ]
     },
     {
      "id": "s4",
      "name": "Stopping rule and series length",
-     "description": "Game winners accumulate until one side has four wins, so the count of summed games is 4 to 7 and depends on per-game win probabilities, home pattern and dependence between games. Length is the main volume of the total contract and sets how many margins enter the differential; the higher seed's extra home games in games 5 and 7 matter only in long paths.",
+     "description": "Game winners accumulate until one side has four wins, so the count of summed games is 4 to 7 and depends on per-game win probabilities, home pattern and dependence between games. Length is the main volume of the total contract and sets how many margins enter the differential; the higher seed's extra home games in games 5 and 7 matter only in long paths. The length pmf is an output of the joint simulator (nba.series_sum_stopping_simulator), with nba.series_length_distribution kept as a cross-check.",
      "distribution": "Discrete on {4,5,6,7}; game-to-game correlation and adjustments make sweeps and seven-game series both differ from an independent binomial.",
      "categories": [
       "pace_volume",
@@ -331,14 +381,15 @@
       "nba.series_model",
       "nba.series_length_distribution",
       "nba.series_game_conditional_state",
-      "nba.venue"
+      "nba.venue",
+      "nba.series_banked_points_state"
      ]
     },
     {
      "id": "s5",
      "name": "Aggregation into series total and cumulative differential",
      "description": "The simulator sums game totals and margins along each path. Because a shared matchup factor persists across games, the sum's sd exceeds sqrt(N) times the single-game sd. The total becomes a mixture with modes near N times the per-game total; the differential is coupled to length through the stopping rule, so lopsided paths are short with large sums and even paths are long with cancelling margins.",
-     "distribution": "Total: multimodal mixture over N with within-mode sd of tens of points; differential: unimodal but with length-dependent variance and a sign tied to the series winner.",
+     "distribution": "Total: mixture over N in {4..7} with modes about one per-game total (~215-225 points) apart and within-mode sd of roughly 40-65 points, so troughs between modes stay well above zero density; differential: sign follows the series winner, so it is bimodal (a lump on each side of 0) for near-even matchups and unimodal only for lopsided ones, with length-dependent variance.",
      "categories": [
       "distribution_variance"
      ],
@@ -346,13 +397,14 @@
       "nba.series_sum_stopping_simulator",
       "nba.series_shared_scoring_factor",
       "nba.team_points_variance_by_style",
-      "nba.series_length_distribution"
+      "nba.series_length_distribution",
+      "nba.series_banked_points_state"
      ]
     },
     {
      "id": "s6",
      "name": "Settlement against the rung",
-     "description": "The running sums are compared to the strike at the series end: at-least K for the total, more-than S for the named team's differential. The total can be decided before the series ends once the sum crosses K. Rules state cumulative points throughout the series but not overtime treatment, incomplete-series handling or the source of truth, so those branches carry contract risk.",
+     "description": "The running sums are compared to the strike at the series end: at-least K for the total, more-than S for the named team's differential. The total can be decided before the series ends once the sum crosses K. Rules state cumulative points throughout the series but not overtime treatment, incomplete-series handling or the source of truth, so those branches carry contract risk. Mid-series, the banked points of completed games (nba.series_banked_points_state) shift each strike and can decide the total before the series ends.",
      "distribution": "Deterministic given the official scores; ambiguity is concentrated in OT inclusion near rungs and in rare incomplete-series branches.",
      "categories": [
       "settlement_contract"
@@ -360,7 +412,8 @@
      "input_ids": [
       "m.rules_text",
       "m.settlement_truth",
-      "nba.stat_corrections"
+      "nba.stat_corrections",
+      "nba.series_banked_points_state"
      ]
     }
    ],
@@ -379,7 +432,8 @@
      "input_ids": [
       "nba.four_factors_matchup",
       "nba.joint_pace_interaction",
-      "nba.def_scheme"
+      "nba.def_scheme",
+      "nba.playoff_matchup_assignment_shift"
      ],
      "note": "Same opponent every game, so matchup effects repeat and feed the shared factor."
     },
@@ -421,9 +475,11 @@
      "input_ids": [
       "nba.margin_decay_after_pull",
       "nba.clinch_elimination_margin_profile",
-      "nba.ot_model"
+      "nba.ot_model",
+      "nba.series_banked_points_state",
+      "nba.ot_final_margin_pmf"
      ],
-     "note": "Garbage time, close-out games, overtime."
+     "note": "Garbage time, close-out games, overtime and the banked score state that anchors a mid-series decision."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -478,9 +534,10 @@
      "input_ids": [
       "m.rules_text",
       "m.settlement_truth",
-      "nba.stat_corrections"
+      "nba.stat_corrections",
+      "nba.series_banked_points_state"
      ],
-     "note": "OT inclusion, early determination and source are open (see unresolved)."
+     "note": "OT inclusion, early determination and source are open (see unresolved); banked points convert the strike into a remaining-games requirement."
     }
    }
   },
@@ -489,7 +546,7 @@
     "label": "Game-by-game series simulator for the joint law of series length, cumulative total and cumulative point differential",
     "category": "distribution",
     "mechanism": "Draws each game's (home points, away points) jointly, records the winner, stops when one side reaches four wins, and sums points and margins over the realised games, so length and points are generated by one process rather than combined independently.",
-    "rationale": "The series total is a random sum over a random number of games, and the number of games depends on the same per-game margins that the spread contract sums. Multiplying an expected length by an expected per-game total loses the multimodal shape (one mode per possible length) and the negative coupling between lopsided margins and short series, which is exactly where rung probabilities live.",
+    "rationale": "This is an aggregation model, not a raw information input: it is listed because every rung is a tail probability of its output and the catalog needs its definition. The series total is a random sum over a random number of games, and the number of games depends on the same per-game margins that the spread contract sums. Multiplying an expected length by an expected per-game total loses the multimodal shape (one mode per possible length) and the negative coupling between lopsided margins and short series, which is exactly where rung probabilities live.",
     "measurement": "Monte Carlo (>=200k paths) over the 2-2-1-1-1 home pattern from the current series state; per game draw team points from a bivariate distribution with means from own-model pace x points per possession for that game's venue, rest and projected lineups, a series-level random effect shared across games, and a correlation between total and |margin| fitted on 2004+ playoff games; output P(N=k), P(total>=K) and P(diff>=S) for every listed rung, recomputed at each as-of timestamp.",
     "pregame_knowable": "yes",
     "free_sources": [
@@ -497,7 +554,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "playoff game box scores (team points by period incl. OT, home team, game number, series id)",
+     "playoff game box scores (team points by period incl. OT, home team; series id and game number to be derived from game id and date, see u6)",
      "own-model per-game expected possessions and points per possession",
      "current series state (wins each side, games played, next venue)"
     ],
@@ -505,21 +562,22 @@
     "role": "primary"
    },
    "nba.series_shared_scoring_factor": {
-    "label": "Series-level shared scoring and margin random effect (within-series game-to-game dependence)",
+    "label": "Series-level shared TOTAL (scoring-environment) random effect and its covariance with margin residuals",
     "category": "distribution",
-    "mechanism": "Two teams meeting four to seven times in two weeks share a matchup regime (tempo, scheme, shooting environment) that persists across games, so game totals and margins inside a series are positively correlated beyond what pre-series ratings explain.",
-    "rationale": "If games were independent, the sd of a five-game series total would be about sqrt(5) times the single-game sd; a positive intraclass correlation inflates that, fattening both tails of the series total and of the cumulative differential and shifting probability toward far rungs. The size of this effect is small-sample and must be estimated with shrinkage.",
-    "measurement": "Fit a random-effects model on playoff games 2004-present: residual of game total (and of home margin) versus the pre-series own-model expectation, with a series random intercept; report the intraclass correlation and its posterior sd, shrunk toward a regular-season back-to-back-matchup estimate; update the series effect after each completed game with a normal-normal conjugate step.",
+    "mechanism": "Two teams meeting four to seven times in two weeks share a scoring environment (tempo, scheme, shooting conditions) that persists across games, so game totals inside a series are positively correlated beyond pre-series ratings; this input owns the total-side dependence and the total-margin covariance only.",
+    "rationale": "If games were independent, the sd of a five-game series total would be about sqrt(5) times the single-game sd; a positive intraclass correlation inflates that, fattening both tails of the series total and shifting probability toward far rungs. The margin-side series random effect (sd about 2 points), the previous-game margin and the elimination dummy are already defined in nba.series_game_conditional_state and are consumed from it, not re-estimated here. The size of this effect is small-sample and must be estimated with shrinkage.",
+    "measurement": "Fit a random-effects model on playoff games 2004-present: residual of GAME TOTAL versus the pre-series own-model expectation, with a series random intercept; report the intraclass correlation and its posterior sd, shrunk toward a regular-season back-to-back-matchup estimate; update the series effect after each completed game with a normal-normal conjugate step. Also estimate the covariance between the total residual and the margin residual within game; the margin random effect itself is taken from nba.series_game_conditional_state so that the simulator holds a single fitted margin-dependence parameter.",
     "pregame_knowable": "partial",
     "free_sources": [
      "Basketball-Reference playoff game logs"
     ],
     "registry_ids": [],
     "raw_data": [
-     "playoff game totals and margins with series id and game number",
-     "pre-series own-model expected totals and margins"
+     "playoff game totals with series id and game number",
+     "pre-series own-model expected totals",
+     "margin random effect parameter from nba.series_game_conditional_state"
     ],
-    "why": "Sets the variance of the summed total and differential, which decides probabilities at rungs away from the centre of each length mode.",
+    "why": "Sets the variance of the summed total, which decides probabilities at rungs away from the centre of each length mode, and supplies the total-margin covariance the differential needs.",
     "role": "primary"
    },
    "nba.playoff_round_scoring_shift": {
@@ -543,27 +601,27 @@
    "nba.series_game_number_drift": {
     "label": "Within-series drift of totals and margins by game number (adjustments and familiarity)",
     "category": "game_state",
-    "mechanism": "Coaches adjust coverages and rotations after each game and players learn the matchup, so later games in a series tend to be lower scoring and the team that lost the previous game tends to play better in the next (a bounce-back effect on margin).",
-    "rationale": "Late games (5-7) exist only in longer series, so a drift by game number changes the per-game total exactly in the paths that cross high rungs; a bounce-back in margin also slows the accumulation of a differential and lengthens series.",
-    "measurement": "From playoff games 2004+: regress game total residual and home-margin residual on game number (fixed effects 1-7), previous-game margin (loser bounce-back slope) and rest days, with series random effects; shrink game 6-7 coefficients toward game 5 because of sparse counts; output per-game adjustments used by the simulator.",
+    "mechanism": "Coaches adjust coverages and rotations after each game and players learn the matchup, so later games in a series tend to have different scoring than game 1 (fixed effects by game number 1-7); the previous-game bounce-back on margin and rest effects are owned by nba.series_game_conditional_state and only consumed here.",
+    "rationale": "Late games (5-7) exist only in longer series, so a drift by game number changes the per-game total exactly in the paths that cross high rungs, and the margin level by game number changes how fast a differential accumulates in long series.",
+    "measurement": "From playoff games 2004+: regress game total residual and home-margin residual on game-number fixed effects 1-7 with series random effects, after partialling out previous-game margin and rest days using the coefficients from nba.series_game_conditional_state (not re-fitted here); shrink game 6-7 coefficients toward game 5 because of sparse counts; output per-game mean adjustments used by the simulator.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Basketball-Reference playoff game logs"
     ],
     "registry_ids": [],
     "raw_data": [
-     "playoff game totals and margins by game number and previous-game margin",
-     "rest days between games"
+     "playoff game totals and margins by game number",
+     "previous-game margin and rest days as defined in nba.series_game_conditional_state"
     ],
     "why": "Shapes the per-game means along each simulated path rather than using one per-game total for the whole series.",
     "role": "secondary"
    },
    "nba.clinch_elimination_margin_profile": {
-    "label": "Margin and total distribution in close-out and elimination games",
+    "label": "Margin spread, blowout and starter-truncation profile in close-out and elimination games",
     "category": "game_state",
-    "mechanism": "When one team can clinch or is facing elimination, effort and rotation decisions differ: a team down 0-3 may concede late, while game-7 margins are compressed; blowout probability and garbage-time minutes therefore depend on series state.",
+    "mechanism": "When one team can clinch or is facing elimination, effort and rotation decisions change the SPREAD of margins and the blowout and garbage-time profile (a team down 0-3 may concede late; game-7 margins are compressed); the mean shift for elimination games is the dummy in nba.series_game_conditional_state and is not re-estimated here.",
     "rationale": "The final game of every series is a close-out game, so its margin enters every cumulative differential; if close-out games are more lopsided (or, for game 7s, tighter) than ratings imply, the differential's tails move. Effects are asymmetric by which side is on the brink.",
-    "measurement": "From playoff play-by-play 2004+: for each game classify state (clinch opportunity for home/away, elimination for both, neither); fit margin mean and sd and blowout (>=20) probability by state controlling for rating gap and venue; track minutes played by starters after a 20-point lead; shrink state effects toward zero with a prior sd of 2 points.",
+    "measurement": "From playoff play-by-play 2004+: classify each game by state (clinch opportunity for home/away, elimination for both, neither); fit margin sd, blowout (>=20) probability and starter minutes after a 20-point lead by state, controlling for rating gap and venue, taking the mean elimination shift from nba.series_game_conditional_state; shrink state effects toward the neutral-game values with a prior sd of 2 points on sd-ratio terms.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NBA Stats play-by-play (playbyplayv3)",
@@ -574,7 +632,7 @@
      "playoff play-by-play with score and substitutions",
      "series state before each game"
     ],
-    "why": "The decisive game is always in the sum, so its margin regime matters disproportionately for the differential contract.",
+    "why": "The decisive game is always in the sum, so the width and truncation of its margin matter disproportionately for the differential contract.",
     "role": "secondary"
    },
    "nba.playoff_whistle_regime": {
@@ -595,20 +653,39 @@
     ],
     "why": "Shifts per-game points for every game of the series and is only partly knowable before each game.",
     "role": "secondary"
+   },
+   "nba.series_banked_points_state": {
+    "label": "Points already banked in completed series games (running team totals, running combined total and running differential)",
+    "category": "game_state",
+    "mechanism": "Both contracts sum over every game of the series, so once k games are final the sum splits into a known banked part and an unplayed remainder; the decision-time probability is a tail probability of the remainder measured from the shifted strike, not from the full strike.",
+    "rationale": "For any decision after game 1 the banked sum is the largest single determinant of both contracts: a 900 total rung after three games with about 650 banked needs only about 250 more points, which is a length question (one more game or two), and the rung can already be decided (YES with certainty) once the banked sum reaches the strike. For the spread, a banked differential of +30 turns a 9.5 strike into a bet that the opponent outscores the leader by less than the remaining cushion. Using a series-start distribution after games are played would ignore this realised state.",
+    "measurement": "As of timestamp T (decision time), take every series game with a final official box score published before T: for each, team points including overtime. Compute B_total = sum over completed games of (home pts + away pts); D_team = sum of (named team pts - opponent pts). Rung conversion: remaining requirement for the total is K_rem = K - B_total (P=1 if K_rem <= 0, otherwise tail probability of the remaining-games total under nba.series_sum_stopping_simulator started from the current series score); for the spread S_rem = S - D_team on the remaining-games differential. Games in progress at T contribute nothing unless the decision uses a live-score feed (excluded here); a game with a pending or corrected score is flagged and re-read after the correction window; units are points, no shrinkage because the quantity is realised.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference playoff box scores / line scores",
+     "NBA Stats leaguegamelog (final team points per game)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "final team points by game for completed games of the series, including OT, with game end timestamp",
+     "current series score and next scheduled game and venue"
+    ],
+    "why": "Realised banked totals and differential are the starting state for every rung once the series is under way, and they decide the total outright when the banked sum passes the strike.",
+    "role": "primary"
    }
   },
   "input_audit": {
    "nba.series_model": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Supplies per-game win probabilities and the home pattern, but it outputs series win and length only, not points; the stopping simulator extends it to sums, so it is an upstream component rather than the main input."
+    "reason": "Supplies per-game win probabilities and the home pattern, but it outputs series win and length only, not points; the stopping simulator extends it to sums, so it is an upstream component rather than the main input. Scope split: owns the per-game win probabilities and home pattern only; the dependence parameter is taken from nba.series_game_conditional_state rather than fitted again."
    },
    "nba.series_length_distribution": {
-    "verdict": "KEEP_PRIMARY",
-    "reason": "Series length is the dominant driver of the total: each extra game adds a whole game of combined points, so the total's modes sit at multiples of the per-game total and the strike's position against them decides most of the probability."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Series length is the dominant driver of the total, but in this archetype it is an output of nba.series_sum_stopping_simulator (length generated jointly with points) and not an independent primary input; the dynamic-programme length pmf is kept as a cross-check and as seed for per-game win probabilities, and the simulated P(N) is what prices rungs. Using it as a separately combined primary factor would reintroduce independence between length and margins."
    },
    "nba.series_game_conditional_state": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Needed to condition each simulated game on series score, rest days and injuries accrued so far; it also re-prices the remaining sum once some games are played. Secondary because its effect is on game-level means already in the simulator."
+    "reason": "Needed to condition each simulated game on series score, rest days and injuries accrued so far; it also re-prices the remaining sum once some games are played. Secondary because its effect is on game-level means already in the simulator. Scope split: sole owner of the margin-level dependence (series random effect, previous-game margin, elimination dummy); nba.series_shared_scoring_factor, nba.series_game_number_drift and nba.clinch_elimination_margin_profile consume these parameters and add only total-side dependence, game-number effects and truncation spread."
    },
    "nba.own_model_team_totals": {
     "verdict": "KEEP_PRIMARY",
@@ -709,6 +786,38 @@
    "nba.stat_corrections": {
     "verdict": "WEAK",
     "reason": "Team points are rarely corrected after a game, unlike player assists or rebounds, so corrections are unlikely to move a summed series total; kept only as a weak check on the settlement source."
+   },
+   "nba.ot_final_margin_pmf": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Overtime game margins are a folded small-margin distribution that sits inside the sum for the spread; used only if OT counts (u1), and supplies the OT-game margin point mass that s3 refers to. Not duplicated by a new input in this record."
+   },
+   "nba.team_points_margin_curve": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Market-free map from expected margin to each team's points (garbage-time flattening of favourites, late fouling by underdogs); splits the simulated game total into team points for the differential contract. Not duplicated by a new input in this record."
+   },
+   "nba.rating_blowout_minutes_curve": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Market-free blowout probability and starter-minutes-vs-margin curve; overlaps nba.margin_decay_after_pull, kept as context for P(lead >= 20 entering Q4) rather than a second margin-shrinkage estimate."
+   },
+   "nba.playoff_matchup_assignment_shift": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Playoff defensive-assignment shift relevant to matchup scoring; the free source is a season-type aggregate and game-level playoff assignments are not shown to be available, so context only."
+   },
+   "m.quote_history": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Kalshi price history is a benchmark: it measures what the market believes about the same rung and is never fed to the simulator."
+   },
+   "m.external_lines": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Sportsbook series lines are market-derived prices; used only to compare against the market-free simulator."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Cross-strike implied distribution comes from prices; used as a consistency check on the simulator."
+   },
+   "nba.market_calibration_bias": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Calibration by price bucket is market-derived and applies after model probabilities exist."
    }
   },
   "interactions": [
@@ -718,7 +827,7 @@
      "nba.own_model_team_totals"
     ],
     "form": "multiplicative",
-    "mechanism": "The series total is about length times per-game total, so a 5-point shift in per-game total moves a 4-game sum by 20 and a 7-game sum by 35; a rung sitting between two length modes barely responds to per-game total, while a rung at a mode centre is highly sensitive.",
+    "mechanism": "The series total is about length times per-game total, so a 5-point shift in per-game total moves a 4-game sum by 20 and a 7-game sum by 35; a rung at a mode centre is highly sensitive to per-game total while a rung in a trough is less sensitive, by an amount that depends on the within-mode sd (about 40-65 points).",
     "how_to_test": "On historical series compare the realised total minus N times pre-series per-game expectation across N; compute the rung-probability derivative with respect to per-game total by rung position."
    },
    {
@@ -768,13 +877,23 @@
     "form": "saturating",
     "mechanism": "Large leads shrink once starters sit, so each game's contribution to a dominant team's differential saturates; combined with fewer games in lopsided series, the cumulative differential grows much slower than the rating gap at the top end.",
     "how_to_test": "Plot per-game realised margin against pre-game expected margin in playoff games and fit a saturating curve; compare simulated differential with linear versus saturated margins."
+   },
+   {
+    "inputs": [
+     "nba.series_banked_points_state",
+     "nba.series_sum_stopping_simulator",
+     "nba.series_length_distribution"
+    ],
+    "form": "threshold",
+    "mechanism": "Once banked points approach the strike, the rung reduces to whether one more or two more games are played, so probability switches from a smooth tail to a length bet; when the banked sum already exceeds the strike the total is certain, a hard threshold in the remaining requirement K - B.",
+    "how_to_test": "Simulate rung probabilities after games 1-5 of historical series with and without conditioning on banked points; compare calibration for rungs whose remaining requirement K-B lies within one game total of zero."
    }
   ],
   "nonlinearities": [
    {
     "input_id": "nba.series_length_distribution",
-    "shape": "staircase in the strike: flat between length modes, steep at mode centres",
-    "why": "Because each extra game adds roughly a full game of points, P(total >= K) as a function of K drops in steps near 4x, 5x, 6x and 7x the per-game total and is nearly flat between them."
+    "shape": "soft staircase in the strike: steep near mode centres, shallower but non-flat between length modes",
+    "why": "Each extra game adds roughly a full game of points, so P(total >= K) falls in steps near 4x, 5x, 6x and 7x the per-game total; with single-game sd about 18-20, a positive shared factor and mean uncertainty multiplied by N, within-mode sd is roughly 40-65 points against a mode spacing of about 220, so troughs keep a sizeable fraction of peak density. The step sharpness depends on the fitted shared-factor size (u4)."
    },
    {
     "input_id": "nba.series_sum_stopping_simulator",
@@ -785,6 +904,11 @@
     "input_id": "nba.ot_model",
     "shape": "discrete jump of one extra period of combined points",
     "why": "An overtime game adds a five-minute period of points to one game's total, so rung probabilities near a mode edge jump with OT incidence if overtime is counted in cumulative points."
+   },
+   {
+    "input_id": "nba.series_banked_points_state",
+    "shape": "threshold at K - banked total <= 0 (probability 1), steep within one game total of that point",
+    "why": "The total contract cannot go back once the running sum has crossed the strike, and just below it a single additional game decides, so response to the banked sum is a kink then a step in series length, not linear."
    }
   ],
   "required_data": [
@@ -796,16 +920,18 @@
      "date",
      "season",
      "playoff round",
-     "series id",
-     "game number",
+     "series id (derived, see u6)",
+     "game number (derived, see u6)",
      "home team",
      "points by period incl. OT",
      "possessions",
      "FTA",
      "PF",
-     "3PA/3PM"
+     "3PA/3PM",
+     "final team points per game (home and away, incl. OT)",
+     "game end timestamp"
     ],
-    "timestamp_requirement": "Final box score values as of game end; seasons strictly before the decision season for fitted parameters.",
+    "timestamp_requirement": "Final box score values as of game end; seasons strictly before the decision season for fitted parameters. For banked points, only games with a final score published before the decision time T; a correction window is applied before a score is treated as settled.",
     "history_needed": "2004-present playoffs (about 1,500 games) plus matching regular seasons",
     "candidate_sources": [
      {
@@ -833,7 +959,10 @@
      "nba.team_points_variance_by_style",
      "nba.pace",
      "nba.fouls_ft",
-     "nba.venue"
+     "nba.venue",
+     "nba.series_banked_points_state",
+     "nba.ot_final_margin_pmf",
+     "nba.team_points_margin_curve"
     ]
    },
    {
@@ -867,7 +996,8 @@
      "nba.playoff_rotation",
      "nba.lineup_adj_rating",
      "nba.joint_pace_interaction",
-     "nba.four_factors_matchup"
+     "nba.four_factors_matchup",
+     "nba.rating_blowout_minutes_curve"
     ]
    },
    {
@@ -1029,7 +1159,8 @@
     "feeds_inputs": [
      "m.rules_text",
      "m.settlement_truth",
-     "nba.stat_corrections"
+     "nba.stat_corrections",
+     "m.ladder_structure"
     ]
    }
   ],
@@ -1052,7 +1183,7 @@
     "id": "u3",
     "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "Only one Finals series was sampled per ticker; earlier rounds may list different strikes, mirror markets for the other team or negative spreads, and the spread orientation convention is unknown.",
+    "description": "Only one Finals series was sampled per ticker; earlier rounds may list different strikes, mirror markets for the other team or negative spreads, and the spread orientation convention is unknown. Only the Finals event KXNBASERIESPTSSPREAD-26NYKSASFIN and KXNBASERIESTOTALPTS-26NYKSASFIN were sampled, so whether earlier rounds list these series at all is also unverified and claims about integer strikes, ties and other rounds are conditional.",
     "what_would_resolve": "Sample rules and strikes of first-round to conference-finals markets for both series tickers."
    },
    {
@@ -1068,6 +1199,13 @@
     "category": "officiating_rules",
     "description": "It is not verified that official.nba.com keeps a historical archive of playoff referee assignments with announcement times, which the whistle-regime input needs for its point-in-time rule.",
     "what_would_resolve": "Check the archive depth of the assignments page or confirm officials per game from Basketball-Reference box scores."
+   },
+   {
+    "id": "u6",
+    "type": "SOURCE_UNVERIFIED",
+    "category": "distribution_variance",
+    "description": "Series id and game number as structured fields in NBA Stats leaguegamelog are not confirmed; they probably have to be derived from game id, date and team pairs (the playoff game id may encode round, series and game but this was not checked), and Basketball-Reference series pages would need scraping. The random-effects fits and the banked-points state depend on a correct series grouping.",
+    "what_would_resolve": "Pull a sample of playoff rows from leaguegamelog and Basketball-Reference and verify that series and game number can be reconstructed for every 2004-present playoff game."
    }
   ]
  }

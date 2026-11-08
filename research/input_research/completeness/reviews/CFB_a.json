@@ -19,7 +19,7 @@
     {
      "ticker": "KXNCAAFWINMARGIN",
      "quote": "Between 7 to 14 points against Miami (FL) in the Full game (including overtime)",
-     "establishes": "Margin buckets use the full game including overtime, so an overtime game caps the winner margin through the extra period score."
+     "establishes": "Margin buckets use the full game including overtime, so overtime points enter the margin; overtime games end with small margins (mostly 3 to 8 points), which concentrates mass in the lowest buckets."
     },
     {
      "ticker": "KXNCAAFGAME",
@@ -140,7 +140,7 @@
     {
      "id": "s6",
      "name": "Contract mechanics: strike, overtime scope and postponement",
-     "description": "Spread rungs are strict greater-than on a .5 strike, so the target is P(margin >= ceiling of the strike) with no push; WINMARGIN buckets are read as full game including overtime, while SPREAD, GAME and CSGAME overtime scope is assumed, not read. A postponement of under 48 hours keeps the market open and over 48 hours produces a fair-price resolution, so the lifecycle feed defines the information set and the void-like state.",
+     "description": "Spread rungs are strict greater-than on a .5 strike, so the target is P(margin >= ceiling of the strike) with no push; WINMARGIN buckets are read as full game including overtime, while SPREAD and GAME overtime scope is not stated (CSGAME and D3GAME only say a declared tie pays 50/50). GAME, SPREAD and WINMARGIN stay open for a postponement that starts within 48 hours and otherwise resolve to a fair price; CSGAME and D3GAME stay open until a rescheduled game finishes within two weeks, then fair price, so the lifecycle feed defines the information set and the void-like state.",
      "distribution": "Binary payoff per rung (bucket for WINMARGIN) as a deterministic function of the final margin; a small fair-price mass for long postponements.",
      "categories": [
       "settlement_contract"
@@ -388,7 +388,7 @@
     "category": "team_strength",
     "mechanism": "Win probability for a Division III (KXNCAAFD3GAME) or FCS (KXNCAAFCSGAME) game from a score-based rating difference, a division-specific home edge and a division-specific margin spread, because no play-by-play efficiency or SP+ exists for these teams.",
     "rationale": "D3 and FCS winner markets cannot use FBS efficiency ratings: D3 has about 240 teams with almost no out-of-region games before the playoff, so connectivity is weak and rating uncertainty is large; talent gaps are wider than in FBS, so the margin spread is larger and blowouts are common; and the sampled D3/FCS games are playoff games where the higher seed usually hosts, so the home edge must be estimated on postseason games, not regular-season averages.",
-    "measurement": "Ridge-regularised margin rating fitted on all completed games of the division since 2010 (margin capped at 35 points, home edge estimated separately for regular season and playoff, game weight halving every 1.5 seasons, ridge penalty chosen by leave-one-season-out log loss); preseason value = 0.6 x prior final rating shrunk to conference mean; P(win) = Phi((rating gap + home edge) / sigma_div) with sigma_div fitted per division on residuals (expected larger than FBS); posterior SD per team from the ridge Hessian added to sigma_div. As-of the last completed game before kickoff; no market input.",
+    "measurement": "Shares the score-based team rating of cfb.lower_division_title_model (one rating fit per division, not a second rating; harmonise margin cap, carry-over and home edge with that input) and adds only the single-game layer: ridge-regularised margin rating fitted on all completed games of the division since 2010 (margin capped at 35 points, home edge estimated separately for regular season and playoff, game weight halving every 1.5 seasons, ridge penalty chosen by leave-one-season-out log loss); preseason value = 0.6 x prior final rating shrunk to conference mean; P(win) = Phi((rating gap + home edge) / sigma_div) with sigma_div fitted per division on residuals (expected larger than FBS); posterior SD per team from the ridge Hessian added to sigma_div. As-of the last completed game before kickoff; no market input.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NCAA statistics scoreboards (stats.ncaa.org)",
@@ -1078,7 +1078,8 @@
       "cfb.script_rush_attempts",
       "cfb.script_adjusted_pass_attempts",
       "cfb.qb_sack_proneness",
-      "cfb.victory_formation_yardage"
+      "cfb.victory_formation_yardage",
+      "cfb.run_defense"
      ]
     }
    ],
@@ -1098,9 +1099,10 @@
      "status": "COVERED",
      "input_ids": [
       "cfb.secondary_coverage",
-      "cfb.pass_rush"
+      "cfb.pass_rush",
+      "cfb.run_defense"
      ],
-     "note": "Opposing explosive pass defence and pressure rate."
+     "note": "Opposing explosive pass defence and pressure rate for passing series; opposing run defence for total yards and rushing touchdowns."
     },
     "role_personnel": {
      "status": "COVERED",
@@ -1319,7 +1321,7 @@
     "category": "game_state",
     "mechanism": "Expected negative rushing yardage from quarterback kneels at the end of a half or game, which the KXNCAAFTEAMYDS note charges to the offence's rushing (and so total) yards.",
     "rationale": "The rules make kneels negative rushing yards, so a team that leads late loses a few yards per kneel series; the loss is near zero for trailing teams and concentrated in the favourite's distribution, slightly shifting rung probabilities near the strike for teams expected to win comfortably; it also lowers rushing attempts' yards per carry.",
-    "measurement": "From play-by-play 2014 onward, classify kneels (play text contains 'kneel' or rush of -1 to -3 yards with zero time-out usage in the final 2:00 of a half while leading or tied); estimate P(kneel series | expected lead at 2:00 of the 4th quarter and of the 2nd quarter) by logistic fit on the non-market expected margin, and mean yards per kneel series (count of kneels x mean loss, about -1 to -2 yards each). Expected kneel yards = sum over halves of P(series) x mean loss; as-of kickoff.",
+    "measurement": "From play-by-play 2014 onward, classify kneels (play text contains 'kneel' or rush of -1 to -3 yards with zero time-out usage in the final 2:00 of a half while leading or tied); estimate P(kneel series | expected lead at 2:00 of the 4th quarter and of the 2nd quarter), using the team kneel-down rate already defined in cfb.two_minute_drill_efficiency as the team-level prior rather than re-estimating it, by logistic fit on the non-market expected margin, and mean yards per kneel series (count of kneels x mean loss, about -1 to -2 yards each). Expected kneel yards = sum over halves of P(series) x mean loss; as-of kickoff.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD plays endpoint (free key)"
@@ -1342,16 +1344,16 @@
     "reason": "Pass share is the direct multiplier between plays and receiving yards; keep, but as the script-adjusted pass attempts, since a raw season pass rate is dominated by games that were blowouts one way or the other. Reverification: the catalog measurement conditions on the spread/total (spread-implied script or lead probability); only a version rebuilt on the non-market expected margin and total (SP+ or own rating) is admissible here, the spread-based version is BENCHMARK_ONLY."
    },
    "cfb.rush_efficiency": {
-    "verdict": "IRRELEVANT",
-    "reason": "For a team receiving-yards threshold, rushing efficiency matters only indirectly through play-calling balance, which pass_rate already carries; line yards and stuff rate have no path into receiving yardage."
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Since the reconciliation added KXNCAAFTEAMYDS, KXNCAAFTEAMRSHTD and KXNCAAFTEAMRSHATT, rushing yards per carry, line yards and stuff rate set half of total offense (stage s9) and the goal-line rushing finish; the earlier IRRELEVANT verdict was written for receiving yards only."
    },
    "cfb.pass_efficiency": {
     "verdict": "KEEP_PRIMARY",
     "reason": "Opponent-adjusted yards per attempt and PPA per dropback directly generate receiving yards; sack rate in the label is a different outcome (sack yards count against rushing under NCAA rules and do not subtract from receiving yards)."
    },
    "cfb.run_defense": {
-    "verdict": "WEAK",
-    "reason": "Opposing run defence affects receiving yards only by pushing the opponent toward passing, a small second-order effect; included as primary matchup input for rushing props but misplaced here."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The opposing front sets rushing yards allowed for KXNCAAFTEAMYDS and rushing-touchdown finishing for KXNCAAFTEAMRSHTD, and pushes the offence toward passing for receiving yards; secondary to own rushing efficiency, used as the opponent adjustment in stage s9."
    },
    "cfb.secondary_coverage": {
     "verdict": "KEEP_PRIMARY",
@@ -1362,12 +1364,12 @@
     "reason": "Pressure converts attempts into incompletions and throwaways (lower completions) but sacks do not count as negative receiving yards; effect runs through completion rate and yards per attempt, not through a sack term."
    },
    "cfb.havoc": {
-    "verdict": "WEAK",
-    "reason": "Havoc rate combines tackles for loss, forced fumbles and pass breakups; only the pass-breakup component touches receiving yards, and it is already carried by opposing secondary_coverage."
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Opponent tackles for loss and sacks subtract from KXNCAAFTEAMYDS and forced fumbles feed KXNCAAFDSTTD return touchdowns, but the sack component is carried by cfb.qb_sack_proneness and the return component by cfb.dst_td_propensity, so havoc is context, not a staged input."
    },
    "cfb.turnover_luck": {
     "verdict": "WEAK",
-    "reason": "Interceptions end drives and cut dropbacks modestly, but the regression-to-expected adjustment changes expected team receiving yards by well under one reception; negligible for a 325-yard threshold."
+    "reason": "Fumble-recovery and interception luck regresses, which matters slightly for KXNCAAFDSTTD (fewer returnable turnovers than a lucky season suggests) and for drives lost; the effect is carried by cfb.dst_td_propensity shrinkage and is negligible for yardage and offensive touchdown rungs."
    },
    "cfb.team_total_split": {
     "verdict": "BENCHMARK_ONLY",
@@ -3216,7 +3218,7 @@
     {
      "id": "s1",
      "name": "Possession order and tempo within the period",
-     "description": "Each period contains only two or three possessions per team. The opening kickoff recipient takes the first and (usually) the third quarter's opening drive, deferral is a coach habit, and the second quarter ends with the team that kicked off in the first half often holding the ball with the last chance to score. Possession counts differ by period and drive times differ by tempo.",
+     "description": "Each period contains only two or three possessions per team. The team receiving the opening kickoff takes the first quarter's opening drive, and the team that deferred (or kicked off) normally receives the second-half kickoff and so opens the third quarter; deferral is a coach habit. Which team holds the ball at the end of the second quarter depends on the drive sequence, giving a last end-of-half scoring chance. Possession counts differ by period and drive times differ by tempo.",
      "distribution": "Small-integer counts (about 2 to 3 per team per quarter) with a deterministic order effect; variance relative to the mean is high.",
      "categories": [
       "pace_volume",
@@ -3519,11 +3521,11 @@
    },
    "m.rules_text": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "The rules text decides ties and overtime scope by series: the 2nd half includes overtime, the 4th quarter excludes it, and QHIGHSCORE pays 1/N on tied quarters; every series needs its own parameterisation."
+    "reason": "The rules text decides ties and overtime scope by series: the 2nd half includes overtime, the 4th quarter excludes it, the period winner texts have no tie clause while KXNCAAF1HWINNER pays a Tie strike; every series needs its own parameterisation."
    },
    "cfb.corr": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Needed to price joint outcomes such as 1HFT (tie at the half and a game winner) and to keep Q1, 1H, 2H and full-game ladders mutually consistent; its estimation requires period-level history of both teams."
+    "reason": "Needed to keep Q1-Q4, 1H, 2H and full-game ladders mutually consistent and to price the KXNCAAF1HWINNER Tie leg jointly with the team legs; its estimation requires period-level history of both teams."
    },
    "cfb.turnover_luck": {
     "verdict": "WEAK",
@@ -3586,7 +3588,7 @@
      "cfb.second_half_ot_spillover"
     ],
     "form": "joint-distribution",
-    "mechanism": "The 2H winner and the full-game winner are strongly dependent through overtime, and 1HFT-type markets require a joint tie-and-winner event; marginal quarters are positively correlated through team strength but only weakly so, which defeats independent-leg pricing.",
+    "mechanism": "The 2H winner and the full-game winner are strongly dependent through overtime, and 2H sides depend on the 1H result through halftime-lead script; marginal quarters are positively correlated through team strength but only weakly so, which defeats independent-leg pricing.",
     "how_to_test": "Estimate the empirical correlation matrix of period margins by expected margin bin and test independence on pairs (1H, 2H) and (Q3, Q4)."
    },
    {
@@ -4505,7 +4507,7 @@
     }
    ],
    "variants_and_edge_cases": [
-    "The archetype contains single-season counts (WINS, UNDEFEATED), conference structure events (SEC/ACC/B12/B10/MAC/AAC... champion and qualifier), selection outcomes (BOWLGAME, PLAYOFF, QF, SF, FINALIST, SEED, TOPSEED, CFPCONF), a multi-year event (TFUT before 2030) and a combination event (KXNCAAFLSUTEX2X: LSU beats Texas in the regular season and wins the national championship).",
+    "The archetype contains single-season counts (WINS, UNDEFEATED), conference structure events (SEC/ACC/B12/B10/MAC/AAC... champion and qualifier), selection outcomes (BOWLGAME, PLAYOFF, QF, SF, FINALIST, SEED, TOPSEED, CFPCONF), a multi-year event (TFUT before 2030) and a combination event (KXNCAAFLSUTEX2X: LSU beats Texas in the regular season and beats Texas again in the national championship game specifically).",
     "Selection-versus-participation: BOWLGAME settles on being selected, whereas PLAYOFF and QF depend on committee selection and format rules that differ by season (number of teams, auto bids, seeding).",
     "Regular-season top-N finish markets pay all tied teams, a ties rule that makes probabilities sum above one across teams.",
     "Six series are TITLE_ONLY with no rules text: KXNCAAFBACC, BSEC, BB10, BB12 (older duplicates of conference champion tickers), KXNCAAFIVY (the Ivy League has no championship game) and KXNCAAFPAC10 (defunct conference name).",
@@ -4919,7 +4921,7 @@
      "FCS playoff bracket and seeds by season",
      "conference tiebreaker rules"
     ],
-    "why": "KXNCAAFCS, KXNCAAFFCS, KXNCAAFD3 and KXNCAAFIVY are TITLE_ONLY outright markets on divisions and a conference that the FBS-centred inputs do not cover.",
+    "why": "KXNCAAFCS, KXNCAAFFCS and KXNCAAFD3 (rules text: win the FCS or Division III national championship) and the TITLE_ONLY KXNCAAFIVY are outright markets on divisions and a conference that the FBS-centred inputs do not cover.",
     "role": "context"
    },
    "cfb.conf_schedule_win_dependence": {
@@ -6050,7 +6052,7 @@
     {
      "id": "s3",
      "name": "Race for the first touchdown",
-     "description": "The first team to score a touchdown is determined by the order in which two hazard processes first fire; the opening possession order, scripted opening drives and defensive scores matter, and there is a probability that neither team scores in the full game. Overtime touchdowns count, so a game with no regulation touchdown is still decided.",
+     "description": "The first team to score a touchdown is determined by the order in which two hazard processes first fire; the opening possession order, scripted opening drives and defensive scores matter, and there is a probability that neither team scores in the full game. For a future named-player first-scorer market, whether overtime touchdowns count is unread; the sibling team race (KXNCAAFFIRSTTDTEAM, now in game_stat_props) counts them.",
      "distribution": "Competing hazards with a deterministic head start for the opening receiver; a small point mass of no-touchdown games.",
      "categories": [
       "game_context_script",
@@ -6080,7 +6082,7 @@
     {
      "id": "s5",
      "name": "Count dispersion, availability and settlement",
-     "description": "High-count rungs (total TDs of 8 or more, rushing TDs of 5 or more) are tail events where clustering in mismatches fattens the distribution; late availability and eligibility news affect team strength rather than the count directly. Two-point conversions never count; overtime touchdowns do.",
+     "description": "High-count rungs (total TDs of 8 or more, rushing TDs of 5 or more) are tail events where clustering in mismatches fattens the distribution; late availability and eligibility news affect team strength rather than the count directly. No live series here: the two-point and overtime treatment of the sibling team-count texts in game_stat_props is not assumed for a future player market.",
      "distribution": "Negative binomial with dispersion that increases in expected total and gap; tail sensitivity to blowouts.",
      "categories": [
       "distribution_variance",
@@ -6298,7 +6300,7 @@
   "input_audit": {
    "cfb.td_rates": {
     "verdict": "WEAK",
-    "reason": "Role-based anytime and first-TD scoring rates apply to named-player markets, but every live series in this archetype (first team TD, total TDs, team rushing/receiving TDs, DST TDs, team TDs) is a team or game count; per-role rates are not defined for them."
+    "reason": "Role-based anytime and first-TD scoring rates are the core of a named-player scorer market, but no such series is live (the team and game counts moved to game_stat_props); WEAK until a player series is listed, then primary."
    },
    "cfb.team_total_split": {
     "verdict": "BENCHMARK_ONLY",
@@ -6306,7 +6308,7 @@
    },
    "cfb.player_usage": {
     "verdict": "WEAK",
-    "reason": "Target, carry and snap shares allocate scoring among players but the live contracts count touchdowns by team or by type; only the rushing/receiving split of the team matters, which is a play-calling mix and not a player share."
+    "reason": "Target, carry and snap shares allocate touchdowns among players; with no named-player series live they have no settled outcome to feed, and the team-level run/pass split is a play-calling mix carried by goal_to_go_run_pass_mix."
    },
    "cfb.qb_rushing": {
     "verdict": "KEEP_SECONDARY",
@@ -6342,7 +6344,7 @@
    },
    "m.rules_text": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Contract definitions drive counts: two-point conversions excluded, overtime TDs counted, fumble recoveries not credited as rushing TDs, and the first-TD market counts defensive and special-teams scores; essential to the label."
+    "reason": "No live series in this archetype, so no rules text is read; the sibling team texts (two-point conversions excluded, overtime counted, fumble-recovery credit) are not assumed for a future player market, whose own text would be primary."
    },
    "cfb.suspension_eligibility": {
     "verdict": "WEAK",
@@ -6374,7 +6376,7 @@
    },
    "m.lifecycle": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Open/close/halt/postponement events matter here because the 48-hour postponement clause converts a delayed touchdown count market to a fair-price settlement; needed to define the information set and void handling."
+    "reason": "Lifecycle events would define the information set and postponement handling for a future player market; with no live series the 48-hour clause of the sibling team texts is not assumed here."
    }
   },
   "interactions": [
@@ -6630,7 +6632,7 @@
     {
      "id": "s1",
      "name": "Candidate pool and participation",
-     "description": "Only players who play contribute; the candidate pool for a stat leader is the few dozen high-usage backs, receivers, pass catchers or edge rushers, with injury and benching hazard removing some each week. A candidate who misses a game falls behind and a candidate who sits out the season resolves No, so participation is the first filter for every series.",
+     "description": "Only players who play contribute; the candidate pool for a voted player award is the few dozen high-production receivers (Biletnikoff) or edge rushers and linebackers (AP Defensive Player of the Year), with injury and benching hazard removing some each week. A candidate who misses games loses visible production and one who sits out the season resolves No, so participation is the first filter for every player series.",
      "distribution": "Bernoulli participation per game with fat-tailed season-ending probability; heavier for high-workload positions.",
      "categories": [
       "availability_news",
@@ -6723,7 +6725,7 @@
       "cfb.qb",
       "cfb.defender_production_profile"
      ],
-     "note": "Usage determines volume; quarterback role limited to the passing-touchdown leader."
+     "note": "Usage determines volume; quarterback status matters only through a receiver's targets and team success for coach votes."
     },
     "availability_news": {
      "status": "COVERED",
@@ -6747,7 +6749,7 @@
     "game_context_script": {
      "status": "GAP",
      "input_ids": [],
-     "note": "Score-state effects (trailing teams pass more, leading teams run and rotate) change cumulative leader totals but no input models the script effect on a candidate's usage; its size relative to injury hazard is unknown."
+     "note": "Score-state effects (trailing teams pass more, leading teams run and rotate) change award candidates' cumulative production but no input models the script effect on a candidate's usage; its size relative to injury hazard is unknown."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -6763,7 +6765,7 @@
       "cfb.leader_race_state",
       "cfb.defender_production_profile"
      ],
-     "note": "Per-game production per opportunity for offensive leaders (inside leader_race_state) and sack, TFL and pressure rates per pass-rush snap for defensive awards and leaders; the offence-only WEAK inputs are removed."
+     "note": "Per-game production per opportunity for receiver candidates (inside leader_race_state, used here as the projected award-ballot production race) and sack, TFL and pressure rates per pass-rush snap for defensive awards; the offence-only WEAK inputs are removed."
     },
     "distribution_variance": {
      "status": "COVERED",
@@ -6833,7 +6835,7 @@
      "carries and snaps",
      "injury news with timestamps"
     ],
-    "why": "Controls how often a leader candidate drops out of the race or resolves No, directly shaping probabilities for later-season rungs.",
+    "why": "Controls how often an award candidate loses production or resolves No under the did-not-play clause, directly shaping late-season probabilities.",
     "role": "primary"
    },
    "cfb.award_vote_feature_model": {
@@ -6895,7 +6897,7 @@
      "pass-rush snaps (paid or estimated)",
      "opponent sacks allowed and pass attempts"
     ],
-    "why": "The four AP Defensive Player of the Year series and the sack/TFL leader series need defender production and pass-rush usage, which the offence-centric inputs do not carry.",
+    "why": "The four AP Defensive Player of the Year series need defender production and pass-rush usage, which the offence-centric inputs do not carry.",
     "role": "primary"
    }
   },
@@ -6910,7 +6912,7 @@
    },
    "cfb.player_usage": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Carries, targets and pass-rush snaps are the volume that produces the counting stats which leader contracts settle on; the original secondary role understates it, since a leader is mostly a usage story with an efficiency multiplier."
+    "reason": "Targets and pass-rush snaps are the volume that produces the receiving and sack/TFL production voters see for the Biletnikoff and AP Defensive Player of the Year; the original secondary role understates it, since production is mostly a usage story with an efficiency multiplier."
    },
    "cfb.pass_efficiency": {
     "verdict": "WEAK",
@@ -6918,11 +6920,11 @@
    },
    "cfb.qb": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Starting quarterback status and regime matter for the passing-touchdown leader and for team-success-based votes (coach awards), but are irrelevant to defensive and receiver awards; scope-limited."
+    "reason": "Starting quarterback status and regime matter for a Biletnikoff candidate's targets and for team-success-based votes (coach awards), but are irrelevant to defensive awards; scope-limited."
    },
    "cfb.qb_rushing": {
     "verdict": "WEAK",
-    "reason": "Quarterback rushing adds to Heisman narratives but the live series count receiving yards, rushing yards (rarely led by a quarterback) and sacks; marginal relevance."
+    "reason": "Quarterback rushing adds to Heisman narratives but no live series is a Heisman or quarterback award; the live player series turn on receiving and defensive production, so relevance is marginal."
    },
    "cfb.td_rates": {
     "verdict": "WEAK",
@@ -6934,7 +6936,7 @@
    },
    "cfb.schedule_strength": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Voters discount production against weak schedules and the remaining schedule determines games left for a leader; two distinct uses that should be separated."
+    "reason": "Voters discount production against weak schedules and the remaining schedule determines games left before the ballot for a candidate's production; two distinct uses that should be separated."
    },
    "cfb.draft_declaration_propensity": {
     "verdict": "IRRELEVANT",
@@ -6949,8 +6951,8 @@
      "cfb.player_usage"
     ],
     "form": "joint-distribution",
-    "mechanism": "A leader's probability is the product of being ahead and staying healthy: a candidate with a small lead and high workload faces a higher chance of falling behind because of injury, so the joint of current gap, workload and hazard shapes the probability more than the gap alone.",
-    "how_to_test": "Simulate the race with and without the hazard and compare to realised outcomes of past leaders by workload tercile."
+    "mechanism": "An award candidate's chance is the product of leading the visible production race and staying healthy: a candidate with a small production lead and high workload faces a higher chance of falling behind because of injury, so the joint of current gap, workload and hazard shapes the probability more than the gap alone.",
+    "how_to_test": "Simulate the production race with and without the hazard and compare to realised award outcomes of past candidates by workload tercile."
    },
    {
     "inputs": [
@@ -7163,7 +7165,7 @@
    {
     "id": "script_effect_on_usage",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Game script (leading teams run, trailing teams pass) changes candidates' cumulative totals, but there is no input that models the script effect on a given player's usage; it may be material for back and receiver leaders on the same team.",
+    "description": "Game script (leading teams run, trailing teams pass) changes candidates' cumulative totals, but there is no input that models the script effect on a given player's usage; it may be material for receiver candidates whose team builds early leads.",
     "what_would_resolve": "Estimate the elasticity of carries and targets to expected score margin from historical game logs.",
     "category": "game_context_script"
    },
@@ -7233,7 +7235,7 @@
     "Coach-exit contracts differ only by named coach and window end (Dec 1 vs Feb 1), so the hazard must be integrated to the exact date; announcement of future departure counts, so a mid-season announced retirement resolves immediately.",
     "NEXTCOACH resolves No for all candidates if no permanent coach is announced before Sep 1, 2027, and an interim hire does not count; candidates are mutually exclusive except through that No state.",
     "CFPEXPAND needs a binding decision by an authorized governing body with exactly 24 teams confirmed by a Source Agency before Dec 2, 2026; the decision may take effect in a later season.",
-    "CONFLEAVE and JOINCONF are triggered by announcement, binding agreement, formal notice or settlement, not by effective membership change; the sampled CONFLEAVE secondary text is cut at 600 characters, so additional triggers could exist (the JOINCONF text is complete).",
+    "CONFLEAVE and JOINCONF are triggered by announcement, binding agreement, formal notice or settlement, not by effective membership change. Four sampled secondary texts are cut at 600 characters: CONFLEAVE (further triggers may exist), TRANSFER (the commits-elsewhere clause is cut mid-sentence), CFPEXPAND (the clause defining how distinct teams are counted, including an opening round, is cut) and DRAFTDECLARE (cut after the supplemental-draft note); COACHLEAVE, COACHOUT, NEXTCOACH and JOINCONF texts are complete.",
     "TRANSFER outcomes are multi-way (stays, declares for the draft, commits elsewhere, possibly other); sum of probabilities must be one when all outcomes are listed, and the staying outcome is conditional on the portal behaviour.",
     "DRAFTDECLARE and the declare leg of TRANSFER are the same kind of event (an unequivocal public declaration); both now sit in this archetype and must use one declaration model, while only the regular NFL Draft counts (the supplemental draft does not)."
    ],
@@ -7900,6 +7902,13 @@
     "category": "situational_schedule_motivation",
     "description": "cfb.draft_declaration_propensity uses 'years since high school graduation >= 3' as the eligibility indicator without a cited source, and the share of declarations announced before versus after the bowl games is not measured, which sets the timing of the DRAFTDECLARE hazard.",
     "what_would_resolve": "Cite the NFL eligibility bylaw and tabulate 2015-2026 announcement dates against the early-entry deadline."
+   },
+   {
+    "id": "truncated_rules_texts",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "The sampled secondary rules for KXNCAAFCFPEXPAND, KXNCAAFTRANSFER, KXNCAAFCONFLEAVE and KXNCAAFDRAFTDECLARE stop at 600 characters; for CFPEXPAND the cut falls inside the definition of how participating teams are counted (opening or play-in round), which decides whether a proposed format is 'exactly 24'.",
+    "what_would_resolve": "Fetch the full rules text of these four series from Kalshi and re-read the team-count, destination and trigger clauses."
    }
   ]
  },
@@ -8538,7 +8547,7 @@
     {
      "ticker": "KXNCAAF2PT",
      "quote": "Any 2-point conversions recorded in overtime do not count towards this market.",
-     "establishes": "The two-point series is regulation only, unlike the yardage, sack and field-goal series that count overtime."
+     "establishes": "The two-point series is regulation only, unlike the sack, interception, turnover and field-goal series of this archetype that count overtime."
     },
     {
      "ticker": "KXNCAAFTEAMTO",
@@ -8572,7 +8581,7 @@
     }
    ],
    "variants_and_edge_cases": [
-    "Overtime scope differs by series: yards, sacks, interceptions and turnovers count only overtime periods one and two, field-goal series count overtime without that limit (only periods one and two can produce field goals anyway), and the two-point series is regulation only.",
+    "Overtime scope differs by series: sacks, interceptions and turnovers count only overtime periods one and two, field-goal series count overtime without that limit (only periods one and two can produce field goals anyway), and the two-point series is regulation only.",
     "KXNCAAFTEAMINT counts the named team's defensive interceptions; an interception on a 2-point try does not count, and since interceptions are also turnovers gained, TEAMINT and TEAMTO for the same team are nested counts.",
     "TEAMTO counts turnovers gained (interceptions and fumble recoveries) and excludes turnovers on downs and possession changes after scores; the sampled secondary text is truncated, so fumbles lost on punts and kickoffs may be included or not and this is unconfirmed.",
     "DELAY resolves YES for any official weather delay, including a delayed start, with no minimum duration and no source named in the sample for what counts as official; delays caused solely by other reasons resolve No.",
@@ -8586,7 +8595,7 @@
     {
      "id": "s1",
      "name": "Opportunity counts for the event",
-     "description": "Each count has its own opportunity base: the opponent's dropbacks for sacks and interceptions, the team's drives that reach field-goal range for kicks, the touchdowns scored for two-point tries, and plays for yards. The base depends on tempo, run-pass mix and expected score state, and varies by 10 to 20 percent between games, giving the first source of variance.",
+     "description": "Each count has its own opportunity base: the opponent's dropbacks for sacks and interceptions, the team's drives that reach field-goal range for kicks, and the touchdowns scored for two-point tries. The base depends on tempo, run-pass mix and expected score state, and varies by 10 to 20 percent between games, giving the first source of variance.",
      "distribution": "Counts with negative-binomial variation around a state-dependent mean; opportunity counts differ across series.",
      "categories": [
       "pace_volume",
@@ -8624,7 +8633,7 @@
     {
      "id": "s3",
      "name": "Decisions that create or remove opportunities",
-     "description": "Field-goal counts depend on the coach's choice to kick, go for it or punt on fourth down; two-point counts depend on the score chart and coach tendency; yards depend on play-calling balance. These choices are not random draws from an ability rate but strategy, and they change count distributions even at equal ability.",
+     "description": "Field-goal counts depend on the coach's choice to kick, go for it or punt on fourth down; two-point counts depend on the score chart and coach tendency; sack and interception counts depend on how often the opponent chooses to drop back. These choices are not random draws from an ability rate but strategy, and they change count distributions even at equal ability.",
      "distribution": "Discrete decisions with coach-specific policy; conditional on score, time and field position.",
      "categories": [
       "coaching_scheme"
@@ -8770,7 +8779,7 @@
       "m.rules_text",
       "cfb.ot_model"
      ],
-     "note": "Series definitions read from rules: net yardage with sacks and kneels negative, turnovers excluding downs, overtime scope by series, regulation-only two-point conversions, any weather delay."
+     "note": "Series definitions read from rules: turnovers gained excluding turnovers on downs, nothing counted on 2-point tries, overtime scope by series, regulation-only two-point conversions, any weather delay."
     }
    }
   },
@@ -8896,7 +8905,7 @@
   "input_audit": {
    "cfb.pace": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Plays bound yards, dropbacks and drives, but different counts depend on different parts of tempo (dropbacks for sacks and interceptions, drives for field goals); the single average plays per game should be split into dropbacks and drives for each series."
+    "reason": "Plays bound dropbacks and drives, but different counts depend on different parts of tempo (dropbacks for sacks and interceptions, drives for field goals); the single average plays per game should be split into dropbacks and drives for each series."
    },
    "cfb.drives": {
     "verdict": "KEEP_PRIMARY",
@@ -8936,11 +8945,11 @@
    },
    "cfb.ot_model": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Overtime periods one and two count for yards, sacks, interceptions and turnovers and all overtime counts for made field goals, while two-point conversions in overtime are excluded; so it matters for most series and not for KXNCAAF2PT, which the existing label does not distinguish."
+    "reason": "Overtime periods one and two count for sacks, interceptions and turnovers and all overtime counts for made field goals, while two-point conversions in overtime are excluded; so it matters for most series and not for KXNCAAF2PT, which the existing label does not distinguish."
    },
    "cfb.clock_rules": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "The clock rule regime shifts plays per game for yards and counts by season, but is constant within a season; it is a stratifier for training data, not a game-level driver."
+    "reason": "The clock rule regime shifts plays, dropbacks and drives per game by season, but is constant within a season; it is a stratifier for training data, not a game-level driver."
    },
    "cfb.net_yards_per_play_model": {
     "verdict": "IRRELEVANT",

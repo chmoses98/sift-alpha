@@ -38,7 +38,7 @@
     }
    ],
    "variants_and_edge_cases": [
-    "PASSYDS, PRECISE and PROT share the 'N+' yardage construction (floor_strike = N-0.5); only PROT carries the first-half-only refund. PASSYDS's non-participation trigger is 'does not appear in any live play' while PRECISE's is 'never takes a snap', a wording difference that matters only for a QB used solely on non-snap plays (e.g. a holder).",
+    "PASSYDS, PRECISE and PROT share the 'N+' yardage construction (floor_strike = N-0.5); only PROT carries the first-half-only refund. PASSYDS's non-participation trigger is 'does not appear in any live play' while PRECISE's is 'never takes a snap', a wording difference that matters only for a QB who appears in a live play without receiving the snap (e.g. lined up as a receiver or on a special-teams unit).",
     "KXNFLPASSYDSH2H is the only variant whose YES event is a difference of two QBs' totals: 50/50 on equal yards, fair price if either QB does not enter or the game is not started within 48 hours of the original start.",
     "Sampled passing-yards texts never say whether overtime yards count or which statistics provider is the source of truth; the existing draft's 'regulation-and-overtime' is an inference, recorded as CONTRACT_AMBIGUOUS u1.",
     "NFL official passing yards are gross yards (sack yardage is deducted only from team net passing), plays nullified by penalty are not credited, and a kneel-down is a rush, so dropbacks that end in sacks or scrambles add zero to this contract.",
@@ -50,12 +50,12 @@
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "A quarterback's passing yards in one game is a compound sum: the number of completed passes times yards per completion, where completions are a thinned binomial of attempts, attempts are dropbacks minus sacks, scrambles and spikes, and dropbacks are team plays times a script-dependent pass rate. Each layer has its own noise. Plays are set by both offenses' tempo and clock behaviour; pass rate swings with the score path (trailing offenses throw, leaders run); a pass's yield depends on the QB's accuracy, receiver separation, depth of target and the defence's pressure and shell; and a small number of explosive completions create a heavy right tail around any rung. Before the number of attempts is even defined, the quarterback must start, stay on the field and not be pulled in a blowout, which is a discrete scenario switch with a left-hand mass at low yardage and, for protected contracts, a refund. The same chain settles the attempt and completion ladders: attempts are the count after dropback leakage, completions the attempts thinned by a depth- and pressure-dependent completion probability.",
+   "summary": "A quarterback's passing yards in one game is a compound sum: the number of completed passes times yards per completion, where completions are a thinned binomial of attempts, attempts are dropbacks minus sacks and scrambles (spikes are counted as incomplete attempts), and dropbacks are team plays times a script-dependent pass rate. Each layer has its own noise. Plays are set by both offenses' tempo and clock behaviour; pass rate swings with the score path (trailing offenses throw, leaders run); a pass's yield depends on the QB's accuracy, receiver separation, depth of target and the defence's pressure and shell; and a small number of explosive completions create a heavy right tail around any rung. Before the number of attempts is even defined, the quarterback must start, stay on the field and not be pulled in a blowout, which is a discrete scenario switch with a left-hand mass at low yardage and, for protected contracts, a refund. The same chain settles the attempt and completion ladders: attempts are the count after dropback leakage, completions the attempts thinned by a depth- and pressure-dependent completion probability.",
    "stages": [
     {
      "id": "s1",
      "name": "Starter status, snap ceiling and removal scenarios",
-     "description": "Whether this passer is the QB1 for the whole game, plays part of it or never plays sets the mass at zero-to-low yards and decides which contract variants refund. The inputs are the practice and game-day inactive vintages, how the coach handles a bench-in-blowout, and the base rate of in-game concussion or throwing-hand exits. It is a mixture: full game, truncated game after injury, truncated game after benching, backup start. Each scenario carries its own attempt ceiling and the contract variant (precise, protected, H2H, weekly-most) pays differently in each.",
+     "description": "Whether this passer is the QB1 for the whole game, plays part of it or never plays sets the mass at zero-to-low yards and decides which contract variants refund. The inputs are the practice and game-day inactive vintages, how the coach handles a bench-in-blowout, and the base rate of in-game concussion or throwing-hand exits. It is a mixture: full game, truncated game after injury, truncated game after benching, backup start. Each scenario carries its own attempt ceiling and the contract variant (precise, protected, H2H, attempts, completions) pays differently in each.",
      "distribution": "Discrete mixture with an atom at 0-40 yards for exits; benching depends on margin and minute, injury exit is near-memoryless (~3-6% per game for QBs, assumption).",
      "categories": [
       "availability_news",
@@ -91,7 +91,7 @@
      "id": "s3",
      "name": "Score path, game script and dropback inflation",
      "description": "The score path rewrites the stage above: trailing teams raise pass rate and play faster until the final minutes, leaders run the clock, large leads can end with the starter benched. Because passing yards are positively linked to deficit but only until prevent-defence and late-lead compression bite, the mapping from pre-game margin to expected dropbacks is hump-shaped, not linear. Overtime and two-minute drills add short high-density volume.",
-     "distribution": "Margin is roughly normal (sd ~13 points) around the spread; attempts respond concavely, with the heaviest right-tail mass from trailing-by-10-to-17 paths.",
+     "distribution": "Margin is roughly normal (sd ~13 points) around the own-rating expected margin (nfl.own_rating_game_state_prior); attempts respond concavely, with the heaviest right-tail mass from trailing-by-10-to-17 paths.",
      "categories": [
       "game_context_script",
       "pace_volume"
@@ -107,7 +107,7 @@
     {
      "id": "s4",
      "name": "Dropback outcome split: sack, scramble, throwaway, attempt",
-     "description": "Only attempts can produce passing yards, so the leakage of dropbacks to sacks (yardage lost on team net but not QB gross), scrambles, spikes and kneels shrinks the count before efficiency applies. A pressured pocket either converts to a sack, a scramble or a rushed attempt depending on the passer's mobility and release time, and offensive-line health shifts the split. This is separate from, and not captured by, overall EPA per dropback.",
+     "description": "Only attempts can produce passing yards, so the leakage of dropbacks to sacks (yardage lost on team net but not QB gross), scrambles and kneels shrinks the count before efficiency applies (spikes remain attempts but add zero yards). A pressured pocket either converts to a sack, a scramble or a rushed attempt depending on the passer's mobility and release time, and offensive-line health shifts the split. This is separate from, and not captured by, overall EPA per dropback.",
      "distribution": "Binomial leakage per dropback (sack ~6-8% league average, scramble 2-5% by passer), jointly dependent on pressure rate; adds attempt-count variance of a few throws.",
      "categories": [
       "opponent_matchup",
@@ -177,7 +177,7 @@
     {
      "id": "s8",
      "name": "Attempt and completion count rungs",
-     "description": "KXNFLPASSATT and KXNFLPASSCOMP settle on counts, not yards. Attempts are the dropbacks left after sack, scramble and kneel leakage plus spikes, so their distribution is driven by team plays, the script-dependent pass rate and the QB's full-game participation, with no efficiency term. Completions are attempts thinned by a per-attempt completion probability that depends on target depth, pressure, receiver separation and the QB's accuracy over expected; short-passing offences convert attempts into completions at 68-72 percent and deep-shot offences at 58-62 percent, so the same attempt count gives different completion rungs. Completions and yards are positively but imperfectly correlated: a dink-and-dunk game can clear a completions rung while missing a yardage rung.",
+     "description": "KXNFLPASSATT and KXNFLPASSCOMP settle on counts, not yards. Attempts are dropbacks x (1 - nfl.qb_dropback_to_attempt_leakage) plus the QB's expected spikes added back (that input's measurement counts spikes as leakage, but spikes are official incomplete attempts), so their distribution is driven by team plays, the script-dependent pass rate and the QB's full-game participation, with no efficiency term. Completions are attempts thinned by a per-attempt completion probability that depends on target depth, pressure, receiver separation and the QB's accuracy over expected; short-passing offences convert attempts into completions at 68-72 percent and deep-shot offences at 58-62 percent, so the same attempt count gives different completion rungs. Completions and yards are positively but imperfectly correlated: a dink-and-dunk game can clear a completions rung while missing a yardage rung.",
      "distribution": "Attempts: overdispersed count (negative binomial, sd about 7-8 on a mean of 34) with a left mass from early exits; completions: beta-binomial given attempts, integer-valued with nested rungs.",
      "categories": [
       "pace_volume",
@@ -251,9 +251,9 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.script",
-      "nfl.garbage_time"
+      "nfl.own_rating_game_state_prior"
      ],
-     "note": "Margin-dependent dropbacks; need the hump-shaped mapping rather than a linear spread term."
+     "note": "Margin-dependent dropbacks from the script lattice driven by the market-free own-rating margin prior; nfl.garbage_time is not cited here because its catalog measurement derives blowout mass from the spread/total."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -341,7 +341,7 @@
      "pbp: game_id, passer_id, qb_dropback, sack, qb_scramble, qb_spike, qb_kneel, pass_attempt",
      "pressure rates from charting vendors"
     ],
-    "why": "Converts the volume stage into attempts and explains why dropback forecasts overstate attempts for scramble-prone quarterbacks facing strong rushes.",
+    "why": "Converts the volume stage into attempts and explains why dropback forecasts overstate attempts for scramble-prone quarterbacks facing strong rushes. Its measurement counts spikes as leakage: correct for the yardage ladders (a spike adds zero yards) but for KXNFLPASSATT/KXNFLPASSCOMP the expected spike count must be added back, because spikes are official (incomplete) passing attempts.",
     "role": "secondary"
    },
    "nfl.receiving_corps_route_weighted_quality": {
@@ -409,7 +409,7 @@
     "category": "player_role",
     "mechanism": "Converts a forecast attempt distribution into a completions distribution using per-attempt expected completion probability (target depth, pressure, receiver separation) plus the QB's shrunk completion-over-expected.",
     "rationale": "Completion rungs settle on a thinned count; raw completion percentage confounds the QB's accuracy with his offence's target-depth mix and the opponent's coverage, and is noisy over a few games. Separating expected completion probability (scheme and matchup) from completion over expected (QB skill, heavily regressed) is what moves a 25+ completions rung when attempts are fixed.",
-    "measurement": "Per QB-offence: xComp per attempt = mean nflfastR cp (completion probability) over the last 16 games with half-life 8 games; completion over expected = mean cpoe shrunk toward 0 with k=300 attempts; opponent factor = opponent's allowed (complete_pass - cp) over the last 12 games, shrunk with k=250 attempts; p = logistic(logit(xComp) + cpoe_shrunk + opp_factor) with a wind >15 mph adjustment of -2 percentage points. Completions | attempts ~ beta-binomial(attempts, p, rho), rho estimated from 2018-2025 QB-games (about 0.01-0.02). Mixed over the nfl.qb_attempt_forecast distribution. As-of: end of the previous game.",
+    "measurement": "Per QB-offence: xComp per attempt = mean nflfastR cp (completion probability) over the last 16 games with half-life 8 games; completion over expected = mean cpoe shrunk toward 0 with k=300 attempts; opponent factor = opponent's allowed (complete_pass - cp) over the last 12 games, shrunk with k=250 attempts; p = xComp + cpoe_shrunk + opp_factor (all on the probability scale, clipped to [0.35, 0.85]) with a wind >15 mph adjustment of -2 percentage points. Completions | attempts ~ beta-binomial(attempts, p, rho), rho estimated from 2018-2025 QB-games (about 0.01-0.02). Mixed over the nfl.qb_attempt_forecast distribution. As-of: end of the previous game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse play-by-play (cp, cpoe, complete_pass, air_yards)",
@@ -542,8 +542,8 @@
      "nfl.qb_blowout_pull_threshold"
     ],
     "form": "threshold",
-    "mechanism": "For a heavy favourite the starter's dropbacks fall once the lead passes the coach's benching line: before that point the offence runs, after it the backup throws; for a mid-sized favourite the benching line is never reached and the starter finishes the game. The result is a discontinuity in expected attempts at a coach-specific margin, not a smooth decline in the spread.",
-    "how_to_test": "Fit P(starter plays 4th quarter) by coach and spread bucket; contrast starters' attempts in games with lead>=17 at the 3rd quarter versus lead<=10, by coach."
+    "mechanism": "For a heavy favourite the starter's dropbacks fall once the lead passes the coach's benching line: before that point the offence runs, after it the backup throws; for a mid-sized favourite the benching line is never reached and the starter finishes the game. The result is a discontinuity in expected attempts at a coach-specific margin, not a smooth decline in the expected margin.",
+    "how_to_test": "Fit P(starter plays 4th quarter) by coach and own-rating expected-margin bucket; contrast starters' attempts in games with lead>=17 at the 3rd quarter versus lead<=10, by coach."
    },
    {
     "inputs": [
@@ -620,7 +620,7 @@
    {
     "input_id": "nfl.script",
     "shape": "hump-shaped: attempts rise as the expected deficit grows to about 10-14 points, then flatten or fall as prevent defence, clock-killing and benching take over",
-    "why": "Passing volume is not monotone in the spread; for 17+ point underdogs yards per attempt fall faster than attempts rise, so a linear spread coefficient mis-prices both tails."
+    "why": "Passing volume is not monotone in the expected margin; for 17+ point underdogs yards per attempt fall faster than attempts rise, so a linear expected-margin coefficient mis-prices both tails."
    },
    {
     "input_id": "nfl.weather_pit",
@@ -899,7 +899,7 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Twelve live per-game series; all but KXNFLLONGESTREC have rules text. 'N+' rungs (KXNFLRECYDS, KXNFLRECYDSPROT, KXNFLREC, KXNFLRECPROT, KXNFLRRYDS) resolve YES when the player's official receiving yards, receptions or combined rushing-plus-receiving yards reach the integer rung; an active player who appears in no live play settles at the pre-game fair price and one live play (even nullified) locks settlement to recorded stats; the PROT variants add the first-half-only refund (overtime counts as after the half). Escalators pay a cubic function of receptions (capped at 14) or of receiving yards bucketed to tens (capped at 200, negatives pay 0); ladders pay $0.05 per reception (cap 20) or $0.0025 per yard (cap 400). KXNFLRECYDSH2H pays 50/50 on equal yards and fair price if either player does not enter or the game is not started within 48 hours. KXNFLMOSTRECYDS is a max over every player in the game: No for a non-participant, 1/N on ties, fair price if not started within 48 hours. KXNFLLONGESTREC (longest reception) is title-only. Overtime inclusion and the statistics source are not stated in any receiving text (u1).",
+   "settlement_definition": "Twelve live per-game series; all but KXNFLLONGESTREC have rules text. 'N+' rungs (KXNFLRECYDS, KXNFLRECYDSPROT, KXNFLREC, KXNFLRECPROT, KXNFLRRYDS) resolve YES when the player's official receiving yards, receptions or combined rushing-plus-receiving yards reach the integer rung; for KXNFLRECYDS, KXNFLREC and KXNFLRRYDS an active player who appears in no live play settles at the pre-game fair price and one live play (even nullified) locks settlement to recorded stats (the sampled PROT texts are truncated before any such clause); the PROT variants add the first-half-only refund (overtime counts as after the half). Escalators pay a cubic function of receptions (capped at 14) or of receiving yards bucketed to tens (capped at 200, negatives pay 0); ladders pay $0.05 per reception (cap 20) or $0.0025 per yard (cap 400). KXNFLRECYDSH2H pays 50/50 on equal yards and fair price if either player does not enter or the game is not started within 48 hours. KXNFLMOSTRECYDS is a max over every player in the game: No for a non-participant, 1/N on ties, fair price if not started within 48 hours. KXNFLLONGESTREC (longest reception) is title-only. Overtime inclusion and the statistics source are not stated in any receiving text (u1).",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -915,7 +915,7 @@
     {
      "ticker": "KXNFLLADDERREC",
      "quote": "The Yes payout per contract is $0.05 per reception constrained between $0.00",
-     "establishes": "The receptions ladder is a linear scalar capped at 20 receptions, so its fair value is the truncated mean of receptions (about 20 times the expected count over 20), unlike the convex escalator on the same player-game."
+     "establishes": "The receptions ladder is a linear scalar capped at 20 receptions, so its fair value is 0.05 x E[min(receptions, 20)], essentially $0.05 times the expected count, unlike the convex escalator on the same player-game."
     },
     {
      "ticker": "KXNFLLADDERRECYDS",
@@ -977,7 +977,7 @@
     {
      "id": "s2",
      "name": "Team pass attempts available to be targeted",
-     "description": "The team's dropbacks and pass attempts form the pool: tempo, pass tendency over expectation and the score path define it, and the defence's tendency to force the opponent into passing or running changes the pool. Pool size is a stable function of coordinator regime plus a game-script component, and the receiver's expected share is applied to it, so the pool and the share multiply. The starting quarterback is the largest single shifter of this pool and of target concentration: a backup start changes attempts, depth of target and which receivers the passer reads, and for the protected variant the receiver's own in-game exit (nfl.in_game_exit_risk) truncates routes after the first half. The catalog measurement values the starter-minus-backup gap from market line moves; that component is a benchmark only and is replaced here by an own valuation (starter versus backup EPA per dropback from nfl.qb_efficiency, or nfl.qb_scenario_rating_drop for team ratings).",
+     "description": "The team's dropbacks and pass attempts form the pool: tempo, pass tendency over expectation and the score path define it, and the defence's tendency to force the opponent into passing or running changes the pool. Pool size is a stable function of coordinator regime plus a game-script component, and the receiver's expected share is applied to it, so the pool and the share multiply. The score-path distribution behind nfl.script is taken from the market-free nfl.own_rating_game_state_prior, never from the spread or total. The starting quarterback is the largest single shifter of this pool and of target concentration: a backup start changes attempts, depth of target and which receivers the passer reads, and for the protected variant the receiver's own in-game exit (nfl.in_game_exit_risk) truncates routes after the first half. The catalog measurement values the starter-minus-backup gap from market line moves; that component is a benchmark only and is replaced here by an own valuation (starter versus backup EPA per dropback from nfl.qb_efficiency, or nfl.qb_scenario_rating_drop for team ratings).",
      "distribution": "Attempts ~28-45 per team-game with positive skew from trailing scripts; overdispersed Poisson-like count.",
      "categories": [
       "pace_volume",
@@ -988,7 +988,8 @@
       "nfl.script",
       "nfl.qb",
       "nfl.pace",
-      "nfl.in_game_exit_risk"
+      "nfl.in_game_exit_risk",
+      "nfl.own_rating_game_state_prior"
      ]
     },
     {
@@ -1650,7 +1651,7 @@
    {
     "id": "u1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Overtime handling, the statistics source of truth and the correction policy are not stated in any receiving rules text; 1 of the 12 live series (KXNFLLONGESTREC) is title-only and is assumed to settle on the longest single reception over an 'N+' strike.",
+    "description": "Overtime handling, the statistics source of truth and the correction policy are not stated in any receiving rules text; 1 of the 12 live series (KXNFLLONGESTREC) is title-only, so its strike construction and settlement are unknown (see u6).",
     "what_would_resolve": "Archive full rules for each series and compare settled values against the game book for overtime games."
    },
    {
@@ -1748,7 +1749,7 @@
     "Rushing yards can be negative (kneel-downs count as rushing attempts for the QB or back who takes the knee), which matters near low rungs and for H2H differences, though negative totals are rare in a full game.",
     "Scalar series: KXNFLESCALATORRSHYDS (cubic in yards floored to tens, cap 200, negatives pay 0) and KXNFLLADDERRSHYDS (linear $0.0025 per yard, cap 400) now have rules text; neither states a non-participation refund, so an inactive or non-playing back appears to pay the zero-yard value (u9).",
     "Protected variant: overtime appears only in the definition of post-half participation; whether overtime yards count and how a player with no first-half play settles are unstated and carried as u6.",
-    "KXNFLMOSTRSHYDS resolves No for a non-participant and 1/N on ties, while the H2H, ladder, attempts and longest-rush series refund an active non-playing player at fair price; one injury report therefore moves the variants in different directions.",
+    "KXNFLMOSTRSHYDS resolves No for a non-participant and 1/N on ties, while the binary yards, attempts and longest-rush series refund an active non-playing player at fair price and the H2H refunds if either player does not enter (the scalar escalator and ladder texts state no refund); one injury report therefore moves the variants in different directions.",
     "KXNFLRSHATT counts official rushing attempts: QB scrambles and kneel-downs are rushing attempts, so a mobile QB's count includes scrambles, while a back's count comes from designed carries only."
    ],
    "settlement_data_source": "The sampled rules never name a provider; 'Governing League' official statistics are implied and the existing draft's mention of kneel-down counting is a statistical convention, not text in the rules.",
@@ -1804,14 +1805,15 @@
      "id": "s4",
      "name": "Score path: leading offences run, trailing offences stop",
      "description": "The pre-game margin distribution, realised as the game unfolds, determines late-game carry volume: favourites generate extra clock-killing carries (often to backups when starters rest), underdogs shift to the air by the third quarter. Garbage-time carries are low-efficiency and may be taken by a different back, so volume and yield change together.",
-     "distribution": "Margin ~ normal around the spread (sd ~13); carries are convex in lead in the leader's fourth quarter and capped by the clock.",
+     "distribution": "Margin ~ normal around the own-rating expected margin from nfl.own_rating_game_state_prior (sd ~13), never the spread; carries are convex in lead in the leader's fourth quarter and capped by the clock.",
      "categories": [
       "game_context_script",
       "pace_volume"
      ],
      "input_ids": [
       "nfl.script",
-      "nfl.late_lead_clock_carry_yield"
+      "nfl.late_lead_clock_carry_yield",
+      "nfl.own_rating_game_state_prior"
      ]
     },
     {
@@ -1842,7 +1844,7 @@
       "environment"
      ],
      "input_ids": [
-      "nfl.rush_explosive_tail_rate",
+      "nfl.rush_yardage_tail",
       "nfl.qb_scramble_yield_given_pressure",
       "nfl.weather_pit"
      ]
@@ -1864,8 +1866,8 @@
     {
      "id": "s8",
      "name": "Game rushing leader and carry-count rungs",
-     "description": "KXNFLMOSTRSHYDS compares the named runner with every ball carrier on both sides, so the opposing workhorse and a running quarterback are rivals; the projected winner's lead back usually holds the top because clock-killing carries come late. KXNFLRSHATT counts carries rather than yards, so it rests on carry share and team rush volume (stages s1-s4) with no yardage term, and KXNFLLONGRSH is a maximum over the runner's carries driven by the per-carry tail of nfl.rush_yardage_tail.",
-     "distribution": "Leader indicator from a joint simulation with a small 1/N tie mass; carry counts are overdispersed integers (variance about 1.5x the mean); longest rush is a maximum of geometric-tailed draws.",
+     "description": "KXNFLMOSTRSHYDS compares the named runner with every ball carrier on both sides, so the opposing workhorse and a running quarterback are rivals; the projected winner's lead back usually holds the top because clock-killing carries come late. KXNFLRSHATT counts carries rather than yards, so it rests on carry share and team rush volume (stages s1-s4) with no yardage term, and KXNFLLONGRSH is a maximum over the runner's carries driven by the per-carry tail of nfl.rush_yardage_tail, which gives P(k+) per carry for k = 7 to 40 and so covers low strikes such as over 6.5 yards.",
+     "distribution": "Leader indicator from a joint simulation with a small 1/N tie mass; carry counts are overdispersed integers (variance about 1.5x the mean); longest rush is a maximum over carries of heavy-tailed per-carry draws.",
      "categories": [
       "distribution_variance",
       "game_context_script",
@@ -1949,16 +1951,15 @@
      "input_ids": [
       "nfl.rush_efficiency",
       "nfl.rb_efficiency",
-      "nfl.rush_explosive_tail_rate"
+      "nfl.rush_yardage_tail"
      ],
      "note": "Yards per carry and explosive rate."
     },
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.rush_explosive_tail_rate",
-      "nfl.game_rushing_leader_field_sim",
-      "nfl.rush_yardage_tail"
+      "nfl.rush_yardage_tail",
+      "nfl.game_rushing_leader_field_sim"
      ],
      "note": "Heavy right tail of per-carry yields."
     },
@@ -2031,7 +2032,7 @@
     "raw_data": [
      "pbp: rusher_id, yards_gained, defteam, carries"
     ],
-    "why": "Separates ceiling probability from mean yards and avoids the use of a single boom-bust variance label for the high rungs.",
+    "why": "Retained for reference only: its 10+/20+ per-carry rates are a subset of the catalog's nfl.rush_yardage_tail (P(k+) for k = 7-40, opponent-adjusted), which is staged instead in s6 and s8 so the yardage rungs, KXNFLLONGRSH and the game-leader simulation read one fitted tail.",
     "role": "secondary"
    },
    "nfl.qb_scramble_yield_given_pressure": {
@@ -2209,7 +2210,7 @@
    {
     "inputs": [
      "nfl.carries",
-     "nfl.rush_explosive_tail_rate"
+     "nfl.rush_yardage_tail"
     ],
     "form": "joint-distribution",
     "mechanism": "Yards in a game combine a number of carries with a heavy-tailed per-carry yield; the probability of a high rung depends on the covariance of carries and explosive rate (a heavy workload gives more draws from the tail), so volume and explosiveness compound rather than add.",
@@ -2238,7 +2239,7 @@
     "why": "Teams use snap counts on returning backs, so carry shares are step-like in practice rather than continuous in injury severity."
    },
    {
-    "input_id": "nfl.rush_explosive_tail_rate",
+    "input_id": "nfl.rush_yardage_tail",
     "shape": "heavy-tailed: P(100+) is roughly linear in explosive rate times carries, while P(60+) is nearly independent of it",
     "why": "The highest rungs are reached only through long runs; below it the steady-yardage mass determines the probability, so the response of rung probabilities to the explosive rate increases with the rung."
    },
@@ -2311,10 +2312,9 @@
      "nfl.qb_rushing",
      "nfl.late_lead_clock_carry_yield",
      "nfl.run_scheme_vs_front_matchup",
-     "nfl.rush_explosive_tail_rate",
+     "nfl.rush_yardage_tail",
      "nfl.qb_scramble_yield_given_pressure",
-     "nfl.game_rushing_leader_field_sim",
-     "nfl.rush_yardage_tail"
+     "nfl.game_rushing_leader_field_sim"
     ]
    },
    {
@@ -2532,7 +2532,7 @@
    ],
    "variants_and_edge_cases": [
     "KXNFLOROY / KXNFLDROY / KXNFLOPOY / KXNFLDPOY / KXNFLCOACH (NFL-titled) are title-only, while their AP-titled twins (OROTY, DROTY, OPOTY, DPOTY, COTY) have rules naming the AP; whether the NFL-titled series settle on the same AP award is unverified.",
-    "Monthly awards (KXNFLROTM, KXNFLPOTM) use a four- or five-game window, so an injury or bye inside the window matters far more than for a season award.",
+    "Monthly awards (KXNFLROTM, KXNFLPOTM) cover roughly four or five games (the texts name only the month, see u5), so an injury or bye inside the window matters far more than for a season award.",
     "KXNFLMVP now has rules text naming the AP Regular Season MVP, but the text does not state ballot format (first-place plurality versus ranked points), tie handling or ballot close date.",
     "Coach of the Year and Comeback Player rules name the AP award only; both reward change relative to the prior season, a different driver from production, and COTY lists 'Tie/Co-Winners' as a separate outcome, so a named coach's treatment under a shared award is not stated.",
     "Monthly window definition (calendar month versus week block) and MVP ballot format are not stated in sampled text and are carried as unresolved u5 and u7.",
@@ -2542,7 +2542,7 @@
     "KXNFLAWARDFIN resolves every candidate No if finalists are not announced before the winner; KXNFLT100 settles on an exact rank (#3), a much narrower event than KXNFLT100TOP's top-N cutoff.",
     "Non-production honours: KXNFLWPMOTY (community service, chosen from one nominee per team) and KXNFLEXECOTY (front-office executive) are decided on criteria unrelated to on-field statistics; KXNFLPROOTY (Protector of the Year) names no awarding body or criteria in its text."
    ],
-   "settlement_data_source": "AP (single-winner player awards, coach), Pro Football Writers of America (Executive of the Year, All-Rookie), the league (monthly awards, Top 100 list) and unnamed 'Source Agencies' (All-Pro, finalists, Hall of Fame). Walter Payton Man of the Year and Protector of the Year texts name no body. Ballot close dates, re-announcement handling and annual-award tie methods are not stated.",
+   "settlement_data_source": "AP (single-winner player awards, coach), Pro Football Writers of America (Executive of the Year, All-Rookie), the Governing League for the player-voted Top 100 list; the monthly-award texts (KXNFLROTM, KXNFLPOTM) name no awarding body and unnamed 'Source Agencies' (All-Pro, finalists, Hall of Fame). Walter Payton Man of the Year and Protector of the Year texts name no body. Ballot close dates, re-announcement handling and annual-award tie methods are not stated.",
    "series_mapping_issues": []
   },
   "mechanism": {
@@ -3784,7 +3784,7 @@
      "input_ids": [
       "m.rules_text"
      ],
-     "note": "No live series: eligibility, statistic source and tie handling are not verifiable here."
+     "note": "19 of 22 series have rules text: regular-season-only rungs without refunds, retirement-bounded career rungs, broken-not-tied records, weekly-most No-if-absent with 1/N, team extremes with dead-heat 1/N, TSPEC trade-combined stats and net team passing yards; overtime, statistics source and career expiry remain unresolved (u1, u8)."
     }
    }
   },
@@ -3922,11 +3922,11 @@
     "role": "primary"
    },
    "nfl.team_season_stat_accrual": {
-    "label": "Team season-statistic accrual: banked plus remaining-game team totals (points for/against, net yards)",
+    "label": "Team season-statistic accrual for non-points team totals (net passing, rushing yards) and late-season rest scaling",
     "category": "team_strength",
-    "mechanism": "Projects a team's final regular-season total of points scored, points allowed or net passing/rushing yards as banked total plus a simulated sum over its remaining games against its actual opponents.",
+    "mechanism": "Projects a team's final regular-season net passing or rushing yards as banked total plus a simulated sum over its remaining games, and applies Weeks 17-18 starter-rest scaling to every team-season total; season points for/against are taken from nfl.team_points_for_against_rates, not recomputed.",
     "rationale": "Team extremes and team specials settle on season totals, so a per-game rating is not enough: byes, the remaining opponents' defences or offences, late-season starter rest and the sack deduction in net passing yards change the remaining sum. The extreme over teams then needs every team's total jointly simulated with shared rating uncertainty.",
-    "measurement": "For each team and remaining game g: expected points for = team offensive points rate (nfl.team_points_for_against_rates) x opponent defensive factor, with home +1.5 points; points against symmetric; net passing yards per game = team gross passing yards rate minus expected sack yards (opponent pressure rate x team sack rate x 6.5 yards); per-game sd from 2012-2025 residuals (about 9.5 points, 70 net passing yards); Weeks 17-18 scaled by nfl.clinched_rest_starter_probability. Sum over remaining games plus banked total; draw team rating errors jointly from nfl.rating_uncertainty_shared_error; 20,000 simulations; output per-team distribution and P(team is extreme) with 1/N dead-heat splitting. As-of the latest completed game.",
+    "measurement": "Points for/against: use the season-total simulation of nfl.team_points_for_against_rates unchanged (its banked-plus-remaining draws and 1/N extreme rule), only multiplying Weeks 17-18 expected scores by the starter-rest factor from nfl.clinched_rest_starter_probability. Net passing yards per remaining game g = expected team dropbacks (nfl.pace x nfl.proe) x [(1 - sack rate) x gross yards per attempt - sack rate x mean sack yards (about 6.5)], with sack rate = team sack rate allowed x opponent pressure factor, gross yards per attempt opponent-adjusted over the last 17 games (half-life 8 games, shrink to league mean with k=6 games); rushing yards analogously from rush attempts x opponent-adjusted yards per carry. Per-game sd from 2012-2025 residuals (about 70 net passing yards); team strength errors are the same per-simulation draw used by the points model (nfl.rating_uncertainty_shared_error), not an extra one. Sum over remaining games plus banked total; 20,000 simulations. As-of the latest completed game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse schedules (scores, remaining schedule)",
@@ -3937,7 +3937,7 @@
      "schedules: game_id, week, home/away, scores, remaining opponents",
      "team-game stats: points, passing yards, sack yards, rushing yards"
     ],
-    "why": "Gives KXNFLTEAMPTS, KXNFLTEAMDPTS and KXNFLTSPEC team lines a season-total forecast, which the player-accrual inputs do not produce.",
+    "why": "Gives KXNFLTSPEC team-statistic lines (net passing yards per the rules text) a season-total forecast and adds late-season rest to the team-points extremes of KXNFLTEAMPTS/KXNFLTEAMDPTS without duplicating the existing team points model.",
     "role": "primary"
    }
   },
@@ -4376,7 +4376,7 @@
     {
      "ticker": "KXNFLPLAYOFFHOST",
      "quote": "the Pro Football championship game will not count as hosting a playoff game for the designated home team",
-     "establishes": "Hosting is read from scheduled home playoff games before the championship, so it depends on seeds 1-4 (division winners) and on bracket advancement, not on the Super Bowl designation."
+     "establishes": "Hosting is read from scheduled home playoff games before the championship, so it depends on seeds 1-4 (division winners host the wild-card round) and on bracket advancement (a wild-card team can host a later round against a lower seed), not on the Super Bowl designation."
     }
    ],
    "variants_and_edge_cases": [
@@ -4446,7 +4446,7 @@
     {
      "id": "s4",
      "name": "Win-total aggregation and exact-win distribution",
-     "description": "The number of wins is the sum of game outcomes, with variance larger than the binomial because of shared rating uncertainty and correlated availability. Exact-win and threshold contracts need the full probability mass function, and a 9.5 line is much more sensitive to the tails than to the mean. The simulation is conditioned on games already played (banked wins, ties and tiebreak state as of the current week) and on current injury and quarterback status, not re-run from Week 1.",
+     "description": "The number of wins is the sum of game outcomes, with variance larger than the binomial because of shared rating uncertainty and correlated availability. Exact-win and threshold contracts need the full probability mass function, and a 9.5 line is much more sensitive to the tails than to the mean. The simulation is conditioned on games already played (banked wins, ties and tiebreak state as of the current week) and on current injury and quarterback status, not re-run from Week 1. KXNFLWINSWEEK reads the same simulated games truncated at games scheduled in weeks 1-12, KXNFLH2HWINS the joint win totals of two teams (50/50 on equal wins), and KXNFLDIVMOSTWINS/DIVLEASTWINS/DIVISIONWINS the sums over a division's four teams.",
      "distribution": "Overdispersed Poisson-binomial with sd approximately 2.0-2.4 wins; exact-win probabilities peak around 15-20 percent at the mean.",
      "categories": [
       "distribution_variance",
@@ -4525,7 +4525,7 @@
       "nfl.full_strength_rating_vs_season_average",
       "nfl.own_team_rating_market_free"
      ],
-     "note": "Own market-free rating (nfl.own_team_rating_market_free) with uncertainty and playoff-time full-strength rating; the catalog nfl.ratings input mixes market-implied history, is audited WEAK and is removed from stages and coverage."
+     "note": "Own market-free rating (nfl.own_team_rating_market_free) with uncertainty and playoff-time full-strength rating; the catalog nfl.ratings input mixes market-implied history, is audited BENCHMARK_ONLY and is removed from stages and coverage."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -4612,7 +4612,7 @@
       "m.rules_text",
       "nfl.standings_sim"
      ],
-     "note": "Tie counting for win totals remains unresolved; seed and pairing contracts are defined in the rules."
+     "note": "All 98 series have rules text: per-team WINS-*/EXACTWINS* say ties do not count as wins, sequence contracts define bye, same-week and tie conventions, standings contracts cite the league tiebreak methodology; open: tie line absent from KXNFLWINS/WINS-ANY (u1), #1-seed bye under ROUNDQUAL (u6), no cancelled-game clause (u7)."
     }
    }
   },
@@ -5009,14 +5009,12 @@
     ]
    },
    {
-    "dataset": "League tiebreak rules, schedule graph and draft pick ownership",
+    "dataset": "League tiebreak rules and schedule graph",
     "grain": "team-season and game",
     "fields": [
      "tiebreak ladder",
      "division membership",
-     "remaining schedule",
-     "pick ownership by round",
-     "draft order tiebreak"
+     "remaining schedule"
     ],
     "timestamp_requirement": "Rules versioned per season; pick ownership as of a date.",
     "history_needed": "10 seasons for rule changes.",
@@ -5025,17 +5023,11 @@
       "name": "NFL operations rulebook and official standings",
       "access": "free",
       "note": "Tiebreakers published by the league."
-     },
-     {
-      "name": "Spotrac / OverTheCap",
-      "access": "free_limited",
-      "note": "Pick ownership table."
      }
     ],
     "feeds_inputs": [
      "nfl.bracket_path",
      "nfl.head_to_head_leverage_games",
-     "nfl.draft_first_pick_loser_race",
      "nfl.motivation_seeding",
      "nfl.rest_travel"
     ]
@@ -5152,7 +5144,8 @@
      "input_ids": [
       "nfl.pace",
       "nfl.drives",
-      "nfl.script"
+      "nfl.script",
+      "nfl.opponent_ball_control_denial"
      ]
     },
     {
@@ -5311,9 +5304,10 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.pace",
-      "nfl.drives"
+      "nfl.drives",
+      "nfl.opponent_ball_control_denial"
      ],
-     "note": "Plays and possessions."
+     "note": "Plays and possessions, with the opponent's ball-control denial as the opponent term of the possession estimate."
     },
     "efficiency_conversion": {
      "status": "COVERED",
@@ -5435,7 +5429,7 @@
      "schedules: game_id, team scores, overtime flag",
      "pbp: scoring plays by quarter"
     ],
-    "why": "Provides the integer pmf from which every KXNFLTEAMTOTAL rung is read, without importing market lines.",
+    "why": "Provides the integer pmf from which every KXNFLTEAMTOTAL rung is read, without importing market lines. The measurement's clause on KXNFLBOTH refers to a series now filed under game_total and does not apply here; for KXNFLTEAMTOTAL the overtime choice stays open (u1).",
     "role": "primary"
    },
    "nfl.paired_score_covariance_own": {
@@ -5454,7 +5448,7 @@
      "schedules: game_id, scores, roof, wind, temp, home_team",
      "pbp: plays per team"
     ],
-    "why": "Couples this team's score to the opponent's through shared pace, weather and the score path, so the team-total pmf conditions on game script and home-field/venue shifts rather than treating the team in isolation.",
+    "why": "Couples this team's score to the opponent's through shared pace, weather and the score path, so the team-total pmf conditions on game script and home-field/venue shifts rather than treating the team in isolation. Its catalog mechanism and output still name the both-teams-35 contract (KXNFLBOTH, now in game_total); here only the bin correlation and the conditional single-team pmf are used (u6).",
     "role": "secondary"
    },
    "nfl.pass_run_split_epa_both_sides": {
@@ -5641,7 +5635,7 @@
    {
     "input_id": "nfl.script",
     "shape": "concave for the leader: points per late drive fall as the lead grows because of clock-killing runs, convex for the trailer",
-    "why": "A large lead reduces the leader's late scoring chance even as expected margin increases, so team total for a favourite is not monotone in the spread."
+    "why": "A large lead reduces the leader's late scoring chance even as expected margin increases, so team total for a favourite is not monotone in the own-rating expected margin."
    }
   ],
   "required_data": [
@@ -5839,6 +5833,12 @@
     "type": "SOURCE_UNVERIFIED",
     "description": "Checked the nflreadr pbp dictionary: td_team, safety, fourth_down_converted, two_point_attempt, two_point_conv_result, field_goal_result and kick_distance exist in nflfastR play-by-play (there is no fg_distance field; kick_distance is the field-goal distance). Still unverified: how soon after each game the current-season file is refreshed (the quote-time vintage, u3); the backup-quarterback point loss of 4-7 is also an unsourced estimate.",
     "what_would_resolve": "Record the nflverse pbp release timestamps against game end times for several weeks, and estimate the backup-versus-starter points gap from 2015-2025 games."
+   },
+   {
+    "id": "u6",
+    "type": "OTHER",
+    "description": "The merged catalog definitions of nfl.team_score_pmf_own_mean (measurement: 'KXNFLBOTH counts overtime') and nfl.paired_score_covariance_own (mechanism, rationale and output: the both-teams-35 joint tail) still describe KXNFLBOTH, which was re-filed to game_total; the review cannot change merged definitions, so the stale text is disclosed in each input's why.",
+    "what_would_resolve": "A catalog-side edit (integrate pass) that rewrites both definitions for the single-team KXNFLTEAMTOTAL use, or a game_total review that takes ownership of the joint-tail definition."
    }
   ]
  },
@@ -5846,7 +5846,7 @@
   "reviewer": "NFL_b author (Claude)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Eleven of the twelve live series settle on Sleeper's full-PPR fantasy points (KXNFLFFPTS: 'Sleeper's default full-PPR scoring', 'no additional rounding', corrections after expiration not considered; the KXNFLFFPTSLADDER text says 'standard Points Per Reception (PPR)', a wording variant to confirm). Per-game tickers (KXNFLFFPTS) refer to the 'Full game (including overtime)' and a player who does not play or has no Sleeper value scores 0; the weekly leader and top-5 texts include overtime and rank all players in the group with membership fixed by Sleeper at expiration, non-players scoring 0; KXNFLFFH2HSEASON treats a non-player as 0 and pays 50 percent on a tie; any-game highs (KXNFLFFPLAYERHIGH, KXNFLFFHIGHSCORE) use any single regular-season game; top-N ranks pay 1/N at the cutoff tie; KXNFLFFPLAYOFFLEADER sums Weeks 15-17 and excludes defence/special teams, kickers and IDP. The exception is KXNFLFANTASYMOST (most fantasy points in one game, sampled for the Feb 8, 2026 Seattle vs New England game), which uses 'ESPN's FFL Points Per Reception (PPR) scoring', counts only points scored during that game and pays 1/N among tied players; it says nothing about non-participants or overtime. Which of these sentences apply to which series is as sampled, not generalised across all twelve. The final series assignment keeps all twelve series here, including the season total, season H2H, position leader, top-N, weekly leader and Weeks 15-17 leader, so season accrual (stage s9) is part of this record.",
+   "settlement_definition": "Eleven of the twelve live series settle on Sleeper's full-PPR fantasy points (KXNFLFFPTS: 'Sleeper's default full-PPR scoring', 'no additional rounding', corrections after expiration not considered; the KXNFLFFPTSLADDER text says 'standard Points Per Reception (PPR)', a wording variant to confirm). Per-game tickers (KXNFLFFPTS) refer to the 'Full game (including overtime)' and a player who does not play or has no Sleeper value scores 0; the weekly leader and top-5 texts include overtime and rank all players in the group with membership fixed by Sleeper at expiration, non-players scoring 0; KXNFLFFH2HSEASON treats a non-player as 0 and pays 50 percent on a tie; any-game highs (KXNFLFFPLAYERHIGH, KXNFLFFHIGHSCORE) use any single regular-season game; top-N ranks pay 1/N at the cutoff tie; KXNFLFFPLAYOFFLEADER sums Weeks 15-17 and excludes defence/special teams, kickers and IDP. The exception is KXNFLFANTASYMOST (most fantasy points in one game, sampled for the Feb 8, 2026 Seattle vs New England game), which uses 'ESPN's FFL Points Per Reception (PPR) scoring', counts only points scored during that game and pays 1/N among tied players; its primary sentence says 'during the full game' but no sentence defines overtime or treats non-participants. Which of these sentences apply to which series is as sampled, not generalised across all twelve. The final series assignment keeps all twelve series here, including the season total, season H2H, position leader, top-N, weekly leader and Weeks 15-17 leader, so season accrual (stage s9) is part of this record.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -5897,7 +5897,7 @@
     "Season ladders and totals use regular-season games only; the per-game ladder is capped at $1.00 for 100 points, which is rarely binding, and rounding half-up is explicit.",
     "Sleeper's fantasy values are published for the 'full game (including overtime)' and corrections after expiry are ignored, so a late stat correction does not change the settlement even if the league changes the official stat.",
     "The Weeks 15-17 leader market excludes kickers, defence/special teams and IDP, whereas the per-game KXNFLFFPTS ticker includes kickers (sample: Will Reichard above 9.2); overtime and post-expiration-correction sentences appear only in some series' sampled text, not all eleven.",
-    "KXNFLFANTASYMOST is the only series on ESPN PPR scoring and the only single-game order statistic: the winner is the top scorer among all players of both teams in one game (typically a quarterback, given 4-point passing touchdowns plus rushing), and its text has no non-participant or overtime clause."
+    "KXNFLFANTASYMOST is the only series on ESPN PPR scoring and the only single-game order statistic: the winner is the top scorer among all players of both teams in one game (typically a quarterback, given 4-point passing touchdowns plus rushing), and its text says 'full game' without an explicit overtime or non-participant clause."
    ],
    "settlement_data_source": "Sleeper's published fantasy points (default full-PPR) at expiration, with Sleeper determining player group membership, for eleven series; ESPN's FFL PPR scoring for KXNFLFANTASYMOST. Official game stats feed both platforms; Sleeper corrections after expiration are ignored, while ESPN correction timing is not stated.",
    "series_mapping_issues": []
@@ -6743,7 +6743,7 @@
    {
     "id": "u6",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXNFLFANTASYMOST names ESPN's FFL PPR scoring but not which ESPN settings (default league settings change over time), whether overtime points count, what happens to an inactive named player, when ESPN's value is read or whether later stat corrections apply; the sample is for a past (Feb 2026) game.",
+    "description": "KXNFLFANTASYMOST names ESPN's FFL PPR scoring but not which ESPN settings (default league settings change over time), whether 'full game' includes overtime points, what happens to an inactive named player, when ESPN's value is read or whether later stat corrections apply; the sample is for a past (Feb 2026) game.",
     "what_would_resolve": "Rules text of a current KXNFLFANTASYMOST market plus ESPN's published default PPR scoring settings for the season, checked against a settled market.",
     "category": "settlement_contract"
    }
@@ -6914,7 +6914,7 @@
      "id": "s7",
      "name": "Score-path functionals: largest lead, lead changes and 24-point comebacks",
      "description": "KXNFLLARGELEAD, KXNFLLEADCHANGE and KXNFLCOMEBACK depend on the order of scores. The largest lead is the maximum absolute in-game margin, driven by the expected margin and the volatility of the scoring sequence; lead changes need many scores alternating between closely matched teams, which high totals and a small spread produce; a 24-point comeback needs the eventual winner to fall at least 24 behind, which happens mostly to a stronger team that starts badly, and late-game trailing teams' aggression (passing, going for it) shapes the recovery. These require a drive-sequence simulation with point values per score, not a final-margin distribution.",
-     "distribution": "Largest lead: right-skewed, concentrated at 7-17 with lumps at 3, 7 and 8 multiples; lead changes: overdispersed count with mass at 0-2 and a thin tail beyond 6; 24-point comeback wins: rare event (roughly 1-2 percent of games).",
+     "distribution": "Largest lead: right-skewed, concentrated at 7-17 with lumps at 3, 7 and 8 multiples; lead changes: overdispersed count with mass at 0-2 and a thin tail beyond 6; 24-point comeback wins: rare event (well under 1 percent of games, on the order of one to three per season; to count from 2000-2025 play-by-play).",
      "categories": [
       "game_context_script",
       "distribution_variance",
@@ -6931,7 +6931,7 @@
      "id": "s8",
      "name": "Coach decisions and rare play calls: 2-point tries, 4th-down conversions, non-QB passes and passes from the 1",
      "description": "KXNFL2PTCONV and KXNFL4DCONV count successful conversions by both teams, so they are attempts times success: attempts come from each coach's go-for-it and two-point policy by field position, distance and score state (trailing teams late go far more often), and success from short-yardage offence against defence. KXNFL1YDPASS needs a snap from on or inside the 1 (a drive that reaches the 1) and a pass call there, which depends on the team's goal-to-go pass rate and its quarterback-sneak or power-run habits. KXNFLNONQBPASS is a trick-play event (receiver or back passes, fake punts thrown by a punter) with a low base rate concentrated in certain coaches and in high-stakes games.",
-     "distribution": "Conversion counts: small overdispersed counts (2-point successes mostly 0-2 per game, 4th-down successes 0-6) with strong dependence on score path; rare-play events: Bernoulli with low per-game probability (non-QB pass roughly 10-20 percent of games, to estimate).",
+     "distribution": "Conversion counts: small overdispersed counts (2-point successes mostly 0-2 per game, 4th-down successes 0-6) with strong dependence on score path; rare-play events: Bernoulli with low per-game probability (non-QB pass roughly 20-30 percent of games if the per-team rate is near 0.15, consistent with nfl.trick_play_and_goal_line_pass_events; to estimate).",
      "categories": [
       "coaching_scheme",
       "game_context_script",
@@ -7169,7 +7169,7 @@
     "category": "distribution",
     "mechanism": "Simulates the alternating drive sequence of both teams with per-drive outcomes and point values, recording the full in-game margin path so path functionals (maximum lead, lead changes, minimum margin of the eventual winner) can be read.",
     "rationale": "Final-score models cannot price path contracts: two games with the same final margin can have zero or eight lead changes. The path depends on drive-outcome probabilities by team, on the alternation of possessions, on state-dependent play calling (trailing teams pass and go for it, leaders run clock) and on point values (7, 3, 8, 6, 2), so a simulation that conditions each drive on the current score state is required.",
-    "measurement": "For each game: possessions alternate starting from the coin-toss winner; drive outcome multinomial (TD, FG, turnover, punt, safety, end of half) from team offence vs opposing defence rates (nfl.drive_outcome_by_index style, opponent-adjusted, last 16 games with half-life 8, shrink k=150 drives) modified by score state (lead or trail by 0-8, 9-16, 17+) and time remaining using 2012-2025 state multipliers; points per TD from nfl.scoring_event_point_values; 20,000 simulated games; outputs per game: distribution of max |margin|, number of lead changes (excluding first score), P(eventual winner trailed by >=24), calibrated against 2012-2025 realised frequencies by spread and total bucket. As-of kickoff.",
+    "measurement": "For each game: possessions alternate starting from the coin-toss winner; drive outcome multinomial (TD, FG, turnover, punt, safety, end of half) from team offence vs opposing defence rates (nfl.drive_outcome_by_index style, opponent-adjusted, last 16 games with half-life 8, shrink k=150 drives) modified by score state (lead or trail by 0-8, 9-16, 17+) and time remaining using 2012-2025 state multipliers; points per TD from nfl.scoring_event_point_values; 20,000 simulated games; outputs per game: distribution of max |margin|, number of lead changes (excluding first score), P(eventual winner trailed by >=24), calibrated against 2012-2025 realised frequencies by own-rating expected-margin and expected-total bucket (nfl.own_rating_game_state_prior; no sportsbook spread or total). As-of kickoff.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse play-by-play (drive results, score by play)",

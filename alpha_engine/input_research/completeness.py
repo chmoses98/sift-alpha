@@ -552,7 +552,7 @@ def build_new_packs() -> dict:
     rules = rd(RULES); led = {r["ticker"]: r for r in rd(LEDGER)["rows"]}
     (CD / "evidence").mkdir(parents=True, exist_ok=True); n = {}
     for s in SPORTS:
-        u = UR.load_universe(s); c = cat.load(s)
+        u = UR.load_all(s); c = cat.load(s)
         pack = {}
         for name, a in u["new_archetypes"].items():
             mem = [t for t, r in u["series"].items() if r.get("final") == "unreg:" + name]

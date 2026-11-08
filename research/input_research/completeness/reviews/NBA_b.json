@@ -9647,108 +9647,120 @@
  "unreg:team_and_player_counting_specials": {
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
+  "reconciled_by": "reconcile-NBA-b",
   "contract": {
-   "settlement_definition": "After the reconciliation the only live series under this key are five division-winner contracts for 2026-27 (KXNBACENTRAL, KXNBANORTHWEST, KXNBAPACIFIC, KXNBASOUTHEAST, KXNBASOUTHWEST): YES if the named team is the division winner based on the standings at the end of the regular season; if teams tie for the best record in the division, the winner is set by the league's official tie-breaking rules, so there is no 1/N split and no void. Play-In and playoff results are irrelevant; Cup games before the Cup final count in the regular-season standings (stated in other rules of this sport, not in these texts). The average, high-score, streak, undefeated and Cup-matchup series reviewed here earlier moved to season_stat_markets and series_and_cup.",
+   "settlement_definition": "The only live series is KXNBAPLAYOFFPTS (NBA Playoffs Player Points): YES if the named player records at least N points (sample: Paolo Banchero, 50) in any single playoff game of the 2026 Pro Basketball Playoffs; points are not summed across games. It is a union over the player's playoff games, so a player whose team misses the playoffs, or who is eliminated or injured before reaching N, simply runs out of chances. The text states no fair-price void for an inactive or traded player, does not say whether Play-In games are playoff games or whether overtime points count, and names no source agency.",
    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
-     "ticker": "KXNBACENTRAL",
-     "quote": "Division winners are based on the standings at the end of the regular season.",
-     "establishes": "The event is the final regular-season division standing; Play-In and playoffs do not matter."
+     "ticker": "KXNBAPLAYOFFPTS",
+     "quote": "If Paolo Banchero records at least 50 points in any playoff game in the 2026 Pro Basketball Playoffs, then the market resolves to Yes.",
+     "establishes": "The event is a single playoff game with 50+ points by the named player at any point of the playoffs: a union over his playoff games, not a per-game ladder."
     },
     {
-     "ticker": "KXNBAPACIFIC",
-     "quote": "If teams are tied for the best record within the division, the winner is determined using the governing league's official tie-breaking rules.",
-     "establishes": "Ties are resolved by the official hierarchy (head-to-head first for two teams of one division), not split, so the tiebreak ledger decides boundary cases."
-    },
-    {
-     "ticker": "KXNBASOUTHWEST",
-     "quote": "If San Antonio is the Southwest Division winner in the 2026-27 Pro Basketball season, then the market resolves to Yes.",
-     "establishes": "One contract per team per division, a five-way partition whose probabilities must sum to one within each division."
+     "ticker": "KXNBAPLAYOFFPTS",
+     "quote": "Cumulative stats across multiple games will not be considered.",
+     "establishes": "Totals or averages across the run are irrelevant; only the maximum single-game score matters, so the upper tail of the per-game points distribution drives the price."
     }
    ],
    "variants_and_edge_cases": [
-    "Ties are broken by the official procedure, not split: for two teams of the same division the first criterion is head-to-head record (four meetings), then division record; three-way ties use a different multi-team order, so a simulated tie must be resolved by the coded hierarchy.",
-    "Division titles carry no automatic seeding benefit in the current NBA format, so teams do not chase the division itself; late-season resting follows conference-seed incentives, and a team that has locked its seed may rest stars while the division is still open.",
-    "Cup games before the final count in standings; teams eliminated in the Cup group stage receive extra regular-season games scheduled later, so part of each team's schedule (opponent and venue of the filler games) is unknown until the group stage ends.",
-    "Each division is a five-team partition: contracts across the five teams sum to one, and divisional opponents meet four times each (16 of 82 games), so rivals' records are negatively dependent."
+    "Strike: the sample uses 50 points (title '50+ points in a single game'); other players or editions may carry other N, and the per-game tail probability falls steeply with N.",
+    "Play-In: the text says 'any playoff game'; other NBA series exclude the Play-In explicitly, so a 50-point Play-In game probably does not count, but this is not stated here.",
+    "Overtime: not mentioned; official box-score points include overtime, which adds about five minutes for stars in roughly 6% of playoff games.",
+    "No void: unlike single-game player props, there is no fair-price settlement for an inactive player; an injured star loses games and the contract settles No if he never reaches N.",
+    "The sampled contract concerns the completed 2026 playoffs (status finalized); the mechanism applies unchanged to later editions, with the player list and strikes read per edition."
    ],
-   "settlement_data_source": "Official league standings at the end of the regular season and the league's published tiebreak procedure; the sampled text names neither a data provider nor the tiebreak document.",
+   "settlement_data_source": "Official playoff box scores (points per player per game); the sampled text names no source agency.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "A division title is the argmax of five teams' final regular-season records, with the official tiebreak hierarchy deciding equal records. Each record is a sum of about 82 game outcomes whose probabilities come from latent team strength (a roster-based preseason prior updated by results, with luck in close games partly regressing), star availability over the season and the schedule (home/away, rest, the Cup filler games). Division rivals meet four times each, so their records are negatively dependent, and the title carries no seeding reward in the current format, so late-season resting follows conference-seed incentives rather than the division race. The probability is steep in the strength gap within the division and is set at the boundary by head-to-head and division records.",
+   "summary": "A single-game 50-point playoff performance needs three things at once: the player's team must be in the playoffs and keep playing (the number of games is set by qualification, Play-In and series advancement), the player must be on the floor for a full playoff workload, and one of those games must land deep in his scoring tail. Per-game P(50+) is a generalised-Pareto tail of points given minutes, usage, three-point volume and free-throw trips, pulled down in the playoffs by slower pace, tighter officiating and opponents who scheme a whole series against the star, and pushed up by longer star minutes and teammate absences that concentrate usage. The contract value is 1 - E[prod over games (1 - p_g)], with the games count and the star's health positively linked.",
    "stages": [
     {
      "id": "s1",
-     "name": "Latent strength of the five division teams",
-     "description": "Each team's strength is a preseason prior from minutes-weighted player impact, aging and continuity, updated by results with a gain that falls as games accumulate; close-game luck in the record to date regresses toward point differential. Within one division the relevant quantity is the gap between the top two or three teams and the uncertainty around it, since the title goes to the maximum of five records rather than to an absolute threshold.",
-     "distribution": "Posterior team strength roughly normal with sd about 3-4 net-rating points preseason, shrinking with games; record luck adds a binomial-like component that partly reverts.",
+     "name": "Team playoff games available to the player",
+     "description": "The opportunity set is the number of playoff games the player's team plays: zero if it misses the playoffs or loses in the Play-In, four to seven per series, up to 28 for a finalist. It comes from the regular-season standings simulation, the Play-In bracket for seeds 7-10, and series-by-series advancement and length; deeper runs add the most games for the strongest teams, which also employ the most likely 50-point scorers.",
+     "distribution": "Lumpy on {0, 4..28}: point mass at zero for non-qualifiers, then sums of series lengths over rounds reached; right-skewed for contenders.",
      "categories": [
+      "pace_volume",
       "talent_strength",
-      "efficiency_conversion"
+      "situational_schedule_motivation"
      ],
      "input_ids": [
       "nba.ratings",
-      "nba.preseason_roster_aging_prior",
-      "nba.pythag_residual"
+      "nba.standings_sim",
+      "nba.play_in_path_model",
+      "nba.title_path",
+      "nba.series_length_distribution"
      ]
     },
     {
      "id": "s2",
-     "name": "Star availability across the season",
-     "description": "Stars miss games through injury and load management, and a long absence of one player can move a team's division chances by tens of percentage points when rivals are close. The availability-adjusted rating converts each projected absence into lower win probabilities for the games missed, and the timing matters: an absence during a run of division games hurts twice, by losing the game and by handing the rival a win.",
-     "distribution": "Heavy-tailed games-missed distribution per star (most miss 5-15 games, a minority 30+); team win probability shifts as a step while a star is out.",
+     "name": "Star availability through the playoff run",
+     "description": "The player has to be healthy for the games his team plays. A survival-type hazard of an availability-ending injury runs from the end of the regular season through each round, and a star playing through an injury carries a minutes restriction that removes him from the 50-point tail even when active. His health also moves his team's advancement, so games played and availability are positively dependent.",
+     "distribution": "Per-round probability of being healthy, decreasing over the run; bimodal per-game state (full workload versus out or restricted).",
      "categories": [
       "availability_news",
       "role_personnel"
      ],
      "input_ids": [
-      "nba.injuries_pit",
-      "nba.lineup_adj_rating"
-     ]
-    },
-    {
-     "id": "s3",
-     "name": "Remaining schedule, rest and Cup filler games",
-     "description": "The remaining schedule sets each game's win probability through opponent strength, venue and rest. Division rivals still to play each other matter most because each such game moves the gap by two. Teams knocked out in the Cup group stage receive extra regular-season games whose opponent and venue are fixed only after the group stage, so part of the schedule is itself uncertain in November.",
-     "distribution": "Sum of heterogeneous Bernoulli game outcomes (Poisson-binomial) with common shocks from strength uncertainty; head-to-head games induce negative correlation between rivals.",
-     "categories": [
-      "environment",
-      "situational_schedule_motivation",
-      "opponent_matchup"
-     ],
-     "input_ids": [
-      "nba.rest_travel",
-      "nba.division_race_tiebreak_state"
-     ]
-    },
-    {
-     "id": "s4",
-     "name": "Seed incentives and late-season resting",
-     "description": "Because winning the division gives no seeding benefit, teams rest stars once their conference seed is effectively fixed, even if the division is still undecided, and tanking teams lower their win probability late. These incentives change the last ten to fifteen games' win probabilities in a way that depends on the conference standings, not the division table, so the division race inherits noise from the conference race.",
-     "distribution": "Regime switch in late-season win probabilities conditional on clinch or elimination status; affects only a minority of teams each season.",
-     "categories": [
-      "situational_schedule_motivation",
-      "coaching_scheme"
-     ],
-     "input_ids": [
-      "nba.standings_motivation",
+      "nba.playoff_star_health_hazard",
       "nba.injuries_pit"
      ]
     },
     {
+     "id": "s3",
+     "name": "Playoff minutes and usage regime",
+     "description": "Playoff rotations tighten to eight or nine players and stars gain two to four minutes, with 44+ minute nights in overtime or elimination games. Usage concentrates further when a co-star is out. Blowouts still truncate minutes, so lopsided series cut the tail. The relevant quantity is the probability of a heavy-minutes, high-usage game, not the average minutes.",
+     "distribution": "Minutes mixture with a heavy-minutes component (40+) whose weight rises in close and elimination games; usage shifts as a step when a teammate is absent.",
+     "categories": [
+      "role_personnel",
+      "coaching_scheme",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nba.playoff_rotation",
+      "nba.minutes",
+      "nba.usage",
+      "nba.heavy_minutes_tail_prob",
+      "nba.teammate_absence_shift",
+      "nba.rating_blowout_minutes_curve"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Single-game scoring tail against playoff defense",
+     "description": "Given a full workload, P(points >= 50) is the far tail of the per-game distribution: a generalised-Pareto exceedance over a high threshold fit on the player's history, raised by three-point volume and free-throw trips and lowered by the series opponent's primary defender, slower playoff pace and fewer fouls called. Single-game shooting is mostly luck, so the tail index must be shrunk to a league value; overtime adds a small extra chance.",
+     "distribution": "Heavy right tail: GPD above about 35 points with a shrunk shape parameter; per-game P(50+) typically 0.1-2% for the top scorers, near zero for others.",
+     "categories": [
+      "efficiency_conversion",
+      "opponent_matchup",
+      "distribution_variance",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "nba.single_game_ceiling_tail",
+      "nba.points_upper_tail_rate",
+      "nba.stat_dist",
+      "nba.three_volume",
+      "nba.player_shooting_regression",
+      "nba.playoff_matchup_assignment_shift",
+      "nba.fouls_ft",
+      "nba.pace",
+      "nba.reg_tie_pmf_model"
+     ]
+    },
+    {
      "id": "s5",
-     "name": "Final ranking within the division and the tiebreak hierarchy",
-     "description": "The winner is the team with the best final record; equal records go to the official procedure, which for two teams of the same division starts with their head-to-head series and then division record, and for three or more uses a separate order. A one-game difference in a simulated season is common for close divisions, so the share of title probability decided by tiebreaks can be large, and the coded procedure must match the league's current document.",
-     "distribution": "Argmax over five correlated integer win totals with ties at integer values resolved deterministically by the stored ledger.",
+     "name": "Union over the run and settlement",
+     "description": "The contract pays if the maximum single-game score over the player's playoff games reaches N. With per-game probability p_g and a random number of games, P(YES) = 1 - E[prod (1 - p_g)], where the expectation runs jointly over team advancement, the player's health and a shared latent form factor that makes his per-game tails correlated within a run. No void applies, and Play-In and overtime treatment follow the open contract questions.",
+     "distribution": "Concave in the number of games; for small p roughly p x E[games played]; dependence through form and matchup makes the union smaller than the independent formula.",
      "categories": [
       "settlement_contract",
-      "officiating_rules",
       "distribution_variance"
      ],
      "input_ids": [
-      "nba.division_race_tiebreak_state",
+      "nba.playoff_any_game_threshold_union",
       "m.rules_text"
      ]
     }
@@ -9757,133 +9769,107 @@
     "talent_strength": {
      "status": "COVERED",
      "input_ids": [
-      "nba.ratings",
-      "nba.preseason_roster_aging_prior"
+      "nba.single_game_ceiling_tail",
+      "nba.ratings"
      ],
-     "note": "Posterior team strength with a roster-based prior and in-season updates."
+     "note": "Player scoring ceiling and team strength for advancement."
     },
     "opponent_matchup": {
      "status": "COVERED",
      "input_ids": [
-      "nba.division_race_tiebreak_state"
+      "nba.playoff_matchup_assignment_shift",
+      "nba.title_path"
      ],
-     "note": "Remaining head-to-head games among division rivals, which move the gap by two per game."
+     "note": "Primary-defender effect within a series and which opponents the bracket produces."
     },
     "role_personnel": {
      "status": "COVERED",
      "input_ids": [
-      "nba.lineup_adj_rating"
+      "nba.usage",
+      "nba.playoff_rotation",
+      "nba.teammate_absence_shift"
      ],
-     "note": "Who is available, converted to team strength for each remaining game."
+     "note": "Usage concentration and playoff rotation tightening."
     },
     "availability_news": {
      "status": "COVERED",
      "input_ids": [
-      "nba.injuries_pit",
-      "nba.lineup_adj_rating"
+      "nba.playoff_star_health_hazard",
+      "nba.injuries_pit"
      ],
-     "note": "Season-long star availability and its timing relative to division games."
+     "note": "Health through each round and game-day status."
     },
     "coaching_scheme": {
      "status": "GAP",
      "input_ids": [],
-     "note": "Coaching changes and coach-specific rest policy (how early a seed-locked team rests stars) shift late-season win probabilities in division races, but no input quantifies them for this archetype."
+     "note": "Opponent game plans against a hot scorer (blitzing pick-and-rolls, early doubles) and a coach's willingness to ride a star for 45+ minutes change the 50-point tail, but no input measures them."
     },
     "environment": {
-     "status": "COVERED",
-     "input_ids": [
-      "nba.rest_travel"
-     ],
-     "note": "Home/away, rest and travel per remaining game."
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Home/away scoring differences for individual stars are about one point and are absorbed in the per-game distribution; no venue or travel variable moves a 50-point tail measurably."
     },
     "game_context_script": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Within-game script (blowouts, overtime) affects margins and minutes, but a division title depends only on wins and losses, so game script has no effect beyond the game win probability already in the ratings."
+     "status": "COVERED",
+     "input_ids": [
+      "nba.rating_blowout_minutes_curve",
+      "nba.reg_tie_pmf_model",
+      "nba.heavy_minutes_tail_prob"
+     ],
+     "note": "Blowout truncation, overtime chance and heavy-minutes games."
     },
     "pace_volume": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Possession counts change scoring totals, not win probability given net strength; no pace or volume variable affects final division standings independently of the ratings."
+     "status": "COVERED",
+     "input_ids": [
+      "nba.pace",
+      "nba.series_length_distribution",
+      "nba.three_volume"
+     ],
+     "note": "Playoff pace per game and the number of playoff games."
     },
     "efficiency_conversion": {
      "status": "COVERED",
      "input_ids": [
-      "nba.pythag_residual"
+      "nba.player_shooting_regression",
+      "nba.fouls_ft"
      ],
-     "note": "Close-game record luck versus point differential, which partly regresses."
+     "note": "Shooting luck shrinkage and free-throw trips."
     },
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nba.division_race_tiebreak_state",
-      "nba.ratings"
+      "nba.points_upper_tail_rate",
+      "nba.stat_dist",
+      "nba.playoff_any_game_threshold_union"
      ],
-     "note": "Joint distribution of five dependent records with integer ties."
+     "note": "Per-game tail shape and the union over a random number of correlated games."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
-      "nba.standings_motivation",
-      "nba.rest_travel"
+      "nba.play_in_path_model",
+      "nba.heavy_minutes_tail_prob"
      ],
-     "note": "Seed-driven resting and tanking late in the season; rest density."
+     "note": "Play-In path to qualification; elimination games raise star minutes."
     },
     "officiating_rules": {
      "status": "COVERED",
      "input_ids": [
-      "nba.division_race_tiebreak_state"
+      "nba.fouls_ft"
      ],
-     "note": "The official tiebreak hierarchy as the governing rule; referee behaviour irrelevant."
+     "note": "Free-throw trips under playoff officiating, which calls fewer fouls than the regular season."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
       "m.rules_text",
-      "nba.division_race_tiebreak_state"
+      "nba.playoff_any_game_threshold_union"
      ],
-     "note": "End-of-regular-season standings, ties by official rules (no 1/N), one contract per team."
+     "note": "Single game, any playoff game, no cumulation, no stated void; Play-In and OT open."
     }
    }
   },
   "new_inputs": {
-   "nba.division_race_tiebreak_state": {
-    "label": "Division-race state: records, remaining division games and tiebreak ledger",
-    "category": "schedule_context",
-    "mechanism": "Division winner contracts are decided by the best record in a five-team division with the league's tiebreak procedure; division head-to-head games and divisional records feed the tiebreak.",
-    "rationale": "Division races are narrower than conference races; a tie for the best record is hypothesised to occur in roughly 10% of divisions (unverified estimate, to be computed from history) and division records are the first tiebreaker after head-to-head, so the state of divisional games matters more than overall strength.",
-    "measurement": "For each division compute records, remaining intra-division games, head-to-head ledger and division record to date; simulate remaining season with team-strength uncertainty and apply the official tiebreak order for ties; output P(division winner) with tie contributions; update nightly. As-of: after each game.",
-    "pregame_knowable": "yes",
-    "free_sources": [
-     "NBA.com standings and tiebreaker rules",
-     "nba_api standings"
-    ],
-    "registry_ids": [],
-    "raw_data": [
-     "standings, schedule, head-to-head results"
-    ],
-    "why": "The only input that stores intra-division head-to-head and division records and applies the official tiebreak order to simulated ties; it decides the boundary cases the rules send to tiebreaks.",
-    "role": "primary"
-   },
-   "nba.preseason_roster_aging_prior": {
-    "label": "Preseason team prior from minutes-weighted roster impact with aging curves and continuity",
-    "category": "team_strength",
-    "mechanism": "A team's true strength before and early in the season is a function of who is on the roster, how those players age, and how much of last year's unit returns; this prior dominates for the first 20-30 games.",
-    "rationale": "With about ten games played, the 2026-27 rating is mostly the prior; building it from last season's team rating ignores offseason roster churn, aging and rookie contributions, and the error of the prior sets the uncertainty of every futures contract.",
-    "measurement": "Prior team rating = sum over projected rotation of (expected minutes share x player impact projection), where projection = last-two-season blended impact (weights 0.6/0.3/0.1 over 3 seasons) + aging adjustment by age bucket (estimated from historical year-over-year change; roughly +1.0/-0.3/-1.0 per 100 possessions at ages 22/28/33) + continuity adjustment (minutes-weighted share of returning players, coefficient estimated by backtest); shrink to league mean by sd of prior error estimated from 10 historical seasons; report mean and sd. As-of: before opening night and updated at each roster transaction.",
-    "pregame_knowable": "yes",
-    "free_sources": [
-     "Basketball-Reference BPM/VORP",
-     "EPM / RAPM published by Dunks&Threes or similar",
-     "Cleaning the Glass"
-    ],
-    "registry_ids": [],
-    "raw_data": [
-     "player-season impact ratings, ages, minutes, team rosters, transactions"
-    ],
-    "why": "Before about 20-30 games the division simulation is dominated by the preseason prior and its sd; without it early-season division prices have no calibrated strength input.",
-    "role": "primary"
-   },
    "nba.ratings": {
     "label": "Team ratings / schedule strength for season markets",
     "category": "team_strength",
@@ -9905,322 +9891,476 @@
      "player impact metrics (EPM/BPM/RAPM)",
      "rosters"
     ],
-    "why": "Team strength with uncertainty is the core of every division simulation; required in this archetype's input list, not only referenced in a stage.",
+    "why": "Team strength sets qualification and advancement, and therefore how many playoff games the player gets.",
     "role": "primary"
    },
-   "nba.lineup_adj_rating": {
-    "label": "Availability-adjusted team rating for tonight's active set",
-    "category": "team_strength",
-    "mechanism": "Team strength given who is actually active, computed by summing player impact over expected minutes, moves spreads, totals and every player prop in the game.",
-    "rationale": "A star absence changes team net rating by an amount far larger than most other features; the market reprices within minutes of the report. The model needs an independent player-impact valuation to avoid just reading the market. Subtle: impact of replacing a player is not the star's full value (usage redistributes), and replacement is nonlinear when multiple players are out.",
-    "measurement": "Sum over expected-minute allocation of per-player impact (RAPM/EPM/BPM shrunk) for the active set vs team average-active baseline; difference gives point-spread adjustment; validate with with/without team splits when sample allows.",
-    "pregame_knowable": "partial",
+   "nba.playoff_any_game_threshold_union": {
+    "label": "Probability a player reaches N points in at least one playoff game (union over a random, correlated run)",
+    "category": "distribution",
+    "mechanism": "A playoff-long single-game threshold pays on the maximum game score over a random number of games whose length depends on advancement and the player's own health, with per-game tails correlated through form and matchup.",
+    "rationale": "Multiplying a regular-season per-game tail by expected games overstates the price: playoff pace and defense compress the tail, the number of games is zero with positive probability, health and advancement are linked, and a series against one elite defender correlates several games. The union must be computed jointly, not from marginals.",
+    "measurement": "Simulate 20,000 playoff runs: draw the team's qualification and series path from the bracket simulation (nba.title_path, nba.series_length_distribution, nba.play_in_path_model), the player's availability per game from nba.playoff_star_health_hazard, a run-level form factor (log-normal, sd fitted from the player's game-to-game residual autocorrelation, about 0.1), and per-game p_g = P(points >= N) from nba.single_game_ceiling_tail rescaled by playoff minutes (nba.playoff_rotation) and opponent defender shift (nba.playoff_matchup_assignment_shift); P(YES) = share of runs with at least one game >= N. Validate on historical playoff 40+ and 50+ games (rates too low for 50 alone). As-of: nightly from the end of the regular season.",
+    "pregame_knowable": "yes",
     "free_sources": [
-     "PBPStats.com (free tier: on/off, lineup, possession-level splits)",
-     "DARKO (darko.app, free web view; no official API)",
-     "Dunks & Threes EPM (free partial; no official API)",
-     "nba_api / stats.nba.com (free, undocumented, rate-limited) teamdashlineups"
+     "Basketball-Reference playoff game logs",
+     "nba_api playoff box scores",
+     "own bracket simulation"
     ],
     "registry_ids": [],
     "raw_data": [
-     "player impact values",
-     "expected minutes",
-     "injury and availability status"
+     "playoff bracket and series results",
+     "player playoff and regular-season game logs (points, minutes, FGA, 3PA, FTA)",
+     "injury report vintages"
     ],
-    "why": "Converts star absences into game win probabilities for the remaining division schedule.",
+    "why": "The settlement functional of KXNBAPLAYOFFPTS; without it per-game tails and the games count are never combined.",
     "role": "primary"
    },
-   "nba.rest_travel": {
-    "label": "Rest, back-to-back, travel, altitude",
-    "category": "schedule_context",
-    "mechanism": "Fatigue from short rest, back-to-backs and dense schedule modestly lowers efficiency and, through coaching decisions, changes minutes and availability.",
-    "rationale": "Rest effects on team performance are small but real; larger is the indirect channel where stars sit on the second night of a back-to-back, which is handled by availability inputs. Rest differential (not absolute rest) matters for the spread; 3-in-4 and 4-in-6 clusters, and games after long road trips, add tail risk. Subtle: effect sizes have shrunk in the sports-science era and must be fit on recent seasons only.",
-    "measurement": "Per team: days of rest, is_b2b, second_game_of_b2b_on_road, games in last 4/6/7 days, rest differential; interactions with age and minutes load; fit effect on margin residual vs closing line.",
+   "nba.playoff_star_health_hazard": {
+    "label": "Time-resolved probability that each rotation star is healthy for each playoff round",
+    "category": "availability",
+    "mechanism": "Title and conference odds are convex in star availability, and the relevant availability is in April-June, not the regular-season games-missed average.",
+    "rationale": "Games-missed expectations average over a season; the quantity that matters for round-reach contracts is the probability of being healthy at tip of each playoff series, which depends on current injury state, history, age and minutes load.",
+    "measurement": "For each player in the top-3 of each contender estimate a hazard model for an injury ending availability (survival model by age, previous-season games missed, minutes per game, current injury status) fitted on 10 seasons of injury data; output P(healthy at playoff start), P(healthy for round k) conditional on being healthy at the start; combine with team-level strength loss from the player's absence (impact x minutes share). As-of: injury report vintage.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA injury reports (archived)",
+     "Pro Sports Transactions injury/transaction data",
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "injury reports archived by vintage",
+     "player age, minutes, games missed"
+    ],
+    "why": "The named star must be healthy in each round he would play; his health also drives his team's advancement.",
+    "role": "primary"
+   },
+   "nba.series_length_distribution": {
+    "label": "Series-length distribution from per-game win probabilities",
+    "category": "game_state",
+    "mechanism": "The number of games in a best-of-seven series is a function of per-game win probability, home pattern and dependence between games.",
+    "rationale": "KXNBASERIESGAMES counts games, not points; the draft has no input for it except a generic series model reference outside the archetype.",
+    "measurement": "P(series ends in k games) by dynamic programming over home pattern 2-2-1-1-1 with per-game win probabilities from own-model ratings and series dependence parameter (game-to-game correlation about +0.05 on margin, estimated from 2000-2025 playoff series); injuries known as of the as-of date; output P(4), P(5), P(6), P(7).",
     "pregame_knowable": "yes",
     "free_sources": [
-     "NBA schedule JSON (cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, free)",
-     "nba_api / stats.nba.com (free, undocumented, rate-limited)",
-     "Basketball-Reference (free; polite scraping, rate-limited)"
+     "Basketball-Reference playoffs",
+     "own ratings"
     ],
-    "registry_ids": [
-     "nba.rest_travel"
-    ],
+    "registry_ids": [],
     "raw_data": [
-     "schedule with dates and venues",
-     "travel distances"
+     "playoff series results by game with venue",
+     "own team ratings"
     ],
-    "why": "Back-to-backs and travel shift single-game win probabilities modestly; summed over the remaining schedule they matter at division-race margins of one or two wins.",
+    "why": "Series lengths per round give the number of games, the volume over which the 50-point tail compounds.",
+    "role": "secondary"
+   },
+   "nba.title_path": {
+    "label": "Playoff bracket path, matchup and home-court structure",
+    "category": "team_strength",
+    "mechanism": "Series winner and title probabilities depend on the bracket path (seed, opponent strength, home-court) and matchup-specific adjustments.",
+    "rationale": "Title odds are the product of series-win probabilities along a path that depends on which seed you are, who you face and the rest/injury states. A given team's path difficulty can differ substantially even for equal rating. Subtle: series outcomes are correlated through injuries to key players across rounds.",
+    "measurement": "Simulate bracket with seed distribution and series-level win probability; incorporate matchup tweaks (style, pace, rim protection) and home-court structure (2-2-1-1-1).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference (free; polite scraping, rate-limited)",
+     "NBA schedule JSON (cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "seed distribution",
+     "series-level win probabilities"
+    ],
+    "why": "Advancement through the bracket sets how many rounds, and so how many games, the player gets.",
+    "role": "secondary"
+   },
+   "nba.play_in_path_model": {
+    "label": "Play-in bracket path probabilities given pre-play-in seed and relative strength",
+    "category": "schedule_context",
+    "mechanism": "The play-in tournament maps seeds 7-10 to final seeds 7 and 8 through a fixed bracket, so the playoff qualification and the post-play-in seed differ from the regular-season seed; Kalshi's seed contracts are measured before the play-in.",
+    "rationale": "KXNBASEEDOU resolves on the regular-season seed before the play-in while qualification/play-in series depend on play-in outcomes; the same team has different probabilities for 'seed 8 or better' depending on which definition applies.",
+    "measurement": "Encode the bracket (7v8 winner gets the 7 seed; 9v10 loser is out; loser of 7v8 plays winner of 9v10 for the 8 seed), compute per-game win probabilities with home-court from team ratings and rest, and convolve to P(final seed 7, 8, out | pre-play-in seed, opponents); estimate the distribution of opponents from the standings simulation. As-of: nightly; rules versioned by season.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com play-in format",
+     "nba_api standings"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "standings before the Play-In",
+     "Play-In format",
+     "team ratings"
+    ],
+    "why": "Players on teams finishing 7-10 reach the playoffs only through the Play-In, whose games probably do not count for this contract.",
     "role": "context"
    },
-   "nba.standings_motivation": {
-    "label": "Standings, clinch/tank incentives and late-season motivation",
-    "category": "motivation",
-    "mechanism": "Teams out of contention or with locked seeds rest stars or play young players, changing availability and minutes distribution late in the season.",
-    "rationale": "Late-season and post-clinch games show elevated load management and unpredictable rotations, making both sides and player props noisier and shifting minutes to bench players. Subtle: announcements arrive late (game-day), and tanking incentives (lottery odds) differ from effort incentives; play-in positioning and in-season Cup stakes alter incentives too.",
-    "measurement": "Compute win-probability leverage per game from standings simulation (seed distribution sensitivity), clinch/elimination flags, games remaining, lottery odds sensitivity; interact with star age/injury history.",
+   "nba.playoff_rotation": {
+    "label": "Playoff rotation tightening and minutes inflation",
+    "category": "player_role",
+    "mechanism": "Playoff games feature shorter rotations and higher starter minutes, changing player props and team-level ratings relative to the regular season.",
+    "rationale": "Stars play several more minutes per game and bench depth matters less; regular-season minutes baselines understate playoff volume for starters and overstate bench contributions. Subtle: the effect varies by round and by series pace/blowout probability.",
+    "measurement": "Compare each player's playoff vs regular-season minutes in historical series; team-level rotation depth; adjust minutes projections and series stat distributions by round.",
     "pregame_knowable": "partial",
     "free_sources": [
      "Basketball-Reference (free; polite scraping, rate-limited)",
      "nba_api / stats.nba.com (free, undocumented, rate-limited)",
-     "NBA standings (stats.nba.com leaguestandingsv3)"
+     "cdn.nba.com liveData JSON (boxscore, playbyplay, odds; free, unofficial)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "standings and remaining schedule",
-     "clinch/elimination status",
-     "historical rest patterns"
+     "player playoff vs regular-season minutes by series"
     ],
-    "why": "Late-season resting follows conference-seed incentives, not the division title, so a seed-locked team may concede division ground; this input carries that incentive state.",
-    "role": "secondary"
+    "why": "Star minutes inflation in the playoffs widens the scoring tail that a 50-point game needs.",
+    "role": "primary"
    },
-   "nba.pythag_residual": {
-    "label": "Point-differential vs record luck (Pythagorean residual, clutch record)",
-    "category": "variance_luck",
-    "mechanism": "Wins above point-differential expectation (close-game results) mean-revert, so records overstate or understate true strength for futures and win totals.",
-    "rationale": "Records built on unusual clutch/close-game results are less predictive than margin-based ratings. Used mainly for season wins, seeds and playoff futures; also reveals when a market anchored to the standings misprices the true team. Subtle: coaching/late-game execution may have a small persistent component, so shrink rather than zero it out.",
-    "measurement": "Pythagorean wins with exponent ~14 (fit by season) minus actual; clutch (score within 5, last 5 min) record vs expectation; apply 50% or fitted regression to remaining games.",
+   "nba.points_upper_tail_rate": {
+    "label": "Player-specific upper-tail frequency of points given full-minutes games (ceiling-game rate)",
+    "category": "distribution",
+    "mechanism": "Scoring has a heavier right tail than a negative binomial fit to the mean implies because hot shooting, FT surges and OT stack; the cubic escalator weights this tail heavily.",
+    "rationale": "The scalar escalator pays (y/50)^3 so its expected value is dominated by 35+ outcomes; a model calibrated to the mean misprices it, and the 30+/40+ rungs depend on the same tail.",
+    "measurement": "For each player estimate exceedance probabilities P(pts >= 1.4m), P(pts >= 1.7m) and P(pts>=2.0m) where m is the minutes-conditional mean, on games with >=30 minutes over a 3-season window; fit a generalised-Pareto above the 85th percentile of residuals with shape shrunk to a league-wide value (prior weight 60 exceedances). Output the tail index and exceedance rates.",
     "pregame_knowable": "yes",
     "free_sources": [
-     "Basketball-Reference (free; polite scraping, rate-limited)",
-     "nba_api / stats.nba.com (free, undocumented, rate-limited) leaguedashteamclutch"
+     "Computed from nba_api box scores"
     ],
     "registry_ids": [],
     "raw_data": [
-     "team game results with margins",
-     "close-game records"
+     "player game logs with minutes, 3 seasons"
     ],
-    "why": "Teams winning more close games than point differential implies regress; in a division decided by one or two wins the luck component of the record matters.",
+    "why": "Player-specific exceedance rates relative to his mean give a second estimate of the far tail that the ceiling model extrapolates.",
     "role": "secondary"
+   },
+   "nba.heavy_minutes_tail_prob": {
+    "label": "Probability of heavy-minutes games (38+ minutes, OT)",
+    "category": "player_role",
+    "mechanism": "The extreme counts come from nights with heavy minutes, whose probability depends on game closeness, depth and the coach's usage of the star.",
+    "rationale": "A single projected minutes figure hides the 10-20% of nights with 38+ minutes that produce the top bands, and nights with 20-25 minutes that produce the bottom ones.",
+    "measurement": "Per player: share of games with minutes >= 38 over the last 80 games (half-life 30), shrunk to role prior with k=15 games; condition on own-model closeness (P(|margin| < 8) from the margin model) and OT probability 0.06; produce P(minutes >= 38) and mean count in that regime = rate per minute x 40; as-of lineup status.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Basketball-Reference game logs",
+     "nba_api"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player game logs with minutes",
+     "own-model game closeness"
+    ],
+    "why": "50-point games almost always come with 38+ minutes; this gives the weight of that regime in playoff games.",
+    "role": "secondary"
+   },
+   "nba.playoff_matchup_assignment_shift": {
+    "label": "Playoff matchup assignment shift (primary defender effect)",
+    "category": "matchup",
+    "mechanism": "In a series the primary defenders assigned to stars shift counts relative to regular-season rates, adjusted game by game.",
+    "rationale": "Regular-season position-based opponent allowances miss the specific defender and the series adaptation. The 5-15% shift magnitude is SOURCE_UNVERIFIED (recalled, not estimated).",
+    "measurement": "From tracking matchup data compute for each offensive player the points/assists per 100 possessions guarded by each defender (min 50 possessions) with shrinkage to the defender's overall effect (k=100 possessions); for a series use the expected share of possessions by defender from the last regular-season meeting and playoffs-to-date; shift = Σ share × (matchup rate - baseline); update after each series game with half-life 2 games.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA.com matchups (nba_api leagueseasonmatchups)",
+     "Second Spectrum (paid)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "tracking matchup data (partial-possession guarding)",
+     "playoff series schedule"
+    ],
+    "why": "A series-long primary defender compresses the star's tail for four to seven correlated games.",
+    "role": "secondary"
+   },
+   "nba.reg_tie_pmf_model": {
+    "label": "Own-model regulation tie probability P(OT)",
+    "category": "distribution",
+    "mechanism": "P(OT) = mass of regulation margin at zero from a heteroscedastic margin density with a late-game excess-mass correction.",
+    "rationale": "The draft claims P(OT) is roughly flat across spreads, but a Gaussian with sd 12 gives 3.3% at pick-em and 2.3% at 10 points, so the dependence on spread is large; the right model is a decreasing function with an empirical excess factor.",
+    "measurement": "P_gauss(0) = phi(mu/sigma)/sigma with mu own-model margin and sigma from nba.margin sd model (about 12, scale sqrt(possessions)); multiply by excess factor kappa(|mu|) estimated by isotonic regression on 10 seasons of games as observed OT rate divided by P_gauss(0) in |mu| buckets of 2 points; kappa about 1.7-1.9 overall; output with beta interval; use own-model mu, not closing lines. Margin is integer-valued with parity tied to the total, and free-throw, three-point and intentional-foul structure moves mass onto and off zero, so estimate the observed integer pmf at 0 (and smoothed mass at +/-1 to +/-4) over 15 seasons and let kappa(|mu|) absorb the discreteness rather than reading the continuous density at zero.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference game logs",
+     "nba_api"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "final margins and own-model margin mean/sd for 10 seasons"
+    ],
+    "why": "Overtime adds about five minutes and a small extra chance of 50; market-free probability of a regulation tie.",
+    "role": "context"
    }
   },
   "input_audit": {
    "nba.milestone_rates": {
     "verdict": "IRRELEVANT",
-    "reason": "Single-game double/triple-double base rates; none of the five live division-winner series involves a player milestone, so the input has no role in this archetype."
+    "reason": "Double- and triple-double base rates do not enter a points-only threshold; the playoff triple-double series is priced in player_milestones."
    },
    "nba.stat_dist": {
-    "verdict": "IRRELEVANT",
-    "reason": "Player stat distributions priced the average and high-score series that moved to season_stat_markets; division standings depend on team wins only."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The body of the per-game points distribution (overdispersed count) anchors the tail threshold; the 50-point exceedance itself comes from the ceiling model."
    },
    "nba.combo_covariance": {
     "verdict": "IRRELEVANT",
-    "reason": "Covariance among points, rebounds and assists has no bearing on a division title decided by team records and tiebreaks."
+    "reason": "Covariance between points, rebounds and assists has no role in a points-only playoff threshold."
    },
    "nba.minutes": {
-    "verdict": "IRRELEVANT",
-    "reason": "Player minutes per game drove the moved player series; for division races, player minutes matter only through availability-adjusted team strength, captured by nba.lineup_adj_rating."
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Minutes are the scale of every scoring chance, but must be re-based to playoff rotations and their heavy-minutes regime, not regular-season projections."
    },
    "nba.usage": {
-    "verdict": "IRRELEVANT",
-    "reason": "Usage determined scoring volume for the moved player series; it has no direct link to division standings."
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Shot and free-throw share per possession is the second driver of a 50-point game; it rises when a co-star is out."
    },
    "nba.pace": {
-    "verdict": "IRRELEVANT",
-    "reason": "Pace scales scoring, not win probability; a division race is a function of net strength, already in the ratings."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Playoff pace runs a few possessions below the regular season, lowering per-game scoring chances for every player."
    },
    "nba.garbage": {
     "verdict": "BENCHMARK_ONLY",
-    "reason": "Catalog definition is \"blowout probability from spread\", a closing-line quantity, so it is a market benchmark and not an input. Removed from stages, coverage, interactions and data feeds; replaced by the market-free nba.rating_blowout_minutes_curve built from ratings and rotation history. Prior note: Blowouts cut stars' minutes and so reduce 54+ chances while close games and overtime raise them; matter for the single-game series only."
+    "reason": "Defined from the point spread (a market price), so it is a benchmark; blowout truncation uses the market-free nba.rating_blowout_minutes_curve."
    },
    "nba.opp_def_pos": {
-    "verdict": "IRRELEVANT",
-    "reason": "Positional defensive allowances are a single-game player-prop variable with no role in a season-long team standings contract."
+    "verdict": "WEAK",
+    "reason": "Regular-season positional allowances average over many opponents; a playoff series is one opponent with a planned primary defender, handled by nba.playoff_matchup_assignment_shift."
    },
    "nba.three_volume": {
-    "verdict": "IRRELEVANT",
-    "reason": "Three-point volume priced the stat-average series that moved to season_stat_markets; irrelevant to division winners."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Three-point attempt volume raises both the mean and the variance of points, and most modern 50-point games include many made threes."
    },
    "nba.player_shooting_regression": {
-    "verdict": "IRRELEVANT",
-    "reason": "Shooting regression priced the moved average series; team-level shooting luck enters division races through nba.pythag_residual and the ratings."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "A hot regular-season shooting stretch inflates a naive tail; single-game and seasonal percentages must be shrunk to talent."
    },
    "nba.injuries_pit": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Season-long star availability is the largest swing factor in a five-team division race; needs a time-resolved games-missed distribution, not only tonight's status."
+    "reason": "Game-day status and restrictions decide whether a given playoff game is a full-workload chance at all."
    },
    "nba.rotation": {
-    "verdict": "IRRELEVANT",
-    "reason": "Within-game rotation patterns do not change season win totals beyond what availability-adjusted ratings capture."
+    "verdict": "WEAK",
+    "reason": "Regular-season rotation patterns are superseded in the playoffs by tightened rotations captured in nba.playoff_rotation."
    },
    "nba.single_game_ceiling_tail": {
-    "verdict": "IRRELEVANT",
-    "reason": "Built for KXNBAPLAYERHIGHSCORE, which the reconciliation moved to season_stat_markets (now defined there); division-winner contracts do not depend on single-game scoring tails."
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Per-game generalised-Pareto exceedance of 50+ points (with overtime adjustment) is the core per-game probability; it needs a playoff rescaling."
    },
    "nba.avg_rounding_and_games_state": {
     "verdict": "IRRELEVANT",
-    "reason": "Built for KXNBASTATAVG, moved to season_stat_markets by the reconciliation; irrelevant to division standings."
+    "reason": "Season-average rounding belongs to KXNBASTATAVG in season_stat_markets; no average enters a single-game playoff threshold."
    },
    "nba.team_win_streak_hazard": {
     "verdict": "IRRELEVANT",
-    "reason": "Built for KXNBAWINSTREAK, moved to season_stat_markets; a division title depends on the season record, not on run lengths."
+    "reason": "Team win-streak hazard belongs to KXNBAWINSTREAK in season_stat_markets; it has no role in a player points threshold."
    },
    "nba.undefeated_start_survival": {
     "verdict": "IRRELEVANT",
-    "reason": "Built for KXNBALASTTOLOSE, moved to season_stat_markets; first-loss dates do not decide a division."
+    "reason": "First-loss survival belongs to KXNBALASTTOLOSE in season_stat_markets; unrelated to playoff scoring."
    },
    "nba.cup_finals_pair_probability": {
     "verdict": "IRRELEVANT",
-    "reason": "Built for KXNBAMATCHUP, moved to series_and_cup (now defined there); the Cup bracket affects division races only through extra scheduled games, handled in the schedule stage."
+    "reason": "Cup Finals pairing belongs to KXNBAMATCHUP in series_and_cup; Cup games are not playoff games."
    },
    "nba.rating_blowout_minutes_curve": {
-    "verdict": "IRRELEVANT",
-    "reason": "Single-game minutes-versus-margin curve used for the high-score contract that moved to season_stat_markets; division races depend on game wins, not on within-game minutes allocation."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Lopsided playoff games cut star minutes in the fourth quarter, removing 50-point chances; market-free margin-to-minutes curve."
+   },
+   "nba.division_race_tiebreak_state": {
+    "verdict": "WEAK",
+    "reason": "The five division contracts it was built for moved to season_futures_team; division titles affect playoff qualification only through seeding, already in the standings simulation."
+   },
+   "nba.preseason_roster_aging_prior": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Before the season ends it feeds the team strength that sets qualification and advancement; once the bracket is set it adds nothing."
    }
   },
   "interactions": [
    {
     "inputs": [
-     "nba.ratings",
-     "nba.preseason_roster_aging_prior"
+     "nba.series_length_distribution",
+     "nba.single_game_ceiling_tail"
+    ],
+    "form": "multiplicative",
+    "mechanism": "The contract compounds a small per-game tail over a random number of games; for p near 1% the value is roughly p times expected games, so a contender's star with 18 expected games is worth several times an equal scorer on a first-round team.",
+    "how_to_test": "Compare realised playoff 45+ and 50+ game incidence by player against per-game tail times games played, bucketed by team depth of run."
+   },
+   {
+    "inputs": [
+     "nba.playoff_star_health_hazard",
+     "nba.title_path"
     ],
     "form": "conditional",
-    "mechanism": "Early in the season the division posterior is mostly the preseason prior; a 6-2 start by a team with a weak prior moves division odds far less than the record suggests, and the weight on results grows with games played at a rate set by the prior's estimated error.",
-    "how_to_test": "Back-test division probabilities at 10, 20 and 40 games with prior weights fitted versus fixed; compare log loss on final division winners over 10 seasons."
+    "mechanism": "Advancement is conditional on the star's health and his games are conditional on advancement, so the joint probability of 'healthy and still playing in round three' exceeds the product of marginals for teams that depend on him and falls below it for deep teams.",
+    "how_to_test": "Simulate runs with and without coupling team strength to the star's health state and compare games-played distributions with historical star playoff games."
    },
    {
     "inputs": [
-     "nba.division_race_tiebreak_state",
-     "nba.standings_motivation"
+     "nba.playoff_rotation",
+     "nba.rating_blowout_minutes_curve"
+    ],
+    "form": "conditional",
+    "mechanism": "Playoff minutes inflation applies only in competitive games; in a lopsided series the star sits fourth quarters, so the heavy-minutes regime needed for 50 depends on the series strength gap.",
+    "how_to_test": "Regress star playoff minutes on game margin and series seed gap over 15 seasons; compare 40+ minute frequency in close versus lopsided series."
+   },
+   {
+    "inputs": [
+     "nba.teammate_absence_shift",
+     "nba.usage"
     ],
     "form": "threshold",
-    "mechanism": "Once a team's conference seed is fixed it rests stars regardless of the division table, because the division brings no seeding reward; a rival one game back then gains, so division odds jump when a leader clinches its seed with games left.",
-    "how_to_test": "Compare win rates in the last 10 games for seed-locked division leaders with those still contesting seeds, over seasons since division winners lost automatic seeding."
+    "mechanism": "When a co-star is out, usage jumps by several points and the 50-point tail thickens sharply; with both creators healthy the tail is thin, so the effect is a regime switch rather than a linear shift.",
+    "how_to_test": "Compare 40+ point game rates for stars in games with and without the second-highest-usage teammate over 5 seasons."
    },
    {
     "inputs": [
-     "nba.injuries_pit",
-     "nba.lineup_adj_rating"
+     "nba.playoff_matchup_assignment_shift",
+     "nba.single_game_ceiling_tail"
     ],
-    "form": "regime-switch",
-    "mechanism": "A star's multi-week absence switches a team into a weaker regime for a block of games; if that block contains head-to-head division games, the swing in the division gap is doubled, so timing as well as total games missed matters.",
-    "how_to_test": "Simulate division odds with absences placed in and out of division-game blocks and compare with realised swings in historical injury cases."
-   },
-   {
-    "inputs": [
-     "nba.division_race_tiebreak_state",
-     "nba.ratings"
-    ],
-    "form": "joint-distribution",
-    "mechanism": "Sixteen of 82 games are against division rivals, so one team's win is another's loss; the records of the five teams are negatively dependent, which concentrates probability on the strongest team more than independent simulations imply and raises the frequency of exact ties at the top.",
-    "how_to_test": "Compare the share of simulated seasons with tied division leaders under joint versus independent simulation against the historical tie frequency."
-   },
-   {
-    "inputs": [
-     "nba.pythag_residual",
-     "nba.ratings"
-    ],
-    "form": "diminishing-returns",
-    "mechanism": "A team that has outperformed its point differential in close games gets less credit for its record as the season goes on, because the luck component does not persist; the value of an extra close win to division odds diminishes relative to margin-based strength.",
-    "how_to_test": "Regress rest-of-season win percentage on record to date and point differential to date by games played; the coefficient on record should fall relative to differential."
+    "form": "conditional",
+    "mechanism": "An elite primary defender assigned for a whole series lowers the scale of the tail for every game of that series, so the per-game tails are positively correlated within a series and the union is smaller than independent games imply.",
+    "how_to_test": "Compare stars' playoff points tails by primary-defender quality bucket and test within-series correlation of residuals."
    }
   ],
   "nonlinearities": [
    {
-    "input_id": "nba.division_race_tiebreak_state",
-    "shape": "step at equal records: the tiebreak winner takes all",
-    "why": "With ties resolved by head-to-head rather than split, one extra head-to-head win flips all tied-season probability to a team, so division odds jump discretely with the head-to-head ledger near the end of the season."
+    "input_id": "nba.single_game_ceiling_tail",
+    "shape": "power-law (generalised Pareto) decay of exceedance in N",
+    "why": "Moving the strike from 45 to 50 cuts per-game probability by a factor of roughly two to four depending on the tail index, so small errors in the shape parameter move the price more than errors in mean points."
    },
    {
-    "input_id": "nba.ratings",
-    "shape": "steep logistic in the rating gap to the second-best division team",
-    "why": "The title goes to the maximum of five records; with about 82 games a two-point net-rating edge over the closest rival already gives a large majority of division titles, so probability saturates quickly as the gap widens."
+    "input_id": "nba.usage",
+    "shape": "convex effect of usage on P(50+)",
+    "why": "A few points of extra usage add little to the mean but shift the far tail strongly because 50 points needs both volume and hot shooting; the response accelerates at high usage."
    }
   ],
   "required_data": [
    {
-    "dataset": "Team game results, schedule and division ledger",
-    "grain": "team x game",
+    "dataset": "Player game logs, regular season and playoffs",
+    "grain": "player x game",
     "fields": [
+     "player_id",
      "game_id",
-     "game_date",
-     "home_team",
-     "away_team",
-     "home_pts",
-     "away_pts",
-     "division_game_flag",
-     "cup_flag",
-     "rest_days",
-     "venue"
+     "playoff_flag",
+     "minutes",
+     "pts",
+     "fga",
+     "fg3a",
+     "fta",
+     "ot_periods",
+     "starter_flag"
     ],
-    "timestamp_requirement": "Completed games as of the previous night; remaining schedule versioned when Cup filler games are added.",
-    "history_needed": "10 seasons for prior calibration and tie frequency; current season nightly",
+    "timestamp_requirement": "Completed games only; as of the night before each playoff game.",
+    "history_needed": "3 seasons per player for tails; 15 seasons league-wide for tail shape and playoff rescaling",
     "candidate_sources": [
      {
-      "name": "nba_api leaguegamelog / scheduleleaguev2",
+      "name": "nba_api playergamelog / boxscoretraditional",
       "access": "free_scrape",
       "note": "Undocumented, rate-limited"
      },
      {
-      "name": "Basketball-Reference schedules and results",
+      "name": "Basketball-Reference game logs",
       "access": "free_scrape",
       "note": "Polite scraping"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.single_game_ceiling_tail",
+     "nba.points_upper_tail_rate",
+     "nba.stat_dist",
+     "nba.minutes",
+     "nba.usage",
+     "nba.three_volume",
+     "nba.player_shooting_regression",
+     "nba.heavy_minutes_tail_prob",
+     "nba.playoff_rotation",
+     "nba.fouls_ft",
+     "nba.teammate_absence_shift",
+     "nba.rating_blowout_minutes_curve",
+     "nba.pace"
+    ]
+   },
+   {
+    "dataset": "Standings, Play-In and playoff bracket with series results",
+    "grain": "team x game; series x game",
+    "fields": [
+     "season",
+     "team_id",
+     "wins",
+     "seed",
+     "playin_result",
+     "round",
+     "series_id",
+     "game_number",
+     "winner",
+     "final_margin"
+    ],
+    "timestamp_requirement": "Standings as of each night; bracket state after each playoff game.",
+    "history_needed": "20 seasons for series lengths and Play-In paths",
+    "candidate_sources": [
+     {
+      "name": "Basketball-Reference standings and playoff series",
+      "access": "free_scrape",
+      "note": "Polite scraping"
+     },
+     {
+      "name": "NBA.com standings / nba_api leaguestandingsv3",
+      "access": "free_scrape",
+      "note": "Undocumented"
      }
     ],
     "feeds_inputs": [
      "nba.ratings",
-     "nba.division_race_tiebreak_state",
-     "nba.rest_travel",
-     "nba.pythag_residual",
-     "nba.standings_motivation"
+     "nba.standings_sim",
+     "nba.play_in_path_model",
+     "nba.title_path",
+     "nba.series_length_distribution",
+     "nba.reg_tie_pmf_model",
+     "nba.playoff_any_game_threshold_union"
     ]
    },
    {
-    "dataset": "Roster, player impact, age and injury history for team priors and availability",
-    "grain": "player x season; player x game status",
+    "dataset": "Injury reports and defensive matchup data",
+    "grain": "player x report time; offensive player x defender x game",
     "fields": [
      "player_id",
-     "team_id",
-     "age",
-     "impact_metric",
-     "expected_minutes",
      "status",
      "report_time",
-     "games_missed"
+     "injury",
+     "defender_id",
+     "partial_possessions",
+     "pts_allowed"
     ],
-    "timestamp_requirement": "Preseason snapshot before opening night; injury statuses archived as published (point-in-time).",
-    "history_needed": "10 seasons of player impact and aging; 3 seasons of injury reports",
+    "timestamp_requirement": "Injury statuses archived as published; matchup data as of the previous game.",
+    "history_needed": "10 seasons of injuries; 5 seasons of matchups",
     "candidate_sources": [
-     {
-      "name": "Basketball-Reference BPM and rosters",
-      "access": "free_scrape",
-      "note": "Polite scraping"
-     },
-     {
-      "name": "Dunks & Threes EPM / DARKO",
-      "access": "free_limited",
-      "note": "Web views, no official API"
-     },
      {
       "name": "NBA official injury report",
       "access": "own_capture",
       "note": "Must be archived live for vintages"
+     },
+     {
+      "name": "nba_api leagueseasonmatchups",
+      "access": "free_scrape",
+      "note": "Partial possessions, from 2017-18"
+     },
+     {
+      "name": "Second Spectrum",
+      "access": "paid",
+      "note": "Full tracking"
      }
     ],
     "feeds_inputs": [
-     "nba.preseason_roster_aging_prior",
-     "nba.lineup_adj_rating",
      "nba.injuries_pit",
-     "nba.ratings"
+     "nba.playoff_star_health_hazard",
+     "nba.playoff_matchup_assignment_shift"
     ]
    },
    {
-    "dataset": "League tiebreak procedure and Kalshi rules text",
-    "grain": "season; series",
+    "dataset": "Kalshi rules text",
+    "grain": "series x edition",
     "fields": [
-     "tiebreak_criteria_order",
-     "multi_team_procedure",
      "ticker",
      "rules_primary",
-     "rules_secondary"
+     "rules_secondary",
+     "floor_strike"
     ],
-    "timestamp_requirement": "Versioned per season; rules captured at listing.",
-    "history_needed": "Current season plus the seasons used for back-tests",
+    "timestamp_requirement": "Captured at listing and at each edition.",
+    "history_needed": "All editions",
     "candidate_sources": [
-     {
-      "name": "NBA.com tiebreak procedures page",
-      "access": "free",
-      "note": "Text only; must be coded by hand"
-     },
      {
       "name": "Kalshi API",
       "access": "free",
@@ -10228,44 +10368,43 @@
      }
     ],
     "feeds_inputs": [
-     "nba.division_race_tiebreak_state",
      "m.rules_text"
     ]
    }
   ],
   "unresolved": [
    {
-    "id": "sp-tiebreak-version",
-    "type": "SOURCE_UNVERIFIED",
+    "id": "pp50-playin",
+    "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "The rules defer to 'the governing league's official tie-breaking rules' without listing them; the exact 2026-27 order for two-team and multi-team division ties (and whether any criterion changed with the Cup format) is assumed from past seasons, not verified.",
-    "what_would_resolve": "Read the league's 2026-27 tiebreak document, code it in nba.division_race_tiebreak_state and test on past tied divisions."
+    "description": "The text says 'any playoff game in the 2026 Pro Basketball Playoffs' without saying whether Play-In games count; other NBA series exclude the Play-In explicitly, which suggests they do not, but it is not stated here.",
+    "what_would_resolve": "Request the full rules_secondary or check a settled KXNBAPLAYOFFPTS market for a player who scored highly in a Play-In game."
    },
    {
-    "id": "sp-existing-mismatch",
-    "type": "OTHER",
-    "description": "The catalog entry for this unregistered key is labelled and targeted as player/team counting specials (triple doubles, stat averages, one-off thresholds) and lists player inputs, while its only live series are now five division-winner contracts; the catalog label, target and contract types must be rewritten by the integrator (catalog not editable in this review).",
-    "what_would_resolve": "Relabel the archetype as division winners (or merge it with the KXNBAATLANTIC handling in season_futures_team) and replace its catalog input list."
+    "id": "pp50-ot-void",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "Overtime inclusion is not stated (KXNBAPLAYERHIGHSCORE says 'including overtime' explicitly), and there is no rule for a player who is traded, suspended or ruled out for the playoffs before they begin; the record assumes official box-score points and No without a void.",
+    "what_would_resolve": "Check settlements of KXNBAPLAYOFFPTS markets for injured players and the full rules text for an overtime clause."
    },
    {
-    "id": "sp-coaching-gap",
+    "id": "pp50-coaching",
     "type": "MECHANISM_UNCERTAIN",
     "category": "coaching_scheme",
-    "description": "How early a coach rests stars once the conference seed is fixed, and the effect of mid-season coaching changes on win probability, are not quantified, yet both change late-season results in close division races.",
-    "what_would_resolve": "Estimate coach-level late-season rest rates and post-change rating shifts from 10 seasons of game logs and coaching transactions."
+    "description": "Opponent game plans that blitz or double a hot scorer, and a coach's willingness to play a star 45+ minutes, change the playoff 50-point tail, but neither is measured by any input.",
+    "what_would_resolve": "Estimate from play-by-play the frequency of doubled possessions against stars by opponent coach and its effect on points per minute in playoff series."
    },
    {
-    "id": "sp-cup-bracket-structure",
-    "type": "SOURCE_UNVERIFIED",
-    "category": "situational_schedule_motivation",
-    "description": "Cup knockout games before the final count in the standings and teams eliminated in the group stage get extra regular-season games scheduled later; the 2026-27 rule for assigning those filler games (opponent, venue, date) is assumed, not verified, and it changes the remaining schedule of division rivals.",
-    "what_would_resolve": "Read the 2026-27 Cup format and schedule-completion rules and version the schedule when the filler games are announced."
+    "id": "pp50-tail-sample",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Playoff 50-point games occur only a few times per decade, so the playoff tail cannot be estimated directly; the record rescales a regular-season tail by playoff minutes and pace, and the size of that rescaling for the far tail is unverified.",
+    "what_would_resolve": "Fit the playoff-versus-regular-season tail ratio at 35+ and 40+ points over 20 seasons and test whether it extrapolates to 50."
    },
    {
-    "id": "sp-ownership-overlap",
+    "id": "pp50-catalog-label",
     "type": "OTHER",
-    "description": "The sixth division contract (KXNBAATLANTIC) sits in season_futures_team and is modelled there with nba.tiebreak_ledger and nba.standings_sim, while these five use nba.division_race_tiebreak_state; the same process has two input ids across archetypes. The streak and last-undefeated contracts formerly here now sit in season_stat_markets.",
-    "what_would_resolve": "Put all six division contracts under one archetype and one tiebreak input."
+    "description": "The catalog entry for this unregistered key is labelled as player/team counting specials (triple doubles, stat averages, one-off thresholds), while its only live series is now playoff single-game points; the playoff triple-double series in player_milestones uses the same union-over-playoff-games structure with separate inputs.",
+    "what_would_resolve": "Relabel the archetype as playoff single-game player thresholds (or merge with KXNBAPLAYOFF3D) and replace its catalog input list with the inputs staged here."
    }
   ]
  }

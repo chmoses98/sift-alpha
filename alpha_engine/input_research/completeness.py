@@ -389,6 +389,25 @@ def reverification_state(ind: dict | None, rv: dict | None, rec: dict | None) ->
     return ("OPEN" if (todo or bad) else "CLEAR"), todo + bad
 
 
+def load_dir(sport: str, folder: str) -> dict:
+    out: dict = {}
+    d = CD / folder
+    for f in sorted(d.glob(f"{sport}*.json")) if d.exists() else []:
+        out.update(rd(f))
+    return out
+
+
+def post_reconcile_state(rlog: dict | None, audit: dict | None) -> str:
+    """Records edited by the reconcile pass after the independent reviews need a fresh independent audit of those edits (a reconciler marking its own work does not count)."""
+    ch = [c for c in (rlog or {}).get("changes") or [] if str(c).strip()]
+    if not ch:
+        return "NOT_NEEDED"
+    a = audit or {}
+    if a.get("verdict") in ("OK", "CORRECTED") and len(str(a.get("evidence", ""))) >= 60 and a.get("auditor") and not any(x.get("fixed") is False for x in a.get("issues") or []):
+        return "CLEAR"
+    return "PENDING"
+
+
 def finding_closed(f: dict, rec: dict | None) -> bool:
     """A finding is closed only by (a) RESOLVED: <what changed, >=40 chars> or (b) DEFERRED_TO_UNRESOLVED:<id> where <id> is a declared entry in the record's own unresolved list."""
     r = str(f.get("resolution", "OPEN"))
@@ -472,7 +491,7 @@ def compute_gate() -> dict:
     all_rows = rd(LEDGER)["rows"]
     assign_rows = rd(IN / "market_universe/series_assignment.json")["rows"]
     for s in SPORTS:
-        c = load_catalog(s); reviews = load_reviews(s); ind = load_independent(s); rvf = load_reverification(s)
+        c = load_catalog(s); reviews = load_reviews(s); ind = load_independent(s); rvf = load_reverification(s); rcl = load_dir(s, "reconcile"); rca = load_dir(s, "reconcile_audit")
         flags = similarity_flags(s, reviews)
         cnt = collections.Counter()
         for k in arch_keys(c):
@@ -488,13 +507,14 @@ def compute_gate() -> dict:
                     errs = errs + [f"possible boilerplate: {x}" for x in sim[:4]]
                 ist, openf = independent_state(ind.get(k), rec)
                 rvs, rvopen = reverification_state(ind.get(k), rvf.get(k), rec)
+                pra = post_reconcile_state(rcl.get(k), rca.get(k))
                 m = rec.get("mechanism") or {}
                 row.update(problems=errs[:25], n_problems=len(errs), stages=len(m.get("stages") or []), new_inputs=len(rec.get("new_inputs") or {}), existing_inputs_audited=len(rec.get("input_audit") or {}),
                            interactions=len(rec.get("interactions") or []), nonlinearities=len(rec.get("nonlinearities") or []), datasets=len(rec.get("required_data") or []),
                            unresolved=len(rec.get("unresolved") or []), gaps=sum(1 for v in (m.get("category_coverage") or {}).values() if v.get("status") == "GAP"),
                            rules_verification=(rec.get("contract") or {}).get("rules_verification"), independent=ist, open_findings=len(openf),
-                           independent_findings=len((ind.get(k) or {}).get("findings") or []), independent_verdict=(ind.get(k) or {}).get("verdict"), reverification=rvs, reverification_open=len(rvopen))
-                row["status"] = ("STRUCTURE_INCOMPLETE" if errs else "AUTHORED_NOT_INDEPENDENTLY_REVIEWED" if ist == "NONE" else "INDEPENDENT_REVIEW_OPEN_FINDINGS" if ist == "OPEN_FINDINGS" else "REVERIFICATION_PENDING" if rvs not in ("CLEAR", "NOT_NEEDED") else "READY_FOR_USER_APPROVAL")
+                           independent_findings=len((ind.get(k) or {}).get("findings") or []), independent_verdict=(ind.get(k) or {}).get("verdict"), reverification=rvs, reverification_open=len(rvopen), post_reconcile_audit=pra)
+                row["status"] = ("STRUCTURE_INCOMPLETE" if errs else "AUTHORED_NOT_INDEPENDENTLY_REVIEWED" if ist == "NONE" else "INDEPENDENT_REVIEW_OPEN_FINDINGS" if ist == "OPEN_FINDINGS" else "REVERIFICATION_PENDING" if (rvs not in ("CLEAR", "NOT_NEEDED") or pra == "PENDING") else "READY_FOR_USER_APPROVAL")
             cnt[row["status"]] += 1; rows.append(row)
         per_sport[s] = {"archetypes": len(arch_keys(c)), **{k: cnt.get(k, 0) for k in STATUSES}, "inputs": len(c["inputs"])}
         sr = [r for r in assign_rows if r["sport"] == s]
@@ -514,13 +534,14 @@ def compute_gate() -> dict:
                          "at least one explicit unresolved gap per archetype (no archetype may be declared complete)",
                          "independent second review recorded with no open BLOCKER/MAJOR finding",
                          "second independent verification (different model) of every closed blocker/major finding: each CONFIRMED or CORRECTED, none REOPENED",
+                         "records edited by the reconcile pass (series re-filed, rules text recovered) are re-audited by an independent verifier after the edit",
                          "READY_FOR_USER_APPROVAL is the ceiling: the human decision lives in approval.json and is never written by code"]}
     return gate
 
 
 def summarize(gate: dict) -> dict:
     """Small dashboard summary: no per-archetype problem text, just counts."""
-    keep = ("sport", "archetype", "label", "registered", "live_series", "rules_text_series", "status", "stages", "new_inputs", "existing_inputs_audited", "interactions", "nonlinearities", "datasets", "unresolved", "gaps", "rules_verification", "independent", "open_findings", "independent_findings", "n_problems", "reverification", "reverification_open")
+    keep = ("sport", "archetype", "label", "registered", "live_series", "rules_text_series", "status", "stages", "new_inputs", "existing_inputs_audited", "interactions", "nonlinearities", "datasets", "unresolved", "gaps", "rules_verification", "independent", "open_findings", "independent_findings", "n_problems", "reverification", "reverification_open", "post_reconcile_audit")
     return {**{k: gate[k] for k in ("schema_version", "status", "phase", "totals", "by_sport", "contract_universe", "approval", "criteria", "series_mapping_proposals") if k in gate}, "rows": [{k: r.get(k) for k in keep} for r in gate["rows"]]}
 
 

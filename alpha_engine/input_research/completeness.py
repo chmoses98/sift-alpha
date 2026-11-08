@@ -54,7 +54,7 @@ UNRESOLVED_TYPES = ("MECHANISM_UNCERTAIN", "CONTRACT_AMBIGUOUS", "DATA_UNAVAILAB
 ACCESS = ("free", "free_scrape", "free_limited", "paid", "own_capture", "unavailable_public", "derived")
 SEVERITY = ("BLOCKER", "MAJOR", "MINOR")
 NEW_INPUT_REQUIRED = ("label", "category", "mechanism", "rationale", "measurement", "pregame_knowable", "free_sources", "registry_ids", "raw_data", "why", "role")
-STATUSES = ("NOT_STARTED", "STRUCTURE_INCOMPLETE", "AUTHORED_NOT_INDEPENDENTLY_REVIEWED", "INDEPENDENT_REVIEW_OPEN_FINDINGS", "READY_FOR_USER_APPROVAL")
+STATUSES = ("NOT_STARTED", "STRUCTURE_INCOMPLETE", "AUTHORED_NOT_INDEPENDENTLY_REVIEWED", "INDEPENDENT_REVIEW_OPEN_FINDINGS", "REVERIFICATION_PENDING", "READY_FOR_USER_APPROVAL")
 
 
 def rd(p):
@@ -73,9 +73,29 @@ def arch_entry(c: dict, key: str) -> dict:
     return (c.get("unregistered_archetypes") or {})[key[6:]] if key.startswith("unreg:") else c["archetypes"][key]
 
 
+def load_catalog(sport: str) -> dict:
+    """Disk catalog plus an in-memory overlay of NEW (not yet merged) archetype entries carried by review records as `catalog_entry`. Read-only: agents validate against it
+    without writing the catalog; `integrate()` is the only writer."""
+    c = cat.load(sport)
+    ua = c.setdefault("unregistered_archetypes", {})
+    for k, rec in load_reviews(sport).items():
+        if k.startswith("unreg:") and k[6:] not in ua and isinstance(rec.get("catalog_entry"), dict):
+            ua[k[6:]] = rec["catalog_entry"]
+    return c
+
+
 def ledger_by_archetype() -> dict[tuple[str, str], list[dict]]:
+    """Series per (sport, archetype) after applying the verified reconciliation overlay (universe_review.apply -> series_assignment.json) on top of the preserved ledger."""
     out = collections.defaultdict(list)
+    assign = {}
+    if (IN / "market_universe/series_assignment.json").exists():
+        assign = {r["ticker"]: r for r in rd(IN / "market_universe/series_assignment.json")["rows"] if r.get("origin", "").startswith("reviewed")}
     for r in rd(LEDGER)["rows"]:
+        a = assign.get(r["ticker"])
+        if a:
+            if a["scope"] != "IN_SCOPE":
+                continue
+            r = {**r, "archetype": a["final"], "evidence": a["basis"] if a["basis"] in ("RULES_TEXT", "TITLE_ONLY") else r["evidence"], "status": "COVERED_UNREGISTERED" if a["final"].startswith("unreg:") else "COVERED_REGISTERED"}
         out[(r["sport"], r["archetype"])].append(r)
     return out
 
@@ -87,7 +107,7 @@ def build_evidence() -> dict[str, int]:
     (CD / "evidence").mkdir(parents=True, exist_ok=True)
     n = {}
     for s in SPORTS:
-        c = cat.load(s)
+        c = load_catalog(s); rvs = load_reviews(s)
         pack = {}
         for k in arch_keys(c):
             a = arch_entry(c, k)
@@ -95,7 +115,7 @@ def build_evidence() -> dict[str, int]:
             pack[k] = {
                 "sport": s, "key": k, "registered": not k.startswith("unreg:"), "label": a["label"], "blueprint": a["blueprint"], "families": a.get("families"), "contract_types": a.get("contract_types"),
                 "target": a["target"], "existing_mechanism": a["mechanism"],
-                "existing_inputs": [{"id": i["id"], "role": i.get("role"), "why": i["why"], "label": c["inputs"][i["id"]]["label"], "category": c["inputs"][i["id"]]["category"], "pregame_knowable": c["inputs"][i["id"]]["pregame_knowable"]} for i in a["inputs"]],
+                "existing_inputs": [{"id": i["id"], "role": i.get("role"), "why": i["why"], "label": c["inputs"][i["id"]]["label"], "category": c["inputs"][i["id"]]["category"], "pregame_knowable": c["inputs"][i["id"]]["pregame_knowable"]} for i in a["inputs"] if i["id"] not in (rvs.get(k, {}).get("new_inputs") or {})],
                 "existing_interactions": a["interactions"],
                 "live_series": [{"ticker": r["ticker"], "title": r["title"], "type": r.get("type"), "period": r.get("period"), "evidence": r["evidence"], "status": r["status"]} for r in rows],
                 "rules_samples": {r["ticker"]: rules[r["ticker"]] for r in rows if r["ticker"] in rules and rules[r["ticker"]].get("rules_primary")},
@@ -138,6 +158,27 @@ def validate_review(sport: str, key: str, rec: dict, c: dict, rules: dict, led_r
             e.append(f"missing {k}")
     if e:
         return e
+    ce = rec.get("catalog_entry")
+    if ce is not None:   # NEW archetypes carry the catalog entry that integrate() will insert (same schema as catalog.validate requires for unregistered archetypes)
+        for k in ("label", "blueprint", "contract_types", "target", "mechanism", "inputs", "interactions"):
+            if not ce.get(k):
+                e.append(f"catalog_entry missing {k}")
+        if ce.get("blueprint") not in c["blueprints"]:
+            e.append("catalog_entry.blueprint must be an existing blueprint of the sport")
+        if not _txt(ce.get("mechanism"), 120):
+            e.append("catalog_entry.mechanism must be a substantive paragraph (>=120 chars)")
+        if len(ce.get("inputs") or []) < 8:
+            e.append("catalog_entry needs >=8 inputs")
+        for it in ce.get("inputs") or []:
+            if it.get("id") not in known or not _txt(it.get("why"), 30) or it.get("role") not in ("primary", "secondary", "context"):
+                e.append(f"catalog_entry input {it.get('id')!r}: must be a known id with a >=30 char why and role primary|secondary|context")
+        if len(ce.get("interactions") or []) < 3:
+            e.append("catalog_entry needs >=3 interactions")
+        for x in ce.get("interactions") or []:
+            if len(x.get("inputs") or []) < 2 or any(i not in known for i in x.get("inputs") or []) or not _txt(x.get("hypothesis"), 30):
+                e.append("catalog_entry interaction needs >=2 known input ids and a >=30 char hypothesis")
+    elif key.startswith("unreg:") and key[6:] not in (cat.load(sport).get("unregistered_archetypes") or {}):
+        e.append("a new archetype review must carry a catalog_entry")
     # --- contract -------------------------------------------------------------------------------------------------------------------------------------------
     ct = rec["contract"]
     tick = {r["ticker"] for r in led_rows}
@@ -317,6 +358,37 @@ def similarity_flags(sport: str, reviews: dict[str, dict], threshold: float = 0.
     return dict(flags)
 
 
+def load_reverification(sport: str) -> dict:
+    out: dict[str, dict] = {}
+    for f in sorted((CD / "reverification").glob(f"{sport}*.json")) if (CD / "reverification").exists() else []:
+        out.update(rd(f))
+    return out
+
+
+REVERIF = ("CONFIRMED", "CORRECTED", "REOPENED")
+
+
+def reverification_state(ind: dict | None, rv: dict | None, rec: dict | None) -> tuple[str, list[str]]:
+    """Second independent verification: every previously CLOSED blocker/major/source-unverified finding needs a verdict. CONFIRMED = the closure is right; CORRECTED = it was wrong or
+    incomplete and the verifier fixed the record (correction text required); REOPENED = still wrong (counts as open). Missing verdict = not yet verified."""
+    need = [x for x in (ind or {}).get("findings") or [] if x.get("severity") in ("BLOCKER", "MAJOR", "SOURCE_UNVERIFIED") and finding_closed(x, rec)]
+    if not need:
+        return "NOT_NEEDED", []
+    fv = (rv or {}).get("findings") or {}
+    todo, bad = [], []
+    for x in need:
+        v = fv.get(x["id"])
+        if not v or v.get("verdict") not in REVERIF or len(str(v.get("evidence", ""))) < 60:
+            todo.append(x["id"]); continue
+        if v["verdict"] == "CORRECTED" and len(str(v.get("correction", ""))) < 40:
+            todo.append(x["id"])
+        elif v["verdict"] == "REOPENED":
+            bad.append(x["id"])
+    if not rv or not rv.get("verifier"):
+        return "NONE", [x["id"] for x in need]
+    return ("OPEN" if (todo or bad) else "CLEAR"), todo + bad
+
+
 def finding_closed(f: dict, rec: dict | None) -> bool:
     """A finding is closed only by (a) RESOLVED: <what changed, >=40 chars> or (b) DEFERRED_TO_UNRESOLVED:<id> where <id> is a declared entry in the record's own unresolved list."""
     r = str(f.get("resolution", "OPEN"))
@@ -353,11 +425,17 @@ def series_remap_proposals() -> dict:
     return out
 
 
-def merge_new_inputs(write: bool = True) -> dict[str, int]:
-    """Add reviewer-discovered inputs to the catalog (idempotent; never edits or removes an existing input) and attach each to the archetype that discovered it."""
-    added = {}
+def integrate(write: bool = True) -> dict:
+    """The only catalog writer. Idempotent; never edits or removes an existing input. For every reviewed archetype it merges into the authoritative catalog:
+    new inputs (attached to the archetype that found them), new archetype entries, the review's interactions (deduplicated by input set + form), non-linearities,
+    the staged mechanism, required-data definitions and the contract summary. Existing archetype/interaction text is preserved."""
+    stats = {}
     for s in SPORTS:
-        c = cat.load(s); reviews = load_reviews(s); n = 0
+        c = cat.load(s); reviews = load_reviews(s); ua = c.setdefault("unregistered_archetypes", {})
+        st = collections.Counter()
+        for k, rec in reviews.items():
+            if k.startswith("unreg:") and k[6:] not in ua and isinstance(rec.get("catalog_entry"), dict):
+                ua[k[6:]] = json.loads(json.dumps(rec["catalog_entry"])); st["new_archetypes"] += 1
         for k, rec in reviews.items():
             if k not in arch_keys(c):
                 continue
@@ -365,13 +443,26 @@ def merge_new_inputs(write: bool = True) -> dict[str, int]:
             for iid, ni in (rec.get("new_inputs") or {}).items():
                 if iid not in c["inputs"]:
                     c["inputs"][iid] = {x: ni[x] for x in ("label", "category", "mechanism", "rationale", "measurement", "pregame_knowable", "free_sources", "registry_ids")}
-                    n += 1
+                    c["inputs"][iid]["raw_data"] = ni["raw_data"]; st["new_inputs"] += 1
                 if iid not in {i["id"] for i in a["inputs"]}:
                     a["inputs"].append({"id": iid, "why": ni["why"], "role": ni["role"]})
-        added[s] = n
-        if write and n:
+            have = {(tuple(sorted(x["inputs"])), x.get("form")) for x in a["interactions"]}
+            for x in rec.get("interactions") or []:
+                key = (tuple(sorted(x["inputs"])), x["form"])
+                if key not in have:
+                    a["interactions"].append({"inputs": x["inputs"], "hypothesis": x["mechanism"], "form": x["form"], "how_to_test": x["how_to_test"], "source": "completeness-review"}); have.add(key); st["interactions"] += 1
+            a["nonlinearities"] = [{"input_id": x["input_id"], "shape": x["shape"], "why": x["why"]} for x in rec.get("nonlinearities") or []]
+            m = rec.get("mechanism") or {}
+            a["mechanism_review"] = {"summary": m.get("summary"), "stages": [{k2: v for k2, v in sg.items()} for sg in m.get("stages") or []], "category_coverage": m.get("category_coverage")}
+            a["required_data"] = rec.get("required_data"); a["contract_review"] = {k2: (rec.get("contract") or {}).get(k2) for k2 in ("settlement_definition", "rules_verification", "settlement_data_source", "variants_and_edge_cases")}
+            st["archetypes_enriched"] += 1
+        stats[s] = dict(st)
+        if write:
             (cat.CATALOG_DIR / f"{s}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False) + "\n")
-    return added
+    return stats
+
+
+merge_new_inputs = integrate   # backwards-compatible name
 
 
 def compute_gate() -> dict:
@@ -380,7 +471,7 @@ def compute_gate() -> dict:
     rows, per_sport, contract_universe = [], {}, {}
     all_rows = rd(LEDGER)["rows"]
     for s in SPORTS:
-        c = cat.load(s); reviews = load_reviews(s); ind = load_independent(s)
+        c = load_catalog(s); reviews = load_reviews(s); ind = load_independent(s); rvf = load_reverification(s)
         flags = similarity_flags(s, reviews)
         cnt = collections.Counter()
         for k in arch_keys(c):
@@ -395,13 +486,14 @@ def compute_gate() -> dict:
                 if sim:
                     errs = errs + [f"possible boilerplate: {x}" for x in sim[:4]]
                 ist, openf = independent_state(ind.get(k), rec)
+                rvs, rvopen = reverification_state(ind.get(k), rvf.get(k), rec)
                 m = rec.get("mechanism") or {}
                 row.update(problems=errs[:25], n_problems=len(errs), stages=len(m.get("stages") or []), new_inputs=len(rec.get("new_inputs") or {}), existing_inputs_audited=len(rec.get("input_audit") or {}),
                            interactions=len(rec.get("interactions") or []), nonlinearities=len(rec.get("nonlinearities") or []), datasets=len(rec.get("required_data") or []),
                            unresolved=len(rec.get("unresolved") or []), gaps=sum(1 for v in (m.get("category_coverage") or {}).values() if v.get("status") == "GAP"),
                            rules_verification=(rec.get("contract") or {}).get("rules_verification"), independent=ist, open_findings=len(openf),
-                           independent_findings=len((ind.get(k) or {}).get("findings") or []), independent_verdict=(ind.get(k) or {}).get("verdict"))
-                row["status"] = ("STRUCTURE_INCOMPLETE" if errs else "AUTHORED_NOT_INDEPENDENTLY_REVIEWED" if ist == "NONE" else "INDEPENDENT_REVIEW_OPEN_FINDINGS" if ist == "OPEN_FINDINGS" else "READY_FOR_USER_APPROVAL")
+                           independent_findings=len((ind.get(k) or {}).get("findings") or []), independent_verdict=(ind.get(k) or {}).get("verdict"), reverification=rvs, reverification_open=len(rvopen))
+                row["status"] = ("STRUCTURE_INCOMPLETE" if errs else "AUTHORED_NOT_INDEPENDENTLY_REVIEWED" if ist == "NONE" else "INDEPENDENT_REVIEW_OPEN_FINDINGS" if ist == "OPEN_FINDINGS" else "REVERIFICATION_PENDING" if rvs not in ("CLEAR", "NOT_NEEDED") else "READY_FOR_USER_APPROVAL")
             cnt[row["status"]] += 1; rows.append(row)
         per_sport[s] = {"archetypes": len(arch_keys(c)), **{k: cnt.get(k, 0) for k in STATUSES}, "inputs": len(c["inputs"])}
         sr = [r for r in all_rows if r["sport"] == s]
@@ -416,13 +508,14 @@ def compute_gate() -> dict:
                          "no boilerplate: stage and interaction text not near-duplicated across archetypes (5-gram Jaccard < 0.35)",
                          "at least one explicit unresolved gap per archetype (no archetype may be declared complete)",
                          "independent second review recorded with no open BLOCKER/MAJOR finding",
+                         "second independent verification (different model) of every closed blocker/major finding: each CONFIRMED or CORRECTED, none REOPENED",
                          "READY_FOR_USER_APPROVAL is the ceiling: the human decision lives in approval.json and is never written by code"]}
     return gate
 
 
 def summarize(gate: dict) -> dict:
     """Small dashboard summary: no per-archetype problem text, just counts."""
-    keep = ("sport", "archetype", "label", "registered", "live_series", "rules_text_series", "status", "stages", "new_inputs", "existing_inputs_audited", "interactions", "nonlinearities", "datasets", "unresolved", "gaps", "rules_verification", "independent", "open_findings", "independent_findings", "n_problems")
+    keep = ("sport", "archetype", "label", "registered", "live_series", "rules_text_series", "status", "stages", "new_inputs", "existing_inputs_audited", "interactions", "nonlinearities", "datasets", "unresolved", "gaps", "rules_verification", "independent", "open_findings", "independent_findings", "n_problems", "reverification", "reverification_open")
     return {**{k: gate[k] for k in ("schema_version", "status", "phase", "totals", "by_sport", "contract_universe", "approval", "criteria", "series_mapping_proposals") if k in gate}, "rows": [{k: r.get(k) for k in keep} for r in gate["rows"]]}
 
 
@@ -446,3 +539,24 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def build_new_packs() -> dict:
+    """Evidence packs for NEW archetypes declared by the universe reconciliation: their series (after the overlay), the sampled rules, and an index of every catalog input of the sport to choose from."""
+    from . import universe_review as UR
+    rules = rd(RULES); led = {r["ticker"]: r for r in rd(LEDGER)["rows"]}
+    (CD / "evidence").mkdir(parents=True, exist_ok=True); n = {}
+    for s in SPORTS:
+        u = UR.load_universe(s); c = cat.load(s)
+        pack = {}
+        for name, a in u["new_archetypes"].items():
+            mem = [t for t, r in u["series"].items() if r.get("final") == "unreg:" + name]
+            pack["unreg:" + name] = {"sport": s, "key": "unreg:" + name, "registered": False, "label": a["label"], "blueprint": a["blueprint"], "contract_types": a["contract_types"], "target": a["target"], "why_distinct": a["why_distinct"],
+                                     "blueprint_mechanism": c["blueprints"][a["blueprint"]]["mechanism"], "blueprint_inputs": c["blueprints"][a["blueprint"]]["inputs"], "existing_inputs": [],
+                                     "live_series": [{"ticker": t, "title": led.get(t, {}).get("title"), "evidence": u["series"][t]["basis"], "reviewer_reason": u["series"][t]["reason"], "confidence": u["series"][t]["confidence"]} for t in mem],
+                                     "rules_samples": {t: rules[t] for t in mem if t in rules and rules[t].get("rules_primary")}}
+        if pack:
+            (CD / "evidence" / f"{s}_new.json").write_text(json.dumps(pack, indent=1, sort_keys=True))
+        (CD / "evidence" / f"{s}_input_index.json").write_text(json.dumps({i: {"label": r["label"], "category": r["category"], "pregame_knowable": r["pregame_knowable"], "market_derived_hint": bool(r.get("registry_ids") and any(x.startswith("m.") for x in r["registry_ids"]))} for i, r in c["inputs"].items()}, indent=0, sort_keys=True))
+        n[s] = len(pack)
+    return n

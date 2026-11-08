@@ -77,7 +77,7 @@ def compute() -> dict:
 
 
 SHORT = {"NOT_STARTED": "not started", "STRUCTURE_INCOMPLETE": "structure incomplete", "AUTHORED_NOT_INDEPENDENTLY_REVIEWED": "authored, awaiting independent review",
-         "INDEPENDENT_REVIEW_OPEN_FINDINGS": "independent review: open findings", "READY_FOR_USER_APPROVAL": "ready for your approval"}
+         "INDEPENDENT_REVIEW_OPEN_FINDINGS": "independent review: open findings", "REVERIFICATION_PENDING": "awaiting second verification", "READY_FOR_USER_APPROVAL": "ready for your approval"}
 
 
 def _completeness_md(p: dict) -> list[str]:
@@ -92,8 +92,8 @@ def _completeness_md(p: dict) -> list[str]:
           f"{t['archetypes']} market archetypes (registered + unregistered contract types) across the eight sports. **{t['READY_FOR_USER_APPROVAL']} are ready for your approval; none is declared complete.** "
           f"Approval recorded: **{'YES' if g['approval'].get('approved') else 'NO'}**. A populated list or a passing automated check is necessary, never sufficient; the ceiling the code can award is *ready for your approval*.", "",
           "Acceptance criteria (all must hold per archetype): " + "; ".join(g["criteria"]) + ".", "",
-          "| Sport | Archetypes | Not started | Structure incomplete | Authored, awaiting independent review | Independent review: open findings | Ready for your approval | Inputs in catalog |", "|---|---|---|---|---|---|---|---|"]
-    L += [f"| {s_} | {v['archetypes']} | {v['NOT_STARTED']} | {v['STRUCTURE_INCOMPLETE']} | {v['AUTHORED_NOT_INDEPENDENTLY_REVIEWED']} | {v['INDEPENDENT_REVIEW_OPEN_FINDINGS']} | {v['READY_FOR_USER_APPROVAL']} | {v['inputs']} |" for s_, v in g["by_sport"].items()]
+          "| Sport | Archetypes | Not started | Structure incomplete | Authored, awaiting independent review | Independent review: open findings | Awaiting second verification | Ready for your approval | Inputs in catalog |", "|---|---|---|---|---|---|---|---|---|"]
+    L += [f"| {s_} | {v['archetypes']} | {v['NOT_STARTED']} | {v['STRUCTURE_INCOMPLETE']} | {v['AUTHORED_NOT_INDEPENDENTLY_REVIEWED']} | {v['INDEPENDENT_REVIEW_OPEN_FINDINGS']} | {v['REVERIFICATION_PENDING']} | {v['READY_FOR_USER_APPROVAL']} | {v['inputs']} |" for s_, v in g["by_sport"].items()]
     L += ["", "### Per-archetype status", "Stages = mechanism stages; New = inputs discovered by this review; Audit = existing inputs individually judged; Ix/NL = interactions / non-linearities; Data = required datasets; Open = unresolved gaps declared; Rules = contract text verification; Ind = independent review.", "",
           "| Sport | Archetype | Status | Live series (rules read) | Stages | New | Audit | Ix/NL | Data | Open | Rules | Ind (open findings) |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in g["rows"]:

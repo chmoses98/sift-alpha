@@ -6,9 +6,9 @@ import phase from "../research/input_research/phase_control.json";
 // "Ready for your approval" is the ceiling the code can award. It never says complete: only approval.json (a human decision) can.
 const REVIEWS = import.meta.glob("../research/input_research/completeness/reviews/*.json");
 const INDEP = import.meta.glob("../research/input_research/completeness/independent/*.json");
-const ORDER = ["READY_FOR_USER_APPROVAL", "INDEPENDENT_REVIEW_OPEN_FINDINGS", "AUTHORED_NOT_INDEPENDENTLY_REVIEWED", "STRUCTURE_INCOMPLETE", "NOT_STARTED"];
-const LABEL = {READY_FOR_USER_APPROVAL: "ready for your approval", INDEPENDENT_REVIEW_OPEN_FINDINGS: "independent review: open findings", AUTHORED_NOT_INDEPENDENTLY_REVIEWED: "authored · awaiting independent review", STRUCTURE_INCOMPLETE: "structure incomplete", NOT_STARTED: "not started"};
-const KIND = {READY_FOR_USER_APPROVAL: "ok", INDEPENDENT_REVIEW_OPEN_FINDINGS: "chipwarn", AUTHORED_NOT_INDEPENDENTLY_REVIEWED: "chipwarn", STRUCTURE_INCOMPLETE: "miss", NOT_STARTED: "miss"};
+const ORDER = ["READY_FOR_USER_APPROVAL", "INDEPENDENT_REVIEW_OPEN_FINDINGS", "REVERIFICATION_PENDING", "AUTHORED_NOT_INDEPENDENTLY_REVIEWED", "STRUCTURE_INCOMPLETE", "NOT_STARTED"];
+const LABEL = {READY_FOR_USER_APPROVAL: "ready for your approval", INDEPENDENT_REVIEW_OPEN_FINDINGS: "independent review: open findings", REVERIFICATION_PENDING: "awaiting second verification", AUTHORED_NOT_INDEPENDENTLY_REVIEWED: "authored · awaiting independent review", STRUCTURE_INCOMPLETE: "structure incomplete", NOT_STARTED: "not started"};
+const KIND = {READY_FOR_USER_APPROVAL: "ok", INDEPENDENT_REVIEW_OPEN_FINDINGS: "chipwarn", REVERIFICATION_PENDING: "chipwarn", AUTHORED_NOT_INDEPENDENTLY_REVIEWED: "chipwarn", STRUCTURE_INCOMPLETE: "miss", NOT_STARTED: "miss"};
 const nice = s => String(s ?? "").toLowerCase().replaceAll("_", " ");
 const Chip = ({s}) => <span className={"ir-chip ir-" + KIND[s]}>{LABEL[s]}</span>;
 

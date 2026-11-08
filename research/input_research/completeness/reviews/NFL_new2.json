@@ -762,8 +762,8 @@
     },
     {
      "id": "nfl.ot_total_increment",
-     "why": "The highest-score contract includes overtime, and tied high-scoring games add OT points to the total.",
-     "role": "secondary"
+     "why": "Benchmark only: P(OT) is binned by closing spread and total; the market-free overtime input is nfl.ot_model.",
+     "role": "context"
     },
     {
      "id": "nfl.weather_total_response",
@@ -777,8 +777,8 @@
     },
     {
      "id": "nfl.carry_count_forecast",
-     "why": "A 225-yard game requires heavy carry volume, usually 25+ attempts, so the carry distribution is the volume factor.",
-     "role": "secondary"
+     "why": "Benchmark only: team rush attempts are conditioned on the closing spread; carry volume uses nfl.carries with a market-free margin.",
+     "role": "context"
     },
     {
      "id": "nfl.rush_yardage_tail",
@@ -834,6 +834,16 @@
      "id": "m.lifecycle",
      "why": "Weekly market close time relative to the last window (timing only, no price) sets how much of the week is already realised.",
      "role": "context"
+    },
+    {
+     "id": "nfl.ot_model",
+     "why": "P(tie after regulation) from the market-free margin distribution and OT points under the current rule add the overtime mass that KXNFLHIGHSCORE explicitly counts.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.carries",
+     "why": "Lead-back carry share and lead/trail-conditioned team rush attempts give the 28+ carry upper tail a 225-yard game needs.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -854,7 +864,7 @@
     },
     {
      "inputs": [
-      "nfl.carry_count_forecast",
+      "nfl.carries",
       "nfl.rush_yardage_tail",
       "nfl.late_lead_clock_carry_yield"
      ],
@@ -916,7 +926,7 @@
     "Weekly argmax contracts pay $1/N rounded down to the nearest cent when tied, so No receives slightly more than (N-1)/N; integer scores and key numbers make ties non-trivial.",
     "A team on bye in the named week cannot score, so its weekly market is effectively NO; Week 18 has every team playing while mid-season weeks have byes and fewer games.",
     "KXNFLGAMESPECIALS includes quarter-specific markets that exclude overtime; only the 225+ rushing-yard full-game variant was sampled, so other stats and rungs in the series are unseen.",
-    "Rungs differ in rarity: 109.5 total is beyond the post-merger record (about 106, CIN-CLE 2004), 51.5 margin is just below the post-merger maximum of 59 (LA Rams 59-0 in 1976, NE 59-0 TEN in 2009) so it has happened about twice in 50 seasons, and 225+ rushing yards is a recurring event (record 296) rather than a record tail; base rates must be set per rung.",
+    "Rungs differ in rarity: 109.5 total is beyond the post-merger record (106, CIN 58-48 CLE 2004); a margin over 51.5 has occurred at least five times post-merger (LA Rams 59-0 ATL 1976, CIN 61-7 HOU 1989, NE 59-0 TEN 2009, NO 62-7 IND 2011, SEA 58-0 ARI 2012), roughly once a decade; 225+ rushing yards is a recurring event (record 296) rather than a record tail; base rates must be set per rung.",
     "Cancelled or no-contest games (for example the 2022 BUF-CIN game) and postponed games are not addressed in the sampled text for season or weekly markets; treatment of their scores is unknown (see u5)."
    ],
    "settlement_data_source": "Not named in the sampled rules; final scores and official player statistics as published by the league are the presumed source.",
@@ -964,7 +974,7 @@
       "nfl.team_points_for_against_rates",
       "nfl.paired_score_covariance_own",
       "nfl.weather_total_response",
-      "nfl.ot_total_increment",
+      "nfl.ot_model",
       "nfl.kickoff_rule_regime",
       "nfl.team_score_pmf_own_mean"
      ]
@@ -999,7 +1009,7 @@
      ],
      "input_ids": [
       "nfl.player_single_game_yardage_extreme_rate",
-      "nfl.carry_count_forecast",
+      "nfl.carries",
       "nfl.rush_yardage_tail",
       "nfl.late_lead_clock_carry_yield",
       "nfl.run_defense"
@@ -1063,7 +1073,7 @@
     "role_personnel": {
      "status": "COVERED",
      "input_ids": [
-      "nfl.carry_count_forecast",
+      "nfl.carries",
       "nfl.qb_scenario_rating_drop"
      ],
      "note": "Lead-back workload and quarterback identity."
@@ -1096,7 +1106,7 @@
      "input_ids": [
       "nfl.blowout_continuation_policy",
       "nfl.qb_blowout_pull_threshold",
-      "nfl.ot_total_increment"
+      "nfl.ot_model"
      ],
      "note": "Runaway scripts, starter pulls and overtime."
     },
@@ -1104,7 +1114,7 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.weekly_slate_composition",
-      "nfl.carry_count_forecast",
+      "nfl.carries",
       "nfl.paired_score_covariance_own"
      ],
      "note": "Number of games or teams in the slate and carry volume."
@@ -1183,7 +1193,7 @@
     "category": "distribution",
     "mechanism": "Per player-game probability that rushing yards reach a high rung (200, 225, 250) from the compound of carry count and heavy-tailed per-carry yards, conditioned on script and opponent.",
     "rationale": "Mean-based projections put no back near 225 yards; the event, which recurs across seasons (record 296 yards), comes from a lead back getting 30 carries in a lopsided win against a poor run defence and breaking two long runs. The compound distribution, not the mean, decides, and quarterbacks with designed runs are a second, smaller contributor.",
-    "measurement": "For each rusher-game simulate carries ~ negative binomial (mean from nfl.carry_count_forecast conditioned on expected leading script) and per-carry yards from the rusher's discrete tail (nfl.rush_yardage_tail) adjusted by opponent explosive-allowed rate; P(sum >= 225). Calibrate on 2000-2025 200+ yard games (frequency per season); apply a starter-pull cap at margins above 28 in the fourth quarter. As-of start of week.",
+    "measurement": "For each rusher-game simulate carries ~ negative binomial (mean from nfl.carries share times team rush attempts conditioned on the market-free expected margin from nfl.own_team_rating_market_free, no spread) and per-carry yards from the rusher's discrete tail (nfl.rush_yardage_tail) adjusted by opponent explosive-allowed rate; P(sum >= 225). Calibrate on 2000-2025 200+ yard games (frequency per season); apply a starter-pull cap at margins above 28 in the fourth quarter. As-of start of week.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse pbp (rushing plays)",
@@ -1255,7 +1265,7 @@
     "label": "Era-adjusted historical distribution of season maxima (margin, total, rushing yards)",
     "category": "distribution",
     "mechanism": "Per-season maxima of game margin, game total and single-game rushing yards over past regular seasons, adjusted for the scoring environment and number of games.",
-    "rationale": "Rungs differ in rarity: the 109.5 total lies beyond the post-merger record (about 106), the 51.5 margin sits just below the post-merger maximum of 59 (reached twice, 1976 and 2009), and 225+ rushing yards recurs across seasons. Base rates are therefore set separately per rung: seasons with any margin above 45, any total above 90 and any 200-yard rusher calibrate per-game tail fits and guard against overconfident extrapolation.",
+    "rationale": "Rungs differ in rarity: the 109.5 total lies beyond the post-merger record (about 106), the 51.5 margin has been exceeded at least five times since the merger (59, 54, 59, 55 and 58 points in 1976, 1989, 2009, 2011 and 2012), roughly once a decade, and 225+ rushing yards recurs across seasons. Base rates are therefore set separately per rung: seasons with any margin above 45, any total above 90 and any 200-yard rusher calibrate per-game tail fits and guard against overconfident extrapolation.",
     "measurement": "For 1978-2025 seasons compute max margin, max total and max single-game rushing yards; scale for games per season (16 to 17) and league scoring per game relative to the season mean; fit GEV per statistic with a scoring-environment covariate; report P(season max > rung) for the 2026 environment with bootstrap intervals. Report per-rung empirical frequency (seasons with exceedance / seasons) beside the GEV estimate; for the 225 rung use count of 225+ games per season, not a record-break model.",
     "pregame_knowable": "yes",
     "free_sources": [
@@ -1324,8 +1334,8 @@
     "reason": "The joint upper tail of both teams' scores, not each marginal, determines totals above 100; the covariance sign at high totals is the subtle part."
    },
    "nfl.ot_total_increment": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "HIGHSCORE explicitly includes overtime and high-scoring ties go to OT; the increment is small but sits exactly in the far tail."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog measurement estimates P(OT) by closing spread bucket and total bucket, a market-derived feature; overtime mass for HIGHSCORE is taken from nfl.ot_model (tie mass from the market-free margin distribution, OT points by rule era) instead."
    },
    "nfl.weather_total_response": {
     "verdict": "KEEP_SECONDARY",
@@ -1336,8 +1346,8 @@
     "reason": "Pick-sixes and return touchdowns are disproportionately present in runaway margins and add points without consuming offensive drives."
    },
    "nfl.carry_count_forecast": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "The volume factor of the rushing extreme; its script-conditioned upper tail (30+ carries), not the mean, is what matters."
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Catalog measurement conditions team rush attempts on the closing spread bucket, a market-derived feature; carry volume for the 225-yard rung comes from nfl.carries (share times lead-conditioned attempts) with the margin from nfl.own_team_rating_market_free."
    },
    "nfl.rush_yardage_tail": {
     "verdict": "KEEP_SECONDARY",
@@ -1378,6 +1388,14 @@
    "m.lifecycle": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Used only for market close time relative to kickoff windows of the week, which is timing metadata; no price or line is used as an input."
+   },
+   "nfl.ot_model": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Market-free source of the overtime increment: tie mass from the model margin distribution and OT scoring by rule era; small but sits in the far tail of the 109.5 total rung."
+   },
+   "nfl.carries": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Market-free carry-share and lead-conditioned attempts input replacing the spread-conditioned carry forecast; the upper tail of carries in winning scripts, not the mean, matters for 225 yards."
    }
   },
   "interactions": [
@@ -1403,7 +1421,7 @@
    },
    {
     "inputs": [
-     "nfl.carry_count_forecast",
+     "nfl.carries",
      "nfl.rush_yardage_tail",
      "nfl.late_lead_clock_carry_yield"
     ],
@@ -1414,7 +1432,7 @@
    {
     "inputs": [
      "nfl.paired_score_covariance_own",
-     "nfl.ot_total_increment",
+     "nfl.ot_model",
      "nfl.total_distribution_tail"
     ],
     "form": "joint-distribution",
@@ -1502,7 +1520,7 @@
      "nfl.deep_tail_margin_model",
      "nfl.total_distribution_tail",
      "nfl.slate_total_extremes",
-     "nfl.ot_total_increment",
+     "nfl.ot_model",
      "nfl.week_running_state_by_window",
      "nfl.team_score_pmf_own_mean"
     ]
@@ -1535,7 +1553,7 @@
      "nfl.blowout_continuation_policy",
      "nfl.player_single_game_yardage_extreme_rate",
      "nfl.rush_yardage_tail",
-     "nfl.carry_count_forecast",
+     "nfl.carries",
      "nfl.late_lead_clock_carry_yield",
      "nfl.non_offensive_scoring_rate",
      "nfl.qb_blowout_pull_threshold",
@@ -1648,7 +1666,7 @@
    {
     "id": "u3",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "The 109.5 total rung lies beyond all post-merger observations and the 51.5 margin rung has been reached about twice in 50 seasons, so the tail shape for margin and total maxima, and its shift under the current kickoff and scoring regime, is weakly identified; the 225-yard rushing rung is recurring and better identified.",
+    "description": "The 109.5 total rung lies beyond all post-merger observations and the 51.5 margin rung has been exceeded only about five times in 50 seasons, so the tail shape for margin and total maxima, and its shift under the current kickoff and scoring regime, is weakly identified; the 225-yard rushing rung is recurring and better identified.",
     "what_would_resolve": "Bootstrap tail-shape intervals and out-of-sample checks across eras; sensitivity of P(YES) to the shape.",
     "category": "distribution_variance"
    },

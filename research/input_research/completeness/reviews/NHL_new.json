@@ -1018,7 +1018,7 @@
     {
      "id": "nhl.rating_posterior_uncertainty",
      "role": "primary",
-     "why": "Uncertainty in the pair's strength and scoring rate is shared by every game, adding variance to totals that grows with the square of games played."
+     "why": "Uncertainty in the pair's strength differential is shared by every game; averaging over it makes series more lopsided (shorter) and moves the winner-by-length cells."
     },
     {
      "id": "nhl.goalie_start_forecast",
@@ -1044,6 +1044,11 @@
      "id": "nhl.series_state_win_prob_shift",
      "role": "secondary",
      "why": "Win probability of a team facing elimination or trailing 0-3 differs from its pre-series rate, which drives comeback and 7-game probabilities."
+    },
+    {
+     "id": "nhl.series_pair_scoring_rate_uncertainty",
+     "role": "primary",
+     "why": "An error in the pair's combined scoring level is shared by every game, so series-total variance grows with games squared; the strength-differential posterior does not carry it."
     }
    ],
    "interactions": [
@@ -1052,7 +1057,7 @@
       "nhl.ratings",
       "nhl.rating_posterior_uncertainty"
      ],
-     "hypothesis": "Uncertainty about the gap is shared by all games: averaging the length pmf over the rating posterior lowers expected length near parity and adds games-squared variance to series total goals."
+     "hypothesis": "Uncertainty about the strength gap is shared by all games: averaging the length pmf over the rating posterior lowers expected length and the game-7 share near parity."
     },
     {
      "inputs": [
@@ -1081,6 +1086,13 @@
       "nhl.series_game_dependence"
      ],
      "hypothesis": "A 0-3 comeback needs four straight wins by the trailing team; its probability depends on the trailing team's state-shifted win rate compounded by the sign of game-to-game dependence."
+    },
+    {
+     "inputs": [
+      "nhl.series_pair_scoring_rate_uncertainty",
+      "nhl.ratings"
+     ],
+     "hypothesis": "Shared scoring-level uncertainty adds variance proportional to games squared, so it widens total-goal tails most for evenly rated pairs that play long series and least for mismatches that end in four or five."
     }
    ]
   },
@@ -1140,7 +1152,7 @@
     {
      "id": "s1",
      "name": "Per-game strength and goal means for the pair",
-     "description": "Each game's expected goals for and against come from the two teams' attack and suppression quality, the confirmed starter, special teams, rest days and the playoff scoring environment. Strength is a posterior, not a point: its uncertainty is common to all games of the series. Injuries and goalie switches during the series change the inputs for remaining games only.",
+     "description": "Each game's expected goals for and against come from the two teams' attack and suppression quality, the confirmed starter, special teams, rest days and the playoff scoring environment. Strength is a posterior, not a point: its uncertainty is common to all games of the series, both for the strength differential (which moves length) and for the combined scoring level (which widens the goal sum). Injuries and goalie switches during the series change the inputs for remaining games only.",
      "distribution": "Poisson-like goal counts per team with overdispersion and a positive home-away correlation.",
      "categories": [
       "talent_strength",
@@ -1160,7 +1172,8 @@
       "nhl.pace",
       "nhl.special_teams",
       "nhl.league_scoring_environment",
-      "nhl.total_goal_dispersion"
+      "nhl.total_goal_dispersion",
+      "nhl.series_pair_scoring_rate_uncertainty"
      ]
     },
     {
@@ -1333,9 +1346,10 @@
       "nhl.rating_posterior_uncertainty",
       "nhl.series_ot_count_dependence",
       "nhl.series_game_dependence",
-      "nhl.series_goalie_volatility"
+      "nhl.series_goalie_volatility",
+      "nhl.series_pair_scoring_rate_uncertainty"
      ],
-     "note": "Per-game overdispersion, shared strength uncertainty (scales with games squared), OT-count overdispersion and game dependence."
+     "note": "Per-game overdispersion, shared strength-differential uncertainty (length), shared scoring-level uncertainty (total-goal variance scaling with games squared), OT-count overdispersion and game dependence."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
@@ -1464,6 +1478,25 @@
     ],
     "why": "Sets late-game cells of the length pmf and the per-series probability of a 0-3 comeback.",
     "role": "secondary"
+   },
+   "nhl.series_pair_scoring_rate_uncertainty": {
+    "label": "Shared posterior uncertainty in the pair's combined goal rate (attack plus defence sum) for one series",
+    "category": "distribution",
+    "mechanism": "Posterior SD of the matchup's expected total goals per game (both teams' attack and suppression components summed), a level error shared by every game of the series.",
+    "rationale": "rating_posterior_uncertainty describes uncertainty in the strength differential, which moves who wins and the series length but not the combined scoring level. An error in the pair's total goal rate is common to all games, so the variance it adds to series total goals scales with the square of games played, unlike per-game overdispersion, which scales linearly. Ignoring it understates both tails of KXNHLSERIESTOTALGOAL strikes.",
+    "measurement": "Fit a bivariate Poisson/negative-binomial team model with separate attack and defence effects on score-adjusted xG and goals (3 seasons, exponential decay half-life 60 games, preseason prior), take the posterior covariance of (attack_A+defence_B)+(attack_B+defence_A) per game, add the playoff_context and league_scoring_environment multiplier SDs, and express as SD of expected goals per game as of the pre-series timestamp; draw one value per simulated series. Validate by comparing the PIT of observed series totals 2005-06 onward with and without the shared term.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Own computation from MoneyPuck free CSVs and NHL API game results",
+     "Natural Stat Trick team splits (free scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "team-game goals and xG for and against by strength state",
+     "playoff game results with series id"
+    ],
+    "why": "Sets the width of the series total-goals distribution beyond per-game overdispersion, which decides tail strikes such as 50+ goals.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -1525,7 +1558,7 @@
    },
    "nhl.reg_tie_model": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Regulation-tie probability is the rate of OT games, hence of the +1 sudden-death goal in totals and the per-game rate for the OT-count contract."
+    "reason": "Regulation-tie probability is the rate of OT games, hence of the +1 sudden-death goal in totals and the per-game rate for the OT-count contract. Must be computed from the own bivariate goal model (market_dependency: hybrid_rebuild); calibration buckets use own-model expected total and margin, never posted totals, spreads or regulation-winner prices."
    },
    "nhl.series_ot_count_dependence": {
     "verdict": "KEEP_PRIMARY",
@@ -1533,7 +1566,7 @@
    },
    "nhl.rating_posterior_uncertainty": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Shared uncertainty in the pair's strength adds games-squared variance to total goals and shortens expected length when integrated over."
+    "reason": "Shared uncertainty in the pair's strength differential shortens expected length and shifts winner-by-length cells when integrated over; its catalog definition (xG/goal differential state-space) does not carry total-scoring-level uncertainty, which is the separate new input series_pair_scoring_rate_uncertainty."
    },
    "nhl.goalie_start_forecast": {
     "verdict": "KEEP_SECONDARY",
@@ -1555,8 +1588,8 @@
      "nhl.rating_posterior_uncertainty"
     ],
     "form": "concave",
-    "mechanism": "Expected length and P(game 7) are concave in per-game win probability near parity, so integrating over the rating posterior lowers both; the same shared uncertainty raises the variance of series goals in proportion to games squared, widening both total-goal tails.",
-    "how_to_test": "Compare predicted game-7 share, sweep share and series-goal variance from point ratings vs posterior draws on 2005-06 onward series, by log-loss and PIT histograms."
+    "mechanism": "Expected length and P(game 7) are concave in per-game win probability near parity, so integrating over the strength-differential posterior lowers both and moves mass to sweeps and five-game series.",
+    "how_to_test": "Compare predicted game-7 and sweep shares from point ratings vs posterior draws on 2005-06 onward series, by log-loss bucketed by pre-series rating gap."
    },
    {
     "inputs": [
@@ -1602,6 +1635,15 @@
     "form": "multiplicative",
     "mechanism": "A 0-3 comeback is four consecutive wins by the trailing team: the per-game state-shifted win rate is raised to the fourth power, and any bounce-back dependence multiplies each step, so small shifts compound strongly.",
     "how_to_test": "Predict the count of 0-3 comebacks and of 0-3 to 3-3 recoveries over 1987-2026 with and without state shift and dependence terms; compare with observed counts."
+   },
+   {
+    "inputs": [
+     "nhl.series_pair_scoring_rate_uncertainty",
+     "nhl.ratings"
+    ],
+    "form": "multiplicative",
+    "mechanism": "The shared scoring-level error enters every game, so its contribution to the variance of series goals is its variance times games squared; length is longest for evenly rated pairs, so the same uncertainty widens total-goal tails far more for close matchups than for mismatches.",
+    "how_to_test": "Bucket 2005-06 onward series by pre-series rating gap and compare the variance of series total goals against a per-game-only model and a model adding the shared term; check PIT of totals by bucket."
    }
   ],
   "nonlinearities": [
@@ -1703,7 +1745,8 @@
      "nhl.league_scoring_environment",
      "nhl.total_goal_dispersion",
      "nhl.rating_posterior_uncertainty",
-     "nhl.rest_travel"
+     "nhl.rest_travel",
+     "nhl.series_pair_scoring_rate_uncertainty"
     ]
    },
    {

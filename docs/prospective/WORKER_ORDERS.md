@@ -7,6 +7,10 @@ Version-controlled so a worker session never depends on a long, drifting prompt.
 2. Reply with the single line it prints (`CAPTURE <status> run=… ticks=… series_failures=… publish_errors=… heartbeat=pushed|NOT_PUBLISHED …`). Nothing else.
 3. If it prints nothing or fails, reply `CAPTURE failed reason=no_output`. Do not debug, edit code, or retry more than once.
 
+## Refresh firing (daily, single writer)
+1. Run in the BACKGROUND with `timeout=3500000`: `bash scripts/prospective/bootstrap.sh refresh`. Wait for it to exit.
+2. Reply with only its single `REFRESH …` line. Do NOT retry (the lease makes a re-run safe but the run id already identifies the firing).
+
 ## Hard limits
 - Never modify files outside what the script writes; never touch `research/`, model configs, ledgers, `LEASE.json` or `RELEASE.json`.
 - Never create/modify triggers, sessions, environments or credentials. No trading, no orders, no paid services.
@@ -15,8 +19,8 @@ Version-controlled so a worker session never depends on a long, drifting prompt.
 ## Release control plane
 `RELEASE.json` on `prospective-data` holds `{"code_commit": "<sha>"}`.  Only the owner/reviewer publishes it.  `bootstrap.sh` refuses a pin that is not an ancestor of `origin/feat/sift-lab` or `origin/main`, so rollback = publish the previous sha (e.g. `a4d87a7`).
 
-## Refresh (daily, single writer)
-`bash scripts/prospective/bootstrap.sh refresh` — takes the data-branch lease, ingests shards exactly once into the hash-chained ledgers, verifies pins/frozen model, publishes with commit trailers (`writer-run`, `role`, `code`).
+## Refresh details
+Takes the data-branch lease, ingests shards exactly once into the hash-chained ledgers, verifies pins/frozen model, publishes with commit trailers (`writer-run`, `role`, `code`).
 
 ## Scheduling
 `alpha_engine/lab/schedule_plan.py` derives wake-ups from the real schedule (≈3.7 firings/day vs 24 hourly); `uncovered()` proves no decision window is left without a firing.  Changing the schedule or adding a second offset worker needs owner approval.

@@ -4408,7 +4408,7 @@
     {
      "id": "s6",
      "name": "Count distribution, recording and contract",
-     "description": "The counts are non-negative integers with overdispersion and a mass near zero for low-minute players. The recorded value depends on the official statistician for assists and on team versus individual credit for rebounds. Ladder rungs for a combination stat integrate two correlated counts. Contract details (DNP handling, overtime) are undefined because no series exists.",
+     "description": "The counts are non-negative integers with overdispersion and a mass near zero for low-minute players. The recorded value depends on the official statistician for assists and on team versus individual credit for rebounds; cbb.venue_scorekeeper_stat_bias carries the arena-level recording offset (home-team assist rate per 100 FGM versus the same teams' road rate), applied multiplicatively to the assist and rebound rate at the game venue. Ladder rungs for a combination stat integrate two correlated counts. Contract details (DNP handling, overtime) are undefined because no series exists.",
      "distribution": "Negative binomial for each stat with a negative copula between them; measurement noise of about one unit for assists in a few percent of games.",
      "categories": [
       "distribution_variance",
@@ -4417,7 +4417,8 @@
      "input_ids": [
       "cbb.stat_dist",
       "m.rules_text",
-      "cbb.shooting_shock_loadings"
+      "cbb.shooting_shock_loadings",
+      "cbb.venue_scorekeeper_stat_bias"
      ]
     }
    ],
@@ -4507,8 +4508,11 @@
      "note": "Rest, travel and rivalry effects on a player's rebounds or assists are below the per-game noise of these counts and no mechanism specific to either stat is known; any schedule-driven rotation change is captured by minutes."
     },
     "officiating_rules": {
-     "status": "GAP",
-     "note": "Official scorer judgement on assists and rebound credit (home statistician) is the officiating-type effect for these stats, and no attached input measures it; the box-score source input is attached only to the generic props archetype."
+     "status": "COVERED",
+     "input_ids": [
+      "cbb.venue_scorekeeper_stat_bias"
+     ],
+     "note": "Official-scorer discretion on assist and rebound credit is the officiating-type effect for these stats; cbb.venue_scorekeeper_stat_bias measures the arena-level offset (shrunk, capped at +/-6 percent). Its true size in college data is empirical and stays open in ra_scorer_discretion."
     },
     "settlement_contract": {
      "status": "GAP",
@@ -4636,6 +4640,25 @@
     ],
     "why": "Splits offensive from defensive rebounding supply by matchup, which the single pool input blends.",
     "role": "context"
+   },
+   "cbb.venue_scorekeeper_stat_bias": {
+    "label": "Home-venue scorekeeper bias in recorded assists, blocks and rebounds",
+    "category": "officiating",
+    "mechanism": "The official statistician's discretion on assists, steals and blocks varies by venue; the same player's recorded rate differs at home versus away after controlling for his true activity.",
+    "rationale": "If a home venue systematically credits more assists, an over on assists is cheaper at home than the rate suggests; the effect is stable and cheap to estimate from the difference between home and away rates of visitors.",
+    "measurement": "For each arena compute (assists per 100 team FGM recorded for the home team minus the same teams' away rate) minus league mean home gap, using 3 seasons with shrinkage n/(n+300 team games); likewise blocks per 100 opponent two-point attempts; apply as a multiplicative adjustment capped at +/-6 percent; SOURCE_UNVERIFIED that the effect exists in college data at this size.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Sports-Reference team game logs home/away",
+     "Bart Torvik game files"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "team game logs (assists, blocks, rebounds) by home/away with arena",
+     "league home gap"
+    ],
+    "why": "Home statisticians credit assists (and to a lesser degree rebounds) with discretion, so an assist or rebound ladder at a given arena carries a venue-specific recording bias on top of the player's true activity.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -4749,6 +4772,15 @@
     "form": "conditional",
     "mechanism": "When a co-starting big is out, the other big's rebound share rises by a fraction of the absent player's share, but only if the replacement is smaller; if the replacement is another big the effect is small, and this conditional logic depends on who the replacement is and not only on the absence.",
     "how_to_test": "Using games with a missing big, compare rebounds per 40 of the remaining big by replacement type (big versus wing) after controlling for opponent size."
+   },
+   {
+    "inputs": [
+     "cbb.venue_scorekeeper_stat_bias",
+     "cbb.assist_creation"
+    ],
+    "form": "multiplicative",
+    "mechanism": "A generous home statistician inflates recorded assists in proportion to the number of assisted-eligible makes, so the venue offset scales a high-creation point guard's line by the same percentage but moves it by more absolute assists than a low-usage wing; it acts only on home and neutral-venue games scored by that arena's crew, never on road games of the same player.",
+    "how_to_test": "For the same players, compare assists per 100 team FGM at venues with high versus low estimated bias, interacting the venue offset with the player's prior assist rate; a multiplicative form predicts a larger absolute gap for high-rate creators."
    }
   ],
   "nonlinearities": [
@@ -4780,7 +4812,9 @@
      "turnovers",
      "starter flag",
      "team FGM/FGA",
-     "opponent FGA"
+     "opponent FGA",
+     "venue/arena",
+     "home/away flag"
     ],
     "timestamp_requirement": "Completed games; features through the prior day.",
     "history_needed": "3 seasons for role-level priors; 5 for shock loadings.",
@@ -4819,7 +4853,8 @@
      "cbb.blowout_garbage",
      "cbb.crash_vs_get_back_scheme",
      "cbb.player_shooting_regression",
-     "cbb.three_pt_luck"
+     "cbb.three_pt_luck",
+     "cbb.venue_scorekeeper_stat_bias"
     ]
    },
    {
@@ -4930,7 +4965,7 @@
     "id": "ra_scorer_discretion",
     "type": "SOURCE_UNVERIFIED",
     "category": "officiating_rules",
-    "description": "The size of scorer discretion on assists across college venues is not verified; if material it adds a venue-specific bias to any assist prop that no attached input captures, and whether a free dataset reveals it is unknown.",
+    "description": "cbb.venue_scorekeeper_stat_bias is now wired to this archetype, but whether between-venue variance in recorded assists exceeds the null in college data, and how large the offset is after shrinkage, is not verified; it may be negligible.",
     "what_would_resolve": "Compare home and away assist rates by venue over three seasons from public game logs and test whether between-venue variance exceeds the null."
    },
    {
@@ -5949,8 +5984,8 @@
     "label": "NCAA tournament field structure and seeding rules for 2027",
     "category": "other",
     "mechanism": "The number of teams, play-in games, at-large and automatic bids, seeding S-curve and region placement rules define which paths exist and how many rounds each team must win.",
-    "rationale": "The sampled round series refers to a 'Round of 76', which implies a field larger than the 68-team format; this changes bubble probabilities, the number of games for the lowest seeds and the title path for play-in teams, so any title model built on the 68-team structure may be wrong.",
-    "measurement": "Record for the season: field size, number of first-round or play-in games, number of automatic and at-large bids, rounds required for each seed line, S-curve rules, bracket-integrity rules (conference avoidance until a specified round) and effective dates; simulate seed to path accordingly; as-of: NCAA announcement date; verify against NCAA.com before each season.",
+    "rationale": "Verified for 2027 (NCAA announcement, 7 May 2026): the men's and women's fields expand to 76 teams with 32 automatic and 44 at-large bids; the 12 lowest-seeded at-large teams and 12 lowest-seeded automatic qualifiers play 12 Opening Round games (First Four name dropped) and the 12 winners join 52 teams in the 64-team bracket. This raises bubble probabilities for teams ranked about 37-50, adds a game for 24 teams, and makes KXMARMADROUND's 'Round of 76' a make-the-field contract.",
+    "measurement": "Season table, versioned by announcement date: 2027 = field 76; automatic bids 32 (one per conference champion); at-large 44; Opening Round games 12 = the 12 lowest-seeded at-large teams paired among themselves and the 12 lowest-seeded automatic qualifiers paired among themselves, played Tuesday-Wednesday after Selection Sunday (Dayton plus a second site); 12 winners join 52 directly placed teams in a 64-team, six-round bracket, so an Opening Round team needs 7 wins for the title and every other team 6; seed list 1-76 on the S-curve with bracket-integrity rules from the NCAA principles document (conference separation by round). Simulation maps each team's S-curve position to its path accordingly; seed lines of Opening Round games are taken from the published 2027 principles when released, else assumed to be the lowest at-large lines (about 10-12) and the lowest automatic lines (15-16).",
     "pregame_knowable": "yes",
     "free_sources": [
      "NCAA.com announcements",
@@ -6008,18 +6043,24 @@
     "label": "Selection into the NIT and College Basketball Crown fields for teams left out of the NCAA tournament",
     "category": "schedule_context",
     "mechanism": "A team can win the NIT or the Crown only if it is not in the NCAA field, is eligible under that event's conference allocation and accepts the invitation, so the field is a filtered set of bubble and near-bubble teams.",
-    "rationale": "Title probability for these events is non-monotone in team strength: strong teams are removed by NCAA selection, conference-allocated slots (Crown slots tied to specific leagues, NIT slots for others) decide who is eligible, and opt-outs by teams that decline are common. Pricing them with the NCAA bracket logic or with strength alone gives the strongest teams large probabilities that are in fact near zero.",
-    "measurement": "P(field_e | team) = P(not in NCAA field) from cbb.committee_ordinal_seed_model, times P(eligible for event e) from a per-season table of that event's slot rules (conference allocations, NET-rank cut-offs, at-large slots) applied to the simulated end-of-season NET rank, times an acceptance rate estimated from past invitation and decline lists (shrunk to the event mean with weight n/(n+20)); field composition is simulated jointly with the NCAA selection draw, then the event bracket is simulated with cbb.ratings_fundamentals at neutral or host sites. As-of: rule table versioned by announcement date; all ranks as of the pricing time.",
+    "rationale": "Title probability for these events is non-monotone in team strength: strong teams are removed by NCAA selection (now 44 at-large places in a 76-team field, which takes more of the old NIT top seeds), the 2027 NIT reserves 12 of its 24 places for the best eligible team of each of the top-10 KenPom conferences plus a second ACC and SEC team, regular-season champions of other leagues enter automatically only at an average metric rank of 125 or better, and the Crown takes top non-NCAA teams of its partner leagues; declines and Crown contractual preclusion (about 15 schools in 2026) are common. Pricing with NCAA bracket logic or strength alone gives the strongest teams probabilities that are in fact near zero.",
+    "measurement": "Joint Monte Carlo with the NCAA selection draw (cbb.committee_ordinal_seed_model, 76-team field) at pricing time t. NIT 2027 (24 teams): (1) rank conferences by KenPom conference rating as of Selection Sunday (simulated forward from t); for each of the top 10, the exempt bid goes to its highest-ranked team not in the NCAA field, plus a second exempt bid to the next such ACC team and SEC team (12 exempt, all hosting); (2) automatic bids to every regular-season conference champion (outright or by the league's tiebreak) not in the NCAA field whose mean rank across the NIT selection metrics (reported as NET, KenPom, BPI, KPI, SOR, Torvik, WAB; equal-weighted, simulated end-of-season ranks) is <=125; (3) remaining places filled by best mean metric rank among non-NCAA teams. Crown: apply the last published slot rule (2026: top two non-NCAA teams each of the Big Ten, Big 12 and Big East plus two committee wild cards, eight teams) until a 2027 rule is announced, and remove Crown teams from NIT eligibility. Each invited team accepts with p = event-and-tier decline rate from the last 3 invitation/decline lists shrunk to the event mean with weight n/(n+20); declined places pass to the next team in rank order. Then simulate the event bracket with cbb.ratings_fundamentals (campus sites for NIT rounds before the final, home edge to the higher seed; neutral for the Crown). As-of: rule table versioned by announcement date (NIT 2027 rules announced 1 Oct 2026); all ranks as of t.",
     "pregame_knowable": "partial",
     "free_sources": [
-     "NIT and Crown official field announcements and bracket pages (SOURCE_UNVERIFIED for archived slot rules)",
-     "NCAA NET archive (SOURCE_UNVERIFIED depth)"
+     "NCAA.com/NCAA.org NIT announcements and selection procedures (2027 structure announced 1 Oct 2026)",
+     "Fox Sports/AEG College Basketball Crown press releases",
+     "KenPom conference ratings (subscription for full history)",
+     "NCAA NET archive and team sheets",
+     "Warren Nolan multi-metric team sheets (free_scrape)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "NIT and Crown field announcements and slot rules by season",
-     "NET archive",
-     "P(not in NCAA field)"
+     "NIT and Crown slot rules by season with announcement dates",
+     "KenPom conference ratings (Selection-Sunday vintage)",
+     "per-team NET, KenPom, BPI, KPI, SOR, Torvik and WAB ranks (daily vintages)",
+     "regular-season conference champions and tiebreak outcomes",
+     "NIT and Crown invitation, decline and preclusion lists by season",
+     "P(not in NCAA field) from the selection draw"
     ],
     "why": "Required for the NIT and Crown series in this archetype; without it these events are priced as if strong teams could enter them.",
     "role": "primary"
@@ -6027,7 +6068,7 @@
    "cbb.wcbb_title_probability": {
     "label": "Women's Division I national title probability by team (for men's-and-women's combo contracts)",
     "category": "team_strength",
-    "mechanism": "The women's champion is decided by a separate 68-team bracket; a combo contract pays only if the named women's team also wins, so the women's marginal is a required factor.",
+    "mechanism": "The women's champion is decided by a separate bracket that also expands to 76 teams (12 Opening Round games) in 2027; a combo contract pays only if the named women's team also wins, so the women's marginal is a required factor.",
     "rationale": "KXNCAAMB2ML conjoins a men's and a women's champion. The women's game has more concentrated strength (a few dominant programmes, fewer upsets), top seeds host first and second rounds, and its ratings and injury news are separate; none of the men's inputs provide this factor, and the two tournaments share no games, so the joint is approximately the product.",
     "measurement": "Simulate the women's bracket 100,000 times from an opponent-adjusted women's efficiency rating (points per 100 possessions, game weight exp(-days/45), ridge prior from last season's final rating x 0.6) with a game sd of 11 points, home court of 3 points for campus-hosted early rounds; before Selection Sunday draw the field and seeds from an ordered-probit on women's NET and resume. Output P(champion) per team as of pricing time; combo price = P_men x P_women, with a sensitivity check on correlation 0.",
     "pregame_knowable": "yes",
@@ -6495,8 +6536,8 @@
     "id": "fc_secondary_field_rules",
     "type": "SOURCE_UNVERIFIED",
     "category": "settlement_contract",
-    "description": "The 2027 NIT and College Basketball Crown slot rules (which conferences feed which event, NET cut-offs, automatic places for regular-season champions) and their history of declined invitations were not verified; the NIT and Crown rules text names only the champion.",
-    "what_would_resolve": "Published 2026-27 NIT and Crown selection procedures and past invitation/decline lists."
+    "description": "The 2027 NIT rules are now encoded in cbb.secondary_postseason_field_model (24 teams, 12 exempt bids, regular-season-champion automatic bids at average metric rank <=125); still open are the 2027 College Basketball Crown allocation, which Fox/AEG had not announced by Nov 2026, and the exact NIT metric list.",
+    "what_would_resolve": "Fox Sports/AEG 2027 Crown field announcement and the NCAA's official 2027 NIT selection-metrics list."
    },
    {
     "id": "fc_womens_data",
@@ -7337,7 +7378,8 @@
     "KXMARMADUPSET names the 'Round of 8' (Elite Eight) while other series use 'Round of 16'/'Round of 64'; round labels are Kalshi's, and the 'Round of 76' in KXMARMADROUND does not match a 68-team field.",
     "Win totals and undefeated series count official regular-season games only; whether games against non-Division I opponents count, and the number of games a team plays (27 to 31), are not stated, and strikes such as 30 wins need near-perfection.",
     "Undefeated at home excludes neutral-site games, conference-tournament and postseason games, so only 14 to 17 games in the team's own arena count.",
-    "KXNCAAMBBOTHQUAL is a joint advancement event that is zero if the two teams are drawn to meet before the Round of 16; same-conference avoidance rules reduce but do not remove that chance."
+    "KXNCAAMBBOTHQUAL is a joint advancement event that is zero if the two teams are drawn to meet before the Round of 16; same-conference avoidance rules reduce but do not remove that chance.",
+    "KXMARMADROUND's 'Round of 76' is the whole 2027 field: a team that is selected or earns an automatic bid qualifies even if it is placed in the Opening Round (and loses there), and the rules say YES stands 'if they qualify but do not end up competing'; it is therefore a make-the-field contract, not a reach-the-64 contract."
    ],
    "settlement_data_source": "NCAA official selection bracket (NCAA.com) for seed and qualification series; the sampled rules name no source, and the title-only series may settle on tournament results.",
    "series_mapping_issues": []
@@ -7381,7 +7423,7 @@
     {
      "id": "s3",
      "name": "Automatic bids and bid thieves",
-     "description": "Each of the roughly 30 conferences sends its tournament champion automatically. When a champion would not have been selected at-large (a bid thief), the number of at-large slots available to bubble teams falls by one. The count of thieves is random and depends on the conference tournaments of multi-bid leagues; a 3-bid league that loses its favourite in the tournament can produce a thief. This count shifts the cutoff by several slots.",
+     "description": "Each of the roughly 30 conferences sends its tournament champion automatically. When a champion would not have been selected at-large (a bid thief), the number of at-large slots available to bubble teams falls by one. The count of thieves is random and depends on the conference tournaments of multi-bid leagues; a 3-bid league that loses its favourite in the tournament can produce a thief. This count shifts the cutoff by several slots. From 2027 the field is 76 teams: 32 automatic bids and 44 at-large; the 12 lowest-seeded at-large teams and the 12 lowest-seeded automatic qualifiers play 12 Opening Round games (the First Four name is dropped), so the bubble is the 44th at-large place and a stolen bid removes one of 44, not one of 36 or 37.",
      "distribution": "The number of bid thieves is approximately Poisson-binomial with mean 1 to 3 per year; each additional thief moves the effective at-large cutoff by one slot.",
      "categories": [
       "settlement_contract",
@@ -7390,7 +7432,8 @@
      ],
      "input_ids": [
       "cbb.auto_bid_structure",
-      "cbb.conference_standings_sim"
+      "cbb.conference_standings_sim",
+      "cbb.tournament_field_format"
      ]
     },
     {
@@ -7418,7 +7461,8 @@
      ],
      "input_ids": [
       "cbb.bracket_sim",
-      "m.rules_text"
+      "m.rules_text",
+      "cbb.tournament_field_format"
      ]
     },
     {
@@ -7568,7 +7612,8 @@
       "cbb.bracket_sim",
       "cbb.auto_bid_structure",
       "cbb.bracket_seed_statistic_sim",
-      "cbb.regular_season_game_inventory"
+      "cbb.regular_season_game_inventory",
+      "cbb.tournament_field_format"
      ],
      "note": "Rules text read for 13 of 14 series (selection, seed lines, round qualification paying without competing, bracket-wide seed statistics, regular-season-only counts, home-arena-only games); HIGHSEED has no listing."
     }
@@ -7727,7 +7772,7 @@
     "category": "distribution",
     "mechanism": "Bracket-wide seed contracts settle on deterministic functions of all games' outcomes, so their probabilities are the empirical distributions of those functions over simulated tournaments.",
     "rationale": "These statistics aggregate dependent games: an early upset removes a favourite and changes later matchups, and year-specific seed-line strength gaps shift all counts together. Historical seed base rates alone ignore the current field; per-team advancement probabilities alone cannot give counts or maxima because they lose the joint structure.",
-    "measurement": "From cbb.bracket_sim (100,000 tournaments using current ratings with posterior sd, bracket as published or simulated seeds before Selection Sunday): per simulation compute (a) for each round r and seed k, number of #k seeds reaching r and winning in r; (b) number of games in round r won by the higher numerical seed; (c) sum of official seeds of the four semifinalists; (d) max over all games of (winner seed - loser seed) where positive, with and without First Four games; (e) for each round r, the highest numerical seed reaching r (title-only KXMARMADHIGHSEED). Output the pmf of each statistic; calibrate to 1985-present seed-level history via a check of mean counts.",
+    "measurement": "From cbb.bracket_sim (100,000 tournaments using current ratings with posterior sd, bracket as published or simulated seeds before Selection Sunday): per simulation compute (a) for each round r and seed k, number of #k seeds reaching r and winning in r; (b) number of games in round r won by the higher numerical seed; (c) sum of official seeds of the four semifinalists; (d) max over all games of (winner seed - loser seed) where positive, with and without the 12 Opening Round games (formerly the 4 First Four games; 2027 field of 76); (e) for each round r, the highest numerical seed reaching r (title-only KXMARMADHIGHSEED). Output the pmf of each statistic; calibrate to 1985-present seed-level history via a check of mean counts.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NCAA.com brackets",
@@ -7740,6 +7785,24 @@
      "historical seed-by-round results for calibration"
     ],
     "why": "Needed for KXMARMADSEEDROUND, SEEDWIN, UPSET, SEEDSUM and SEEDDIF, which settle on bracket-wide seed statistics.",
+    "role": "primary"
+   },
+   "cbb.tournament_field_format": {
+    "label": "NCAA tournament field structure and seeding rules for 2027",
+    "category": "other",
+    "mechanism": "The number of teams, play-in games, at-large and automatic bids, seeding S-curve and region placement rules define which paths exist and how many rounds each team must win.",
+    "rationale": "Verified for 2027 (NCAA announcement, 7 May 2026): the men's and women's fields expand to 76 teams with 32 automatic and 44 at-large bids; the 12 lowest-seeded at-large teams and 12 lowest-seeded automatic qualifiers play 12 Opening Round games (First Four name dropped) and the 12 winners join 52 teams in the 64-team bracket. This raises bubble probabilities for teams ranked about 37-50, adds a game for 24 teams, and makes KXMARMADROUND's 'Round of 76' a make-the-field contract.",
+    "measurement": "Season table, versioned by announcement date: 2027 = field 76; automatic bids 32 (one per conference champion); at-large 44; Opening Round games 12 = the 12 lowest-seeded at-large teams paired among themselves and the 12 lowest-seeded automatic qualifiers paired among themselves, played Tuesday-Wednesday after Selection Sunday (Dayton plus a second site); 12 winners join 52 directly placed teams in a 64-team, six-round bracket, so an Opening Round team needs 7 wins for the title and every other team 6; seed list 1-76 on the S-curve with bracket-integrity rules from the NCAA principles document (conference separation by round). Simulation maps each team's S-curve position to its path accordingly; seed lines of Opening Round games are taken from the published 2027 principles when released, else assumed to be the lowest at-large lines (about 10-12) and the lowest automatic lines (15-16).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NCAA.com announcements",
+     "NCAA tournament selection principles PDF"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "field size, play-in games, auto and at-large bids, bracket-integrity rules, effective dates"
+    ],
+    "why": "Defines what 'qualifies' means for KXMARMADROUND (Round of 76 = the full 76-team field including the Opening Round) and KXNCAAMBTEAMSQUAL, and fixes 44 at-large places, which sets the bubble cut line the seed/bid model is priced against.",
     "role": "primary"
    }
   },
@@ -7881,6 +7944,15 @@
     "form": "joint-distribution",
     "mechanism": "For two named teams to both reach the Round of 16, the seed draw and region placement matter jointly: both being top-4 seeds in different regions makes the joint near the product of marginals, while same-region placement or a possible second-round meeting cuts it sharply.",
     "how_to_test": "In simulations, compare the joint Round-of-16 probability with the product of marginals by region relation (same region, same pod, different region)."
+   },
+   {
+    "inputs": [
+     "cbb.tournament_field_format",
+     "cbb.committee_ordinal_seed_model"
+    ],
+    "form": "threshold",
+    "mechanism": "The committee's latent at-large ranking maps to a bid only below the 44th at-large place (after automatic bids are removed), and to an Opening Round placement for at-large lines 33-44; moving the cut from 36/37 to 44 shifts bid probability for teams ranked roughly 37-50 on the S-curve from near zero to substantial, and every bid thief moves the line up by one place.",
+    "how_to_test": "Simulate the ordinal seed model under the 68-team (36/37 at-large) and the 76-team (44 at-large) structures and compare P(bid) by latent rank; check the 2027 selection against the cut implied by 44 at-large places."
    }
   ],
   "nonlinearities": [
@@ -7948,7 +8020,8 @@
      "cbb.remaining_game_resume_leverage",
      "cbb.ratings_fundamentals",
      "cbb.conf_strength",
-     "cbb.sos_remaining"
+     "cbb.sos_remaining",
+     "cbb.tournament_field_format"
     ]
    },
    {
@@ -8098,10 +8171,10 @@
    },
    {
     "id": "so_field_size",
-    "type": "SOURCE_UNVERIFIED",
+    "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "KXMARMADROUND names a 'Round of 76', which does not match a 68-team field; the 2027 format (field size, number of play-in games, which seed lines play in) changes at-large counts, bubble probabilities and the round labels the other series use.",
-    "what_would_resolve": "NCAA announcement of the 2027 tournament format and the KXMARMADROUND market list."
+    "description": "Format is now verified (76 teams, 32 automatic and 44 at-large bids, 12 Opening Round games of the 12 lowest at-large and 12 lowest automatic qualifiers) and attached via cbb.tournament_field_format; still unverified are the seed lines the Opening Round produces and the labels Kalshi will use for later rounds.",
+    "what_would_resolve": "NCAA 2027 bracket principles document (seed lines of Opening Round games) and the full KXMARMADROUND round list."
    },
    {
     "id": "so_committee_subjectivity",

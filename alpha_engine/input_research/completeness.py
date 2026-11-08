@@ -283,8 +283,8 @@ def validate_review(sport: str, key: str, rec: dict, c: dict, rules: dict, led_r
         if not _txt(r.get("reason"), 40):
             e.append(f"input_audit.{i}: reason must be a specific >=40 char judgement")
     for i in ia:
-        if i not in existing:
-            e.append(f"input_audit has {i!r}, which is not an existing input of this archetype")
+        if i not in existing and i not in known:
+            e.append(f"input_audit has {i!r}, which is not a known input")
     # --- interactions & nonlinearities ----------------------------------------------------------------------------------------------------------------------
     ix = rec["interactions"]
     if len(ix) < 4:
@@ -444,6 +444,19 @@ def series_remap_proposals() -> dict:
     return out
 
 
+def archetype_patches(sport: str) -> dict:
+    out: dict = {}
+    d = CD / "archetype_patches"
+    for f in sorted(d.glob(f"{sport}*.json")) if d.exists() else []:
+        for k, v in (rd(f).get("patches") or {}).items():
+            cur = out.setdefault(k, {"detach": [], "roles": {}, "attach": []})
+            cur["detach"] += v.get("detach") or []; cur["roles"].update(v.get("roles") or {}); cur["attach"] += v.get("attach") or []
+            for fld in ("label", "target", "contract_types", "mechanism"):
+                if fld in v:
+                    cur[fld] = v[fld]
+    return out
+
+
 def integrate(write: bool = True) -> dict:
     """The only catalog writer. Idempotent; never edits or removes an existing input. For every reviewed archetype it merges into the authoritative catalog:
     new inputs (attached to the archetype that found them), new archetype entries, the review's interactions (deduplicated by input set + form), non-linearities,
@@ -465,7 +478,7 @@ def integrate(write: bool = True) -> dict:
                     c["inputs"][iid]["raw_data"] = ni["raw_data"]; st["new_inputs"] += 1
                 elif not c["inputs"][iid].get("raw_data"):
                     c["inputs"][iid]["raw_data"] = ni["raw_data"]
-                if iid not in {i["id"] for i in a["inputs"]}:
+                if iid not in {i["id"] for i in a["inputs"]} and iid not in (archetype_patches(s).get(k, {}).get("detach") or []):
                     a["inputs"].append({"id": iid, "why": ni["why"], "role": ni["role"]})
             have = {(tuple(sorted(x["inputs"])), x.get("form")) for x in a["interactions"]}
             for x in rec.get("interactions") or []:

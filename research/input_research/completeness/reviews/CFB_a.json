@@ -1334,6 +1334,99 @@
     ],
     "why": "Small but rule-specified deduction in KXNCAAFTEAMYDS for the leading team; ignored by gross-yardage models.",
     "role": "context"
+   },
+   "cfb.td_per_scoring_trip": {
+    "label": "Touchdowns per scoring trip (drives reaching opponent 40) with type split",
+    "category": "team_strength",
+    "mechanism": "Expected touchdown count from the number of drives reaching scoring range and the touchdown conversion rate, split into rushing, receiving and non-offensive.",
+    "rationale": "All live series count touchdowns, not points: a drive that ends in a field goal produces no TD, so TD count depends on finishing (TD versus FG versus turnover) more than on points; the type split determines TEAMRSHTD and TEAMRECTD.",
+    "measurement": "For each team: trips = drives with a first down at or inside the opponent 40; TD per trip over last 10 games with 0.85 decay, opponent-adjusted by the opponent defence's TD per trip allowed, shrinkage k = 25 trips to the FBS mean; split of TDs by type (rush, pass, other) over 2 seasons with shrinkage k = 30 TDs. Expected team TDs = expected trips x TD per trip; variance from negative binomial with fitted dispersion.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD drives and plays (free key)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "drives with start/end field position and result",
+     "scoring plays with type",
+     "opponent allowed values"
+    ],
+    "why": "TEAMTD, TOTALTD, TEAMRSHTD and TEAMRECTD settle on touchdown counts: expected scoring trips times TD per trip with the rush/pass split is the core count model.",
+    "role": "primary"
+   },
+   "cfb.td_count_dispersion": {
+    "label": "Touchdown count dispersion and tail probabilities",
+    "category": "distribution",
+    "mechanism": "Variance-to-mean ratio of team and game touchdown counts and tail probability of 5+ team rushing or 8+ game touchdowns.",
+    "rationale": "Counts like total touchdowns 8+ and rushing touchdowns 5+ sit in the upper tail where a Poisson underestimates the probability because scoring drives cluster in mismatches and shootouts.",
+    "measurement": "Fit a negative binomial to game TD counts by expected-total and gap bins from FBS 2014 onward: mean mu(bin) and dispersion r(bin); report P(N >= k) for k in 1..12 with a 95 percent interval from bootstrapped games; shrinkage to pooled dispersion with k = 150 games. For team rushing TD counts fit separately by team style bucket.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD games and scoring plays (free key)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "touchdowns by game, team and type",
+     "expected total/gap (non-market)"
+    ],
+    "why": "TOTALTD and TEAMTD ladders sit in the upper tail (8+ game TDs, 5+ rushing TDs) where a Poisson understates probability; the fitted dispersion prices each rung.",
+    "role": "primary"
+   },
+   "cfb.dst_td_propensity": {
+    "label": "Defensive and special-teams touchdown propensity",
+    "category": "variance_luck",
+    "mechanism": "Probability that a game contains at least one touchdown scored by a defence or special teams, from turnover returns, kick returns and blocked kicks.",
+    "rationale": "DST touchdowns require the opposing offence to turn the ball over in a returnable place or special teams to give returns; they depend on interception and fumble rates, return specialists and the rules for kickoff returns, and are rare events with fat tails.",
+    "measurement": "Expected DST TDs per team-game = interceptions forced per game x pick-six rate (shrunk k = 40 INTs to the FBS mean) + fumbles forced x return-TD rate + kick/punt return TD rate for the returner + blocked-kick rate, each opponent-adjusted by the opposing offence's turnover rate; game probability = 1 - exp(-lambda_total) with lambda total = sum of both teams. Kickoff rule regime recorded by season. As-of last game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD plays (free key)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "plays with interception, fumble, return, blocked kick and TD flags",
+     "kickoff rule regime table"
+    ],
+    "why": "KXNCAAFDSTTD settles on at least one defensive or special-teams touchdown by either team, and TOTALTD/FIRSTTDTEAM count them too.",
+    "role": "primary"
+   },
+   "cfb.first_td_race_rate": {
+    "label": "First-touchdown race (hazard and no-touchdown mass)",
+    "category": "game_state",
+    "mechanism": "Rate at which each team scores its first touchdown, including defensive and special-teams touchdowns, and the probability that neither scores in the full game.",
+    "rationale": "First team to score a touchdown is a race between two hazards with a deterministic head start for the receiving team on the opening possession, and with a small chance that neither scores (low-scoring game); overtime still counts for this market.",
+    "measurement": "From games since 2014, model time to first TD per team as a piecewise-constant hazard by drive index; hazard depends on team TD per trip, drive pace, opening possession order (receive-first adds probability mass at drive 1) and opponent's early defence; shrink to league hazard with k = 10 games; compute P(team A first) = integral; add P(no TD in 60 min + overtime) from low-total regimes (calibrated on FBS history). As-of kickoff with opening possession probability from cfb.opening_poss. Non-offensive and overtime components: add a defensive/special-teams touchdown arrival hazard per possession of the opponent (from cfb.dst_td_propensity) that can fire before any offensive possession ends; the No-team-scores outcome mass = P(no TD in regulation, from the hazards) x [1 - P(tie after 60 minutes, cfb.ot_model) x P(a touchdown in overtime periods 1-2 | tie)], since the contract settles the first touchdown in the full game including overtime.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "CFBD plays and scoring plays (free key)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "scoring plays with time and drive index",
+     "opening possession",
+     "no-TD games",
+     "overtime results"
+    ],
+    "why": "KXNCAAFFIRSTTDTEAM is a race between the two teams' touchdown arrival processes with a No-TD outcome, priced from first-TD hazard rates.",
+    "role": "primary"
+   },
+   "cfb.goal_to_go_run_pass_mix": {
+    "label": "Goal-to-go and short-yardage run/pass mix",
+    "category": "game_state",
+    "mechanism": "Share of goal-line and short-field plays that are runs (including quarterback sneaks and designed runs) versus passes.",
+    "rationale": "Within the same number of touchdowns, the split between rushing and receiving depends on goal-line play calling: option and power-run offences score rushing touchdowns at close range where spread passing offences score receiving touchdowns, and trailing or leading status shifts the mix.",
+    "measurement": "Compute run share on plays inside the opponent 10 and on 3rd/4th-and-short, by team over 2 seasons with decay 0.5 per season and shrinkage k = 40 plays to the conference mean; add TD conversion rate by type; condition on score state with a logistic model (leading by 14+ increases run share by 0.10-0.15 in the fit). Output expected rushing and receiving TD counts given expected total TDs.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD plays (free key)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "plays inside opponent 10 with run/pass and result",
+     "score state"
+    ],
+    "why": "Splits touchdowns into rushing versus receiving for TEAMRSHTD and TEAMRECTD; a fumble-recovery TD is credited to neither.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -4618,7 +4711,7 @@
     {
      "id": "s7",
      "name": "Bowl eligibility and selection",
-     "description": "KXNCAAFBOWLGAME is settled on selection, not participation: a team needs 6 wins (or an APR-ranked 5-7 fallback when eligible teams fall short of slots), then competes for its conference tie-in slots, with the CFP taking top teams first and bowl committees choosing the remainder; the contract list of eligible bowls excludes FCS playoffs. Eligibility detail missing from cfb.bowl_selection_state: under NCAA bowl rules only one win over an FCS opponent counts toward the six (to be verified for 2026), and teams that lose a conference title game can finish 6-7, so the threshold is on countable wins, not raw wins.",
+     "description": "KXNCAAFBOWLGAME is settled on selection, not participation. Eligibility is on countable wins, not raw wins: wins over FBS opponents plus at most one win over an FCS opponent that averaged 80% of the maximum football grants-in-aid over a rolling two-year period (NCAA FOC, March 2022; the old 90% figure is obsolete), and the team must not finish below .500. When deserving teams are fewer than open slots, alternates come in a legislated order: denied-waiver FCS-win teams, 6-7 teams with 13 games, then 5-7 teams with a postseason-eligible multiyear APR; since Proposal 2026-30 (final, June 2026) the 5-7 alternates are no longer released in descending APR order, and Proposal 2026-31 made reclassifying FCS-to-FBS programs bowl-eligible. The CFP takes its field first and conference tie-ins allocate the rest.",
      "distribution": "Threshold event on a win count (>=6) combined with a slot-shortage regime; bubble teams (5-7 to 6-6) carry the probability mass while 8-win teams are near-certain.",
      "categories": [
       "situational_schedule_motivation",
@@ -4806,9 +4899,9 @@
    "cfb.cfp_committee_resume_model": {
     "label": "CFP committee selection and ranking model from resume metrics",
     "category": "motivation",
-    "mechanism": "Predicted committee rank from record, strength of record, quality wins and losses, conference champion status and previous ranking.",
+    "mechanism": "Canonical CFP committee rank model (alias: cfb.cfp_ranking_resume_features): predicted committee rank at each release from record, strength of record and schedule, quality wins and losses, head-to-head and common opponents, conference champion status, key injuries and the previous ranking.",
     "rationale": "Playoff berth, seed and top-N ranking contracts are decided by a committee, not by the ratings: the committee emphasises wins over ranked teams and conference championships, penalises losses depending on opponent and timing, and moves slowly week to week. A rating-only model misses the selection layer.",
-    "measurement": "Fit an ordered-response or rank regression for each committee release 2014 to latest: rank ~ ESPN Strength of Record or equivalent resume metric (computed from own ratings if unavailable), number of wins over top-25 and top-50 opponents, losses (count and margin), head-to-head, conference-champion flag, previous week rank (inertia coefficient), and week index; evaluate by rank error and by the probability of making the field. Output predicted rank distribution for each team at each future release date.",
+    "measurement": "Fit an ordered-response rank model on every CFP committee release 2014 to latest: rank_t ~ rank_(t-1) (inertia), ESPN Strength of Record or own resume metric from non-market ratings, strength of schedule, wins over top-25 and top-50 opponents, losses (count, margin, opponent quality, week of loss), head-to-head and common-opponent results versus adjacent-ranked teams, conference-champion flag (set only after title games), starting-quarterback injury flag, week index, with separate weights before and after championship week. Calibrate by rank error, pairwise ordering accuracy for adjacent ranks and probability of making the field. Output the rank distribution per team for every future release date (labelled weekly releases such as Nov 24 and the selection-day ranking). Serves season_futures (field, seed) and polls_and_cfp_rankings (exact and top-N rank).",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD CFP rankings endpoint (free key)",
@@ -4888,20 +4981,23 @@
    "cfb.bowl_selection_state": {
     "label": "Bowl eligibility, slot balance and conference tie-in selection model",
     "category": "schedule_context",
-    "mechanism": "KXNCAAFBOWLGAME settles on being selected (not playing) for a certified Division I bowl or the CFP: the chain is 6-win eligibility, the count of eligible teams against bowl slots, conference tie-in order, bowl committee choices and top teams taken by the CFP.",
-    "rationale": "Selection is not a function of wins alone: when eligible teams (6 or more wins) exceed slots, the weakest eligible teams miss out; when slots exceed eligible teams, 5-7 teams are taken (typically ranked by APR, a rule that changes by season); a conference with more eligible teams than tie-ins sends the surplus to open slots with bowls choosing by expected draw and travel, so a 6-6 mid-major is a bubble case while a 7-5 power team is safe.",
-    "measurement": "For each draw of cfb.rating_posterior_draws simulate regular-season wins; team eligible if wins >= 6, else if 5-7 included in an APR-ranked fallback list used only when eligible teams < open slots. Remove CFP field first. Allocate in bowl pick order of that season's tie-in table: each bowl takes the best remaining team of its tie-in conference by score = wins + 0.5 x (AP-ranked flag) + logit-fitted draw term (fitted on 2014-2025 bowl selections by multinomial logit on wins, rank, conference, travel distance). Output P(selected) per team and per-conference P(eligible < tie-in slots). Re-run weekly as-of latest results; no market input.",
+    "mechanism": "KXNCAAFBOWLGAME settles on being selected (not playing) for a certified bowl or the CFP. Chain: countable wins (FBS wins plus at most one qualifying FCS win; non-Division I wins never count) -> deserving status (6+ countable wins and no losing record) -> CFP field removed -> conference tie-in allocation -> if deserving teams < open slots, legislated alternates (denied-waiver FCS-win teams, 6-7 teams with 13 games, then 5-7 teams with multiyear APR >= 930, no longer in APR order after Proposal 2026-30).",
+    "rationale": "Selection is not a function of raw wins: a second FCS win or a win over an FCS team below the NCAA aid threshold (80% of the maximum grants-in-aid averaged over two years, FOC March 2022) does not count, so a 6-6 team can be ineligible. When slots exceed deserving teams, alternates follow a legislated order; Proposal 2026-30 (DI Cabinet final, June 2026) removed the descending-APR ordering of 5-7 alternates, so the conference with the unfilled tie-in now chooses among its 930+ APR 5-7 teams, and Proposal 2026-31 made programs reclassifying from FCS to FBS bowl-eligible. A 6-6 mid-major is a bubble case while a 7-5 power team is safe.",
+    "measurement": "For each draw of cfb.rating_posterior_draws simulate remaining games. Per team: countable_wins = wins over FBS opponents + min(1, wins over FCS opponents flagged as meeting the 80% two-year grants-in-aid average or holding an approved waiver); wins over non-Division I opponents = 0. Deserving if countable_wins >= 6 and countable_wins >= losses (a 13-game 6-7 team is an alternate, not deserving); reclassifying FCS-to-FBS programs are treated as regular FBS members from 2026 (Proposal 2026-31). Remove the CFP field first, then allocate deserving teams in each season's bowl pick order: each bowl takes the best remaining team of its tie-in conference by score = countable_wins + 0.5 x (AP-ranked flag) + logit draw term (multinomial logit on wins, rank, conference, travel distance fitted on 2014-2025 selections). If deserving teams < open slots, fill in the legislated order: (a) teams whose only shortfall is a non-qualifying FCS win with a denied waiver, (b) 13-game 6-7 teams, (c) 5-7 teams with multiyear APR >= 930; for 2026 onward the unfilled tie-in's conference picks its own 5-7 team by the same score (no APR order), for 2014-2025 backtests use descending multiyear APR. Output P(selected) per team and P(deserving < slots) per season. Re-run weekly as of latest results; no market input.",
     "pregame_knowable": "partial",
     "free_sources": [
-     "CFBD games and bowl records (free key)",
-     "NCAA bowl lists and APR releases (free scrape)",
+     "CFBD games with home/away classification (free key)",
+     "NCAA APR public database (free scrape)",
+     "NCAA governance reports: FOC 2022-03-24, FBSOC 2026-05-07, DI Cabinet 2026-06-23/24 (free)",
      "own computation"
     ],
     "registry_ids": [],
     "raw_data": [
-     "season schedule and results",
-     "bowl tie-in table by conference and year",
-     "APR by team",
+     "season schedule and results with opponent division per game (FBS, FCS, non-Division I)",
+     "FCS opponent two-year average football grants-in-aid or NCAA waiver decision per counted FCS win",
+     "multiyear APR by team (930 postseason floor)",
+     "FBS reclassification status by season",
+     "bowl tie-in table and pick order by conference and year",
      "bowl slot counts by season",
      "CFP field from simulation"
     ],
@@ -5322,13 +5418,16 @@
     ]
    },
    {
-    "dataset": "Bowl tie-in tables, APR and slot counts",
+    "dataset": "Bowl tie-in tables, eligibility counting fields, APR and slot counts",
     "grain": "season x conference x bowl",
     "fields": [
      "bowl name",
      "conference tie-in and pick order",
      "slot counts",
-     "team APR",
+     "opponent division per game (FBS/FCS/non-Division I)",
+     "FCS opponent two-year average football grants-in-aid or waiver flag",
+     "multiyear APR (930 postseason floor)",
+     "FBS reclassification status",
      "selected teams"
     ],
     "timestamp_requirement": "Tie-in table as published before the season; selections only after announcement date.",
@@ -5343,6 +5442,21 @@
       "name": "CollegeFootballData.com games endpoint (postseason games)",
       "access": "free_limited",
       "note": "Played bowl games, not selection announcements"
+     },
+     {
+      "name": "CollegeFootballData.com games endpoint (home/away classification fbs|fcs)",
+      "access": "free_limited",
+      "note": "Opponent division per game for the one-FCS-win cap"
+     },
+     {
+      "name": "NCAA Academic Progress Rate public database",
+      "access": "free_scrape",
+      "note": "Multiyear APR by team; postseason floor 930"
+     },
+     {
+      "name": "FCS programs' grants-in-aid averages",
+      "access": "unavailable_public",
+      "note": "Not published per program; NCAA certifies which FCS wins count or rules on waivers"
      }
     ],
     "feeds_inputs": [
@@ -5385,8 +5499,8 @@
    {
     "id": "committee_model_duplication",
     "type": "OTHER",
-    "description": "The CFP committee resume model (cfb.cfp_committee_resume_model) is re-derived here and as cfb.cfp_ranking_resume_features in the polls archetype, a duplication risk: a change to one would not propagate to the other.",
-    "what_would_resolve": "Choose one canonical committee-behaviour input in the catalog and alias the other."
+    "description": "Consolidated 2026-11-08: cfb.cfp_committee_resume_model is the single committee rank input for season_futures and polls_and_cfp_rankings (merged feature list by input patch), cfb.cfp_ranking_resume_features is an alias marked DUPLICATE_OF in the polls record. Still open: whether one weight set fits both the field/seed and the exact-rank-at-a-date uses.",
+    "what_would_resolve": "Backtest the merged model on 2014-2025 releases separately for field membership and exact-rank error at mid-season dates."
    },
    {
     "id": "tfut_horizon_model",
@@ -5404,8 +5518,8 @@
     "id": "bowl_eligibility_rule",
     "type": "SOURCE_UNVERIFIED",
     "category": "settlement_contract",
-    "description": "cfb.bowl_selection_state flags eligibility at six raw wins; the NCAA rule that only one win over an FCS opponent counts, the 5-7 APR fallback order and 2026 waivers are not verified here and change which bubble teams are eligible for KXNCAAFBOWLGAME.",
-    "what_would_resolve": "The 2026 NCAA postseason bowl-eligibility bylaw text and the APR fallback list procedure."
+    "description": "Verified 2026-11-08 from NCAA reports (FOC 2022-03-24, FBSOC 2026-05-07, DI Cabinet 2026-06-23/24) and patched into cfb.bowl_selection_state: one qualifying FCS win (80% aid threshold), alternate order, 2026-30 removal of APR ordering, 2026-31 reclassifying-team eligibility. Still open: the FCS opponents' two-year aid averages are not published, and whether a 6-7 finish caused by a conference title-game loss stays deserving was not confirmed from bylaw text.",
+    "what_would_resolve": "NCAA Bylaw 18.7.2 current text (title-game loss treatment) and an NCAA list of FCS programs meeting the 80% aid average or waiver decisions."
    },
    {
     "id": "conf_count_dependence_fit",
@@ -6566,8 +6680,8 @@
    {
     "id": "player_series_missing",
     "type": "OTHER",
-    "description": "The registered archetype is touchdown scorer markets (anytime and first player) but the ledger shows no live named-player touchdown series, only team and game counts; if player series are listed later the player-role inputs (td_rates, depth_chart, player_usage) become primary and are currently untestable.",
-    "what_would_resolve": "Re-check the live Kalshi series list for named-player touchdown markets and re-key the archetype into player and team-count parts."
+    "description": "Re-checked 2026-11-08 against the Kalshi public series list (api.elections.kalshi.com, Sports): CFB has no named-player touchdown series (only TEAMTD, TOTALTD, TEAMRSHTD, TEAMRECTD, DSTTD, FIRSTTDTEAM; NFL has KXNFLANYTD and KXNFLFIRSTTD). The team/game series are filed under game_stat_props, whose record now attaches the five TD-count inputs as primary; this archetype is dormant and its player-role inputs (td_rates, player_usage, depth_chart) are audited WEAK. Open: the catalog archetype entry still lists those player inputs as primary roles, which integrate cannot rewrite.",
+    "what_would_resolve": "If Kalshi lists a CFB named-player TD series, read its rules and re-activate this archetype with player-role inputs primary."
    },
    {
     "id": "player_market_rules_unknown",
@@ -8023,7 +8137,7 @@
      "input_ids": [
       "cfb.standings",
       "cfb.schedule_strength",
-      "cfb.cfp_ranking_resume_features",
+      "cfb.cfp_committee_resume_model",
       "cfb.playoff_format"
      ]
     },
@@ -8052,7 +8166,7 @@
      ],
      "input_ids": [
       "cfb.title_path_to_final_ap",
-      "cfb.cfp_ranking_resume_features",
+      "cfb.cfp_committee_resume_model",
       "cfb.playoff_format"
      ]
     }
@@ -8085,7 +8199,7 @@
      "status": "COVERED",
      "input_ids": [
       "cfb.qb_status_pit",
-      "cfb.cfp_ranking_resume_features"
+      "cfb.cfp_committee_resume_model"
      ],
      "note": "Committee explicitly considers key injuries; AP voters react to injury news."
     },
@@ -8138,7 +8252,7 @@
      "status": "COVERED",
      "input_ids": [
       "cfb.playoff_format",
-      "cfb.cfp_ranking_resume_features"
+      "cfb.cfp_committee_resume_model"
      ],
      "note": "Committee protocol and format; AP voting procedures are not formal rules."
     },
@@ -8211,27 +8325,6 @@
     "why": "Structural model for the two number-one contracts (APANY and APCHURN) where history is too thin for frequencies alone.",
     "role": "primary"
    },
-   "cfb.cfp_ranking_resume_features": {
-    "label": "CFP committee ranking features and protocol",
-    "category": "motivation",
-    "mechanism": "Resume features the committee emphasises: strength of record, strength of schedule, wins over ranked teams, conference championship, head-to-head, common opponents and key injuries.",
-    "rationale": "CFP exact-rank contracts (top 4, exactly #25 on a given Tuesday) depend on a committee that claims to rank afresh each week but moves slowly, weights wins over ranked teams and conference championships, and considers injuries; a rating-only model misses protocol-specific weights.",
-    "measurement": "Fit a rank model on the 2014 to latest committee releases: rank_t ~ rank_(t-1), ESPN SOR or own resume metric, number of wins over top-25 and top-50 teams, losses (count, margin, quality), conference champion flag (post-title game), head-to-head vs adjacent teams, injury flag for starting quarterback; output the rank distribution at the release date (Nov 24). Calibrate by pairwise ordering accuracy for adjacent ranks.",
-    "pregame_knowable": "partial",
-    "free_sources": [
-     "CFBD rankings endpoint (Playoff Committee Rankings; free key)",
-     "ESPN Strength of Record (free scrape)"
-    ],
-    "registry_ids": [],
-    "raw_data": [
-     "committee weekly rankings",
-     "resume metrics",
-     "game results",
-     "injury status"
-    ],
-    "why": "Provides the committee-specific mapping that differs from AP voting and from ratings.",
-    "role": "primary"
-   },
    "cfb.bubble_proximity_state": {
     "label": "Top-25 bubble proximity (others receiving votes and ranks 20-30)",
     "category": "other",
@@ -8275,7 +8368,7 @@
     "category": "schedule_context",
     "mechanism": "KXNCAAFAPRANK (Final AP #1, released after the title game) and the late-season paths of KXNCAAFAPANY and KXNCAAFAPCHURN depend on bowl and CFP results through the national championship; the input is a bracket simulation from non-market ratings plus the historical link between the CFP champion and the AP final #1.",
     "rationale": "The Final AP poll is released after the championship game (rules text: Final Rankings expected Jan 26, 2027), so the leading candidate for #1 is the CFP champion; AP voters have ranked the champion first in the CFP era (2014-2024, to be verified), which turns the Final-#1 market into a title-probability market with a small split-vote tail, and the number of distinct #1 teams depends on regular-season losses of the top-ranked team before the bracket.",
-    "measurement": "Simulate the bracket 20,000 times from cfb.sp_plus-type non-market ratings with posterior SD (as in the season_futures simulation): seeding from a projected committee ranking (cfb.cfp_ranking_resume_features), bracket paths under the 2026 format, neutral-site games without home edge; output P(national champion) per team. Then P(AP final #1 = team) = P(champion) x P(AP #1 | champion; empirical rate from CFP-era seasons with Beta(9, 1) prior) + P(non-champion #1 | split cases, small mass from the same history). As-of the latest week; update after each bracket round.",
+    "measurement": "Simulate the bracket 20,000 times from cfb.sp_plus-type non-market ratings with posterior SD (as in the season_futures simulation): seeding from a projected committee ranking (cfb.cfp_committee_resume_model), bracket paths under the 2026 format, neutral-site games without home edge; output P(national champion) per team. Then P(AP final #1 = team) = P(champion) x P(AP #1 | champion; empirical rate from CFP-era seasons with Beta(9, 1) prior) + P(non-champion #1 | split cases, small mass from the same history). As-of the latest week; update after each bracket round.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD games and rankings (free key)",
@@ -8290,12 +8383,33 @@
     ],
     "why": "KXNCAAFAPRANK (Final AP #1) and late-season KXNCAAFAPANY/APCHURN paths cannot be priced without a title-probability input; the machinery otherwise lives only in season_futures.",
     "role": "primary"
+   },
+   "cfb.cfp_committee_resume_model": {
+    "label": "CFP committee selection and ranking model from resume metrics",
+    "category": "motivation",
+    "mechanism": "Canonical CFP committee rank model (alias: cfb.cfp_ranking_resume_features): predicted committee rank at each release from record, strength of record and schedule, quality wins and losses, head-to-head and common opponents, conference champion status, key injuries and the previous ranking.",
+    "rationale": "Playoff berth, seed and top-N ranking contracts are decided by a committee, not by the ratings: the committee emphasises wins over ranked teams and conference championships, penalises losses depending on opponent and timing, and moves slowly week to week. A rating-only model misses the selection layer.",
+    "measurement": "Fit an ordered-response rank model on every CFP committee release 2014 to latest: rank_t ~ rank_(t-1) (inertia), ESPN Strength of Record or own resume metric from non-market ratings, strength of schedule, wins over top-25 and top-50 opponents, losses (count, margin, opponent quality, week of loss), head-to-head and common-opponent results versus adjacent-ranked teams, conference-champion flag (set only after title games), starting-quarterback injury flag, week index, with separate weights before and after championship week. Calibrate by rank error, pairwise ordering accuracy for adjacent ranks and probability of making the field. Output the rank distribution per team for every future release date (labelled weekly releases such as Nov 24 and the selection-day ranking). Serves season_futures (field, seed) and polls_and_cfp_rankings (exact and top-N rank).",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "CFBD CFP rankings endpoint (free key)",
+     "ESPN FPI/Strength of Record pages (free scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "committee rankings by week",
+     "game results with opponent ranks",
+     "conference champions",
+     "ESPN Strength of Record vintages"
+    ],
+    "why": "Canonical CFP committee rank model; its rank distribution at the labelled release date settles CFPPOLL/TOPCFPPOLL and seeds the bracket used for the Final AP #1.",
+    "role": "primary"
    }
   },
   "input_audit": {
    "cfb.poll_voter_behavior": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Umbrella label for two different electorates; superseded for the AP by cfb.poll_transition_model and for the CFP committee by cfb.cfp_ranking_resume_features, which carry the measurable definitions, so it is kept only as context and not as a separate primary input."
+    "reason": "Umbrella label for two different electorates; superseded for the AP by cfb.poll_transition_model and for the CFP committee by cfb.cfp_committee_resume_model, which carry the measurable definitions, so it is kept only as context and not as a separate primary input."
    },
    "cfb.sp_plus": {
     "verdict": "KEEP_SECONDARY",
@@ -8332,6 +8446,10 @@
    "cfb.playoff_format": {
     "verdict": "KEEP_CONTEXT",
     "reason": "CFP rankings always list 25 teams, so the format matters mostly for how much the committee cares about the top four or twelve positions and for conference-champion treatment; weak for the AP-based series."
+   },
+   "cfb.cfp_ranking_resume_features": {
+    "verdict": "DUPLICATE_OF:cfb.cfp_committee_resume_model",
+    "reason": "Same committee rank model as the season_futures input with a different feature list; consolidated into cfb.cfp_committee_resume_model (feature lists merged by patch CFB_a: head-to-head, common opponents, QB injury flag, pre/post-championship regimes, pairwise calibration) and kept only as an alias id."
    }
   },
   "interactions": [
@@ -8357,7 +8475,7 @@
    },
    {
     "inputs": [
-     "cfb.cfp_ranking_resume_features",
+     "cfb.cfp_committee_resume_model",
      "cfb.standings",
      "cfb.playoff_format"
     ],
@@ -8440,7 +8558,7 @@
      "cfb.poll_voter_behavior",
      "cfb.poll_transition_model",
      "cfb.ballot_points_gap",
-     "cfb.cfp_ranking_resume_features",
+     "cfb.cfp_committee_resume_model",
      "cfb.bubble_proximity_state",
      "cfb.poll_release_calendar"
     ]
@@ -8512,7 +8630,7 @@
     "feeds_inputs": [
      "cfb.qb_status_pit",
      "cfb.playoff_format",
-     "cfb.cfp_ranking_resume_features"
+     "cfb.cfp_committee_resume_model"
     ]
    }
   ],
@@ -8617,7 +8735,7 @@
       "cfb.pace",
       "cfb.drives",
       "cfb.script",
-      "cfb.opp_dropback_volume",
+      "cfb.script_adjusted_pass_attempts",
       "cfb.clock_rules"
      ]
     },
@@ -8742,7 +8860,7 @@
      "status": "COVERED",
      "input_ids": [
       "cfb.script",
-      "cfb.opp_dropback_volume"
+      "cfb.script_adjusted_pass_attempts"
      ],
      "note": "Score state drives pass volume and two-point decisions."
     },
@@ -8751,7 +8869,7 @@
      "input_ids": [
       "cfb.pace",
       "cfb.drives",
-      "cfb.opp_dropback_volume"
+      "cfb.script_adjusted_pass_attempts"
      ],
      "note": "Opportunity counts for each series."
     },
@@ -8796,23 +8914,6 @@
    }
   },
   "new_inputs": {
-   "cfb.opp_dropback_volume": {
-    "label": "Opposing dropback volume under expected script",
-    "category": "pace_volume",
-    "mechanism": "Expected number of pass dropbacks by the opponent (the opportunity count for sacks and interceptions) given its pass rate and the expected game state.",
-    "rationale": "Sack and interception counts are rates times the opponent's dropbacks, and the opponent's dropbacks swing by 10 to 15 depending on whether it trails or leads; using season averages misprices games with large expected margins. Note: this measures the same quantity as cfb.script_adjusted_pass_attempts plus cfb.state_dependent_pace in the game_stat_props record (dropbacks under the expected script) and should be aliased to one catalog input.",
-    "measurement": "Opponent neutral-situation pass rate (first and second down, score within 7, first three quarters) over last 10 games with 0.8 decay, expected plays from state-dependent tempo, and expected score state from non-market ratings (leading by 14+ lowers pass rate by about 10 points; trailing raises it by a similar amount); output expected dropbacks and negative-binomial dispersion. As-of last completed game.",
-    "pregame_knowable": "yes",
-    "free_sources": [
-     "CFBD plays (free key)"
-    ],
-    "registry_ids": [],
-    "raw_data": [
-     "plays with down, distance, score, play type, offense"
-    ],
-    "why": "Sets the number of opportunities for the defensive count series (sacks, interceptions, forced turnovers).",
-    "role": "primary"
-   },
    "cfb.qb_sack_proneness": {
     "label": "Quarterback sack proneness independent of line",
     "category": "player_role",
@@ -8912,6 +9013,23 @@
     ],
     "why": "Replaces a wind-focused weather input with the hazard that actually determines the delay series.",
     "role": "secondary"
+   },
+   "cfb.script_adjusted_pass_attempts": {
+    "label": "Script-adjusted team dropbacks",
+    "category": "pace_volume",
+    "mechanism": "Expected team pass attempts plus sacks given the expected game flow, rather than the season-average pass rate.",
+    "rationale": "Pass volume is the largest driver of receiving-yards variance: a team that trails by two scores throws 50-plus times, a team leading by 21 throws 20. Using season-average attempts mixes games of both kinds and understates the spread in the mean.",
+    "measurement": "Fit dropbacks per game on team neutral-situation pass rate (first and second down, score within 7, first three quarters), opponent neutral pass-rate allowed, expected margin from non-market ratings (not a quote), and plays; then predict at the pre-game expected margin with a piecewise term at +/-14 and +/-21. Window: current season with 6-game half-life, shrunk to previous season with k = 4 games; as-of the Saturday preceding kickoff. Output: mean attempts and a negative-binomial dispersion.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "CFBD plays with down, distance, score and play type (free key)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play with play_type, down, distance, score diff, period, clock"
+    ],
+    "why": "Evaluated for the opposing offence, the expected dropbacks are the opportunity base for TEAMSACK and TEAMINT (sacks and interceptions per dropback).",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -8966,6 +9084,10 @@
    "cfb.net_yards_per_play_model": {
     "verdict": "IRRELEVANT",
     "reason": "KXNCAAFTEAMYDS, the only total-yardage series, is filed under game_stat_props after the reconciliation; sacks, interceptions, turnovers, field goals, two-point tries and delays do not settle on net yards per play."
+   },
+   "cfb.opp_dropback_volume": {
+    "verdict": "DUPLICATE_OF:cfb.script_adjusted_pass_attempts",
+    "reason": "Its own definition measures opponent dropbacks under the expected script, which is cfb.script_adjusted_pass_attempts computed for the opposing team (it already includes the opponent's neutral pass rate allowed); consolidated and kept only as an alias id."
    }
   },
   "interactions": [
@@ -8973,7 +9095,7 @@
     "inputs": [
      "cfb.pass_rush",
      "cfb.qb_sack_proneness",
-     "cfb.opp_dropback_volume"
+     "cfb.script_adjusted_pass_attempts"
     ],
     "form": "multiplicative",
     "mechanism": "Expected sacks equal dropbacks times pressure rate times sack-given-pressure, and a mobile quick-release quarterback cuts the third factor, so the pass rush's advantage is large only against a quarterback who holds the ball; the effect is multiplicative in the volume.",
@@ -9032,7 +9154,7 @@
     "why": "A kicker's accuracy is high inside 35 yards and drops steeply beyond 45, so the count of made field goals depends on the distribution of distances, not only the number of attempts."
    },
    {
-    "input_id": "cfb.opp_dropback_volume",
+    "input_id": "cfb.script_adjusted_pass_attempts",
     "shape": "Piecewise in lead size: dropbacks rise when trailing by two scores and fall when leading",
     "why": "Opportunity counts for sacks and interceptions respond non-linearly to the expected margin, so the same team gets very different counts in a blowout and a close game."
    }
@@ -9084,7 +9206,7 @@
      "cfb.kicker",
      "cfb.redzone",
      "cfb.script",
-     "cfb.opp_dropback_volume",
+     "cfb.script_adjusted_pass_attempts",
      "cfb.qb_sack_proneness",
      "cfb.qb_interception_propensity",
      "cfb.fg_attempt_make_model",
@@ -9191,8 +9313,8 @@
    {
     "id": "stat_count_split",
     "type": "OTHER",
-    "description": "After the reconciliation team stat counts are split between game_stat_props (yards, touchdowns, rushing attempts) and this archetype (sacks, interceptions, turnovers, field goals, two-point conversions, delays), and cfb.opp_dropback_volume overlaps cfb.script_adjusted_pass_attempts and cfb.state_dependent_pace used there.",
-    "what_would_resolve": "Alias cfb.opp_dropback_volume to the game_stat_props dropback input in the catalog, or document why the defensive view needs a separate definition."
+    "description": "Consolidated 2026-11-08: the dropback opportunity base for sacks and interceptions is cfb.script_adjusted_pass_attempts evaluated for the opposing offence (attached here as primary); cfb.opp_dropback_volume is marked DUPLICATE_OF here and in season_stat_leader and patched as an alias. Open: whether sacks/interceptions need a separate pass-rate allowed shrinkage for defences facing few dropbacks.",
+    "what_would_resolve": "Compare held-out sack and interception deviance using the canonical dropback forecast with and without a defence-side pass-rate-allowed term."
    },
    {
     "id": "delay_history_source",

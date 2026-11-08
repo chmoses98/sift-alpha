@@ -69,12 +69,27 @@ def load_resolutions(sport: str) -> dict:
     return out
 
 
-def resolution_ok(sport: str, key: str, r: dict, cat_c: dict, arch: set) -> bool:
+AD = comp.CD / "gap_resolution_audit"
+
+
+def load_resolution_audit(sport: str) -> dict:
+    out = {}
+    for f in sorted(AD.glob(f"{sport}*.json")) if AD.exists() else []:
+        out.update(json.loads(f.read_text()).get("gaps") or {})
+    return out
+
+
+def resolution_ok(sport: str, key: str, r: dict, cat_c: dict, arch: set, audit: dict | None = None) -> bool:
     """A catalog-blocker closure counts only if it says what changed (>=60 chars) and names changed ids that exist in the final catalog (inputs or archetype keys)."""
     if r.get("status") != "RESOLVED" or not comp._txt(r.get("detail"), 60):
         return False
     ids = r.get("changed_ids") or []
-    return bool(ids) and all(i in cat_c["inputs"] or i in arch for i in ids)
+    if not (bool(ids) and all(i in cat_c["inputs"] or i in arch for i in ids)):
+        return False
+    if audit is not None:   # the closure must also have been confirmed by an independent auditor (not the resolver)
+        a = audit.get(key) or {}
+        return a.get("verdict") == "CONFIRMED" and len(str(a.get("evidence", ""))) >= 60 and bool(a.get("auditor"))
+    return True
 
 
 def validate_resolutions(sport: str) -> list[str]:
@@ -96,15 +111,15 @@ def summary() -> dict:
     tot = collections.Counter(); by = {}; blockers = []; n = 0; closed = 0
     for s in comp.SPORTS:
         cls = load(s); gaps = collect(s); c = collections.Counter(v["class"] for v in cls.values()); by[s] = {"declared": len(gaps), "classified": len(cls), **dict(c)}
-        cc = cat.load(s); arch = set(comp.arch_keys(cc)); res = load_resolutions(s)
+        cc = cat.load(s); arch = set(comp.arch_keys(cc)); res = load_resolutions(s); aud = load_resolution_audit(s)
         tot.update(c); n += len(gaps)
         for g, v in cls.items():
             if v["class"] == "CATALOG_BLOCKER":
-                done = g in res and resolution_ok(s, g, res[g], cc, arch)
+                done = g in res and resolution_ok(s, g, res[g], cc, arch, aud)
                 closed += done; by[s]["blockers_resolved"] = by[s].get("blockers_resolved", 0) + int(done)
                 if not done:
                     blockers.append({"sport": s, "gap": g, "action": v.get("catalog_action"), "rationale": v["rationale"]})
-    return {"declared": n, "classified": sum(tot.values()), "by_class": dict(tot), "blockers_resolved": closed, "blockers_open": len(blockers), "by_sport": by, "catalog_blockers": blockers}
+    return {"declared": n, "classified": sum(tot.values()), "by_class": dict(tot), "blockers_resolved": closed, "blockers_open": len(blockers), "blockers_resolved_unaudited": sum(1 for s_ in comp.SPORTS for g, r in load_resolutions(s_).items() if r.get("status") == "RESOLVED" and (load_resolution_audit(s_).get(g) or {}).get("verdict") != "CONFIRMED"), "by_sport": by, "catalog_blockers": blockers}
 
 
 def main():

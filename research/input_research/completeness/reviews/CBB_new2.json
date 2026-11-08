@@ -90,6 +90,11 @@
      "id": "cbb.incumbent_coach_departure_hazard",
      "why": "Incumbent departure hazard and succession arrangements set the no-vacancy and coach-in-waiting mass for series opened before a vacancy.",
      "role": "secondary"
+    },
+    {
+     "id": "cbb.concurrent_vacancy_competition",
+     "why": "KXNCAAMBNEXTCOACH prices a named candidate's chance of being hired by one school; a simultaneous opening at a richer school linked to the same candidate directly reduces that probability, which no other attached input captures.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -212,15 +217,17 @@
     {
      "id": "s3",
      "name": "Reachability and negotiation",
-     "description": "A top-ranked candidate must accept: the offer must exceed salary plus buyout at the current school, roster budget (revenue sharing and NIL) must be competitive, and the current school may counter with an extension. Candidates whose teams are still in the NCAA tournament or whose buyout drops at a later date may be unavailable when the school wants to hire. Competing vacancies at other schools bid for the same people.",
+     "description": "A top-ranked candidate must accept: the offer must exceed salary plus buyout at the current school, roster budget (revenue sharing and NIL) must be competitive, and the current school may counter with an extension. Candidates whose teams are still in the NCAA tournament or whose buyout drops at a later date may be unavailable when the school wants to hire. Competing vacancies at other schools bid for the same people: cbb.concurrent_vacancy_competition measures, per candidate, the attractiveness-weighted pressure from rival openings linked to him and the chance he is taken off the board before this school decides.",
      "distribution": "Acceptance is close to binary per candidate given an offer; a declined first choice shifts mass to the next names in a cascade, giving a mixture over orderings.",
      "categories": [
       "environment",
-      "situational_schedule_motivation"
+      "situational_schedule_motivation",
+      "opponent_matchup"
      ],
      "input_ids": [
       "cbb.program_hiring_resources",
-      "cbb.candidate_availability_calendar"
+      "cbb.candidate_availability_calendar",
+      "cbb.concurrent_vacancy_competition"
      ]
     },
     {
@@ -251,9 +258,11 @@
      "note": "Candidate quality is the programme-building record, measured from point-in-time ratings."
     },
     "opponent_matchup": {
-     "status": "GAP",
-     "note": "Competing vacancies at other schools bid for the same candidates in the same window; no input tracks the simultaneous carousel and the relative attractiveness of rival openings. Stage s3 no longer claims this category; competing vacancies stay a declared gap (coach_u2).",
-     "input_ids": []
+     "status": "COVERED",
+     "input_ids": [
+      "cbb.concurrent_vacancy_competition"
+     ],
+     "note": "The 'opponent' of a coaching search is every rival vacancy in the same cycle; cbb.concurrent_vacancy_competition scores rival pressure per candidate from dated links and relative offer capacity. The per-link loss rate h is empirical (coach_u2)."
     },
     "role_personnel": {
      "status": "COVERED",
@@ -552,6 +561,27 @@
     ],
     "why": "Supplies the no-vacancy mass and the coach-in-waiting case that the field-residual input does not cover, needed for any series opened before a vacancy.",
     "role": "secondary"
+   },
+   "cbb.concurrent_vacancy_competition": {
+    "label": "Concurrent head-coach vacancies competing for the same candidates in the hiring cycle",
+    "category": "matchup",
+    "mechanism": "Schools hiring in the same window bid for overlapping candidate lists; when a better-resourced or more attractive rival opening hires or targets a candidate first, that candidate leaves this school's board and probability mass cascades to lower-ranked names or the residual.",
+    "rationale": "The single-search model treats each candidate's acceptance as depending only on this school's offer, but the carousel is a matching market: a rival vacancy that opens later at a richer programme can still pull a candidate who would otherwise have accepted, and a rival filling early releases pressure. Subtle: rival openings also create new vacancies (a hired sitting coach opens his old job), so candidate overlap changes within days, and timing matters as much as resources.",
+    "measurement": "At as-of t, list every open Division I head-coach vacancy V_j (announced before t, not yet filled) and every reported candidate link L(j,c) from cbb.coaching_search_report_ledger dated before t. For each candidate c on this school's board: rival_pressure(c) = sum over rival vacancies j linked to c of attract_j / (attract_i + attract_j), where attract = offer_capacity from cbb.program_hiring_resources times a programme-prestige factor (mean NCAA-tournament wins per season over the last 15 seasons, shrunk to the league mean with weight n/(n+5)); P(c lost to rival before this school's decision) = 1 - prod_j (1 - h * attract_j/(attract_i+attract_j)), with h the historical per-link loss rate estimated from past cycles (prior 0.25, shrunk n/(n+30)); also report n_open_vacancies_same_tier (rivals with offer_capacity >= this school's). Vacancies and links dated after t are excluded.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Coaching-carousel trackers published by ESPN, CBS Sports, Stadium/The Field of 68 and Yahoo",
+     "Athletics department press releases announcing firings and hires",
+     "USA Today coach salary database"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "vacancy table: school, conference, date opened, date filled, hire",
+     "dated candidate-link reports per vacancy (from cbb.coaching_search_report_ledger)",
+     "school offer capacity and NCAA-tournament history"
+    ],
+    "why": "KXNCAAMBNEXTCOACH prices a named candidate's chance of being hired by one school; a simultaneous opening at a richer school linked to the same candidate directly reduces that probability, which no other attached input captures.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -643,6 +673,24 @@
     "form": "joint-distribution",
     "mechanism": "The no-hire mass and the unlisted mass are not separable: a retirement with a pre-arranged successor removes both, while a firing opens a conventional search with a large unlisted mass, so the residual masses must be mixed over departure types rather than estimated from all vacancies pooled.",
     "how_to_test": "Estimate the unlisted-hire share separately for retirements with named successors, retirements without, and firings, and compare with the pooled figure."
+   },
+   {
+    "inputs": [
+     "cbb.concurrent_vacancy_competition",
+     "cbb.program_hiring_resources"
+    ],
+    "form": "conditional",
+    "mechanism": "Rival pressure matters only relative to this school's own offer capacity: a linked rival vacancy at a programme with lower capacity barely threatens the candidate, while one with higher capacity can remove him regardless of how strongly he is linked here; for low-resource schools a cycle with many same-tier openings pushes mass from sitting head coaches toward assistants and the residual.",
+    "how_to_test": "In past cycles, regress whether a linked candidate was hired by school i on his link strength, school i's capacity and the capacity ratio of the strongest rival opening linked to him, and test the interaction term against an additive model."
+   },
+   {
+    "inputs": [
+     "cbb.concurrent_vacancy_competition",
+     "cbb.candidate_availability_calendar"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Rival competition binds only while vacancies overlap in time: early-cycle openings (before the NCAA tournament ends) face a different rival set than late openings created by sitting coaches leaving, so the same candidate is contested in one window and uncontested in another.",
+    "how_to_test": "Split past candidate links by whether a higher-capacity rival vacancy was open in the same 14-day window and compare hire conversion rates."
    }
   ],
   "nonlinearities": [
@@ -846,6 +894,43 @@
      "cbb.bracket_sim",
      "cbb.preseason_prior"
     ]
+   },
+   {
+    "dataset": "Head-coach vacancy carousel table",
+    "grain": "one row per vacancy per cycle, plus one row per dated candidate link",
+    "fields": [
+     "school",
+     "conference",
+     "date opened",
+     "date filled",
+     "hired coach",
+     "candidate linked",
+     "link report date",
+     "link source"
+    ],
+    "timestamp_requirement": "Each vacancy and link stamped with first public report time; only rows dated before the pricing time are used.",
+    "history_needed": "At least 8 hiring cycles (2018-19 onward) to estimate per-link loss rates.",
+    "candidate_sources": [
+     {
+      "name": "ESPN / CBS Sports / Yahoo coaching-carousel trackers",
+      "access": "free_limited",
+      "note": "tracker pages are overwritten; dates must be reconstructed from archived snapshots"
+     },
+     {
+      "name": "Internet Archive snapshots of carousel trackers",
+      "access": "free_scrape",
+      "note": "coverage of snapshots SOURCE_UNVERIFIED"
+     },
+     {
+      "name": "Athletics department press releases",
+      "access": "free",
+      "note": "exact open/fill dates"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.concurrent_vacancy_competition",
+     "cbb.program_hiring_resources"
+    ]
    }
   ],
   "unresolved": [
@@ -860,7 +945,7 @@
     "id": "coach_u2",
     "type": "DATA_UNAVAILABLE",
     "category": "opponent_matchup",
-    "description": "No input models simultaneous competing vacancies (other schools hiring in the same cycle) that bid for the same candidates; a rival opening at a higher-resourced school can take a candidate off the board.",
+    "description": "cbb.concurrent_vacancy_competition now models rival openings bidding for the same candidates, but the per-link loss rate h and the prestige weighting have never been estimated, and no archived dated carousel table is known to exist.",
     "what_would_resolve": "Build a cycle-level vacancy table with school resources and link overlaps, then estimate candidate loss rates to rival openings."
    },
    {
@@ -1960,7 +2045,7 @@
     "label": "Expected tournament games per candidate player (field entry x team survival x availability)",
     "category": "schedule_context",
     "mechanism": "A player can only hit a milestone in games his team plays; expected exposure is the sum over rounds of P(team in field) times P(team reaches that round) times P(player active).",
-    "rationale": "Total team-games in the tournament are fixed by the format, but they concentrate on strong teams; a star on a 1 seed averages several games, a star on a 16 seed one or two. Subtle: the First Four counts, so play-in teams add a game, and a changed field size changes the count. The market trades through the tournament window, so exposure must be recomputed as teams are eliminated and as a milestone either occurs (settling YES) or becomes unreachable with fewer games left.",
+    "rationale": "Total team-games in the tournament are fixed by the format, but they concentrate on strong teams; a star on a 1 seed averages several games, a star on a 16 seed one or two. Subtle: the Opening Round counts (12 games and 24 teams from 2027, replacing the 4-game First Four), so play-in teams add a game, and a changed field size changes the count. The market trades through the tournament window, so exposure must be recomputed as teams are eliminated and as a milestone either occurs (settling YES) or becomes unreachable with fewer games left.",
     "measurement": "For each player as of t: E[games] = sum_r P(team bid) * P(team plays round r | bid) * P(player active in r), using the bracket simulation with fundamentals-only ratings; P(active) from injury status and star injury risk; before Selection Sunday include bid probability; report full distribution of games (1 to 7, or more under an expanded field). In-tournament state: after the field is set, condition on the live bracket at t (teams still alive, games already played, results to date) and set P(YES) = 1 for the relevant series once any qualifying game is final; remaining exposure = games still to be played by surviving teams only.",
     "pregame_knowable": "partial",
     "free_sources": [
@@ -2021,7 +2106,7 @@
     "category": "distribution",
     "mechanism": "YES = at least one player-game hits the milestone; probability is one minus the probability that none does, computed over correlated player-games in a bracket where survival paths are shared.",
     "rationale": "Simple independence summation overstates YES when probability is concentrated on a few stars whose games are correlated by team survival, and the chance that a candidate's team loses early removes several of his games at once. Subtle: the event is dominated by a handful of players, so the union is sensitive to errors in their tails, and 'long tail' depth (many players at very small probabilities) still contributes.",
-    "measurement": "Monte Carlo: simulate the bracket (with First Four) N >= 50,000 times; for each simulated game draw active players' stat lines from their per-game models (minutes linked to game margin and OT); YES if any line hits the milestone; report P(YES) and the contribution share of the top 10 players; compare with the analytical 1 - prod(1 - p_i)^{E[games_i]} as a check.",
+    "measurement": "Monte Carlo: simulate the bracket (with the 12-game Opening Round of the 2027 76-team field) N >= 50,000 times; for each simulated game draw active players' stat lines from their per-game models (minutes linked to game margin and OT); YES if any line hits the milestone; report P(YES) and the contribution share of the top 10 players; compare with the analytical 1 - prod(1 - p_i)^{E[games_i]} as a check.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Derived from bracket simulation and player models"

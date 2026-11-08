@@ -173,6 +173,44 @@ def apply_patches() -> dict:
     return stats
 
 
+def apply_archetype_patches() -> dict:
+    """Archetype-level catalog corrections (archetype_patches/<SPORT>*.json): relabel, retarget, detach inputs that do not belong, re-role attached inputs, attach existing inputs."""
+    stats = {}
+    for s in SPORTS:
+        pt = comp.archetype_patches(s)
+        if not pt:
+            continue
+        c = cat.load(s); n = collections.Counter()
+        for k, v in pt.items():
+            if k not in comp.arch_keys(c):
+                raise ValueError(f"{s}: archetype patch for unknown archetype {k}")
+            a = comp.arch_entry(c, k); have = {i["id"] for i in a["inputs"]}
+            for fld in ("label", "target", "contract_types", "mechanism"):
+                if fld in v and a.get(fld) != v[fld]:
+                    if fld in ("mechanism",) and len(str(v[fld])) < 120:
+                        raise ValueError(f"{s}:{k}: mechanism too thin")
+                    a[fld] = v[fld]; n[fld] += 1
+            for iid in v["detach"]:
+                if iid in have:
+                    a["inputs"] = [i for i in a["inputs"] if i["id"] != iid]; have.discard(iid); n["detached"] += 1
+            if len(a["inputs"]) + len(v["attach"]) < 8:
+                raise ValueError(f"{s}:{k}: an archetype needs >=8 inputs after detaching")
+            for iid, role in v["roles"].items():
+                if role not in ("primary", "secondary", "context"):
+                    raise ValueError(f"{s}:{k}:{iid}: bad role")
+                for i in a["inputs"]:
+                    if i["id"] == iid and i["role"] != role:
+                        i["role"] = role; n["roles"] += 1
+            for x in v["attach"]:
+                if x["id"] not in c["inputs"] or len(str(x.get("why", ""))) < 30 or x.get("role") not in ("primary", "secondary", "context"):
+                    raise ValueError(f"{s}:{k}: bad attach {x}")
+                if x["id"] not in have:
+                    a["inputs"].append({"id": x["id"], "why": x["why"], "role": x["role"]}); have.add(x["id"]); n["attached"] += 1
+        (cat.CATALOG_DIR / f"{s}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False) + "\n")
+        stats[s] = dict(n)
+    return stats
+
+
 def summary() -> dict:
     mech = mechanical(); out = {"mechanical": mech["by_sport"], "audited": {}, "market_free": collections.Counter(), "verdicts": collections.Counter()}
     for s in SPORTS:

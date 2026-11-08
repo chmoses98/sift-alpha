@@ -1052,9 +1052,9 @@
   "nfl.ot_model": {
    "label": "Overtime and tie model",
    "category": "distribution",
-   "mechanism": "Overtime frequency, the overtime rule set in force that season (sudden-death versus both-teams-possess variants, 10-minute regular-season period, ties possible in the regular season) and tie probability determine settlement of regulation-only versus including-OT markets.",
+   "mechanism": "Overtime frequency, the overtime rule set in force that season and tie probability determine settlement of regulation-only versus including-OT markets. From 2025 the regular-season overtime is a single 10-minute period in which both teams get a possession (an opening-drive touchdown no longer ends the game), then sudden death; the game is a tie if the period expires level. Seasons 2017-2024 used the 10-minute first-possession-touchdown-wins format; the playoffs have no time limit.",
    "rationale": "OT adds scoring and changes winner markets; in nflverse regular-season data (2012-2025, n=3,784) about 6% of games were tied after regulation and went to overtime, but only about 0.4% ended tied, so markets that settle on regulation carry meaningful tie mass while including-OT markets almost none; ties count 0.5 in standings. The overtime rule set changes by season and must be read from each contract's rules text, not assumed. Market wording must be matched to the model.",
-   "measurement": "P(tie after 60 min) from the margin distribution (probability mass at 0 with key-number clustering); OT win probability conditional on the rule set in force that season and team strength; expected OT points; tie probability after the regular-season OT period; use settlement wording to decide which components to include.",
+   "measurement": "P(tie after 60 min) from the model margin lattice mass at 0 (nfl.model_margin_lattice, own means, no betting lines). Overtime: drive simulation under the rule era of the season (2017-2024: first-possession TD wins, 10 min; 2025+: both teams possess unless the first drive consumes the full 10 minutes and scores, then sudden death, 10 min; playoffs: both possess, untimed). Per drive, outcome rates (TD, FG, punt/turnover, safety) and drive duration from the two teams' own drive model by field position, shrunk to league with k=150 drives; two-point decision after a TD by coach and score state. The final OT margin lies on the lattice {1,2,3,4,5,6,7,8}: 1-2 for answered TDs with different tries, 2 for a safety, 3 for FG, 4-5 for a FG answered by a TD or a clock-expiry finish, 6-8 for unanswered TD with failed, kicked or two-point try. Output P(OT), P(win | OT) per team, expected OT points and P(level after OT) per game, refitted by era (2012-2016, 2017-2024, 2025+); use settlement wording to decide which components to include.",
    "pregame_knowable": "yes",
    "free_sources": [
     "nflverse games.csv (spread_line, total_line, moneylines, roof, surface, temp, wind, rest, referee, coaches, starting QBs)",
@@ -1553,15 +1553,23 @@
   "nfl.offfield_base_rate": {
    "label": "Reference-class base rates for NFL off-field events",
    "category": "distribution",
-   "mechanism": "Coach firings, trades and announcements occur at historical frequencies by calendar window.",
-   "rationale": "Off-field markets (coach out, hire, trade) are not game-model problems; the prior is the historical frequency conditional on record, ownership and calendar, updated by dated reporting.",
-   "measurement": "Count event classes per season and week-of-year from transactions archives; condition on team record and tenure; shrink; store the announcement timestamp.",
+   "mechanism": "Each off-field series is priced from a named reference class of comparable past events with its historical frequency by calendar window: head-coach exits and hires, trades, retirements and roster events from the transaction history, cross-sport athletes linked to an NFL signing for the celebrity series, and announced international games for the game-location series.",
+   "rationale": "Off-field markets are not game-model problems; the prior is the historical frequency of a defined class conditional on record, contract and calendar, updated by dated official reporting. Classes must be declared per series: a celebrity-signing market has almost no successes in its class, so the prior is near zero and dominated by verified tryout or signing news, while ownership-stake and stadium-completion series are out of scope and excluded rather than given an invented prior.",
+   "measurement": "Per series reference class, window and estimator. (1) Coach exit/hire (KXNFLCOACHOUT, KXNFLNEXTCOACHOUT, KXNFLHIRECOACH): head-coach seasons 2000-2025, event by calendar week, conditioned on win% bin and tenure, Gamma-Poisson shrinkage (prior shape 2, rate 4 team-years). (2) Trades, next team, retirement, 53-man (KXNFLTRADE, KXNFLNEXTTEAM, KXNFLRETIRE, KXNFL53MAN): transaction log 2010-2025 by type and week, conditioned on contract year and age, same shrinkage. (3) Cross-sport athlete signing or snap (KXNFLHKANE, KXNFLCOMPETE): class = non-NFL athletes publicly reported as working out for or negotiating with an NFL team 2000-2025 (International Player Pathway rugby and other athletes, soccer and track converts, celebrities); success = official signing (HKANE) or a recorded snap (COMPETE) within the contract window; Beta(0.5, 0.5) prior updated by class counts, then multiplied by 0.1 when no credible tryout or negotiation report exists for the named person. (4) International game venue retention (KXNFLGAMELOCATION): announced international regular-season games 2007-2025, share played in the announced city by the announced date, Beta(1,1) prior. Excluded: KXNFLOWNERSTAKE and KXNFLSTADIUM, re-filed OUT_OF_SCOPE in the final series assignment. Store each event's official announcement timestamp; as-of quote time.",
    "pregame_knowable": "partial",
    "free_sources": [
-    "nflverse transactions-adjacent data (players/rosters)",
-    "Pro-Football-Reference coaching records"
+    "nflverse rosters and players (status changes)",
+    "Pro-Football-Reference coaching records (free, scrape)",
+    "NFL International Player Pathway announcements (nfl.com)",
+    "NFL international games schedule history (nfl.com)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "coach seasons: team, coach, start/end dates, win%",
+    "transaction log: date, player, team, type",
+    "cross-sport athlete list: name, sport, first NFL report date, signing date, snap date",
+    "international games: announced city, announcement date, played city and date"
+   ]
   },
   "nfl.player_xtd": {
    "label": "Player expected touchdowns (xTD) from play-level opportunity",
@@ -2311,9 +2319,9 @@
   "nfl.ot_ending_hazard": {
    "label": "P(game ends level | overtime) under current OT rules",
    "category": "distribution",
-   "mechanism": "Probability that the overtime period fails to produce a decisive score, given each team's possession counts, scoring rates and 4th-down choices under the OT rule set.",
+   "mechanism": "Probability that the overtime period fails to produce a decisive score under the rule era in force: from 2025 in the regular season both teams get a possession inside a 10-minute period followed by sudden death, so a level finish needs equal scores (no score, matched FGs, matched TDs and tries) when the clock expires.",
    "rationale": "Overtime ending level is a very small but rule-dependent event; the tie market is the product of two small probabilities and the OT-rule change makes historical frequencies stale.",
-   "measurement": "Simulate OT as a drive process with period length 10 min (regular season), possession rule per season, team TD/FG rates per drive (from nfl.drive-level data, shrunk), and 4th-down aggression; calibrate to realized OT outcomes since 2012 (about 100+ regular-season OT games); report P(level | OT) with credible interval; as-of start of season and refreshed weekly.",
+   "measurement": "Simulate OT as a drive process with a 10-minute clock (regular season) and the possession rule of the season's era (2017-2024 first-possession TD wins; 2025+ both teams possess unless the opening drive uses the full period and scores, then sudden death); per drive TD/FG/safety/empty rates and drive duration from the two teams' drive-level data shrunk to league with k=150 drives; extra-point versus two-point choice after a matching TD from coach policy; 4th-down aggression. Final margins on the lattice {1,...,8} (not 0/3/6). Calibrate to realized regular-season OT outcomes per era since 2012; report P(level | OT) with credible interval; as-of start of season and refreshed weekly.",
    "pregame_knowable": "yes",
    "free_sources": [
     "nflverse schedules and pbp (overtime flag, result)",
@@ -2861,9 +2869,9 @@
   "nfl.vote_outcome_model": {
    "label": "Vote-share model for awards and the Top 100 list",
    "category": "distribution",
-   "mechanism": "Winner or rank probability from candidate quality, narrative, previous votes, timing and electorate composition.",
+   "mechanism": "Winner or rank probability from candidate quality, narrative, previous votes, timing and electorate composition, aggregated through each award's actual ballot: AP MVP since 2022 is a 50-voter top-5 ranked ballot scored 10-5-3-2-1, other AP awards and Coach of the Year a top-3 ballot scored 5-3-1, earlier seasons a single first-place vote.",
    "rationale": "Awards and ranks are decided by a small electorate with identifiable biases (position, team success, prior awards); the leader's share is concentrated.",
-   "measurement": "Per award, conditional (multinomial) logit of winner on candidate features: team win% at announcement, statistical rank within position (EPA or season totals), prior award wins, position dummy, drop undefined narrative flags, with ridge penalty by leave-one-season-out CV and prior weight 3 pseudo-observations. T100: ordered logit on previous rank, change in production, position group, age. Output P(candidate=winner) and P(rank=r); group markets P(group) = sum of P(win) by team at announcement time with 1/N co-winner payout; Executive of the Year tie probability = own-award co-winner frequency shrunk to pooled co-winner frequency of comparable awards with weight 10 awards. As-of announcement date.",
+   "measurement": "Per AP award, model each voter's ranked ballot: rank-ordered (exploded) logit of candidate placements on features (team win% at ballot close, statistical rank within position by EPA or season totals, prior award wins, position dummy), ridge penalty by leave-one-season-out CV, prior weight 3 pseudo-observations; fit 2022-2025 on full placement counts (MVP 5 places, others 3) and pre-2022 on first-place votes only as a separate regime sharing feature weights through a hierarchical prior. Simulate 50 ballots per draw, score with 10-5-3-2-1 (MVP) or 5-3-1 (other AP awards), winner = highest points (ties shared). Non-AP processes (PFWA Executive of the Year, Hall of Fame, All-Pro, T100) keep their own model: T100 ordered logit on previous rank, change in production, position group, age. Output P(candidate=winner) and P(rank=r); group markets P(group) = sum of P(win) by team at announcement time with 1/N co-winner payout; Executive of the Year tie probability = own-award co-winner frequency shrunk to comparable awards with weight 10. As-of ballot close.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Pro Football Reference awards and voting (free_scrape)",
@@ -3939,16 +3947,17 @@
   "nfl.teammate_vote_split_penalty": {
    "label": "Teammate and look-alike candidate vote-splitting penalty",
    "category": "distribution",
-   "mechanism": "Reduction in a candidate's vote share caused by another strong candidate with the same team, position or narrative.",
-   "rationale": "Plurality voting splits similar support: two quarterbacks on the same team or two edge rushers with similar sack counts take votes from each other, so independent win probabilities overstate the sum and understate a third candidate's chance.",
-   "measurement": "Latent score for candidate i in season s = x_i'theta where x_i are the features of nfl.vote_outcome_model (team win%, positional EPA rank, prior wins) minus beta x max over same-team or same-position rivals j of x_j'theta. Estimate theta and beta jointly by maximum likelihood of the observed first-place vote shares under a Dirichlet-multinomial for 2005-2025 seasons (candidates with at least 1 vote), ridge penalty lambda chosen by leave-one-season-out CV, shrink beta toward 0. Output winner probabilities after the split correction. As-of announcement date.",
+   "mechanism": "Reduction in a candidate's ballot placements caused by another strong candidate with the same team, position or narrative; under ranked-points ballots it acts mostly on first-place share, because both rivals can still collect lower-place points.",
+   "rationale": "Since 2022 AP awards are ranked-points ballots (MVP 10-5-3-2-1 over five places, other AP awards 5-3-1 over three), so two similar candidates split first places but not all support: a candidate can win on second- and third-place points (2025 MVP: Stafford 366 points with 24 firsts, Maye 361 with 23). A penalty fitted to first-place shares under plurality overstates the split for ranked seasons and must be estimated by regime.",
+   "measurement": "Rank-ordered logit latent utility for candidate i on voter ballot = x_i'theta - beta_r x max over same-team or same-position rivals j of x_j'theta, where x are the nfl.vote_outcome_model features and r indexes the placement (first place versus lower places). Estimate theta and beta_r by maximum likelihood on placement counts per candidate for 2022-2025 ranked seasons (MVP five places, other AP awards three), and on first-place vote shares under a Dirichlet-multinomial for 2005-2021 single-vote seasons as a separate regime; ridge penalty by leave-one-season-out CV, shrink beta_r toward 0. Output winner probabilities from simulated 50-voter ballots scored by the award's point scheme. As-of ballot close.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Pro-Football-Reference AP voting tables"
    ],
    "registry_ids": [],
    "raw_data": [
-    "AP vote shares by candidate-season, team, position",
+    "AP vote tallies by candidate-season: points and placement counts (2022+), first-place votes (pre-2022)",
+    "team and position per candidate",
     "per-candidate production score"
    ],
    "market_free": "yes",
@@ -4699,9 +4708,9 @@
   "nfl.paired_score_covariance_own": {
    "label": "Paired team-score covariance from pace, script and weather (market-free)",
    "category": "distribution",
-   "mechanism": "Estimates the covariance between the two teams' scores through shared pace, shared weather and the zero-sum score path, so the joint tail for the both-teams-35 contract is not a product of marginals.",
-   "rationale": "Team scores are positively correlated through plays and drives and conditionally negative through script (a leading team slows play and shortens the other side's comeback window). The joint tail P(both >= 35) is a tail of a score pair and is highly sensitive to the correlation sign at high totals.",
-   "measurement": "Using 2010-2025 regular-season games, compute residual correlation rho_b of (home score - own model home mean) and (away score - own model away mean), where means are walk-forward outputs of nfl.model_team_points_mean including the home shift and dome flag. Bins: expected total (<40, 40-50, >50 model points) x wind (<10, 10-15, >=15 mph; roofed games count as calm), 9 cells; shrink each rho_b toward the pooled rho with weight n_b/(n_b+150). Simulate pairs by drawing a bivariate normal with rho_b, mapping each margin through the inverse CDF of that team's nfl.team_score_pmf_own_mean marginal (Gaussian copula on integer scores). Output P(both scores >= 35) and rho_b per cell. As-of kickoff weather forecast and model means; no betting total used.",
+   "mechanism": "Estimates the dependence between the two teams' scores through shared pace, shared weather and the score path and outputs their joint integer pmf, from which the single-team conditional pmf (team totals), the both-teams-at-least-N tail (game_total's KXNFLBOTH) and the game-total tail (slate extremes) are read.",
+   "rationale": "Team scores are positively correlated through plays and drives and conditionally negative through script (a leading team slows play and shortens the other side's comeback window). The sign and size vary by expected total and weather, so any contract on one team conditioned on the game, on both teams' tails or on the sum needs the joint pmf rather than a product of marginals; the dependence is strongest in the high-total tail.",
+   "measurement": "Using 2010-2025 regular-season games, compute residual correlation rho_b of (home score - own model home mean) and (away score - own model away mean), where means are walk-forward outputs of nfl.model_team_points_mean including the home shift and dome flag. Bins: expected total (<40, 40-50, >50 model points) x wind (<10, 10-15, >=15 mph; roofed games count as calm), 9 cells; shrink each rho_b toward the pooled rho with weight n_b/(n_b+150). Simulate pairs by a Gaussian copula with rho_b mapping each margin through that team's nfl.team_score_pmf_own_mean marginal (OT-inclusive or regulation-only per contract). Output the joint pmf P(home=h, away=a) for h, a in 0..70 and rho_b per cell; consumers read P(team>=n | game draw), P(both>=N) and P(home+away>=T). As-of kickoff weather forecast and model means; no betting total used.",
    "pregame_knowable": "yes",
    "free_sources": [
     "nflverse schedules (final scores, roof, wind, temp)",
@@ -7252,11 +7261,11 @@
    }
   },
   "nfl.combine_drill_extreme_history": {
-   "label": "Yearly Combine best marks by drill and record tail",
+   "label": "Yearly Combine best marks by drill (40, broad jump, vertical, bench reps) and record tail",
    "category": "distribution",
-   "mechanism": "Distribution of the yearly fastest 40 and longest broad jump across classes, used to calibrate the extreme-value tail and the chance of breaking the record.",
+   "mechanism": "Distribution of the yearly fastest 40, longest broad jump, highest vertical and most bench-press reps across classes, used to calibrate the extreme-value tail of each drill and the chance of breaking its record.",
    "rationale": "The 148-inch strike exceeds the 147-inch record, so the per-class probability is a record-exceedance tail that cannot be read from typical yearly bests; the era trend (training specialisation) and the number of participants shift the location.",
-   "measurement": "From nflverse Combine data 2006-2025 (fixed window; years before 2006 excluded because timing regime differs), take each year's best 40 time (minimum) and best broad jump (maximum) among participants. Fit a GEV to the 20 yearly maxima (sign-flipped for the 40) with location mu = a + b x (season-2006) + c x ln(number of participants who recorded the drill); shape by maximum likelihood with a Normal(0, 0.15) prior, parametric bootstrap 2,000 draws for intervals. Output P(max >= x) for any strike x (broad jump inches) and the distribution of the winning 40 time. As-of before testing, using the invite-list participant count forecast.",
+   "measurement": "From nflverse Combine data 2006-2025 (fixed window; earlier timing regime excluded), take each year's best 40 time (minimum), broad jump (maximum, inches), vertical (maximum, inches) and bench press (maximum reps at 225 lb) among participants. For the three continuous drills fit a GEV to the 20 yearly maxima (sign-flipped for the 40) with location mu = a + b x (season-2006) + c x ln(number of participants who recorded the drill); shape by maximum likelihood with a Normal(0, 0.15) prior. For bench reps (integer) fit the same GEV to yearly maxima and discretise by rounding with continuity correction. Parametric bootstrap 2,000 draws for intervals. Output P(max >= x) for any strike and the distribution of the winning mark per drill. As-of before testing, using the forecast participant count per drill.",
    "pregame_knowable": "yes",
    "free_sources": [
     "nflverse combine data",
@@ -7265,8 +7274,8 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "combine.season, player, pos, forty, broad_jump",
-    "participant counts by position and year"
+    "combine.season, player, pos, forty, broad_jump, vertical, bench",
+    "participant counts by drill, position and year"
    ],
    "market_free": "yes",
    "provenance": {
@@ -7538,6 +7547,154 @@
     ],
     "verified": false
    }
+  },
+  "nfl.combo_shared_weather_leg_coupling": {
+   "label": "Shared-weather common shock coupling same-game combo legs (total, kicker, passing, rushing)",
+   "category": "environment",
+   "mechanism": "One kickoff-hour weather state (sustained wind, gusts, heavy precipitation, extreme cold) at an open-air venue shifts several legs of the same combo in fixed directions at once: it lowers the game total and team totals, lowers kicker points and long-FG legs, lowers QB passing-yard and receiver-yard legs, and raises rushing attempts and the leading back's carry legs.",
+   "rationale": "Legs are priced from marginals that each absorb the weather forecast separately; multiplying them treats a 20 mph wind as an independent shock per leg, which understates the joint probability of same-direction combos (under + QB-yards under + kicker under) and overstates mixed-direction combos (over + QB-yards over). The effect is thresholded (near zero below about 10 mph sustained, steep above 15) and vanishes for domes and closed retractable roofs, so it is a regime variable, not a constant correlation.",
+   "measurement": "For each open-air game 2010-2025 take the forecast weather state W (sustained wind mph, gust mph, precipitation flag, temp F) from nfl.weather_pit at the leg quote vintage (observed game-time weather from nflverse schedules for the historical fit, flagged as observed); roof in (dome, closed) sets W = calm. Bin W into calm (<10 mph, no precipitation), moderate (10-15 mph or light rain), severe (>=15 mph sustained or gusts >=25 or snow/heavy rain). For each leg pair type (game total x QB passing yards; game total x kicker points/long FG; QB passing yards x top receiver yards; game total x lead-rusher carries/yards; kicker points x team total) compute the residual of each leg statistic against its own-model expectation without the weather term (nfl.model_team_points_mean, qb/receiver/rusher projections), then the residual correlation and the weather-bin shift of both residual means; shrink bin correlations toward the calm-bin value with weight n/(n+80) leg-pairs. Joint simulation: draw W from the forecast distribution (forecast-error SD by lead time from archive vs observed), shift each leg mean by nfl.weather_total_response and the leg-specific weather slopes, and draw legs with the bin correlation. Output joint P(all legs) per combo and the weather share of the dependence. As-of the latest forecast vintage before the quote.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse schedules (roof, observed wind and temp)",
+    "Open-Meteo forecast and historical forecast API",
+    "NWS api.weather.gov hourly grids"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "schedules: game_id, roof, wind, temp, stadium",
+    "forecast vintages: wind, gust, precip, temp at fixed leads",
+    "player-game passing/receiving/rushing and kicking stats",
+    "own-model leg expectations"
+   ]
+  },
+  "nfl.sibling_leg_marginal_interface": {
+   "label": "Cross-archetype leg output contract: per-leg P(yes) plus a shared latent game-state sample",
+   "category": "distribution",
+   "mechanism": "Defines what each sibling archetype model must export so combos can be priced coherently: the leg's marginal P(yes) and, for the same simulation draws, the latent game state (home and away points, margin, total, plays, starting QB and key-player availability state, weather bin) and the leg statistic itself, so joints are read from shared draws instead of a copula on marginals.",
+   "rationale": "A combo is only as good as its marginals, and separate models that each simulate their own game state produce incoherent joints (a QB-yards draw from one game script paired with a cover from another). A fixed interface (fields, draw count, as-of time, seed alignment) is the definition that makes the combo layer reproducible; without it the cross-archetype dependency is undefined.",
+   "measurement": "Interface spec, version 1. Producers: game_moneyline_spread, game_total, team_total, qb_passing_yards, receiving_yards_and_receptions, rushing_yards, anytime_first_td_scorer, first_half_and_quarter_totals. Each producer, for game g and as-of timestamp t (latest injury-report and forecast vintage before the quote), returns (a) for each listed leg: P(yes) under that leg's own settlement rule (OT in/out, push, DNP=0 or void) and (b) a draw matrix of S=20,000 simulations sharing a common seed per game: draw_id, home_pts, away_pts, regulation_home_pts, regulation_away_pts, ot_flag, team plays, QB1_active, key-player active flags, weather bin, and the leg statistic (yards, receptions, TD order). The game-level model (nfl.model_team_points_mean, nfl.model_margin_lattice) generates the shared columns; player archetypes condition on them. Consistency checks: mean of indicator over draws equals the exported P(yes) within 0.002; team-total and game-total draws obey home+away=total. Combos compute P(all legs) as the share of draws where every leg settles YES. Market prices are never inputs.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "derived from sibling archetype models (own computation)",
+    "nflverse schedules and pbp for historical validation of joint hit rates"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "per-leg settlement rule metadata",
+    "simulation draw matrices from each sibling model",
+    "as-of timestamps of injury and weather vintages"
+   ]
+  },
+  "nfl.fantasy_kicker_points_chain": {
+   "label": "Kicker fantasy points under Sleeper default scoring from drive stalls by distance",
+   "category": "player_role",
+   "mechanism": "A kicker's Sleeper points are +3 per FG made 0-39 yards, +4 for 40-49, +5 for 50-59, +6 for 60+, +1 per extra point made and -1 per FG or extra point missed, so the score is a weighted count of drive endings: touchdowns (extra-point tries), drives that stall inside range (FG attempts by distance) and the kicker's make curve.",
+   "rationale": "Kicker scores have a small mean (about 7-9) and a lumpy discrete distribution, and strikes such as 9.2 sit where one long FG changes the outcome; the distance tiers make a stalled drive at the opponent's 35 worth more than one at the 10, and coach 4th-down aggressiveness converts would-be FGs into TD tries. Team TD expectation and FG opportunity move in opposite directions inside the red zone, which a single 'team points' proxy misses.",
+   "measurement": "Per team-game simulation using the shared drive draws: number of drives from nfl.drives; per drive, ending state (TD, FG attempt, other) from own-model drive outcome rates by field position, with FG attempt distance = line of scrimmage + 17 yards from the drive's stall yard line distribution (nflverse pbp 2018-2025, shrunk to league with k=200 attempts by stall bin) and the coach's FG-versus-go decision from nfl.fourth_down_fg_decision_rate; make probability from nfl.kicker's distance curve (weather and altitude adjusted); extra-point make rate per kicker shrunk to league with k=150 tries; two-point try share by coach. Points = 3*FG(0-39)+4*FG(40-49)+5*FG(50-59)+6*FG(60+)+1*XP - 1*(FG missed + XP missed). Output the full pmf and P(points > strike) as of the latest injury report (kicker active flag; replacement kicker if out).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "nflverse play-by-play (field_goal_result, kick_distance, extra_point_result, drive end yard line)",
+    "Kalshi KXNFLFFPTS rules text (Sleeper default scoring table)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "pbp: field_goal_attempt, kick_distance, field_goal_result, extra_point_result, two_point_attempt, drive_end_yard_line",
+    "drive outcome counts per team-game",
+    "kicker active status by injury report vintage"
+   ]
+  },
+  "nfl.fantasy_dst_points_chain": {
+   "label": "Team D/ST fantasy points under Sleeper default scoring (events plus points-allowed tier)",
+   "category": "matchup",
+   "mechanism": "A D/ST score is the sum of event points (+1 sack, +2 interception, +2 fumble recovery, +1 forced fumble, +2 safety, +2 blocked kick, +6 defensive or special-teams TD, +1 special-teams forced fumble or fumble recovery) and a step function of points allowed (0: +10, 1-6: +7, 7-13: +4, 14-20: +1, 21-27: 0, 28-34: -1, 35+: -4), so it is driven by the opponent offence's dropbacks, sack and giveaway rates and by the opponent's scoring distribution.",
+   "rationale": "D/ST markets (e.g. 'Seattle Seahawks D/ST: Over 8.8') are decided by rare high-value events and a steep points-allowed step; a shutout or a pick-six moves the score by 6-10 points, so the distribution is right-skewed with a negative floor. Sacks and turnovers rise when the opponent trails and must pass, linking D/ST points to the margin, and the points-allowed tier depends on whether Sleeper counts points allowed by the offence (return TDs) as well, which is not stated in the Kalshi text.",
+   "measurement": "Per team-game, using the shared game draws: opponent dropbacks from the opponent's pass rate by simulated script; sacks = dropbacks x own pressure-to-sack rate (nfl.defence_sack_count_decomposition) as negative binomial; interceptions = opponent pass attempts x opponent QB INT rate adjusted for pressure (nfl.int_rate), fumbles and recoveries from league per-play rates shrunk to team with k=400 plays; D/ST TDs from nfl.dst_td_hazard; safeties and blocked kicks at league rates (shrunk team effect, k=40 games). Points allowed = opponent simulated points from nfl.team_score_pmf_own_mean conditional on the draw, mapped to the Sleeper tier. Sum event points + tier points per draw; output pmf and P(points > strike). Fit dispersion on 2015-2025 team-games. As-of the latest injury report of both teams' QBs and key pass rushers.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play (sack, interception, fumble_lost, safety, blocked kicks, return TDs)",
+    "nflverse schedules (scores)",
+    "Kalshi KXNFLFFPTS rules text (Sleeper D/ST scoring table)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "pbp: sack, interception, fumble_forced, fumble_lost, safety, field_goal_result=blocked, punt_blocked, return_touchdown",
+    "team-game points allowed",
+    "injury report vintages for QBs and edge rushers"
+   ]
+  },
+  "nfl.combine_bench_press_pool_and_prior": {
+   "label": "Bench-press (225 lb reps) participant pool and per-prospect rep prior",
+   "category": "player_role",
+   "mechanism": "The most-reps event is a maximum over prospects who choose to bench, a pool dominated by defensive and offensive linemen with long-standing strength histories; arm length lowers reps, and top prospects and players with upper-body injuries often skip the lift.",
+   "rationale": "The speed and jump pools used for the 40 and broad jump are almost disjoint from the bench pool, so the existing priors say nothing about this event; the favourite is set by a few interior linemen with very high strength priors, and opt-outs among them change the maximum more than anything else.",
+   "measurement": "Per invitee: expected reps = regression on 2006-2025 Combine bench results of position group (iDL, EDGE, OL, LB, TE, RB, other), weight (lb), arm length (in), and reported pro-day or college strength numbers where available (flagged by source), with prospect-level SD from residuals; shrink toward position-weight mean with weight 2 reported lifts. Participation probability from nfl.combine_drill_participation_hazard refit for the bench drill (covariates: projected round, upper-body injury in prior 90 days, position). Simulate the field maximum over participating invitees (integer reps); calibrate the yearly maximum against the 2006-2025 history in nfl.combine_drill_extreme_history. Output P(max reps >= k) and P(named prospect has the most reps), dead-heat ties shown separately. As-of the day before bench testing.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse combine data (bench, wt, pos)",
+    "NFL.com Combine invite list and measurements (arm length)",
+    "Pro-Football-Reference combine pages (free, scrape)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "combine: season, player, pos, wt, bench (reps)",
+    "invite list measurements: arm length, weight",
+    "news timestamps of drill opt-outs"
+   ]
+  },
+  "nfl.combine_vertical_jump_prior": {
+   "label": "Vertical-jump participant pool and per-prospect jump prior",
+   "category": "player_role",
+   "mechanism": "The highest vertical is a maximum over jumpers whose ceiling depends on elastic power relative to mass; receivers, corners, safeties and some running backs and edge rushers populate the tail, and the event shares participants and opt-out behaviour with the broad jump.",
+   "rationale": "Vertical and broad jump are correlated (both lower-body power) but not interchangeable: the vertical favours lighter, elastic athletes, measurement uses the Vertec standing-reach protocol, and best-of-attempt noise is larger relative to the spread of the top of the field, so the broad-jump prior cannot be reused unchanged.",
+   "measurement": "Per invitee: expected vertical (inches) = regression on 2006-2025 Combine results of broad-jump prior from nfl.prospect_pre_combine_athletic_prior, weight, height, position, and college track jump marks where available (long jump, high jump; FAT/wind-legal flags), with residual SD per position; participation from nfl.combine_drill_participation_hazard refit for the vertical; joint simulation with the broad jump using the empirical residual correlation (estimated per position group, shrunk to pooled with weight n/(n+50)). Field maximum by simulation; output P(max >= x) for half-inch strikes and P(named prospect highest), ties reported. Calibrate yearly maxima to the 2006-2025 history. As-of the day before jumps.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse combine data (vertical, broad_jump)",
+    "TFRRS collegiate track results (free, scrape)",
+    "NFL.com Combine tracker"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "combine: season, player, pos, ht, wt, vertical, broad_jump",
+    "track jump marks with wind and timing flags",
+    "drill opt-out news timestamps"
+   ]
+  },
+  "nfl.player_single_game_stat_extreme_family": {
+   "label": "Season-long any-player single-game extreme by stat (passing, receiving, receptions, TDs, sacks, tackles, INTs)",
+   "category": "distribution",
+   "mechanism": "Each non-rushing KXNFLGAMESPECIALS rung pays if any player in any regular-season game reaches it, so its probability is one minus the product over the season's player-games of the chance of staying below the rung, built from each stat's own opportunity-times-yield process: passing yards and passing TDs from dropbacks and efficiency in shootouts; receiving yards and receptions from target share in high-volume passing games; non-passing TDs from goal-line usage; sacks from pass-rush wins against a trailing offence; tackles from defensive snaps and opponent run volume; interceptions from a defender's targets against turnover-prone passers.",
+   "rationale": "The live rung list goes far beyond rushing: 475/500/525 passing yards, 6 passing TDs, 250/275/300 receiving yards, 15/17/20 receptions, 4+ non-passing TDs, 4/5/6 sacks, 20+ tackles, 2/3 defensive interceptions, 2+ D/ST TDs and 100 rushing plus 100 receiving yards. Each sits in a different tail with different drivers, and several were already settled YES early in the season (2 and 3 interceptions, 15 and 17 receptions), so banked state matters as much as the per-game tail. Tackle counts depend on the official scorer's solo-plus-assist tally, which varies by stadium crew.",
+   "measurement": "For each stat k in {pass yds, pass TD, rec yds, receptions, non-passing TD, sacks, tackles (solo+assisted), def INT, D/ST TD, rush>=100 and rec>=100 jointly}: per player-game, simulate the stat from the player's opportunity share (last 8 games, half-life 4, shrunk to depth-slot prior k=3 games) times team volume conditioned on own-model margin and total draws (nfl.model_team_points_mean, never betting lines), with stat-specific yield distributions fitted on 2010-2025 player-games (negative binomial for counts, discretised gamma mixture for yards; tackle counts with a home-scorer random effect shrunk k=16 games). P(rung reached in game) per player-game; season probability = 1 - prod over remaining player-games (1 - p) with a shared-rating-error adjustment, conditioned on the realised season maximum to date (settled rungs = 1). Calibrate each stat's intercept to the 2010-2025 count of games per season above the rung. As-of start of each week.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse player_stats (passing, receiving, rushing, defensive: def_tackles_solo, def_tackle_assists, def_sacks, def_interceptions)",
+    "nflverse play-by-play",
+    "Pro-Football-Reference game logs (free, scrape)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "player-game stats by stat type with game_id and week",
+    "team-game plays, dropbacks and rush attempts",
+    "home team and official stat crew identifier where available",
+    "running season maxima per stat"
+   ]
+  },
+  "nfl.player_single_quarter_stat_extreme": {
+   "label": "Any-player single-quarter stat extreme (250 passing, 150 rushing, 150 receiving yards; overtime excluded)",
+   "category": "distribution",
+   "mechanism": "Quarter rungs pay if any player records the stat within one regulation quarter; a 15-minute window concentrates the outcome on explosive plays and on quarters with many possessions (two-minute drills, trailing scripts), so the per-quarter distribution is far more tail-heavy relative to its mean than the full-game total.",
+   "rationale": "The KXNFLGAMESPECIALS rules state that quarter-specific markets count only stats in an individual quarter, not overtime, so full-game projections cannot be scaled by one quarter: second and fourth quarters carry end-of-half possessions, and a single 80-yard play is a large share of a 150-yard quarter.",
+   "measurement": "From nflverse pbp 2010-2025, aggregate each player's passing, rushing and receiving yards by game and quarter (qtr 1-4 only; qtr 5 excluded). Per player-quarter model: yards = sum over the player's plays in the quarter of per-play yards drawn from the player's play-yard distribution (shrunk to position, k=150 plays), with play count negative binomial by quarter index and simulated score state. Season probability = 1 - prod over remaining player-quarters (1 - p), conditioned on settled rungs. Calibrate to the empirical per-season count of player-quarters above each rung. As-of start of each week.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "nflverse play-by-play (qtr, passer/rusher/receiver ids, yards_gained)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "pbp: game_id, qtr, passer_player_id, rusher_player_id, receiver_player_id, yards_gained, play_type, score_differential"
+   ]
   }
  },
  "blueprints": {
@@ -16496,9 +16653,9 @@
      },
      {
       "id": "s6",
-      "name": "Vote aggregation: plurality over a panel and vote splitting",
-      "description": "The winner is the candidate with the most votes from a panel of about 50 voters (for the AP awards, assumption: SOURCE_UNVERIFIED), so the win probability is the probability that his share exceeds each rival's in a Dirichlet-like vote model. Similar candidates, especially teammates or same-position rivals, split the same voters' preferences and reduce each other's chance.",
-      "distribution": "Multinomial vote split with overdispersion; winner probability is a softmax-like function of latent scores with correlated errors among similar candidates.",
+      "name": "Vote aggregation: ranked-points ballots over a 50-voter panel and vote splitting",
+      "description": "Since the 2022 season the AP awards are decided by ranked-points ballots from a 50-voter media panel, not by first-place plurality: MVP voters rank five players scored 10-5-3-2-1, and the other AP awards (OPOY, DPOY, OROY, DROY, CPOY, Coach of the Year) rank three scored 5-3-1. The winner is the candidate with the most points, so second- and third-place support can beat a first-place-vote lead (2025 MVP: Stafford 366 points with 24 firsts beat Maye 361 with 23). Win probability is the chance a candidate's expected point total exceeds every rival's under a ranked-ballot model; teammates and same-position rivals split first places but can both collect lower-place points, so the split penalty acts mainly on the first-place share. Seasons before 2022 used a single-choice ballot and must be modelled as a separate regime.",
+      "distribution": "Each voter's ballot is a ranking of 5 (MVP) or 3 (other AP awards) candidates; the point total is a weighted sum of placement counts with heavy concentration on two or three finalists; ties in points are rare but possible",
       "categories": [
        "distribution_variance",
        "settlement_contract"
@@ -16914,7 +17071,8 @@
      "KXNFLHALLOFFAME settles at the class announcement before the Super Bowl, months after the eligible career ended; season production plays no role, while finalist history and the class cap do.",
      "Conference and division specials (OPOY/DPOY by conference, MVP by division) settle on the winner's team at announcement; co-winners in one group pay that group in full, split groups pay 1/N.",
      "KXNFLAWARDFIN resolves every candidate No if finalists are not announced before the winner; KXNFLT100 settles on an exact rank (#3), a much narrower event than KXNFLT100TOP's top-N cutoff.",
-     "Non-production honours: KXNFLWPMOTY (community service, chosen from one nominee per team) and KXNFLEXECOTY (front-office executive) are decided on criteria unrelated to on-field statistics; KXNFLPROOTY (Protector of the Year) names no awarding body or criteria in its text."
+     "Non-production honours: KXNFLWPMOTY (community service, chosen from one nominee per team) and KXNFLEXECOTY (front-office executive) are decided on criteria unrelated to on-field statistics; KXNFLPROOTY (Protector of the Year) names no awarding body or criteria in its text.",
+     "Ballot format by award (verified 2026-11-08 from AP/press reports): AP MVP since 2022 is a top-5 ranked ballot scored 10-5-3-2-1 by 50 voters; the other AP individual awards and Coach of the Year use a top-3 ballot scored 5-3-1; before 2022 all were single first-place votes. PFWA (Executive of the Year), Hall of Fame selection, All-Pro, Walter Payton Man of the Year and the player-voted Top 100 use their own processes, not this ballot."
     ]
    }
   },
@@ -17191,8 +17349,8 @@
      {
       "id": "g2",
       "name": "Overtime resolution and the level-after-overtime event",
-      "description": "Once in overtime, who scores first and whether each team gets a possession depend on the rules in force (regular-season 10-minute period; whether a first-possession TD ends it), on coin-toss and field position, and on 4th-down policy. The game ends level only if the OT period elapses without a decisive score. P(level after OT | OT) is small but not zero and varies with weather, defences and kickers, and a rule change changes it materially.",
-      "distribution": "Bernoulli given overtime; rule-regime dependent; well below a fifth of overtime games historically",
+      "description": "Since the 2025 season the regular-season overtime follows the playoff possession rule: each team gets a possession (an opening-drive touchdown no longer ends the game), then sudden death, inside a single 10-minute period after which the game is a tie. Two consequences matter for KXNFLTIE and the OT-counting TD ladders. First, the team receiving first can still win without the other team touching the ball if its opening drive uses the whole 10 minutes and scores, and a second team that trails late in the period may run out of clock. Second, the final OT margin lattice is not 0/3/6: answered scores leave margins of 1 or 2 (TD plus extra point versus TD plus two-point try), 3 (field goal, or TD with failed try answering a FG), 4 (FG answered by TD and extra point), 6-8 (unanswered TD with a missed, made or two-point try) and 2 for a safety, and the game ends level only when the period expires with equal scores (no score, matched FGs or matched TDs and tries). P(level | OT) therefore depends on the clock-use and two-point decisions of both coaches, team TD/FG rates per drive, kickers and weather, and is materially different from the 2017-2024 first-TD-wins regime.",
+      "distribution": "Bernoulli given overtime with rule-era dependence; final OT margin on the lattice {1,...,8} with mass concentrated at 3 and 6-8; level outcome a few percent of OT games",
       "categories": [
        "distribution_variance",
        "officiating_rules",
@@ -17500,7 +17658,8 @@
      "KXNFLTOTALTD and KXNFLGAMETD are both combined-TD ladders (8+ and 9+ sampled); only TOTALTD states that overtime TDs count, so they are not interchangeable until GAMETD OT treatment is confirmed; KXNFLTEAMTD is a single-team ladder (4+ sampled). Strikes are integer N+ via half-point floors, so no push.",
      "KXNFLDSTTD counts either team's defensive or special-teams TD; whether a fake-punt/fake-FG TD counts as special teams is not stated here (the player TD series say such TDs are offensive).",
      "Team-level events only: no named-player void; the 48-hour postponement clause is the only void path.",
-     "The weekly-tie series (KXNFLWEEKTIE) and the longest-rush series are no longer filed here and are not claimed."
+     "The weekly-tie series (KXNFLWEEKTIE) and the longest-rush series are no longer filed here and are not claimed.",
+     "Overtime rule era (verified from 2025 league-meeting reports): regular-season OT gives both teams a possession since 2025, stays 10 minutes, and can still end in a tie; the first team can win on a drive that consumes the full period. Seasons 2017-2024 used the 10-minute first-possession-TD-wins format, so P(level | OT) must be fitted by rule era."
     ]
    }
   },
@@ -19038,7 +19197,7 @@
      {
       "id": "o6",
       "name": "Settlement wording and novelty events",
-      "description": "Official announcement versus report, effective-date clauses for retirement, rescission-proof trade settlement, practice-squad exclusion and NO-on-postponement for game location decide the label. KXNFLCOMPETE (a celebrity must take a snap, preseason included) is a signing-then-activation chain with a tiny base rate; KXNFLHKANE is the same chain without the snap; KXNFLGAMELOCATION is venue-retention risk for an international game (security, weather, stadium readiness). These have no football-performance driver and rest on reference-class priors.",
+      "description": "Official announcement versus report, effective-date clauses for retirement, rescission-proof trade settlement, practice-squad exclusion and NO-on-postponement for game location decide the label. KXNFLCOMPETE (a celebrity must take a snap, preseason included) is a signing-then-activation chain with a tiny base rate; KXNFLHKANE is the same chain without the snap; KXNFLGAMELOCATION is venue-retention risk for an international game (security, weather, stadium readiness). These have no football-performance driver and rest on reference-class priors. Reference classes are now defined per series in nfl.offfield_base_rate: KXNFLHKANE and KXNFLCOMPETE use a cross-sport-athlete class (non-football athletes publicly linked to an NFL tryout or signing, outcome official signing or a recorded snap within the window), KXNFLGAMELOCATION uses the history of announced international regular-season games and whether each was played in the announced city. The ownership-stake (KXNFLOWNERSTAKE) and stadium-completion (KXNFLSTADIUM) series were re-filed by the final series assignment to OUT_OF_SCOPE (franchise_ownership_business, team_facilities) and are explicitly excluded from this archetype.",
       "distribution": "Deterministic rule application; novelty events are Poisson or Bernoulli with reference-class base rates",
       "categories": [
        "settlement_contract",
@@ -19046,7 +19205,8 @@
       ],
       "input_ids": [
        "m.rules_text",
-       "nfl.novelty_prop_priors"
+       "nfl.novelty_prop_priors",
+       "nfl.offfield_base_rate"
       ]
      },
      {
@@ -19567,6 +19727,16 @@
      "id": "nfl.cross_game_leg_dependence",
      "why": "Multi-game moneyline parlays (PREPACK2ML/3ML) are a product of legs only if this residual dependence is negligible.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.combo_shared_weather_leg_coupling",
+     "why": "Closes the missing shared-weather dependence of same-game combos: names the coupled leg pairs (total, kicker, QB/receiver yards, rusher) and makes the joint draw conditional on one weather state instead of independent per-leg adjustments.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.sibling_leg_marginal_interface",
+     "why": "Turns the undefined dependency on sibling marginals into an explicit export contract, so combo joints come from shared latent draws with coherent margin, total and availability rather than a product or copula of separately calibrated legs.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -19657,6 +19827,17 @@
      "form": "conditional",
      "how_to_test": "Compare realized parlay hit rates against product-of-legs predictions binned by number of legs and minimum leg probability on 2012-2025 same-week game sets.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "nfl.combo_shared_weather_leg_coupling",
+      "nfl.weather_total_response",
+      "nfl.kicker"
+     ],
+     "hypothesis": "Below about 10 mph the weather term barely moves any leg, so same-game legs are close to their script-only dependence; above about 15 mph sustained (or gusts near 25) total, kicker and passing legs all drop together, so the joint of an under/kicker-under/QB-under combo jumps above the product while an over/QB-over combo falls below it. Roofed games stay in the calm regime.",
+     "form": "threshold",
+     "how_to_test": "On 2010-2025 open-air games compute empirical joint hit rates of synthetic under+kicker-under and under+QB-yards-under pairs by wind bin and compare to the product of bin-specific marginals; repeat for dome games as the placebo.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -19682,7 +19863,7 @@
      {
       "id": "s1",
       "name": "Leg marginals from the underlying archetype models",
-      "description": "Each leg inherits a marginal probability from the model of its own archetype: spread and moneyline from the margin distribution, total from drive-by-drive scoring, QB yards from attempts and efficiency, TD scorer from the allocation model. If the marginals are wrongly calibrated, the joint is wrong whatever the copula; the combo error is approximately the sum of leg errors because probabilities multiply. Marginals must also be coherent with each other (for example, a team total leg and a game total leg imply an opponent total). The marginals are an explicit dependency on the model outputs of the sibling archetypes (moneyline/spread, total, QB, scorer); this record does not rebuild them and uses market-free team means, never ratings implied by lines.",
+      "description": "Each leg inherits a marginal probability from the model of its own archetype: spread and moneyline from the margin distribution, total from drive-by-drive scoring, QB yards from attempts and efficiency, TD scorer from the allocation model. If the marginals are wrongly calibrated, the joint is wrong whatever the copula; the combo error is approximately the sum of leg errors because probabilities multiply. Marginals must also be coherent with each other (for example, a team total leg and a game total leg imply an opponent total). The marginals are an explicit dependency on the model outputs of the sibling archetypes (moneyline/spread, total, QB, scorer); this record does not rebuild them and uses market-free team means, never ratings implied by lines. The dependency is now an explicit interface (nfl.sibling_leg_marginal_interface): each sibling archetype exports its leg P(yes) and shared simulation draws of home/away points, margin, total, plays, availability and weather bin, so legs are read from the same draws.",
       "distribution": "Each leg is Bernoulli with its own probability; the joint support is a subset of {0,1}^k with k = 2 to 6 legs; errors in marginals compound multiplicatively across legs",
       "categories": [
        "talent_strength",
@@ -19691,7 +19872,8 @@
       "input_ids": [
        "nfl.model_team_points_mean",
        "nfl.model_margin_lattice",
-       "nfl.player_stat_variance"
+       "nfl.player_stat_variance",
+       "nfl.sibling_leg_marginal_interface"
       ]
      },
      {
@@ -19785,6 +19967,22 @@
        "nfl.rating_uncertainty_shared_error",
        "nfl.cross_game_leg_dependence"
       ]
+     },
+     {
+      "id": "s8",
+      "name": "Shared weather state as a common shock across same-game legs",
+      "description": "At open-air venues a single kickoff weather state moves several legs together: sustained wind above roughly 15 mph or heavy precipitation lowers the game and team totals, cuts kicker points and long-field-goal legs, lowers QB passing-yard and receiver-yard legs and pushes play-calling toward the run, raising the lead back's carries. Same-direction combos (under, QB under, kicker under) therefore have joint probability above the product of marginals and mixed combos below it. Domes and closed roofs remove the shock entirely, and forecast uncertainty at quote time means the joint must integrate over the weather distribution, not plug in a point forecast.",
+      "distribution": "Regime mixture over calm, moderate and severe weather bins; within a bin legs share mean shifts and a residual correlation; zero effect for roofed games",
+      "categories": [
+       "environment",
+       "distribution_variance"
+      ],
+      "input_ids": [
+       "nfl.combo_shared_weather_leg_coupling",
+       "nfl.weather_pit",
+       "nfl.weather_total_response",
+       "nfl.kicker"
+      ]
      }
     ],
     "category_coverage": {
@@ -19821,9 +20019,13 @@
       "note": "Coaching tendencies act through team marginals and script, which are already represented by the script lattice; no combo-specific coaching variable exists."
      },
      "environment": {
-      "status": "GAP",
-      "input_ids": [],
-      "note": "Wind, precipitation and dome status move total, passing-yard and kicker legs together, but no shared-weather factor is defined for combos; the dependence of leg pairs on weather is not parameterized here."
+      "status": "COVERED",
+      "input_ids": [
+       "nfl.combo_shared_weather_leg_coupling",
+       "nfl.weather_pit",
+       "nfl.weather_total_response"
+      ],
+      "note": "Shared weather enters the joint draw as a regime variable (calm/moderate/severe) coupling total, kicker, QB/receiver yards and rusher legs; elasticities by leg pair remain to be estimated."
      },
      "game_context_script": {
       "status": "COVERED",
@@ -20030,6 +20232,35 @@
       "nfl.cross_game_leg_dependence",
       "nfl.rating_uncertainty_shared_error",
       "nfl.ot_model"
+     ]
+    },
+    {
+     "dataset": "Kickoff-hour weather forecast vintages and observed game weather for open-air games",
+     "grain": "game x forecast lead time",
+     "fields": "game_id, stadium, roof, forecast lead hours, sustained wind, gust, precipitation probability and type, temperature, observed wind and temp",
+     "timestamp_requirement": "Forecast vintage strictly before the leg quote; observed weather only for historical fitting, flagged",
+     "history_needed": "2010-2025 observed; forecast vintages from own capture going forward plus archived forecasts where available",
+     "candidate_sources": [
+      {
+       "name": "nflverse schedules",
+       "access": "free",
+       "note": "roof, observed wind and temp per game"
+      },
+      {
+       "name": "Open-Meteo historical forecast API",
+       "access": "free",
+       "note": "archived model forecasts by coordinate"
+      },
+      {
+       "name": "NWS api.weather.gov",
+       "access": "own_capture",
+       "note": "hourly grid forecasts must be captured prospectively"
+      }
+     ],
+     "feeds_inputs": [
+      "nfl.combo_shared_weather_leg_coupling",
+      "nfl.weather_pit",
+      "nfl.weather_total_response"
      ]
     }
    ],
@@ -20746,7 +20977,8 @@
      "KXNFL1YDPASS counts only official forward pass attempts from on or inside the 1 at the snap (sacks, scrambles and runs do not count) and counts a pass nullified by penalty if it is recorded in the play-by-play.",
      "KXNFLLARGELEAD settles on a band ('between 7 to 10 points'); whether both ends are inclusive and whether an overtime score that ends the game can set the largest lead are not stated.",
      "KXNFLTIES (season count) and KXNFLWEEKTIE (at least one tie in a week) are tail events of per-game tie probabilities of roughly 0.25 percent per game (to recompute); the overtime rule in force decides how often regulation ties survive.",
-     "Most sampled game-level markets are for the Feb 8, 2026 Seattle vs New England game, a neutral-site championship game with elevated stakes, so base rates for 2-point tries, 4th-down attempts and trick plays may differ from regular-season games."
+     "Most sampled game-level markets are for the Feb 8, 2026 Seattle vs New England game, a neutral-site championship game with elevated stakes, so base rates for 2-point tries, 4th-down attempts and trick plays may differ from regular-season games.",
+     "Family routing (each family has its own chain): per-team per-game counts KXNFLFG -> s1+s2, KXNFLTEAMSACK -> s1+s3, KXNFLTEAMYDS -> s1+s4, KXNFLNEXTINT -> s3 (multi-game hazard); both-team per-game counts KXNFLGAMESACK -> s3+s5, KXNFL2PTCONV and KXNFL4DCONV -> s8; rare play calls KXNFLNONQBPASS and KXNFL1YDPASS -> s8; score-path functionals KXNFLLARGELEAD, KXNFLLEADCHANGE, KXNFLCOMEBACK -> s7; league season and weekly counts KXNFLTIES, KXNFLWEEKTIE, KXNFL60YARDFGS -> s6."
     ]
    }
   },
@@ -20863,6 +21095,16 @@
      "id": "nfl.game_fantasy_max_field_sim",
      "why": "Supplies KXNFLFANTASYMOST, the only single-game field maximum in this archetype and the only one on ESPN scoring.",
      "role": "primary"
+    },
+    {
+     "id": "nfl.fantasy_kicker_points_chain",
+     "why": "KXNFLFFPTS lists kicker over/under markets (e.g. Will Reichard over 9.2); their settlement is a distance-tiered count of FG and XP events, which needs its own chain rather than skill-position scoring.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.fantasy_dst_points_chain",
+     "why": "KXNFLFFPTS lists D/ST over markets for most teams each week; their score combines opponent-driven event counts and a points-allowed step that no skill-position stage composes.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -20949,6 +21191,28 @@
      "hypothesis": "Fantasy value per target is catch probability times (1 reception point + 0.1 per yard) plus touchdown value, so the slope of points on target share depends on the receiver's depth: a short-area high-aDOT-low target profile gains mostly reception points at high catch rate, while deep targets are caught less often but carry more yards, so scoring is not linear in target share across depth profiles.",
      "form": "conditional",
      "how_to_test": "Fit points per target by aDOT bin and catch-rate bin, and test whether the slope of total points on targets differs across aDOT terciles.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "nfl.fantasy_dst_points_chain",
+      "nfl.team_score_pmf_own_mean",
+      "nfl.defence_sack_count_decomposition"
+     ],
+     "hypothesis": "D/ST points have a step in points allowed (+10, +7, +4, +1, 0, -1, -4) and event counts that rise when the opponent trails and throws; a defence facing a weak offence gains twice, through the higher tier and more sacks and interceptions in a passing script, so the response to the opponent's expected points is piecewise and convex at the low end.",
+     "form": "piecewise",
+     "how_to_test": "On 2015-2025 team-games regress D/ST Sleeper points on opponent own-model expected points with tier dummies and compare the slope of event points across opponent-expectation bins.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "nfl.fantasy_kicker_points_chain",
+      "nfl.redzone",
+      "nfl.fourth_down_fg_decision_rate"
+     ],
+     "hypothesis": "A kicker's FG count depends on drives that stall inside range, so a more efficient red-zone offence or a more aggressive 4th-down coach converts FG tries into touchdowns: kicker points rise with team scoring only until red-zone conversion is high, then extra points replace field goals and the score flattens.",
+     "form": "conditional",
+     "how_to_test": "Bin team-games by own-model expected points and red-zone TD rate and compare kicker Sleeper points; test whether 4th-down aggressiveness terciles shift FG attempts at fixed expected points.",
      "source": "completeness-review"
     }
    ],
@@ -21055,7 +21319,7 @@
      {
       "id": "s5",
       "name": "Negative events and kicker special case",
-      "description": "Interceptions, lost fumbles and kicker misses subtract points; quarterbacks carry most of the downside, and kickers' scores are driven by the number of field-goal and extra-point opportunities, which depend on team drives and red-zone stalls. Kicker scoring weights are not shown in the sampled text. Kicker points follow field-goal and extra-point opportunities set by drive count (nfl.drives), red-zone stall rate (nfl.redzone) and the kicker's distance-specific accuracy (nfl.kicker); interceptions and lost fumbles use nfl.int_rate and nfl.fumble_luck. The ladder and per-game ticker KXNFLFFPTS includes kickers, whereas the Weeks 15-17 leader market excludes kickers, defence/special teams and IDP.",
+      "description": "Interceptions, lost fumbles and kicker misses subtract points; quarterbacks carry most of the downside, and kickers' scores are driven by the number of field-goal and extra-point opportunities, which depend on team drives and red-zone stalls. Kicker and D/ST weights are listed in the full KXNFLFFPTS rules text (read from the live Kalshi market on 2026-11-08; the stored sample is truncated before them) and are composed in stage s11. Kicker points follow field-goal and extra-point opportunities set by drive count (nfl.drives), red-zone stall rate (nfl.redzone) and the kicker's distance-specific accuracy (nfl.kicker); interceptions and lost fumbles use nfl.int_rate and nfl.fumble_luck. The ladder and per-game ticker KXNFLFFPTS includes kickers, whereas the Weeks 15-17 leader market excludes kickers, defence/special teams and IDP.",
       "distribution": "Low-count events with small penalties; kicker points are discrete sums of 3-5 point field goals and 1 point extra points.",
       "categories": [
        "efficiency_conversion",
@@ -21145,6 +21409,26 @@
        "nfl.game_fantasy_max_field_sim",
        "nfl.fantasy_component_and_stack_covariance",
        "nfl.qb_rushing"
+      ]
+     },
+     {
+      "id": "s11",
+      "name": "Kicker and team D/ST fantasy scores (Sleeper default tables)",
+      "description": "KXNFLFFPTS lists kicker markets (Will Reichard over 9.2) and team D/ST markets (for example Seattle Seahawks D/ST over 8.8) alongside skill players. Kicker points are a distance-tiered count of field goals (3/4/5/6 points by 0-39, 40-49, 50-59, 60+ yards) plus extra points, minus one per miss, so they come from drive stalls inside range, the coach's kick-or-go choice and the kicker's make curve, and fall when the offence converts red-zone trips into touchdowns. D/ST points are sacks, takeaways, safeties, blocks and return touchdowns plus a points-allowed step from +10 at a shutout to -4 at 35 or more, so they depend on the opponent offence, its quarterback and the score script that forces it to pass.",
+      "distribution": "Kicker: discrete, lumpy pmf on small integers with mean near 8 and an atom at zero if inactive; D/ST: right-skewed sum of rare events plus a step function, support roughly -4 to 30",
+      "categories": [
+       "efficiency_conversion",
+       "opponent_matchup",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "nfl.fantasy_kicker_points_chain",
+       "nfl.fantasy_dst_points_chain",
+       "nfl.kicker",
+       "nfl.drives",
+       "nfl.dst_td_hazard",
+       "nfl.defence_sack_count_decomposition",
+       "nfl.team_score_pmf_own_mean"
       ]
      }
     ],
@@ -23706,6 +23990,16 @@
      "id": "m.lifecycle",
      "why": "Drills run by position group on fixed days, so the market state jumps when the fastest groups test before close.",
      "role": "context"
+    },
+    {
+     "id": "nfl.combine_bench_press_pool_and_prior",
+     "why": "KXNFLCOMBINE-BENCH26 (Most Bench Press Reps) exists in the series; its pool and prior are lineman-driven and not covered by the speed/jump inputs.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.combine_vertical_jump_prior",
+     "why": "KXNFLCOMBINE-VERT26 (Highest Vertical Jump) exists in the series and needs its own prior and its correlation with the broad-jump field already modelled.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -23769,6 +24063,17 @@
      "hypothesis": "Revision of unofficial to official 40 times only matters when the two fastest official times are within the revision sd (about 0.01-0.02 s); outside that band revisions cannot change the argmax, so the settlement risk switches on only for close races.",
      "form": "threshold",
      "how_to_test": "From tracker snapshots, count classes where the leader changed between first-displayed and official times as a function of the gap between first and second.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "nfl.combine_vertical_jump_prior",
+      "nfl.prospect_pre_combine_athletic_prior",
+      "nfl.combine_drill_participation_hazard"
+     ],
+     "hypothesis": "Vertical and broad jump outcomes are positively correlated within a prospect and opt-outs are usually joint (a prospect who skips jumps skips both), so the vertical and broad-jump maxima are dependent: one elite jumper opting out lowers both, and pricing the two events independently misstates their joint.",
+     "form": "joint-distribution",
+     "how_to_test": "On 2006-2025 classes correlate yearly vertical and broad maxima and the identity of the leaders; test per-prospect joint skip rates for the two jumps.",
      "source": "completeness-review"
     }
    ],
@@ -23865,6 +24170,24 @@
        "m.rules_text",
        "m.settlement_truth",
        "m.lifecycle"
+      ]
+     },
+     {
+      "id": "s6",
+      "name": "Vertical-jump and bench-press events of the same series",
+      "description": "The Kalshi event list for KXNFLCOMBINE in 2026 has four events: highest vertical jump, longest broad jump, most bench-press reps and fastest 40. The vertical draws on the same elastic-power athletes as the broad jump, so it reuses their participation decisions with a correlated but distinct per-prospect prior. The bench press is a separate pool of interior linemen and edge players lifting 225 lb for reps, where heavier players with short arms do best and the main uncertainty is which strong prospects opt out. Both are field maxima settled on the official recorded result.",
+      "distribution": "Vertical: continuous half-inch maximum over roughly 150-250 jumpers, Gumbel-like tail; bench: integer maximum over roughly 150-200 lifters, upper tail driven by a few linemen, dead-heat ties possible",
+      "categories": [
+       "talent_strength",
+       "role_personnel",
+       "availability_news",
+       "distribution_variance"
+      ],
+      "input_ids": [
+       "nfl.combine_vertical_jump_prior",
+       "nfl.combine_bench_press_pool_and_prior",
+       "nfl.combine_drill_participation_hazard",
+       "nfl.combine_drill_extreme_history"
       ]
      }
     ],
@@ -24106,7 +24429,8 @@
      "The fastest-40 text has no dead-heat clause; official 40 times are reported to hundredths and a tie at the top is plausible, so payout under a tie is unknown.",
      "Scope is the Combine only: a prospect who skips the Combine 40 and runs faster at his pro day cannot be YES, and his absence raises others' chances.",
      "The text does not say whether broadcast unofficial times or later official times settle; these can differ by a few hundredths and reorder close sprinters.",
-     "rules_secondary is empty for both sampled markets, so no settlement source, revision window or void rule for a cancelled drill is visible."
+     "rules_secondary is empty for both sampled markets, so no settlement source, revision window or void rule for a cancelled drill is visible.",
+     "Series scope verified on the Kalshi events API (2026-11-08): KXNFLCOMBINE-VERT26, -BROAD26, -BENCH26 and -4026 exist with settlement sources ESPN and NFL Network; only the broad-jump market text is sampled and the vertical and bench market rules could not be retrieved (markets no longer returned), so their tie and revision handling is unknown."
     ]
    }
   },
@@ -24277,6 +24601,16 @@
      "id": "nfl.carries",
      "why": "Lead-back carry share and lead/trail-conditioned team rush attempts give the 28+ carry upper tail a 225-yard game needs.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.player_single_game_stat_extreme_family",
+     "why": "Covers every non-rushing KXNFLGAMESPECIALS rung (passing, receiving, receptions, TDs, sacks, tackles, INTs, D/ST TDs, 100/100 combo), which previously had no inputs in this record.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.player_single_quarter_stat_extreme",
+     "why": "KXNFLGAMESPECIALS lists quarter rungs (QPY250, QRY150, QREY150) whose window and overtime exclusion differ from the full-game rungs.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -24375,6 +24709,16 @@
      "form": "conditional",
      "how_to_test": "Compare dome-game share of weekly highest totals in weeks with high versus low cross-game spread of forecast wind.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "nfl.player_single_game_stat_extreme_family",
+      "nfl.slate_running_extreme_state"
+     ],
+     "hypothesis": "Once a rung is reached the market settles and the next rung inherits the realised maximum, so the remaining-season probability of a higher rung depends on how far the current maximum is from it; the 17-reception rung settling YES removes it and leaves 20 as a far-tail event with a much lower hazard.",
+     "form": "threshold",
+     "how_to_test": "Backtest per-week remaining-season probabilities for each stat rung on 2010-2025 seasons conditioning on the realised maximum to date versus an unconditioned season product.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -24397,6 +24741,11 @@
      "input_id": "nfl.weekly_slate_composition",
      "shape": "inverse in number of contenders",
      "why": "Baseline argmax share scales like 1/N, so the drop from 32 to 26 teams lifts every team's share by about 23 percent, a non-linear effect for favourites near the top."
+    },
+    {
+     "input_id": "nfl.player_single_quarter_stat_extreme",
+     "shape": "convex in play count",
+     "why": "A quarter with two extra possessions roughly doubles the chance of 150 yards because the tail needs several explosive plays, so exceedance rises convexly with quarter play volume."
     }
    ],
    "mechanism_review": {
@@ -24510,6 +24859,40 @@
        "m.rules_text",
        "m.stat_correction_risk",
        "nfl.slate_max_tie_mass"
+      ]
+     },
+     {
+      "id": "s7",
+      "name": "Other player single-game specials: passing, receiving, TDs and defensive counts",
+      "description": "The live KXNFLGAMESPECIALS list for 2026-27 has rungs on passing yards (475/500/525), passing TDs (6+), receiving yards (250/275/300), receptions (15/17/20), non-passing TDs (4+), sacks (4/5/6), tackles (20+), defensive interceptions (2/3), D/ST TDs (2+) and 100 rushing plus 100 receiving yards, besides rushing. Each is a season-long any-player tail with its own process: passing and receiving rungs need shootout scripts and a concentrated target tree, sacks need a dominant rusher against a trailing team, tackles need heavy opponent run volume and generous scorers, and interceptions need a turnover-prone passer. Rungs already reached (2 and 3 interceptions, 15 and 17 receptions) are settled and drop out.",
+      "distribution": "Per player-game exceedance probabilities from overdispersed counts and heavy-tailed yardage; season event = 1 minus product over about 9,000 relevant player-games, sensitive to tail calibration",
+      "categories": [
+       "distribution_variance",
+       "pace_volume",
+       "role_personnel",
+       "opponent_matchup"
+      ],
+      "input_ids": [
+       "nfl.player_single_game_stat_extreme_family",
+       "nfl.slate_running_extreme_state",
+       "nfl.individual_defender_sack_int_accrual",
+       "nfl.targets"
+      ]
+     },
+     {
+      "id": "s8",
+      "name": "Quarter-window specials with overtime excluded",
+      "description": "Three rungs ask for 250 passing, 150 rushing or 150 receiving yards inside one regulation quarter. The window makes possession count and explosive plays dominate: end-of-half two-minute drills and fourth-quarter comeback passing create the high-volume quarters, and one long touchdown can supply most of a 150-yard quarter. The rules text excludes overtime from quarter-specific markets, so the fifth period never counts.",
+      "distribution": "Per player-quarter heavy-tailed sum of a negative-binomial number of plays with long right-tail play yards; season event over roughly 36,000 relevant player-quarters",
+      "categories": [
+       "distribution_variance",
+       "pace_volume",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "nfl.player_single_quarter_stat_extreme",
+       "nfl.slate_running_extreme_state",
+       "m.rules_text"
       ]
      }
     ],
@@ -24808,7 +25191,8 @@
      "A team on bye in the named week cannot score, so its weekly market is effectively NO; Week 18 has every team playing while mid-season weeks have byes and fewer games.",
      "KXNFLGAMESPECIALS includes quarter-specific markets that exclude overtime; only the 225+ rushing-yard full-game variant was sampled, so other stats and rungs in the series are unseen.",
      "Rungs differ in rarity: 109.5 total is beyond the post-merger record (106, CIN 58-48 CLE 2004); a margin over 51.5 has occurred at least five times post-merger (LA Rams 59-0 ATL 1976, CIN 61-7 HOU 1989, NE 59-0 TEN 2009, NO 62-7 IND 2011, SEA 58-0 ARI 2012), roughly once a decade; 225+ rushing yards is a recurring event (record 296) rather than a record tail; base rates must be set per rung.",
-     "Cancelled or no-contest games (for example the 2022 BUF-CIN game) and postponed games are not addressed in the sampled text for season or weekly markets; treatment of their scores is unknown (see u5)."
+     "Cancelled or no-contest games (for example the 2022 BUF-CIN game) and postponed games are not addressed in the sampled text for season or weekly markets; treatment of their scores is unknown (see u5).",
+     "KXNFLGAMESPECIALS market list verified on the Kalshi events API (2026-11-08): passing yards 475/500/525, passing TDs 6+, rushing 225-300, receiving yards 250/275/300, receptions 15/17/20, 100 rush + 100 rec, non-passing TDs 4+, sacks 4/5/6, tackles 20+, defensive INTs 2/3 (settled YES), D/ST TDs 2+, and quarter rungs 250 passing / 150 rushing / 150 receiving."
     ]
    }
   }

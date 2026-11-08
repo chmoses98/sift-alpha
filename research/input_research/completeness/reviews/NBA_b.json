@@ -136,7 +136,8 @@
       "nba.series_length_distribution",
       "nba.playoff_star_health_hazard",
       "nba.playoff_rotation",
-      "nba.milestone_rates"
+      "nba.milestone_rates",
+      "nba.title_path"
      ]
     }
    ],
@@ -819,7 +820,8 @@
      "nba.series_player_exposure",
      "nba.series_length_distribution",
      "nba.playoff_star_health_hazard",
-     "nba.playoff_rotation"
+     "nba.playoff_rotation",
+     "nba.title_path"
     ]
    }
   ],
@@ -1006,6 +1008,23 @@
       "m.rules_text",
       "nba.team_bench_points_model",
       "nba.early_exit_hazard"
+     ]
+    },
+    {
+     "id": "s7",
+     "name": "Team bench-points total filed here (KXNBABENCHPTS)",
+     "description": "KXNBABENCHPTS is not a player contract: the Kalshi series metadata (checked 8 Nov 2026) uses the BASKETBALLENTITYSTAT terms with scope 'Bench Points' and ESPN/NBA as settlement sources, the same team-entity stat as KXNBAH2HBENCHPTS. It is a team sum over players who did not start, so who counts as bench is fixed by the starting five at tip, blowout minutes for reserves raise it on both sides, and a late scratch moves a starter-calibre player into or out of the bench pool. It is modelled with the team-level bench inputs, not the single-player ladder.",
+     "distribution": "Team bench points are roughly normal (mean 30-40, sd 9-11) with right skew in blowouts and a mixture over who starts; no listed markets yet, so strike construction is unseen.",
+     "categories": [
+      "role_personnel",
+      "game_context_script",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.team_bench_points_model",
+      "nba.starter_bench_definition_ledger",
+      "nba.rating_blowout_minutes_curve",
+      "nba.starters_pit"
      ]
     }
    ],
@@ -1683,7 +1702,8 @@
      "nba.status_resolution_prob",
      "nba.starters_pit",
      "nba.referee_crew",
-     "nba.rest_travel"
+     "nba.rest_travel",
+     "nba.starter_bench_definition_ledger"
     ]
    },
    {
@@ -3459,7 +3479,25 @@
      "input_ids": [
       "m.rules_text",
       "nba.ot_prob_ratings_margin",
-      "nba.period_margin_pmf"
+      "nba.period_margin_pmf",
+      "nba.second_half_reg_ot_joint_margin"
+     ]
+    },
+    {
+     "id": "s7",
+     "name": "In-play conditioning for later-period markets",
+     "description": "Because the second-half and later-quarter markets stay open until a winner is declared, a quote placed during the game is a bet on the remaining part of a period given what has already happened. The value is the conditional distribution of the remaining margin given the current score, period start score, clock, the lineups actually on the floor, team-foul and bonus state and timeouts. Pregame inputs set the prior; the live state dominates once a period is under way.",
+     "distribution": "Remaining-margin variance shrinks roughly linearly with remaining possessions; a period lead late in the quarter makes the outcome near-deterministic, with discrete jumps at each score.",
+     "categories": [
+      "game_context_script",
+      "pace_volume",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.live_period_state",
+      "nba.period_possession_split",
+      "nba.quarter_unit_projection",
+      "nba.period_foul_bonus_state"
      ]
     }
    ],
@@ -3708,6 +3746,44 @@
     ],
     "why": "The 2H winner, spread and total include overtime while Q1-Q4 and 1H do not, so the wedge between 2H and Q3+Q4 is exactly P(OT) times the combined OT points; this supplies both without a spread bucket.",
     "role": "secondary"
+   },
+   "nba.second_half_reg_ot_joint_margin": {
+    "label": "Joint second-half margin: regulation-only and overtime-inclusive outputs from one simulated game",
+    "category": "game_state",
+    "mechanism": "The OT-inclusive second-half margin equals the regulation second-half margin plus the overtime margin, and overtime happens only when the regulation full-game margin is zero, so both 2H contract versions come from one draw.",
+    "rationale": "Rules text: KXNBA2H, KXNBA2HSPREAD and KXNBA2HTOTAL count the 2nd half including overtime, KXNBA2HWINNER excludes it. Pricing the two separately breaks the identity that they differ only in games tied after regulation; e.g. a 2H tie under KXNBA2HWINNER plus OT gives a decided KXNBA2H.",
+    "measurement": "Per simulated game: draw H1 and regulation H2 margins from nba.period_margin_pmf (correlated via nba.second_half_adjustment_effect); regulation full margin = H1 + H2reg; if zero, draw number of OT periods and each OT margin from nba.ot_prob_ratings_margin (5-minute periods, repeat while tied); outputs: M2H_reg = H2reg (settles KXNBA2HWINNER, tie possible), M2H_ot = H2reg + sum(OT margins) (settles KXNBA2H, KXNBA2HSPREAD; totals add OT points); 50,000 draws per game; as-of tip. Check on settled pairs from every overtime game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com linescores (period and OT points)",
+     "Basketball-Reference linescores"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "Period-by-period scores including each overtime",
+     "Kalshi 2H series rules text"
+    ],
+    "why": "Produces both settlement variants of the second half from one coherent game draw.",
+    "role": "primary"
+   },
+   "nba.live_period_state": {
+    "label": "In-play game state for later-period markets (score, clock, on-court lineups, team fouls, timeouts)",
+    "category": "game_state",
+    "mechanism": "Later-period and second-half markets keep trading after tipoff, so their value is conditional on the realised state at the quote time rather than the pregame distribution.",
+    "rationale": "Verified on the Kalshi API (8 Nov 2026): KXNBA2H markets for 9 Nov games have close_time 12 Nov 03:00Z, two days after the game, with early close 'after a winner is declared', so they trade in play. Q2-Q4 and 2H prices then depend on the current margin, period, on-court five, team fouls toward the bonus, and timeouts left, none of which a pregame input carries.",
+    "measurement": "At each quote timestamp: period, game clock (seconds), score by team, score at the start of the current period, five players on court per team, team fouls in the period (bonus at 5), timeouts remaining, possession; source cdn.nba.com liveData play-by-play and boxscore JSON polled every 5-10 s with receipt timestamps; the period-margin model is re-run conditional on elapsed time and remaining possessions (nba.period_possession_split scaled by remaining clock) and the on-court units' ratings from nba.quarter_unit_projection. As-of: quote timestamp minus feed latency (record both).",
+    "pregame_knowable": "no",
+    "free_sources": [
+     "cdn.nba.com liveData play-by-play and boxscore JSON (free, unofficial)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "Live play-by-play events with clock",
+     "Live boxscore with on-court flags and team fouls",
+     "Kalshi quote timestamps"
+    ],
+    "why": "Q2-Q4 and 2H markets trade in play, so value is conditional on the live state at the quote time.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -3881,7 +3957,8 @@
      "nba.period_margin_pmf",
      "nba.q_scoring",
      "nba.ot_prob_ratings_margin",
-     "nba.second_half_adjustment_effect"
+     "nba.second_half_adjustment_effect",
+     "nba.second_half_reg_ot_joint_margin"
     ]
    },
    {
@@ -4057,6 +4134,37 @@
     ],
     "feeds_inputs": [
      "nba.ot_prob_ratings_margin"
+    ]
+   },
+   {
+    "dataset": "Live play-by-play and boxscore snapshots during games",
+    "grain": "event x game (5-10 s polling)",
+    "fields": [
+     "period",
+     "clock",
+     "home_score",
+     "away_score",
+     "on_court_players",
+     "team_fouls_period",
+     "timeouts_remaining",
+     "possession",
+     "receipt_ts"
+    ],
+    "timestamp_requirement": "Feed receipt timestamp aligned to Kalshi quote timestamps; history must be captured prospectively.",
+    "history_needed": "One full season of captured live snapshots to calibrate conditional models; historical play-by-play for backfill of score/clock.",
+    "candidate_sources": [
+     {
+      "name": "cdn.nba.com liveData JSON",
+      "access": "free",
+      "note": "unofficial; schema stable but undocumented"
+     },
+     {
+      "name": "Own capture of Kalshi quotes",
+      "access": "own_capture"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.live_period_state"
     ]
    }
   ],
@@ -5173,7 +5281,7 @@
     "category": "schedule_context",
     "mechanism": "Seeds and division winners are decided by the league's tiebreak hierarchy (head-to-head, division winner, conference record and so on), so exact ties are resolved by information that accumulates over the season.",
     "rationale": "Simulating only win totals misses the probability that a tie is broken in a team's favor; at seed boundaries (6th vs 7th, 10th vs 11th, play-in cutoff) a tie occurs in about 8-15% of final standings and the tiebreak ledger is partly known before the season ends.",
-    "measurement": "For each team pair compute season-to-date head-to-head wins/losses and remaining games, division record, conference record and record vs playoff teams, updated nightly from game results; in the simulation, apply the official tiebreak procedure (stored as code from league rules) to simulated ties and output P(win tie) by pair. As-of: nightly after final scores.",
+    "measurement": "For each team pair keep season-to-date head-to-head, division and conference records, record vs playoff-eligible teams in each conference, and net points, updated nightly. In the simulation apply the league order (verified on NBA.com standings, 2025-26): two-team ties - head-to-head, division leader over non-leader, division record (same division only), conference record, record vs playoff-eligible own-conference teams, record vs playoff-eligible other-conference teams, net points; three or more - division leader first, then head-to-head among all tied, division record (all same division), conference record, the two playoff-eligible records, net points; re-check the 2026-27 standings page before each season. Output P(win tie) per pair and seed. As-of: nightly after final scores.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NBA.com official tiebreaker rules",
@@ -6143,7 +6251,7 @@
     "category": "distribution",
     "mechanism": "A 20-game win streak requires 20 consecutive wins; with game win probabilities of 75-85% for the best team, the chance depends on the full sequence of probabilities, their correlation through star health and schedule, and the number of teams that could qualify.",
     "rationale": "Averaging a team's win probability underestimates the chance because a streak concentrates in stretches of weak opponents and healthy rosters; the league-wide market is a union over 30 teams and 63 windows each (82 games minus 19).",
-    "measurement": "For each team, with per-game win probabilities p_g from own-model ratings, rest and home/away for the remaining schedule (plus a star-health scenario mixture), compute P(run of >= 20 consecutive wins occurs at some point in the remaining games) exactly by a dynamic-programming recursion with state = current run length r (0..19, absorbing 20): from state r, win with p_g to r+1 and lose with 1-p_g to 0, starting from the team's current run length. Cup group games count, the Cup final and playoffs are excluded. Combine across teams assuming independence except through shared head-to-head games (simulate those jointly). As-of: nightly; update the current run after each result.",
+    "measurement": "View of the shared season paths: for each team, P(run of >= 20 consecutive wins at some point) = share of nba.standings_sim paths whose game sequence (current run carried in, Cup group and knockout games before the final counted, play-in and playoffs excluded) contains such a run; an exact dynamic-programming recursion on the same per-game probabilities (state = run length 0..19, absorbing 20) is the check for each team, and head-to-head games are consistent across teams because they come from the same path. As-of: nightly.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nba_api schedule and results",
@@ -6815,7 +6923,7 @@
     {
      "id": "s4",
      "name": "Within-game score extremes compounded over a series",
-     "description": "KXNBASERIESGCOMEBACK pays if any game in the series is won by a team that trailed by 30 or more, and KXNBAFINBLOWOUT if any Finals game ends with a 40-point margin. Both need the score path or final margin distribution of playoff games, conditional on the strength gap and pace, compounded over a random number of games. Even matchups produce longer series (more chances) but fewer huge leads; uneven ones produce blowouts but end sooner, so the series length and the per-game tail interact.",
+     "description": "KXNBASERIESGCOMEBACK pays if any game in the series is won by a team that trailed by 30 or more, and KXNBAFINBLOWOUT if any Finals game ends with a 40-point margin. Both need the score path or final margin distribution of playoff games, conditional on the strength gap and pace, compounded over a random number of games. Even matchups produce longer series (more chances) but fewer huge leads; uneven ones produce blowouts but end sooner, so the series length and the per-game tail interact. These two series are deliberately kept with the series contracts but staged separately, fed by play-by-play score paths (required_data 3), because the compounding over series length is what couples them to the bracket.",
      "distribution": "Per-game P(margin >= 40) and P(win after trailing by 30+) are well below 1% for even playoff teams; union over 4-7 games with dependence through matchup and pace.",
      "categories": [
       "game_context_script",
@@ -6830,7 +6938,7 @@
     {
      "id": "s5",
      "name": "Cup group stage and knockout",
-     "description": "Cup group winners and qualifiers are determined by group record and tiebreakers (including point differential), and the knockout stage is single-elimination. The Finals-matchup contract resolves when both finalists are known, so it is the joint probability of two bracket paths, group-to-win sums title chances of teams that played each other in the group, and the champion contract is three knockout wins after qualification. Incentives in the last group games depend on the standings state, and margin matters for tiebreaks.",
+     "description": "Cup group winners and qualifiers are determined by group record and tiebreakers (including point differential), and the knockout stage is single-elimination. The Finals-matchup contract resolves when both finalists are known, so it is the joint probability of two bracket paths, group-to-win sums title chances of teams that played each other in the group, and the champion contract is three knockout wins after qualification. Incentives in the last group games depend on the standings state, and margin matters for tiebreaks. Filing decision (resolver, 8 Nov 2026): the Cup contracts stay in this archetype as this separate stage with their own inputs and data set (Cup schedule and group tables) rather than a new archetype, because they share the team-strength and single-elimination machinery but none of the best-of-seven inputs. 2026-27 format: group winners and one wild card per conference make conference-split quarterfinals hosted by the higher seed, semifinals at the higher seed's arena, final at Hinkle Fieldhouse.",
      "distribution": "Small group tables with discrete outcomes; margin enters via the tiebreak; knockout rounds are single games with win probability near rating-implied values.",
      "categories": [
       "situational_schedule_motivation",
@@ -7030,7 +7138,7 @@
     "category": "schedule_context",
     "mechanism": "The Cup Finals pair is formed by the two semifinal winners (one from each conference bracket, if the bracket is conference-based), so the pair probability is a product of two independent single-elimination outcomes.",
     "rationale": "The matchup contract resolves immediately upon qualification, not when the game is played; its probability depends on group results, quarterfinal and semifinal match-ups and neutral-site single-game probabilities.",
-    "measurement": "P(team reaches final) = P(qualifies from group) * P(wins quarterfinal) * P(wins semifinal), computed from team ratings with home-court advantage in the quarterfinal (hosted by the higher seed at its arena) and zero home advantage in the neutral-site semifinal, each with rest-days adjustment; P(pair) = P(A final)*P(B final) under independence, plus a Gaussian-copula version with correlation rho in [0, 0.3] bounding shared rest, travel and injury shocks if semifinals share a venue and weekend; report the range. Rules (venue by round, seeding, wildcard) read from the season's Cup rules text; as-of nightly during the Cup.",
+    "measurement": "P(team reaches final) = P(qualifies as group winner or wild card) x P(wins quarterfinal) x P(wins semifinal), from team ratings with home-court advantage for the higher seed in both the quarterfinal and the semifinal (2026-27: semifinals at the higher seed's arena, verified), with rest-days adjustment; East and West brackets are disjoint until the final, so P(pair) = P(A reaches final) x P(B reaches final) with no shared-venue correlation; the final itself is at neutral Hinkle Fieldhouse. Re-read the season's Cup rules each year; as-of nightly during the Cup.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NBA.com Cup bracket rules",
@@ -10081,7 +10189,7 @@
     "category": "team_strength",
     "mechanism": "Series winner and title probabilities depend on the bracket path (seed, opponent strength, home-court) and matchup-specific adjustments.",
     "rationale": "Title odds are the product of series-win probabilities along a path that depends on which seed you are, who you face and the rest/injury states. A given team's path difficulty can differ substantially even for equal rating. Subtle: series outcomes are correlated through injuries to key players across rounds.",
-    "measurement": "Simulate the full bracket 50,000 times: draw final regular-season seeds from nba.standings_sim, play-in outcomes from nba.play_in_path_model, then each series winner from game-by-game win probabilities p_g = f(rating difference from nba.ratings playoff version, home advantage, injury status) with a series dependence parameter and the 2-2-1-1-1 pattern from nba.series_length_distribution; matchup tweak = nba.playoff_matchup_assignment_shift and nba.playoff_rotation effects applied to ratings, not ad hoc. Output P(reach round r), P(title), opponent distributions and home-court indicators per round, with sd from simulation. As-of: nightly; completed games condition the paths.",
+    "measurement": "Single shared playoff bracket simulation for every archetype that needs advancement or series length (season_futures_team, series_and_cup, player_milestones playoff triple-double, playoff single-game points, series cumulative points): 50,000 draws; seeds from nba.standings_sim paths, play-in from nba.play_in_path_model, each series game by game with p_g from playoff ratings, home court (2-2-1-1-1) and injury state, series dependence as in nba.series_length_distribution; store per-path series lengths, game venues and advancement so consumers read the same draws. Output P(reach round r), P(title), opponent distributions and games played per team. As-of: nightly; completed games condition the paths.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Basketball-Reference (free; polite scraping, rate-limited)",
@@ -10289,8 +10397,8 @@
     "reason": "Lopsided playoff games cut star minutes in the fourth quarter, removing 50-point chances; market-free margin-to-minutes curve."
    },
    "nba.division_race_tiebreak_state": {
-    "verdict": "WEAK",
-    "reason": "The five division contracts it was built for moved to season_futures_team; division titles affect playoff qualification only through seeding, already in the standings simulation."
+    "verdict": "DUPLICATE_OF:nba.tiebreak_ledger",
+    "reason": "Same mechanism as nba.tiebreak_ledger (head-to-head, division and conference record ledgers applied through the official tiebreak order inside nba.standings_sim); irrelevant to playoff single-game points in any case."
    },
    "nba.preseason_roster_aging_prior": {
     "verdict": "KEEP_CONTEXT",

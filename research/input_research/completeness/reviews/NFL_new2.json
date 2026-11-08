@@ -117,7 +117,8 @@
     "The fastest-40 text has no dead-heat clause; official 40 times are reported to hundredths and a tie at the top is plausible, so payout under a tie is unknown.",
     "Scope is the Combine only: a prospect who skips the Combine 40 and runs faster at his pro day cannot be YES, and his absence raises others' chances.",
     "The text does not say whether broadcast unofficial times or later official times settle; these can differ by a few hundredths and reorder close sprinters.",
-    "rules_secondary is empty for both sampled markets, so no settlement source, revision window or void rule for a cancelled drill is visible."
+    "rules_secondary is empty for both sampled markets, so no settlement source, revision window or void rule for a cancelled drill is visible.",
+    "Series scope verified on the Kalshi events API (2026-11-08): KXNFLCOMBINE-VERT26, -BROAD26, -BENCH26 and -4026 exist with settlement sources ESPN and NFL Network; only the broad-jump market text is sampled and the vertical and bench market rules could not be retrieved (markets no longer returned), so their tie and revision handling is unknown."
    ],
    "settlement_data_source": "Not named in the sampled rules; presumably the official NFL Scouting Combine results published by the league (NFL.com Combine results), which is unverified."
   },
@@ -197,6 +198,24 @@
       "m.rules_text",
       "m.settlement_truth",
       "m.lifecycle"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Vertical-jump and bench-press events of the same series",
+     "description": "The Kalshi event list for KXNFLCOMBINE in 2026 has four events: highest vertical jump, longest broad jump, most bench-press reps and fastest 40. The vertical draws on the same elastic-power athletes as the broad jump, so it reuses their participation decisions with a correlated but distinct per-prospect prior. The bench press is a separate pool of interior linemen and edge players lifting 225 lb for reps, where heavier players with short arms do best and the main uncertainty is which strong prospects opt out. Both are field maxima settled on the official recorded result.",
+     "distribution": "Vertical: continuous half-inch maximum over roughly 150-250 jumpers, Gumbel-like tail; bench: integer maximum over roughly 150-200 lifters, upper tail driven by a few linemen, dead-heat ties possible",
+     "categories": [
+      "talent_strength",
+      "role_personnel",
+      "availability_news",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nfl.combine_vertical_jump_prior",
+      "nfl.combine_bench_press_pool_and_prior",
+      "nfl.combine_drill_participation_hazard",
+      "nfl.combine_drill_extreme_history"
      ]
     }
    ],
@@ -377,11 +396,11 @@
     "role": "secondary"
    },
    "nfl.combine_drill_extreme_history": {
-    "label": "Yearly Combine best marks by drill and record tail",
+    "label": "Yearly Combine best marks by drill (40, broad jump, vertical, bench reps) and record tail",
     "category": "distribution",
-    "mechanism": "Distribution of the yearly fastest 40 and longest broad jump across classes, used to calibrate the extreme-value tail and the chance of breaking the record.",
+    "mechanism": "Distribution of the yearly fastest 40, longest broad jump, highest vertical and most bench-press reps across classes, used to calibrate the extreme-value tail of each drill and the chance of breaking its record.",
     "rationale": "The 148-inch strike exceeds the 147-inch record, so the per-class probability is a record-exceedance tail that cannot be read from typical yearly bests; the era trend (training specialisation) and the number of participants shift the location.",
-    "measurement": "From nflverse Combine data 2006-2025 (fixed window; years before 2006 excluded because timing regime differs), take each year's best 40 time (minimum) and best broad jump (maximum) among participants. Fit a GEV to the 20 yearly maxima (sign-flipped for the 40) with location mu = a + b x (season-2006) + c x ln(number of participants who recorded the drill); shape by maximum likelihood with a Normal(0, 0.15) prior, parametric bootstrap 2,000 draws for intervals. Output P(max >= x) for any strike x (broad jump inches) and the distribution of the winning 40 time. As-of before testing, using the invite-list participant count forecast.",
+    "measurement": "From nflverse Combine data 2006-2025 (fixed window; earlier timing regime excluded), take each year's best 40 time (minimum), broad jump (maximum, inches), vertical (maximum, inches) and bench press (maximum reps at 225 lb) among participants. For the three continuous drills fit a GEV to the 20 yearly maxima (sign-flipped for the 40) with location mu = a + b x (season-2006) + c x ln(number of participants who recorded the drill); shape by maximum likelihood with a Normal(0, 0.15) prior. For bench reps (integer) fit the same GEV to yearly maxima and discretise by rounding with continuity correction. Parametric bootstrap 2,000 draws for intervals. Output P(max >= x) for any strike and the distribution of the winning mark per drill. As-of before testing, using the forecast participant count per drill.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse combine data",
@@ -390,8 +409,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "combine.season, player, pos, forty, broad_jump",
-     "participant counts by position and year"
+     "combine.season, player, pos, forty, broad_jump, vertical, bench",
+     "participant counts by drill, position and year"
     ],
     "why": "Yearly best 40 and broad jump over a provisional electronic-timing window, and the record, anchor the order-statistic tail for the 148-inch strike.",
     "role": "primary"
@@ -414,6 +433,48 @@
     ],
     "why": "Electronic timing, start trigger, indoor track and unofficial-to-official revision define the recorded number that settles.",
     "role": "secondary"
+   },
+   "nfl.combine_bench_press_pool_and_prior": {
+    "label": "Bench-press (225 lb reps) participant pool and per-prospect rep prior",
+    "category": "player_role",
+    "mechanism": "The most-reps event is a maximum over prospects who choose to bench, a pool dominated by defensive and offensive linemen with long-standing strength histories; arm length lowers reps, and top prospects and players with upper-body injuries often skip the lift.",
+    "rationale": "The speed and jump pools used for the 40 and broad jump are almost disjoint from the bench pool, so the existing priors say nothing about this event; the favourite is set by a few interior linemen with very high strength priors, and opt-outs among them change the maximum more than anything else.",
+    "measurement": "Per invitee: expected reps = regression on 2006-2025 Combine bench results of position group (iDL, EDGE, OL, LB, TE, RB, other), weight (lb), arm length (in), and reported pro-day or college strength numbers where available (flagged by source), with prospect-level SD from residuals; shrink toward position-weight mean with weight 2 reported lifts. Participation probability from nfl.combine_drill_participation_hazard refit for the bench drill (covariates: projected round, upper-body injury in prior 90 days, position). Simulate the field maximum over participating invitees (integer reps); calibrate the yearly maximum against the 2006-2025 history in nfl.combine_drill_extreme_history. Output P(max reps >= k) and P(named prospect has the most reps), dead-heat ties shown separately. As-of the day before bench testing.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse combine data (bench, wt, pos)",
+     "NFL.com Combine invite list and measurements (arm length)",
+     "Pro-Football-Reference combine pages (free, scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "combine: season, player, pos, wt, bench (reps)",
+     "invite list measurements: arm length, weight",
+     "news timestamps of drill opt-outs"
+    ],
+    "why": "KXNFLCOMBINE-BENCH26 (Most Bench Press Reps) exists in the series; its pool and prior are lineman-driven and not covered by the speed/jump inputs.",
+    "role": "primary"
+   },
+   "nfl.combine_vertical_jump_prior": {
+    "label": "Vertical-jump participant pool and per-prospect jump prior",
+    "category": "player_role",
+    "mechanism": "The highest vertical is a maximum over jumpers whose ceiling depends on elastic power relative to mass; receivers, corners, safeties and some running backs and edge rushers populate the tail, and the event shares participants and opt-out behaviour with the broad jump.",
+    "rationale": "Vertical and broad jump are correlated (both lower-body power) but not interchangeable: the vertical favours lighter, elastic athletes, measurement uses the Vertec standing-reach protocol, and best-of-attempt noise is larger relative to the spread of the top of the field, so the broad-jump prior cannot be reused unchanged.",
+    "measurement": "Per invitee: expected vertical (inches) = regression on 2006-2025 Combine results of broad-jump prior from nfl.prospect_pre_combine_athletic_prior, weight, height, position, and college track jump marks where available (long jump, high jump; FAT/wind-legal flags), with residual SD per position; participation from nfl.combine_drill_participation_hazard refit for the vertical; joint simulation with the broad jump using the empirical residual correlation (estimated per position group, shrunk to pooled with weight n/(n+50)). Field maximum by simulation; output P(max >= x) for half-inch strikes and P(named prospect highest), ties reported. Calibrate yearly maxima to the 2006-2025 history. As-of the day before jumps.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse combine data (vertical, broad_jump)",
+     "TFRRS collegiate track results (free, scrape)",
+     "NFL.com Combine tracker"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "combine: season, player, pos, ht, wt, vertical, broad_jump",
+     "track jump marks with wind and timing flags",
+     "drill opt-out news timestamps"
+    ],
+    "why": "KXNFLCOMBINE-VERT26 (Highest Vertical Jump) exists in the series and needs its own prior and its correlation with the broad-jump field already modelled.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -479,6 +540,16 @@
     "form": "threshold",
     "mechanism": "Revision of unofficial to official 40 times only matters when the two fastest official times are within the revision sd (about 0.01-0.02 s); outside that band revisions cannot change the argmax, so the settlement risk switches on only for close races.",
     "how_to_test": "From tracker snapshots, count classes where the leader changed between first-displayed and official times as a function of the gap between first and second."
+   },
+   {
+    "inputs": [
+     "nfl.combine_vertical_jump_prior",
+     "nfl.prospect_pre_combine_athletic_prior",
+     "nfl.combine_drill_participation_hazard"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Vertical and broad jump outcomes are positively correlated within a prospect and opt-outs are usually joint (a prospect who skips jumps skips both), so the vertical and broad-jump maxima are dependent: one elite jumper opting out lowers both, and pricing the two events independently misstates their joint.",
+    "how_to_test": "On 2006-2025 classes correlate yearly vertical and broad maxima and the identity of the leaders; test per-prospect joint skip rates for the two jumps."
    }
   ],
   "nonlinearities": [
@@ -918,6 +989,11 @@
      "ticker": "KXNFLWEEKHIGHSCORE",
      "quote": "If Washington is the highest scoring team in Week 18 of the 2026-27 Pro Football regular season, then the market resolves to Yes.",
      "establishes": "Weekly argmax of team points across all teams playing that week, with a parallel 1/N tie rule."
+    },
+    {
+     "ticker": "KXNFLGAMESPECIALS",
+     "quote": "any quarter-specific markets only pertain to stats recorded in an individual quarter, not inclusive of overtime",
+     "establishes": "The series carries quarter-window variants and excludes overtime from them, so a separate per-quarter chain is required."
     }
    ],
    "variants_and_edge_cases": [
@@ -927,7 +1003,8 @@
     "A team on bye in the named week cannot score, so its weekly market is effectively NO; Week 18 has every team playing while mid-season weeks have byes and fewer games.",
     "KXNFLGAMESPECIALS includes quarter-specific markets that exclude overtime; only the 225+ rushing-yard full-game variant was sampled, so other stats and rungs in the series are unseen.",
     "Rungs differ in rarity: 109.5 total is beyond the post-merger record (106, CIN 58-48 CLE 2004); a margin over 51.5 has occurred at least five times post-merger (LA Rams 59-0 ATL 1976, CIN 61-7 HOU 1989, NE 59-0 TEN 2009, NO 62-7 IND 2011, SEA 58-0 ARI 2012), roughly once a decade; 225+ rushing yards is a recurring event (record 296) rather than a record tail; base rates must be set per rung.",
-    "Cancelled or no-contest games (for example the 2022 BUF-CIN game) and postponed games are not addressed in the sampled text for season or weekly markets; treatment of their scores is unknown (see u5)."
+    "Cancelled or no-contest games (for example the 2022 BUF-CIN game) and postponed games are not addressed in the sampled text for season or weekly markets; treatment of their scores is unknown (see u5).",
+    "KXNFLGAMESPECIALS market list verified on the Kalshi events API (2026-11-08): passing yards 475/500/525, passing TDs 6+, rushing 225-300, receiving yards 250/275/300, receptions 15/17/20, 100 rush + 100 rec, non-passing TDs 4+, sacks 4/5/6, tackles 20+, defensive INTs 2/3 (settled YES), D/ST TDs 2+, and quarter rungs 250 passing / 150 rushing / 150 receiving."
    ],
    "settlement_data_source": "Not named in the sampled rules; final scores and official player statistics as published by the league are the presumed source.",
    "series_mapping_issues": [
@@ -1049,6 +1126,40 @@
       "m.rules_text",
       "m.stat_correction_risk",
       "nfl.slate_max_tie_mass"
+     ]
+    },
+    {
+     "id": "s7",
+     "name": "Other player single-game specials: passing, receiving, TDs and defensive counts",
+     "description": "The live KXNFLGAMESPECIALS list for 2026-27 has rungs on passing yards (475/500/525), passing TDs (6+), receiving yards (250/275/300), receptions (15/17/20), non-passing TDs (4+), sacks (4/5/6), tackles (20+), defensive interceptions (2/3), D/ST TDs (2+) and 100 rushing plus 100 receiving yards, besides rushing. Each is a season-long any-player tail with its own process: passing and receiving rungs need shootout scripts and a concentrated target tree, sacks need a dominant rusher against a trailing team, tackles need heavy opponent run volume and generous scorers, and interceptions need a turnover-prone passer. Rungs already reached (2 and 3 interceptions, 15 and 17 receptions) are settled and drop out.",
+     "distribution": "Per player-game exceedance probabilities from overdispersed counts and heavy-tailed yardage; season event = 1 minus product over about 9,000 relevant player-games, sensitive to tail calibration",
+     "categories": [
+      "distribution_variance",
+      "pace_volume",
+      "role_personnel",
+      "opponent_matchup"
+     ],
+     "input_ids": [
+      "nfl.player_single_game_stat_extreme_family",
+      "nfl.slate_running_extreme_state",
+      "nfl.individual_defender_sack_int_accrual",
+      "nfl.targets"
+     ]
+    },
+    {
+     "id": "s8",
+     "name": "Quarter-window specials with overtime excluded",
+     "description": "Three rungs ask for 250 passing, 150 rushing or 150 receiving yards inside one regulation quarter. The window makes possession count and explosive plays dominate: end-of-half two-minute drills and fourth-quarter comeback passing create the high-volume quarters, and one long touchdown can supply most of a 150-yard quarter. The rules text excludes overtime from quarter-specific markets, so the fifth period never counts.",
+     "distribution": "Per player-quarter heavy-tailed sum of a negative-binomial number of plays with long right-tail play yards; season event over roughly 36,000 relevant player-quarters",
+     "categories": [
+      "distribution_variance",
+      "pace_volume",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nfl.player_single_quarter_stat_extreme",
+      "nfl.slate_running_extreme_state",
+      "m.rules_text"
      ]
     }
    ],
@@ -1299,6 +1410,45 @@
     ],
     "why": "Weekly highest-scoring game and team markets are partly settled by earlier windows, so the realised in-week maximum and the close time relative to the Monday game are needed state.",
     "role": "primary"
+   },
+   "nfl.player_single_game_stat_extreme_family": {
+    "label": "Season-long any-player single-game extreme by stat (passing, receiving, receptions, TDs, sacks, tackles, INTs)",
+    "category": "distribution",
+    "mechanism": "Each non-rushing KXNFLGAMESPECIALS rung pays if any player in any regular-season game reaches it, so its probability is one minus the product over the season's player-games of the chance of staying below the rung, built from each stat's own opportunity-times-yield process: passing yards and passing TDs from dropbacks and efficiency in shootouts; receiving yards and receptions from target share in high-volume passing games; non-passing TDs from goal-line usage; sacks from pass-rush wins against a trailing offence; tackles from defensive snaps and opponent run volume; interceptions from a defender's targets against turnover-prone passers.",
+    "rationale": "The live rung list goes far beyond rushing: 475/500/525 passing yards, 6 passing TDs, 250/275/300 receiving yards, 15/17/20 receptions, 4+ non-passing TDs, 4/5/6 sacks, 20+ tackles, 2/3 defensive interceptions, 2+ D/ST TDs and 100 rushing plus 100 receiving yards. Each sits in a different tail with different drivers, and several were already settled YES early in the season (2 and 3 interceptions, 15 and 17 receptions), so banked state matters as much as the per-game tail. Tackle counts depend on the official scorer's solo-plus-assist tally, which varies by stadium crew.",
+    "measurement": "For each stat k in {pass yds, pass TD, rec yds, receptions, non-passing TD, sacks, tackles (solo+assisted), def INT, D/ST TD, rush>=100 and rec>=100 jointly}: per player-game, simulate the stat from the player's opportunity share (last 8 games, half-life 4, shrunk to depth-slot prior k=3 games) times team volume conditioned on own-model margin and total draws (nfl.model_team_points_mean, never betting lines), with stat-specific yield distributions fitted on 2010-2025 player-games (negative binomial for counts, discretised gamma mixture for yards; tackle counts with a home-scorer random effect shrunk k=16 games). P(rung reached in game) per player-game; season probability = 1 - prod over remaining player-games (1 - p) with a shared-rating-error adjustment, conditioned on the realised season maximum to date (settled rungs = 1). Calibrate each stat's intercept to the 2010-2025 count of games per season above the rung. As-of start of each week.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse player_stats (passing, receiving, rushing, defensive: def_tackles_solo, def_tackle_assists, def_sacks, def_interceptions)",
+     "nflverse play-by-play",
+     "Pro-Football-Reference game logs (free, scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player-game stats by stat type with game_id and week",
+     "team-game plays, dropbacks and rush attempts",
+     "home team and official stat crew identifier where available",
+     "running season maxima per stat"
+    ],
+    "why": "Covers every non-rushing KXNFLGAMESPECIALS rung (passing, receiving, receptions, TDs, sacks, tackles, INTs, D/ST TDs, 100/100 combo), which previously had no inputs in this record.",
+    "role": "primary"
+   },
+   "nfl.player_single_quarter_stat_extreme": {
+    "label": "Any-player single-quarter stat extreme (250 passing, 150 rushing, 150 receiving yards; overtime excluded)",
+    "category": "distribution",
+    "mechanism": "Quarter rungs pay if any player records the stat within one regulation quarter; a 15-minute window concentrates the outcome on explosive plays and on quarters with many possessions (two-minute drills, trailing scripts), so the per-quarter distribution is far more tail-heavy relative to its mean than the full-game total.",
+    "rationale": "The KXNFLGAMESPECIALS rules state that quarter-specific markets count only stats in an individual quarter, not overtime, so full-game projections cannot be scaled by one quarter: second and fourth quarters carry end-of-half possessions, and a single 80-yard play is a large share of a 150-yard quarter.",
+    "measurement": "From nflverse pbp 2010-2025, aggregate each player's passing, rushing and receiving yards by game and quarter (qtr 1-4 only; qtr 5 excluded). Per player-quarter model: yards = sum over the player's plays in the quarter of per-play yards drawn from the player's play-yard distribution (shrunk to position, k=150 plays), with play count negative binomial by quarter index and simulated score state. Season probability = 1 - prod over remaining player-quarters (1 - p), conditioned on settled rungs. Calibrate to the empirical per-season count of player-quarters above each rung. As-of start of each week.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "nflverse play-by-play (qtr, passer/rusher/receiver ids, yards_gained)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, qtr, passer_player_id, rusher_player_id, receiver_player_id, yards_gained, play_type, score_differential"
+    ],
+    "why": "KXNFLGAMESPECIALS lists quarter rungs (QPY250, QRY150, QREY150) whose window and overtime exclusion differ from the full-game rungs.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -1458,6 +1608,15 @@
     "form": "conditional",
     "mechanism": "When several outdoor games face wind or rain, the argmax mass concentrates on dome games and calm venues; in a uniformly mild week the mass spreads by team quality, so weather matters for the argmax mainly through its dispersion across the slate.",
     "how_to_test": "Compare dome-game share of weekly highest totals in weeks with high versus low cross-game spread of forecast wind."
+   },
+   {
+    "inputs": [
+     "nfl.player_single_game_stat_extreme_family",
+     "nfl.slate_running_extreme_state"
+    ],
+    "form": "threshold",
+    "mechanism": "Once a rung is reached the market settles and the next rung inherits the realised maximum, so the remaining-season probability of a higher rung depends on how far the current maximum is from it; the 17-reception rung settling YES removes it and leaves 20 as a far-tail event with a much lower hazard.",
+    "how_to_test": "Backtest per-week remaining-season probabilities for each stat rung on 2010-2025 seasons conditioning on the realised maximum to date versus an unconditioned season product."
    }
   ],
   "nonlinearities": [
@@ -1480,6 +1639,11 @@
     "input_id": "nfl.weekly_slate_composition",
     "shape": "inverse in number of contenders",
     "why": "Baseline argmax share scales like 1/N, so the drop from 32 to 26 teams lifts every team's share by about 23 percent, a non-linear effect for favourites near the top."
+   },
+   {
+    "input_id": "nfl.player_single_quarter_stat_extreme",
+    "shape": "convex in play count",
+    "why": "A quarter with two extra possessions roughly doubles the chance of 150 yards because the tail needs several explosive plays, so exceedance rises convexly with quarter play volume."
    }
   ],
   "required_data": [

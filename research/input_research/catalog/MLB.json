@@ -22,7 +22,7 @@
    "category": "pace_volume",
    "mechanism": "Batters faced is the volume multiplier for every pitcher counting stat (strikeouts, outs, hits, walks, earned runs) and sets how much bullpen exposure the game has.",
    "rationale": "Pitcher props are rate x opportunity; workload uncertainty is often a bigger source of variance than rate uncertainty. Subtle: realized pitch count and pull are not knowable pregame; only their distribution is. Expected batters faced = min(pitch cap / pitches per PA, performance-based hook), so efficiency, leash and opponent patience all enter.",
-   "measurement": "Distribution of batters faced from the pitcher's last 10-15 starts (excluding injury-shortened), adjusted for team/manager leash, rest days, opponent pitches/PA and ongoing pitch-limit status; model as mixture of hook triggers (pitch cap vs performance).",
+   "measurement": "Readout of the shared exit hazard mlb.sp_hook_hazard_curve, not a separate model: the distribution of batters faced is P(BF = b) = S(b-1) * h(b) with E[BF] = sum over b of S(b); outs and pitch-count distributions come from the same hazard run inside the plate-appearance simulation (pitches per PA from mlb.sp_efficiency and mlb.opp_pitches_per_pa; announced caps from mlb.pitch_count_limit). The pitcher's last 10-15 starts (excluding injury-shortened) enter only through the hazard's pitcher terms. Output E[BF], E[outs], E[pitches] and their distributions. As-of: lineup post.",
    "pregame_knowable": "partial",
    "free_sources": [
     "MLB StatsAPI statsapi.mlb.com (/api/v1/schedule?hydrate=probablePitcher,lineups, /api/v1/game/{gamePk}/boxscore, /feed/live) boxscore (pitchesThrown, battersFaced)",
@@ -301,6 +301,9 @@
    ],
    "registry_ids": [
     "mlb.injuries_pit"
+   ],
+   "raw_data": [
+    "see catalog definition of mlb.injuries_pit"
    ]
   },
   "mlb.opp_strength": {
@@ -380,6 +383,9 @@
    ],
    "registry_ids": [
     "mlb.hr_environment"
+   ],
+   "raw_data": [
+    "see catalog definition of mlb.hr_environment"
    ]
   },
   "mlb.contact_defense": {
@@ -399,11 +405,11 @@
    ]
   },
   "mlb.leash": {
-   "label": "Manager hook tendencies, pitch-count limits, bullpen state (how long a starter stays)",
+   "label": "Manager hook tendency (component of the shared starter exit hazard: manager effect and bullpen freshness)",
    "category": "pace_volume",
    "mechanism": "Managers remove starters based on pitch count, times through the order and leverage; leash determines batters faced and thus all pitcher counting stats.",
    "rationale": "Hook behaviour is team- and manager-specific and has become shorter in recent seasons; analytics-driven teams pull starters before the third time through. Subtle: leash depends on score, bullpen availability and pitcher performance in-game, so the pregame distribution of outs is a mixture over these scenarios.",
-   "measurement": "Per-manager and per-team distribution of pitches and BF at exit conditional on starter type, score margin, and TTO; fit survival/hazard model of exit by pitch count and runs allowed; update with current-season hook-rate.",
+   "measurement": "Not a separate model: leash is reported as the manager random effect (shrunk with k = 40 starts, reset on a manager change) and the bullpen-freshness coefficient inside mlb.sp_hook_hazard_curve, summarised as the manager's predicted median batters faced at exit for a league-average starter at 0 runs allowed and a 95-pitch count, relative to the league median. Units: batters faced relative to league. As-of: starts through the previous day.",
    "pregame_knowable": "partial",
    "free_sources": [
     "MLB StatsAPI statsapi.mlb.com (/api/v1/schedule?hydrate=probablePitcher,lineups, /api/v1/game/{gamePk}/boxscore, /feed/live) game feeds (pitching changes)",
@@ -1088,6 +1094,9 @@
    "registry_ids": [
     "mlb.hitter_quality",
     "mlb.hr_environment"
+   ],
+   "raw_data": [
+    "see catalog definition of mlb.hitter_hr_profile"
    ]
   },
   "mlb.pitcher_hr_vulnerability": {
@@ -1095,7 +1104,7 @@
    "category": "matchup",
    "mechanism": "Pitchers who allow fly balls and hard contact give up more home runs, and the hitter-pitcher combination determines the single-game probability.",
    "rationale": "Pitcher HR rates are noisy; barrel% and fly-ball rate against are more stable. Subtle: pitch type matters (center-cut fastballs, hanging breaking balls) and HR/FB regresses strongly toward league average.",
-   "measurement": "Pitcher barrel%/FB% allowed by batter hand, HR/FB regressed (prior weight ~200 FB); combine with hitter HR profile via log5 for per-PA HR probability.",
+   "measurement": "Pitcher barrel%/FB% allowed by batter hand, HR/FB regressed (prior weight ~200 FB); combine with hitter HR profile via log5 for per-PA HR probability. When used for opposing-hitter markets before first pitch (single-game HR, hits, TB), evaluate it as a mixture over starters: per-PA HR probability = (1 - P(change)) * p(announced starter) + P(change) * sum over replacements r of P(r | change) * p(r), with P(change) and the replacement distribution (next rotation arm, opener plus bulk, bullpen game) from mlb.f5_starter_change_risk at the same as-of time; for the pitcher's own ladders use the announced pitcher only. As-of: lineup post.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Baseball Savant / pybaseball statcast (baseballsavant.mlb.com/statcast_search CSV export, leaderboards)",
@@ -1104,6 +1113,9 @@
    "registry_ids": [
     "mlb.hr_environment",
     "mlb.contact_defense"
+   ],
+   "raw_data": [
+    "see catalog definition of mlb.pitcher_hr_vulnerability"
    ]
   },
   "mlb.pitcher_gb_rate": {
@@ -1602,11 +1614,11 @@
    ]
   },
   "mlb.award_narrative": {
-   "label": "Award narrative: team success, milestones, positional context, finalist news",
+   "label": "Award narrative flags: pre-registered milestone, comeback, first-year, positional-scarcity and team-surprise indicators",
    "category": "motivation",
    "mechanism": "Voters respond to storylines and team success beyond raw metrics, creating systematic deviations from WAR rankings.",
    "rationale": "A candidate with the best WAR on a non-playoff team may lose to a candidate on a playoff team. Subtle: narrative is hard to quantify; proxy by team win%, playoff clinch and media mentions.",
-   "measurement": "Regress historical winners on WAR rank, team seed/win%, league (AL/NL), position; add finalist indicator.",
+   "measurement": "Binary flags per candidate-season tagged from official season statistics at the ballot deadline (end of the regular season), never from media text: milestone = reached a pre-registered threshold (50 HR, 200 hits, 40 SB with 40 HR, 20 wins, ERA under 2.00 with 162 IP, 300 strikeouts, 40 saves, .350 AVG qualified); comeback = prior-season fWAR <= 0.5 or prior-season PA < 200 (IP < 60 for pitchers) with current fWAR >= 3; first_year = first season in MLB or in the league after a cross-league trade before July; positional_scarcity = primary position C, SS or CF with fWAR rank in the top 3 at that position; team_surprise = team wins minus preseason projected wins (mean of ZiPS and PECOTA) >= 8. Flags enter mlb.award_vote_rank_model as additive terms in the worth function with coefficients fitted per electorate class and ridge-shrunk toward 0 (penalty 3 seasons); report the incremental log-likelihood of each flag over WAR and team success on 1996-2025 ballots and drop flags with no gain. Sources: Baseball-Reference/FanGraphs season and career tables, preseason projection archives.",
    "pregame_knowable": "partial",
    "free_sources": [
     "BBWAA award history (baseball-reference.com/awards)",
@@ -2076,7 +2088,7 @@
    "category": "pace_volume",
    "mechanism": "Batters faced is a first-passage time with removal hazard depending on pitch count, trip through the order, runs allowed and manager.",
    "rationale": "The existing 'leash' label names the idea but gives no estimand. A K ladder cares about P(survive to batter 25+) and the hook is not a function of innings alone: a starter at 85 pitches with a 4-run deficit is removed at a different rate than one with a lead, and managers differ in whether they pull at the third-time-through boundary or at a pitch count. A measured hazard curve turns leash into a number the strikeout model can integrate over.",
-   "measurement": "Discrete-time logistic hazard h(b) = P(removed after batter b | still in) estimated on 5 seasons of starts (regular season; separate postseason intercept). Predictors: batters faced b (spline, knots at 9, 18, 27), pitch count (spline), runs allowed so far (0,1,2,3+), runners on at b, team lead/deficit bucket, days rest, season-to-date average pitches per start (shrunk to league with k = 8 starts), manager random effect (shrunk, k = 40 starts), bullpen-freshness index (relievers used last 2 days). Output: survival S(b) for b = 1..36 and E[BF]. As-of: manager and pitcher effects fit through the prior game; game-state predictors enter only inside a simulation, not as pregame data.",
+   "measurement": "The single shared starter exit-hazard model for every pitcher prop and window (strikeouts, outs, earned runs/hits/walks, F5, inherited runners, win credit). Discrete-time logistic hazard h(b) = P(removed after batter b | still in) estimated on 5 seasons of starts (regular season; separate postseason intercept). Predictors: batters faced b (spline, knots at 9, 18, 27), third-trip indicator I(b >= 19), inning-boundary indicator I(batter b made the third out of an inning), pitch count (spline), runs allowed so far (0,1,2,3+), runners on at b, team lead/deficit bucket (leading, tied or trailing by <=2, trailing by >=3), days rest, season-to-date average pitches per start (shrunk to league with k = 8 starts), manager random effect (shrunk, k = 40 starts; reset when the manager changes), bullpen-freshness index (relievers used last 2 days); an announced pitch cap from mlb.pitch_count_limit enters as a hard truncation (h = 1 once the cap is reached). Output: survival S(b) for b = 1..36, E[BF] = sum S(b), and, run inside the PA simulation with outs per batter, the distribution of outs at exit. mlb.sp_workload, mlb.exit_boundary_mass and mlb.leash are readouts or components of this model and are not fitted separately. As-of: manager and pitcher effects fit through the prior game; game-state predictors enter only inside a simulation, not as pregame data.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Retrosheet game logs / event files",
@@ -2210,11 +2222,11 @@
    }
   },
   "mlb.exit_boundary_mass": {
-   "label": "Manager exit-boundary mass: P(removal at outs = 3k | reached) with run-state conditioning",
+   "label": "Exit-outs lattice readout of the shared starter exit hazard: P(removal at outs = j | reached), including the spikes at inning boundaries",
    "category": "game_state",
-   "mechanism": "Starter removals cluster at inning boundaries and at the start of the third time through, and each manager has a characteristic exit lattice.",
+   "mechanism": "Starter removals cluster at inning boundaries and at the start of the third time through; this lattice is read off the one shared exit-hazard model rather than estimated as a separate model, so outs, strikeout and earned-run ladders of the same start stay consistent.",
    "rationale": "Outs ladders sit on multiples of three; if removals are smooth, P(outs>=15) and P(outs>=16) are priced alike, but if the manager lets starters finish innings then 16-17 outs are rare while 15 and 18 carry mass. Existing leash does not carry this discreteness.",
-   "measurement": "For every start in the last 4 seasons record exit_outs. For the current manager only (reset on a change), estimate the discrete hazard g_j = P(removed with exactly j outs | still pitching when reaching j outs) for j = 3..26 in cells of pitch-count bucket at that moment (<85, 85-100, >100) x run-state bucket (leading, tied or trailing by <=2, trailing by >=3); shrink each cell to the league cell with k = 30 starts. Do not smooth across inning boundaries. The distribution of exit_outs is f(j) = g_j * prod_{i<j} (1 - g_i), and P(outs >= m) = prod_{i<m} (1 - g_i), with the pitch-count bucket at each j set from the pitcher's pitches per out. As-of: games through the previous day.",
+   "measurement": "Not fitted separately. Simulate the start with mlb.sp_hook_hazard_curve (which carries the inning-boundary, third-trip, pitch-count and run-state terms and the manager effect) inside the plate-appearance simulation, mapping batters faced to outs with mlb.outs_per_bf_dp_baserunning; record exit_outs in each of 20,000 simulated starts. Output f(j) = share of simulations ending with exactly j outs for j = 0..27, g_j = f(j) / P(outs >= j), and P(outs >= m). Diagnostic only: compare g_j with the manager's empirical exit lattice over the last 4 seasons (cells of pitch-count bucket <85, 85-100, >100 x run-state bucket, shrunk to league with k = 30 starts); persistent gaps are fixed by adding terms to the shared hazard, never by a second model. As-of: games through the previous day.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Retrosheet game logs and event files",
@@ -2470,7 +2482,7 @@
    "category": "game_state",
    "mechanism": "A starter is charged for runners left on base when relieved, so the bullpen strand rate determines part of his earned runs.",
    "rationale": "The starter's earned-run count is not finished when he leaves: if he leaves with traffic and the reliever allows them to score, those runs are his. Exit-with-traffic probability is high in blow-up outings, the same outings that populate the right tail of the ER ladder.",
-   "measurement": "P(exit with k runners) from the hazard model (see leash) x P(each inherited runner scores | reliever profile) with reliever strand rate shrunk to league (k = 60 BF with inherited runners). Expected extra ER = sum_k P(k) x k x p_score x (1-unearned share). Use the likely first reliever from bullpen availability (setup man or long man). Units: expected earned runs added. As-of: lineup post + bullpen usage from prior 2 days.",
+   "measurement": "P(exit with k runners) from the shared exit hazard mlb.sp_hook_hazard_curve evaluated inside the PA simulation x P(each inherited runner scores | reliever profile) with reliever strand rate shrunk to league (k = 60 BF with inherited runners). Expected extra ER = sum_k P(k) x k x p_score x (1-unearned share). Use the likely first reliever from bullpen availability (setup man or long man). Units: expected earned runs added. As-of: lineup post + bullpen usage from prior 2 days.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Baseball-Reference inherited runners data",
@@ -3267,9 +3279,9 @@
   "mlb.f5_starter_change_risk": {
    "label": "Probability the listed starter does not start (scratch, opener, bulk swap) and replacement distribution",
    "category": "availability",
-   "mechanism": "F5 contracts do not condition on the pitcher, so a change shifts the whole distribution.",
+   "mechanism": "Contracts that do not gate on the pitcher (F5 lines, opposing-hitter props) stay live when the listed starter is scratched or swapped, so the change probability and the replacement's identity shift the whole outcome distribution.",
    "rationale": "Pre-lineup prices sit on the announced pitcher; a late scratch or opener plan is a large run-expectation change (a quality starter replaced by a bullpen day), and in the postseason pitching plans change.",
-   "measurement": "P(change) = logistic(a + b1*days_to_first_pitch + b2*IL_return_flag + b3*injury_report_flag + b4*team opener or bulk start rate in last 10 starts + b5*postseason + b6*doubleheader), fitted only on own-captured announced-versus-actual starters; until at least one full season of captured vintages exists, use the league base rate stratified by status flags with a Beta prior (k = 100 games) and label the output uncalibrated. Replacement distribution = mixture of next-in-rotation, bulk reliever and opener with their F5 run rates over 2 seasons shrunk to team average with k = 8 starts. Output P(change) and E[F5 runs | change] minus E[F5 runs | no change]. As-of: each timestamp before first pitch, using only announcements available then.",
+   "measurement": "P(change) = logistic(a + b1*days_to_first_pitch + b2*IL_return_flag + b3*injury_report_flag + b4*team opener or bulk start rate in last 10 starts + b5*postseason + b6*doubleheader), fitted only on own-captured announced-versus-actual starters; until at least one full season of captured vintages exists, use the league base rate stratified by status flags with a Beta prior (k = 100 games) and label the output uncalibrated. Replacement distribution = mixture of next-in-rotation, bulk reliever and opener with their F5 run rates over 2 seasons shrunk to team average with k = 8 starts. Output P(change), the replacement distribution (identity, throwing hand and role of each candidate with probabilities), E[F5 runs | change] minus E[F5 runs | no change] for F5 markets, and the replacement mixture used by opposing-hitter props through mlb.pitcher_hr_vulnerability. As-of: each timestamp before first pitch, using only announcements available then.",
    "pregame_knowable": "partial",
    "free_sources": [
     "MLB Stats API probable pitchers history (vintage unverified)",
@@ -3343,7 +3355,7 @@
    "category": "pace_volume",
    "mechanism": "Early starter exits push relievers into innings 4 and 5; the mixture shifts F5 runs.",
    "rationale": "Starter-only models understate runs when the starter has a short leash, and bullpen quality (not starter) then governs the end of the F5 window; openers make the share large.",
-   "measurement": "From the starter hazard of exit (see leash) compute E[outs by reliever in innings 1-5] = 15 - E[min(starter outs, 15)]; relief quality from the likely first reliever and leverage; F5 reliever share = that/15. F5 runs = starter rate x share_starter + reliever rate x share_relief. Uses 5 seasons start logs, k = 8 starts shrinkage to team average. Units: outs and runs per out. As-of: lineup post.",
+   "measurement": "From the shared starter exit hazard mlb.sp_hook_hazard_curve compute E[outs by reliever in innings 1-5] = 15 - E[min(starter outs, 15)]; relief quality from the likely first reliever and leverage; F5 reliever share = that/15. F5 runs = starter rate x share_starter + reliever rate x share_relief. Uses 5 seasons start logs, k = 8 starts shrinkage to team average. Units: outs and runs per out. As-of: lineup post.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Retrosheet start logs",
@@ -3773,9 +3785,9 @@
    }
   },
   "mlb.manager_wins_over_expectation": {
-   "label": "Manager/executive award score: wins over preseason expectation, division outcome and turnaround",
+   "label": "Manager of the Year score: wins over preseason expectation, division outcome and turnaround",
    "category": "motivation",
-   "mechanism": "Awards for managers and executives are voted on surprise and success relative to expectation rather than on absolute record.",
+   "mechanism": "BBWAA voters choose Manager of the Year before the postseason on team surprise and success relative to preseason expectation rather than on absolute record; the executive award has a different electorate and its own input.",
    "rationale": "Votes correlate more with wins minus preseason projection (and a division title or big turnaround) than with wins alone; the voting ballot closes before the postseason, so late-season trajectory and awards-ballot deadline matter.",
    "measurement": "score = (actual wins - preseason projected wins, mean of ZiPS and PECOTA team projections published before opening day) + b1*I(division title) + b2*I(playoff berth) + b3*(wins - prior-season wins), evaluated at the ballot deadline (end of regular season) and updated daily in-season. P(manager i wins) = softmax over the finalist set of c*score_i, with b1, b2, b3 and c fitted by multinomial logit on 2005-2025 finalist sets and c shrunk toward 0 with k = 3 seasons. The executive-award extension is dropped until its inputs are defined. Units: wins-equivalent score and probability.",
    "pregame_knowable": "partial",
@@ -4682,7 +4694,7 @@
    "category": "distribution",
    "mechanism": "Awards are decided by ballots ranking candidates; the distribution over rankings, not a single score, gives winner and finalist probabilities.",
    "rationale": "A winner market and a finalist market need different parts of the same ranking distribution; point totals depend on ballot structure (first-place votes, 10-deep ballots) and on how the voters weigh WAR, counting stats and team success.",
-   "measurement": "Plackett-Luce likelihood on 1996-2025 BBWAA ballots per award and league (rank-ordered top 10 for MVP, top 5 for Cy Young and ROY): worth_i = exp(b1*WAR_z + b2*team_win_pct_z + b3*counting_z + b4*playoff_flag + b5*milestone_flag + position/pitcher effects), z-scores computed within each league-season over the top 15 candidates by WAR, WAR = mean of fWAR and bWAR at the end of the regular season (ballot deadline). Estimate by maximum likelihood with ridge shrinkage of each award's coefficients toward the pooled coefficients (penalty equal to 3 seasons of data). Simulate 30 voter ballots from the fitted model (temperature tau fitted on first-place-vote dispersion) with the real points scale; output P(winner) and P(top 3 by points). milestone_flag is a pre-registered list (for example 50 HR, 20 wins, sub-2.00 ERA). As-of: final regular-season stats, before ballot release.",
+   "measurement": "Plackett-Luce likelihood on 1996-2025 BBWAA ballots per award and league (rank-ordered top 10 for MVP with points 14-9-8-7-6-5-4-3-2-1, top 5 for Cy Young since 2010 with 7-4-3-2-1, top 3 for Rookie and Manager of the Year with 5-3-1): worth_i = exp(b1*WAR_z + b2*team_win_pct_z + b3*counting_z + b4*playoff_flag + b5*milestone_flag + position/pitcher effects), z-scores computed within each league-season over the top 15 candidates by WAR, WAR = mean of fWAR and bWAR at the end of the regular season (ballot deadline). Estimate by maximum likelihood with ridge shrinkage of each award's coefficients toward the pooled coefficients of the same electorate class from mlb.award_electorate_procedure (penalty equal to 3 seasons of data); BBWAA coefficients are never pooled with panel, beat-reporter, fan or executive awards. Simulate 30 voter ballots from the fitted model (temperature tau fitted on first-place-vote dispersion) with the real points scale; output P(winner) and P(top 3 by points). milestone_flag and the other narrative terms are the pre-registered flags of mlb.award_narrative. As-of: final regular-season stats, before ballot release.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Baseball-Reference award voting history",
@@ -6846,6 +6858,134 @@
     "verdict": "WEAK",
     "duplicate_of": null
    }
+  },
+  "mlb.pitcher_k_talent_prior": {
+   "label": "Pitcher strikeout-rate prior from pitch-quality grades and projection systems, blended with observed K% by sample size and arsenal-change status",
+   "category": "matchup",
+   "mechanism": "A pitcher's strikeout ability is fixed by the physical quality of his pitches (velocity, movement, extension, release) long before his observed K% stabilises, so a pitch-quality grade and a projection prior carry the information when observed samples are short or obsolete.",
+   "rationale": "Observed K% needs several hundred batters faced to stabilise, and the 120-BF half-life used for k_rates throws away the history that would help; after an arsenal change (new pitch, velocity jump), an injury return or a debut, the observed rate measures a pitcher who no longer exists. Pitch-shape grades react within one or two starts and projections encode minor-league and aging information, so the prior matters most exactly on the rungs where markets misprice rookies and retooled starters.",
+   "measurement": "prior_K = w * projK + (1 - w) * stuffK, where projK = mean of the latest Steamer and ZiPS K% (rest-of-season if published, else preseason) at the as-of date, and stuffK = league K% + beta * (usage-weighted pitch-model whiff grade - league mean), with the per-pitch whiff grade a logistic model on release speed, induced vertical and horizontal break, spin rate, extension, release height and arm angle, and speed/movement differences to the primary fastball, fitted on 2021-2025 Statcast pitches; beta fitted by regressing pitcher-season K% on the grade (min 150 BF). w = 0.5 by default, 0.3 when the pitcher's last-3-start arsenal differs from his prior season (new pitch type with >= 10% usage or fastball velocity change >= 1.5 mph). Posterior K% = (BF_eff * obsK + 150 * prior_K) / (BF_eff + 150), with BF_eff = BF since the arsenal change at full weight plus earlier BF at weight 0.25; rookies with < 100 MLB BF use projK from MiLB-translated projections. As-of: projections and pitches dated before the game; units K per batter faced.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "FanGraphs projections (Steamer, ZiPS) and pitch-model leaderboards (Stuff+, Pitching+)",
+    "Baseball Savant / pybaseball Statcast pitch-level (release_speed, pfx_x, pfx_z, release_extension, release_pos_z, spin_rate, arm_angle)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "projection snapshots: pitcher_id, system, K%, BF, publish_date",
+    "statcast pitches: pitcher_id, pitch_type, release_speed, pfx_x, pfx_z, release_extension, release_pos_z, release_spin_rate, arm_angle, description, game_date"
+   ]
+  },
+  "mlb.opposing_probable_starter_vintage": {
+   "label": "Opposing probable starter identity, throwing hand and announcement timestamp, with the probability the listed starter changes",
+   "category": "matchup",
+   "mechanism": "Managers bench platoon hitters against same-handed starters, so whether a part-time player starts is decided by the opposing probable starter's throwing hand as it is known at the time, and changes if that starter is replaced.",
+   "rationale": "Platoon status alone says a player sits against left-handers; it does not say who is pitching or when that became known. Probables are announced days ahead and occasionally change (scratch, opener, bullpen day), and a change of hand flips platoon starts for several hitters at once, so the start probability before the card posts must be a mixture over the opposing starter's hand with its announcement vintage.",
+   "measurement": "Snapshot the MLB Stats API schedule (hydrate=probablePitcher) every 30 minutes from 3 days before first pitch; per game and team store probable pitcher id, pitchHand code (L/R), first-seen timestamp and each change. At as-of time t: P(opp hand = L) = (1 - P(change)) * I(listed hand = L) + P(change) * share of left-handers in the replacement distribution, with P(change) and the replacement distribution taken from mlb.f5_starter_change_risk at the same t; before any probable is listed use the rotation order from mlb.pitcher_rotation_slot_and_rest. For each hitter, P(start | hand) comes from his manager-specific start rates against LHP and RHP over the last 2 seasons (shrunk to his role class with k = 30 games per hand); P(start) = sum over hands of P(hand) * P(start | hand). Units: probability; as-of the snapshot time, using only announcements visible then.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "MLB Stats API statsapi.mlb.com /api/v1/schedule?hydrate=probablePitcher (probable pitcher and pitchHand)",
+    "Baseball-Reference and Retrosheet game logs (starting pitchers and lineups by date for start rates by opposing hand)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "probable-pitcher snapshots: game_pk, team_id, pitcher_id, pitch_hand, first_seen_ts, change_ts",
+    "lineup history: game_pk, batter_id, started_flag, opposing_starter_hand"
+   ]
+  },
+  "mlb.award_electorate_procedure": {
+   "label": "Award electorate and ballot procedure by award (who votes, ballot depth and points, vote timing, fan-vote component, public ballots)",
+   "category": "market_structure",
+   "mechanism": "Each award is produced by a different electorate with its own ballot, so the vote model, its coefficients and its training data depend on which body votes and how ballots are aggregated.",
+   "rationale": "Verified electorates differ: BBWAA writers vote MVP (10 places, 14-9-8-7-6-5-4-3-2-1), Cy Young (5 places, 7-4-3-2-1), Rookie and Manager of the Year (3 places, 5-3-1) before the postseason with public ballots; the Rivera/Hoffman Reliever awards are voted by a panel of about six retired relievers (3 picks, 5-3-1); the BBWAA added its own Relief Pitcher of the Year from 2026 (finalists named Nov 2 2026); Comeback Player is voted by the 30 MLB.com club beat reporters; the Hank Aaron Award combines a Hall of Fame panel with an MLB.com fan vote; Executive of the Year is voted by the 30 clubs before the postseason; Gold Gloves are managers and up to six coaches per club plus the SABR Defensive Index at about 25 percent. Pooling coefficients across these bodies is wrong.",
+   "measurement": "Table keyed by award x league x season with fields: electorate_class in {BBWAA, RETIRED_RELIEVER_PANEL, MLBCOM_BEAT_REPORTERS, HOF_PANEL_PLUS_FANS, CLUB_EXECUTIVES, MANAGERS_COACHES_PLUS_SDI, OTHER}, n_voters, ballot_places, points_vector, vote_deadline relative to the end of the regular season, postseason_included flag, fan_vote flag and published weight (null if unpublished), public_ballots flag, finalist_announcement flag. Source each row from the awarding body's announcement for that season. Use: award_vote_rank_model coefficients are pooled only within one electorate_class; classes without public ballots are fitted on winner and finalist outcomes only (multinomial logit over the finalist set, ridge-shrunk toward the BBWAA coefficients with penalty equal to 3 seasons); the ballot simulation uses that row's n_voters and points_vector. As-of: the row for the season being priced, frozen at the vote deadline.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "BBWAA voting FAQ and award results (bbwaa.com)",
+    "MLB.com press releases for Reliever of the Year, Comeback Player, Hank Aaron Award and Executive of the Year",
+    "SABR Defensive Index and Rawlings Gold Glove selection process (sabr.org)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "award procedure table: award, league, season, electorate_class, n_voters, ballot_places, points_vector, vote_deadline, fan_vote_flag, public_ballots_flag, source_url"
+   ]
+  },
+  "mlb.award_fan_vote_popularity": {
+   "label": "Fan-vote popularity of a candidate for awards with a fan ballot (Hank Aaron Award)",
+   "category": "motivation",
+   "mechanism": "Where fans vote, a candidate's popularity and market size add support beyond the offensive production a panel weighs, so the winner can differ from the statistical leader.",
+   "rationale": "The Hank Aaron Award combines a Hall of Fame panel with an online MLB.com fan vote, so a large-market or widely followed slugger gains share that a production model does not see; the relative weight of the two components is not published, so popularity must be estimated from outcomes. The All-Star fan ballot published by MLB is the only public, dated measure of the same fan population's preferences.",
+   "measurement": "pop_i = log(All-Star Phase 1 fan votes of player i in the same season, from MLB's published leader updates; 0 for players not listed, with a not-listed flag) + log(team metro population) as a second term. Winner model over the club-nominee finalist set: P(i) = softmax(a1*OPS+_z + a2*HR_z + a3*pop_i + a4*team_playoff_flag), z-scores within league among finalists at the end of the regular season; fit a1-a4 by conditional logit on 2014-2025 winners per league with ridge shrinkage toward a1 = production-only fit (penalty 3 seasons). Units: probability; as-of end of the regular season (voting runs through the postseason, so later fan activity is unobserved).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "MLB.com All-Star ballot leader announcements (Phase 1 vote updates)",
+    "MLB.com Hank Aaron Award finalist and winner releases",
+    "FanGraphs or Baseball-Reference season batting (OPS+, HR)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "All-Star phase-1 vote totals by player and season",
+    "Hank Aaron finalists and winners by league and season",
+    "team metro population"
+   ]
+  },
+  "mlb.executive_award_team_improvement": {
+   "label": "Executive of the Year signal: team improvement versus prior season and projection, payroll efficiency and value of the executive's acquisitions, judged by club executives before the postseason",
+   "category": "motivation",
+   "mechanism": "Club executives vote before the postseason for the front office that most improved its club relative to expectations and resources, so the signal is the team's regular-season surprise, cost efficiency and the visible results of recent trades and signings.",
+   "rationale": "MLB's Executive of the Year is voted by the 30 clubs before the postseason (winners since 2018 include Beane, Antonetti, Elias and Arnold twice), with no public ballots, so BBWAA-style ballot models and fan inputs do not apply and the manager score is the wrong object; small-revenue clubs that outperform projections dominate the history.",
+   "measurement": "For each club's top baseball-operations executive at season end: x1 = regular-season wins - prior-season wins; x2 = wins - preseason projected wins (mean of ZiPS and PECOTA team projections published before opening day); x3 = playoff-berth flag; x4 = z-score of wins per $10M of opening-day payroll; x5 = fWAR produced this season by players acquired by trade or free agency in the prior 12 months minus fWAR of players traded away in that period. P(i) = softmax(b * x) over the 30 executives, b fitted by conditional logit on 2018-2025 winners with ridge shrinkage (penalty 3 seasons) because only 8 winners exist. Units: probability; as-of the last day of the regular season (votes are cast before the postseason, so postseason results are excluded).",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "MLB.com Executive of the Year announcements (mlb.com/awards/executive-of-the-year)",
+    "FanGraphs projections and WAR; Baseball-Reference transactions and payroll",
+    "Cot's Baseball Contracts payroll pages"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "team standings by season",
+    "preseason team projections by system and publish date",
+    "opening-day payroll by club",
+    "transaction log with player fWAR before and after"
+   ]
+  },
+  "mlb.leaguewide_rare_game_event_hazard": {
+   "label": "League-wide single-game rare-event hazard over the remaining season and playoffs (individual no-hitter, perfect game, 4+ HR game, 20+ K game, 2+ grand slams in a game, 500+ ft Statcast home run)",
+   "category": "distribution",
+   "mechanism": "Each 'any player' feat is a union over every remaining team-game of a tiny per-game probability, so its chance is one minus the survival of a low-rate point process whose rate depends on the league's strikeout and power environment and on how long starters pitch.",
+   "rationale": "Rates moved sharply across eras: higher strikeout rates raised no-hit and 20-strikeout chances per inning while shorter starts lowered the chance of one pitcher finishing 27 outs, and only individual no-hitters count here; multi-HR feats depend on the right tail of hitter power, and 500-foot drives depend on the Statcast distance tail and altitude (Coors Field). Using long-run historical averages without these adjustments misstates the hazard by large factors.",
+   "measurement": "For event e, per team-game rate lambda_e(t) = exp(b0_e + b1_e*league K% + b2_e*league HR per PA + b3_e*league mean starter outs per start) fitted by Poisson regression on league-season counts 1990-2025 (500 ft: Statcast seasons 2015-2025 only, count of HR with hit_distance_sc >= 500); for the individual no-hitter count only games where one pitcher recorded all outs; covariates are season-to-date values at the as-of date. Multi-HR and 2-grand-slam feats are cross-checked bottom-up: sum over hitter-games of P(4+ HR) or P(2+ GS) from each hitter's per-PA HR rate (mlb.hitter_hr_profile) with 4.2 PA per game. The 500 ft term uses a generalised Pareto tail fitted to HR distances >= 450 ft with a park altitude covariate. P(event in the rest of the season) = 1 - exp(-sum over remaining regular-season team-games and expected playoff games of lambda_e). Units: probability; as-of the market timestamp with games already played counted as observed (a feat already achieved settles Yes).",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "Retrosheet game logs and event files (no-hitters, multi-HR games, strikeouts per game)",
+    "Baseball-Reference no-hitter, perfect game and multi-HR game lists",
+    "Baseball Savant Statcast hit_distance_sc for home runs (2015+)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "league-season counts of individual no-hitters, perfect games, 4+ HR games, 20+ K games, 2+ GS games, 500+ ft HR",
+    "league-season K%, HR per PA, starter outs per start",
+    "Statcast HR distances with park"
+   ]
+  },
+  "mlb.any_pitcher_season_wins_threshold": {
+   "label": "Any-pitcher 20-win season threshold: probability at least one pitcher reaches 20 regular-season wins",
+   "category": "distribution",
+   "mechanism": "A pitcher's wins accumulate one start at a time with a win credited only if he completes five innings with his team leading and the lead holds, so 20 wins needs a near-full rotation workload on a strong team and has become rare as starts shorten.",
+   "rationale": "Wins depend on team offence and bullpen as much as on the pitcher, and on starts remaining; the union over pitchers is dominated by the two or three leaders by the deadline, and the event collapses once their remaining starts cannot close the gap, so a pace-based projection that ignores remaining rotation turns misprices it late in the season.",
+   "measurement": "For each pitcher with W0 wins at the as-of date: remaining starts n_i from the rotation schedule (mlb.pitcher_rotation_slot_and_rest, five-man turns adjusted for off days and IL risk); per-start win probability p_i = P(starter records >= 15 outs) from the shared exit hazard (mlb.sp_hook_hazard_curve) x P(team leads when he exits and holds the lead) from his team's run-scoring and bullpen models, fitted on 2015-2025 starts with logistic calibration. W_i = W0 + Binomial(n_i, p_i) (Poisson-binomial when p varies by opponent); P(any >= 20) = 1 - product over pitchers of P(W_i < 20), assuming independence across teams and a shared-team correction for teammates. Units: probability; as-of the market timestamp, regular season only per the rules.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "MLB Stats API player game logs and probable pitchers",
+    "Baseball-Reference pitcher game logs (decisions, innings)",
+    "Retrosheet start logs for win-credit calibration"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "pitcher season wins and starts to date",
+    "rotation schedule and probables",
+    "start logs with outs recorded, score at exit and final decision"
+   ]
   }
  },
  "blueprints": {
@@ -8800,6 +8940,11 @@
      "id": "mlb.abs_challenge_regime",
      "why": "Adds the missing 2026+ zone mechanism for strikeout ladders, where called third strikes and count leverage are central.",
      "role": "secondary"
+    },
+    {
+     "id": "mlb.pitcher_k_talent_prior",
+     "why": "Strikeout rungs on rookies, injury returns and pitchers with a new pitch are where k_rates and pitch_type_whiff have the least valid data; this prior supplies talent there and sets the shrinkage target for everyone else.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -8905,6 +9050,17 @@
      "form": "convex",
      "how_to_test": "Estimate rho by BF bucket and by first-inning velocity deviation (post-hoc check); compare rung calibration with and without the rho term.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.pitcher_k_talent_prior",
+      "mlb.pitch_type_whiff",
+      "mlb.k_rates"
+     ],
+     "hypothesis": "The weight on observed whiff and K% versus the pitch-quality prior is a step function of effective sample: it drops when the arsenal changes (old pitches no longer thrown) and rises as new-arsenal batters faced accumulate, so the same observed K% means different things for a stable veteran and a pitcher who added a sweeper three starts ago.",
+     "form": "piecewise",
+     "how_to_test": "Backtest K-rung calibration on pitcher-starts within 5 starts of a flagged arsenal change, rookie debuts and IL returns, comparing k_rates alone versus the blended posterior.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -8973,7 +9129,7 @@
      {
       "id": "s3",
       "name": "Per-batter strikeout probability",
-      "description": "Within a PA the strikeout is a sequence: reach two strikes, then convert a two-strike count with a swing-and-miss, a called third strike or a foul tip. The pitcher's arsenal (usage by count and batter hand, whiff and chase by pitch) meets each batter's whiff and chase profile by pitch type; the odds-ratio combination of two rates is not additive. The confirmed lineup order matters because the nine hitters are not interchangeable and the top of the order is seen more often when the pitcher goes deep. Times-through-the-order decay lowers the rate on trips two and three.",
+      "description": "Within a PA the strikeout is a sequence: reach two strikes, then convert a two-strike count with a swing-and-miss, a called third strike or a foul tip. The pitcher's arsenal (usage by count and batter hand, whiff and chase by pitch) meets each batter's whiff and chase profile by pitch type; the odds-ratio combination of two rates is not additive. The confirmed lineup order matters because the nine hitters are not interchangeable and the top of the order is seen more often when the pitcher goes deep. Times-through-the-order decay lowers the rate on trips two and three. Pitcher-side K talent is a posterior: pitch-quality grades and projection systems form the prior (pitcher_k_talent_prior) that observed K% and pitch-type whiff update, with older history discounted after an arsenal change, an injury return or for a debut.",
       "distribution": "Bernoulli per batter with probability roughly 0.15 to 0.40 depending on matchup; heterogeneity across the nine batters creates a Poisson-binomial rather than a binomial count.",
       "categories": [
        "opponent_matchup",
@@ -8987,7 +9143,8 @@
        "mlb.lineup_k_platoon",
        "mlb.pitch_mix",
        "mlb.tto",
-       "mlb.sp_two_strike_putaway"
+       "mlb.sp_two_strike_putaway",
+       "mlb.pitcher_k_talent_prior"
       ]
      },
      {
@@ -9030,7 +9187,8 @@
       "status": "COVERED",
       "input_ids": [
        "mlb.k_rates",
-       "mlb.pitch_type_whiff"
+       "mlb.pitch_type_whiff",
+       "mlb.pitcher_k_talent_prior"
       ],
       "note": "Pitcher swing-and-miss and called-strike talent."
      },
@@ -9334,6 +9492,47 @@
      "feeds_inputs": [
       "m.rules_text"
      ]
+    },
+    {
+     "dataset": "Projection snapshots and pitch-shape grades",
+     "grain": "one row per pitcher per projection publish date; one row per pitch for shape features",
+     "fields": [
+      "pitcher_id",
+      "projection_system",
+      "proj_k_pct",
+      "proj_bf",
+      "publish_date",
+      "pitch_type",
+      "release_speed",
+      "pfx_x",
+      "pfx_z",
+      "release_extension",
+      "release_pos_z",
+      "release_spin_rate",
+      "arm_angle"
+     ],
+     "timestamp_requirement": "Projection values as published before the game date (store each vintage; rest-of-season projections change daily); pitch-shape grades computed only from pitches before the game.",
+     "history_needed": "Projection vintages from own capture going forward (archives of daily rest-of-season projections are not public); Statcast pitch shapes 2021-present for fitting the whiff grade.",
+     "candidate_sources": [
+      {
+       "name": "FanGraphs projections and Stuff+ leaderboards",
+       "access": "free_scrape",
+       "note": "Current values only; past vintages require own capture"
+      },
+      {
+       "name": "Baseball Savant Statcast Search / pybaseball",
+       "access": "free",
+       "note": "Pitch-level shape fields"
+      },
+      {
+       "name": "Own daily projection snapshots",
+       "access": "own_capture",
+       "note": "Needed for as-of vintages"
+      }
+     ],
+     "feeds_inputs": [
+      "mlb.pitcher_k_talent_prior"
+     ]
     }
    ],
    "contract_review": {
@@ -9477,6 +9676,11 @@
      "id": "mlb.abs_zone_pitch_cost",
      "why": "Replaces the circular claim that the zone effect is already inside pitches per PA by modelling the 2026 regime shift explicitly.",
      "role": "secondary"
+    },
+    {
+     "id": "mlb.sp_hook_hazard_curve",
+     "why": "Outs recorded are a first-passage time of the starter's removal; the shared hazard model (same object as for strikeouts and earned runs) carries the inning-boundary and run-state terms whose outs lattice is exit_boundary_mass.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -9661,7 +9865,7 @@
      {
       "id": "s4",
       "name": "Performance trigger and exit-boundary policy",
-      "description": "A starter is removed when a hook rule fires: a bad inning with runs and runners, the third time through the order, a pitch count threshold, or simply an inning end. Managers differ in whether they let a starter finish an inning, and removals concentrate on inning boundaries and at the first batter of the third trip, so the exit-out distribution has mass spikes at multiples of three. Bullpen freshness and series position (postseason leash) shift the probabilities.",
+      "description": "A starter is removed when a hook rule fires: a bad inning with runs and runners, the third time through the order, a pitch count threshold, or simply an inning end. Managers differ in whether they let a starter finish an inning, and removals concentrate on inning boundaries and at the first batter of the third trip, so the exit-out distribution has mass spikes at multiples of three. Bullpen freshness and series position (postseason leash) shift the probabilities. The exit lattice is not a second model: exit_boundary_mass is read off the shared sp_hook_hazard_curve (which carries inning-boundary, third-trip, pitch-count and run-state terms with a manager effect), so strikeout, outs and earned-run ladders of the same start stay consistent.",
       "distribution": "Lattice-valued exit time with spikes at outs divisible by 3, left tail of blow-up exits, ceiling exits; mixture over managers.",
       "categories": [
        "coaching_scheme",
@@ -9672,7 +9876,8 @@
        "mlb.tto",
        "mlb.bullpen",
        "mlb.exit_boundary_mass",
-       "mlb.velo_trend"
+       "mlb.velo_trend",
+       "mlb.sp_hook_hazard_curve"
       ]
      },
      {
@@ -9849,7 +10054,8 @@
       "mlb.sp_rest_days",
       "mlb.opener_bulk_flag",
       "mlb.postseason_leverage_usage",
-      "mlb.lineup_pit"
+      "mlb.lineup_pit",
+      "mlb.sp_hook_hazard_curve"
      ]
     },
     {
@@ -10089,6 +10295,11 @@
      "id": "mlb.abs_zone_walk_effect",
      "why": "Adds the missing 2026 zone-regime driver to the walks ladder and to baserunner volume for ER.",
      "role": "secondary"
+    },
+    {
+     "id": "mlb.sp_hook_hazard_curve",
+     "why": "Batters faced multiplies all three ladders and runs allowed accelerate removal; the shared hazard model with its runs-allowed term gives the BF distribution and the exit states used for inherited-runner charges.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -10208,7 +10419,7 @@
      {
       "id": "s1",
       "name": "Gate and exposure",
-      "description": "The starter must have faced a batter. Exposure is batters faced from the hook process, the same stopping-time logic that governs outs but here with an asymmetry: runs allowed accelerate the pull, so the number of batters faced is endogenous to the counts being predicted, which truncates the ER tail and the hits tail in blow-up games.",
+      "description": "The starter must have faced a batter. Exposure is batters faced from the hook process, the same stopping-time logic that governs outs but here with an asymmetry: runs allowed accelerate the pull, so the number of batters faced is endogenous to the counts being predicted, which truncates the ER tail and the hits tail in blow-up games. Exposure comes from the shared starter exit hazard (sp_hook_hazard_curve) evaluated inside the PA simulation, so runs allowed shorten the outing endogenously instead of using a fixed batters-faced mean.",
       "distribution": "Truncated discrete exposure correlated with the outcomes themselves.",
       "categories": [
        "pace_volume",
@@ -10218,7 +10429,8 @@
        "mlb.sp_workload",
        "mlb.leash",
        "mlb.lineup_pit",
-       "mlb.bullpen"
+       "mlb.bullpen",
+       "mlb.sp_hook_hazard_curve"
       ]
      },
      {
@@ -10502,7 +10714,8 @@
      "feeds_inputs": [
       "mlb.sp_workload",
       "mlb.leash",
-      "mlb.lineup_pit"
+      "mlb.lineup_pit",
+      "mlb.sp_hook_hazard_curve"
      ]
     },
     {
@@ -10668,6 +10881,11 @@
      "id": "mlb.batted_ball_outcome_model",
      "why": "Distinguishes a singles hitter from a power hitter with the same xBA, which matters for the 2+/3+/4+ total-bases rungs.",
      "role": "primary"
+    },
+    {
+     "id": "mlb.pa_base_out_state_chain",
+     "why": "KXMLBHRR adds runs and RBIs to hits; both depend on the base-out states created by the hitters batting around him in the confirmed order, which this shared chain (also used by hitter_rbis_runs_sb) supplies per PA.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -10756,6 +10974,17 @@
      "hypothesis": "H+R+RBI counts the same events multiple times, so the components are positively correlated through team scoring and inning clustering; the sum's variance is greater than the sum of component variances. A hitter's own hit adds to all three when he scores and drives himself in.",
      "form": "joint-distribution",
      "how_to_test": "Simulate the combo through base-out states and compare variance and tail with an independent-sum model.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.pa_base_out_state_chain",
+      "mlb.batted_ball_outcome_model",
+      "mlb.expected_pa"
+     ],
+     "hypothesis": "On an HRR rung the hitter's own extra-base hit both counts as a hit and changes the base state for himself and for the next hitters, so his hits, runs and RBIs are jointly generated by one chain: a double with two on adds one hit and two RBIs and puts him in scoring position; treating the legs as independent understates the upper-rung tail.",
+     "form": "joint-distribution",
+     "how_to_test": "Simulate HRR with the chain versus summing marginal hit, run and RBI distributions; compare calibration of 4+ and 5+ rungs on past games of the same hitters.",
      "source": "completeness-review"
     }
    ],
@@ -10857,7 +11086,7 @@
      {
       "id": "s5",
       "name": "Overlap and count distribution",
-      "description": "The H+R+RBI ladder is a weighted sum of events that overlap (a home run scores the hitter, counts as a hit and drives in at least one run), and the hits and TB ladders are the same PA sequence aggregated differently. A PA simulation with base-out states gives the joint distribution; per-rung nestedness holds within each ladder.",
+      "description": "The H+R+RBI ladder is a weighted sum of events that overlap (a home run scores the hitter, counts as a hit and drives in at least one run), and the hits and TB ladders are the same PA sequence aggregated differently. A PA simulation with base-out states gives the joint distribution; per-rung nestedness holds within each ladder. For the runs and RBI legs the same lineup Markov chain used by the RBI archetype (pa_base_out_state_chain) supplies, PA by PA, the runners on base ahead of him and the chance the hitters behind him drive him in, so H+R+RBI is built from one shared chain rather than slot averages.",
       "distribution": "Compound multinomial; overdispersed relative to binomial because of shared game environment; H+R+RBI has heavier tail from inning-level clustering.",
       "categories": [
        "distribution_variance",
@@ -10866,7 +11095,8 @@
       "input_ids": [
        "mlb.rbi_opportunity",
        "mlb.run_scoring_opportunity",
-       "mlb.hitter_recent_form"
+       "mlb.hitter_recent_form",
+       "mlb.pa_base_out_state_chain"
       ]
      }
     ],
@@ -11060,7 +11290,8 @@
       "mlb.late_replacement_risk",
       "mlb.injuries_pit",
       "mlb.pa_split_sp_vs_pen",
-      "mlb.bullpen_talent"
+      "mlb.bullpen_talent",
+      "mlb.pa_base_out_state_chain"
      ]
     },
     {
@@ -11236,6 +11467,11 @@
      "id": "mlb.playoff_walkoff_event_rate",
      "why": "Gives the live KXMLBWALKOFFS contract an explicit exposure-times-rate input; without it the series has no required inputs at all.",
      "role": "primary"
+    },
+    {
+     "id": "mlb.f5_starter_change_risk",
+     "why": "The single-game HR ladder gates only on the named hitter (fair price if he does not start), so a scratched or swapped opposing starter leaves the market live; pitcher HR vulnerability must be a mixture over the announced and replacement starters weighted by this risk.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -11325,6 +11561,17 @@
      "form": "convex",
      "how_to_test": "Compare realised 2+ rates against a linear-in-PA model across lineup slots and game totals, split by pinch-hit-for frequency.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.f5_starter_change_risk",
+      "mlb.pitcher_hr_vulnerability",
+      "mlb.relief_hr_vulnerability_by_hand"
+     ],
+     "hypothesis": "If the announced starter is scratched, the hitter's per-PA HR rate is evaluated against the replacement: a bulk or bullpen day raises the share of PAs against relievers of known hand, so the effect of a change depends on how far the replacement's HR allowed by hand differs from the starter's; for a fly-ball replacement facing a pull hitter the change raises P(1+).",
+     "form": "conditional",
+     "how_to_test": "On games with a late starter change, compare realised hitter HR against predictions using the announced starter versus the mixture; the mixture should reduce log loss only in changed games.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -11385,7 +11632,7 @@
      {
       "id": "s3",
       "name": "Pitcher and pitch-type vulnerability",
-      "description": "The starter's HR/FB, barrels allowed, fly-ball rate and the pitch types he throws in hittable locations determine how much of the hitter's power profile is realised; relievers have different HR vulnerability and handedness. The hitter's pitch-type strengths meet the pitcher's usage in damage zones.",
+      "description": "The starter's HR/FB, barrels allowed, fly-ball rate and the pitch types he throws in hittable locations determine how much of the hitter's power profile is realised; relievers have different HR vulnerability and handedness. The hitter's pitch-type strengths meet the pitcher's usage in damage zones. The contract voids nothing when the opposing starter changes: the HR text settles at fair price only for the named hitter, so before first pitch the pitcher side is a mixture over the announced starter and his replacement distribution (next rotation arm, opener-plus-bulk or bullpen game) weighted by the change probability.",
       "distribution": "Pitcher HR vulnerability ranges about 0.6 to 1.8 HR/9; relief HR rates differ and are lower sample.",
       "categories": [
        "opponent_matchup"
@@ -11394,7 +11641,8 @@
        "mlb.pitcher_hr_vulnerability",
        "mlb.batter_vs_pitch",
        "mlb.bullpen_talent",
-       "mlb.relief_hr_vulnerability_by_hand"
+       "mlb.relief_hr_vulnerability_by_hand",
+       "mlb.f5_starter_change_risk"
       ]
      },
      {
@@ -11631,7 +11879,8 @@
      "feeds_inputs": [
       "mlb.lineup_pit",
       "mlb.expected_pa",
-      "mlb.bullpen_talent"
+      "mlb.bullpen_talent",
+      "mlb.f5_starter_change_risk"
      ]
     },
     {
@@ -12206,7 +12455,7 @@
     }
    ],
    "contract_review": {
-    "settlement_definition": "Two live series with sampled rules: KXMLBRBI (Yes if the named batter records at least N RBIs, e.g. 2+) and KXMLBSB (Yes if he records at least N stolen bases, 1+ sampled). Both use the same gate: the batter must be in the official starting lineup and record at least one plate appearance; a scratch, bench start, zero-PA starter or later-entering substitute settles at the undefined fair market price, and pinch-hit at-bats do not count. The texts say only 'based on RBIs recorded' / 'based on stolen bases recorded'; official-scoring conventions (no RBI on a GIDP, RBI on bases-loaded walk/HBP, no SB on defensive indifference) are presumed. Runs scored have no series. Postponement and the data source are not stated.",
+    "settlement_definition": "Two live series with sampled rules: KXMLBRBI (Yes if the named batter records at least N RBIs, e.g. 2+) and KXMLBSB (Yes if he records at least N stolen bases, 1+ sampled). Both use the same gate: the batter must be in the official starting lineup and record at least one plate appearance; a scratch, bench start, zero-PA starter or later-entering substitute settles at the undefined fair market price, and pinch-hit at-bats do not count. The texts say only 'based on RBIs recorded' / 'based on stolen bases recorded'; official-scoring conventions (no RBI on a GIDP, RBI on bases-loaded walk/HBP, no SB on defensive indifference) are presumed. Runs scored have no series: the Kalshi series endpoint (category Sports, read 2026-11-08) lists 166 KXMLB series and none settles on a batter's runs scored (runs appear only inside KXMLBHRR, filed in hitter_hits_and_total_bases). Settled KXMLBRBI markets listed on the same date carry 1+, 2+ and occasionally 3+ rungs; KXMLBSB carries only 1+. Postponement and the data source are not stated.",
     "rules_verification": "VERIFIED_FROM_RULES_TEXT",
     "settlement_data_source": "Official box score RBIs from MLB Stats API or Retrosheet; presumed since the sampled rules do not name a source.",
     "variants_and_edge_cases": [
@@ -13611,6 +13860,17 @@
      "form": "joint-distribution",
      "how_to_test": "Tabulate historical 9th-inning run pairs by entering margin and compare tie frequency with a model that treats the two halves as independent untruncated innings.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.tto",
+      "mlb.inning_index_scoring_profile",
+      "mlb.bullpen"
+     ],
+     "hypothesis": "For innings 3-6 the run probability of a named inning switches regime on whether the starter is still in: while he pitches, the third-trip penalty raises it; once a fresh reliever opens the inning it falls back toward the bullpen's rate, so the inning-index curve is a mixture weighted by the starter's survival to that inning.",
+     "form": "regime-switch",
+     "how_to_test": "Compare actual runs in innings 4-7 split by starter-in versus reliever-opened against the inning-index profile alone; a significant split coefficient at fixed inning index shows the regime.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -13689,7 +13949,6 @@
       ],
       "input_ids": [
        "mlb.first_inning",
-       "mlb.f3_split",
        "mlb.park",
        "mlb.weather_pit",
        "mlb.umpire",
@@ -13725,6 +13984,23 @@
        "m.rules_text",
        "mlb.delay_risk",
        "mlb.inning_index_scoring_profile"
+      ]
+     },
+     {
+      "id": "s6",
+      "name": "Middle-inning index: which trip and which arm",
+      "description": "Single-inning strikes for innings 2 through 8 depend on where the lineup turns over and who is pitching when that inning starts. For a given inning index the due-up slot is a random variable propagated from the earlier innings' baserunner counts, the starter's second or third trip arrives around innings 3-6 with a higher on-base rate, and the probability that a reliever opens the inning rises from near zero in the 4th to most games by the 7th. Over 1.5 rungs need two runs inside one half-inning pair, so they respond to the top-of-order turning over in that inning far more than the Over 0.5 rung.",
+      "distribution": "Per-inning zero-inflated run count; P(over 0.5) varies by inning index in a hump shape (higher in the 1st and around the third trip); Over 1.5 mass is concentrated in innings where slots 1-4 are due.",
+      "categories": [
+       "pace_volume",
+       "role_personnel",
+       "game_context_script"
+      ],
+      "input_ids": [
+       "mlb.tto",
+       "mlb.inning_index_scoring_profile",
+       "mlb.bullpen",
+       "mlb.lineup_pit"
       ]
      }
     ],
@@ -13874,7 +14150,6 @@
       "mlb.first_inning_markov_run_prob",
       "mlb.first_inning_splits",
       "mlb.first_inning",
-      "mlb.f3_split",
       "mlb.plate_discipline",
       "mlb.k_rates",
       "mlb.babip_luck",
@@ -13991,14 +14266,15 @@
     }
    ],
    "contract_review": {
-    "settlement_definition": "Three live series after the reconciliation, all with sampled rules. KXMLBRFI pays Yes 'If either team scores a run in the first inning' (no secondary clause on postponement or called games). KXMLBINNINGTOTAL (over N runs in the named inning, e.g. over 1.5 in the 9th) and KXMLBINNINGWIN (which team scores more in the named inning, with a tie strike 'If neither ... scores more runs') count 'Only runs scored during the 9th inning', settle 'even if the home team does not bat in the bottom of the inning', and resolve to a Fair Price if the game is called before the inning is completed. Only the 9th-inning strike was sampled. The F3/F5/F7, extras and winning-streak series formerly filed here were moved by the reconciliation. Source of truth is not named.",
+    "settlement_definition": "Three live series after the reconciliation, all with sampled rules. KXMLBRFI pays Yes 'If either team scores a run in the first inning' (no secondary clause on postponement or called games). KXMLBINNINGTOTAL (both teams' combined runs in one named inning over 0.5 or over 1.5) and KXMLBINNINGWIN (one market per team 'scores more in the Nth inning' plus a tie market) count only the runs of the named inning. Kalshi's public market API (settled markets listed 2026-11-08) shows these strikes for every inning 1 through 9 of each listed game: Over 0.5 and Over 1.5 for INNINGTOTAL, team-more and tie for INNINGWIN; no extra-inning strike was listed. Every inning's text says the market resolves to a Fair Price if the game is called before that inning is completed (verified for the 3rd inning as well as the sampled 9th); only the 9th-inning text adds that it settles 'even if the home team does not bat in the bottom of the inning'. The F3/F5/F7, extras and winning-streak series formerly filed here were moved by the reconciliation. Source of truth is not named.",
     "rules_verification": "VERIFIED_FROM_RULES_TEXT",
     "settlement_data_source": "Official linescore by inning (MLB Stats API / box score); presumed, since the sampled rules name no source.",
     "variants_and_edge_cases": [
      "Population differs by series: KXMLBRFI resolves on the first inning (both halves always played), while KXMLBINNINGTOTAL and KXMLBINNINGWIN resolve on the named (sampled: 9th) inning, whose bottom half may not be played or may end early on a walk-off.",
      "Ninth-inning markets: the home team does not bat when leading, so the ninth is an at most one-half-inning event in about half of games, and the market still settles Yes/No on the visitor's runs; a game called before the 9th is completed resolves to a Fair Price.",
      "Inning-winner construction: when the home team leads after 8.5 innings it does not bat, its 9th-inning runs are zero, so the tie strike resolves Yes exactly when the visitors are held scoreless in the top of the 9th and the home strike cannot win; when the home team bats, a non-home-run walk-off caps its 9th-inning runs at the margin needed, while a walk-off home run counts every run it scores.",
-     "KXMLBRFI has a one-sentence rule ('If either team scores a run in the first inning') with no clause for a postponed, suspended or called game, unlike the 9th-inning markets, which resolve to a Fair Price if the inning is not completed."
+     "KXMLBRFI has a one-sentence rule ('If either team scores a run in the first inning') with no clause for a postponed, suspended or called game, unlike the 9th-inning markets, which resolve to a Fair Price if the inning is not completed.",
+     "Inning index (verified 2026-11-08 from the Kalshi markets endpoint for KXMLBINNINGTOTAL and KXMLBINNINGWIN): innings 1-8 trade with the same two strikes as the 9th, so the archetype prices a per-inning curve across the order's 2nd and 3rd trips and the starter-to-bullpen handoff, not only the first and ninth innings; innings 1-8 always have both halves unless the game is called (Fair Price), and a walk-off can only truncate the 9th."
     ]
    }
   },
@@ -14100,6 +14376,11 @@
     {
      "id": "mlb.f5_reliever_innings_share",
      "why": "F5 differs from full game in how much bullpen enters; this is the explicit mixture weight.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.f3_split",
+     "why": "KXMLBF3 (filed here) settles on the innings 1-3 result, so the starter's first-trip run split by confirmed lineup is the core window input for the three-inning market.",
      "role": "secondary"
     }
    ],
@@ -14454,7 +14735,8 @@
       "mlb.tto",
       "mlb.sp_quality",
       "mlb.lob_strand_luck",
-      "mlb.contact_defense"
+      "mlb.contact_defense",
+      "mlb.f3_split"
      ]
     },
     {
@@ -15833,6 +16115,26 @@
      "id": "mlb.award_combo_joint_distribution",
      "why": "Defines the joint structure for combination markets.",
      "role": "secondary"
+    },
+    {
+     "id": "mlb.manager_wins_over_expectation",
+     "why": "Manager of the Year (KXMLBALMOTY, KXMLBNLMOTY, filed here) is a BBWAA vote cast before the postseason that rewards wins over preseason expectation; this is the manager-specific score used in stage s7.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.award_electorate_procedure",
+     "why": "The archetype mixes BBWAA awards with panel, beat-reporter, fan and executive votes; the electorate decides which voter model and which training data apply to each series.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.award_fan_vote_popularity",
+     "why": "KXMLBALHAARON and KXMLBNLHAARON settle on an award partly decided by fans; the panel-only production model misprices popular candidates.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.executive_award_team_improvement",
+     "why": "KXMLBEOTY (moved here) settles on the executives' award, which none of the BBWAA, fan or manager inputs measures.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -15936,6 +16238,28 @@
      "form": "conditional",
      "how_to_test": "Compare rest-of-season staff K% before and after deadline moves and test whether leader probabilities updated on roster changes beat a static staff projection.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.award_electorate_procedure",
+      "mlb.award_vote_rank_model",
+      "mlb.award_stats_war"
+     ],
+     "hypothesis": "How strongly WAR drives the outcome depends on who votes: BBWAA writers track WAR closely in MVP and Cy Young voting, the retired-reliever panel weighs saves and leverage innings, and club executives weigh improvement relative to payroll; one pooled coefficient on WAR overstates favourites in the non-writer awards and understates them in the writer awards.",
+     "form": "conditional",
+     "how_to_test": "Fit the winner model with WAR coefficients by electorate class versus pooled; compare out-of-sample log loss on 2014-2025 winners for each award family.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.award_fan_vote_popularity",
+      "mlb.award_stats_war",
+      "mlb.award_electorate_procedure"
+     ],
+     "hypothesis": "Fan popularity matters only where a fan vote exists (Hank Aaron, All-Star) and scales the panel's production-based preference: a popular slugger with similar OPS+ gains a large share, while for writer-only awards the popularity term is zero.",
+     "form": "multiplicative",
+     "how_to_test": "Add the All-Star fan-vote term to winner models for Hank Aaron versus BBWAA MVP; the coefficient should be positive for Hank Aaron and indistinguishable from zero for MVP.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -15961,7 +16285,7 @@
     }
    ],
    "mechanism_review": {
-    "summary": "Awards and leaders are of two types. Statistical outcomes (season leaders, Triple Crown, season thresholds) equal current totals plus rest-of-season rate times opportunities times availability, so the probability that a player finishes first is the probability his final total exceeds every rival's, with correlations through teams and parks and with rate-stat qualification rules deciding who is eligible. Voted outcomes (MVP, Cy Young, Rookie of the Year, finalists, Gold Glove, Silver Slugger, All-Star) are produced by a ballot of a specific electorate that ranks candidates on a mixture of production (WAR variants, counting stats), team success and narrative, with ballots cast at a fixed date and finalists announced before winners. The finalist market is a rank-three event, which is easier to predict than the winner, with a timing condition. A first-principles model uses a production model for statistical races and a rank-ordered voter model (Plackett-Luce) for awards, with candidate sets restricted by eligibility. Early-season leaders are mostly luck so regression of rates is critical; late-season markets are dominated by remaining games and injuries. After the reconciliation the archetype also holds postseason MVP and playoff-leader markets (team advancement times player credit), Manager and Executive of the Year (team surprise versus projection), and single-hitter season counting thresholds (50 HR, 50 HR plus 40 SB). The team-strikeout leader market (KXMLBTEAMSTAT) is a thirty-team order statistic of batters faced times staff strikeout rate.",
+    "summary": "Awards and leaders are of two types. Statistical outcomes (season leaders, Triple Crown, season thresholds) equal current totals plus rest-of-season rate times opportunities times availability, so the probability that a player finishes first is the probability his final total exceeds every rival's, with correlations through teams and parks and with rate-stat qualification rules deciding who is eligible. Voted outcomes (MVP, Cy Young, Rookie of the Year, finalists, Gold Glove, Silver Slugger, All-Star) are produced by a ballot of a specific electorate that ranks candidates on a mixture of production (WAR variants, counting stats), team success and narrative, with ballots cast at a fixed date and finalists announced before winners. The finalist market is a rank-three event, which is easier to predict than the winner, with a timing condition. A first-principles model uses a production model for statistical races and a rank-ordered voter model (Plackett-Luce) for awards, with candidate sets restricted by eligibility. Early-season leaders are mostly luck so regression of rates is critical; late-season markets are dominated by remaining games and injuries. After the reconciliation the archetype also holds postseason MVP and playoff-leader markets (team advancement times player credit), Manager of the Year (team surprise versus projection, BBWAA) and Executive of the Year (club executives' vote before the postseason on team improvement and resource efficiency), and single-hitter season counting thresholds (50 HR, 50 HR plus 40 SB). The team-strikeout leader market (KXMLBTEAMSTAT) is a thirty-team order statistic of batters faced times staff strikeout rate.",
     "stages": [
      {
       "id": "s1",
@@ -15998,7 +16322,7 @@
      {
       "id": "s3",
       "name": "Voter model for awards",
-      "description": "Ballots rank candidates; each voter's ranking combines production metrics (WAR variants, counting stats), team success (playoff berth, division title) and narrative (milestones, comeback), with systematic biases (pitchers vs hitters in MVP, closers in Cy Young). Point systems aggregate ranks to a winner and finalists. The outcome is a rank distribution, not a single winner. The electorate differs by award (writers, retired relievers, fans/players, executives), so the rank-model coefficients are fitted per electorate and pooled only within the BBWAA awards.",
+      "description": "Ballots rank candidates; each voter's ranking combines production metrics (WAR variants, counting stats), team success (playoff berth, division title) and narrative (milestones, comeback), with systematic biases (pitchers vs hitters in MVP, closers in Cy Young). Point systems aggregate ranks to a winner and finalists. The outcome is a rank distribution, not a single winner. The electorate differs by award and is now sourced (award_electorate_procedure): BBWAA writers with public ballots for MVP, Cy Young, Rookie and Manager of the Year; rank-model coefficients are pooled only within one electorate class, and the ballot simulation uses each award's own voter count and points scale (MVP 14-9-8-...-1 over 10 places, Cy Young 7-4-3-2-1, Rookie and Manager 5-3-1).",
       "distribution": "Rank distribution over few candidates; multinomial-logit or Plackett-Luce with correlated voter noise.",
       "categories": [
        "talent_strength",
@@ -16008,7 +16332,8 @@
        "mlb.award_voting",
        "mlb.award_stats_war",
        "mlb.award_narrative",
-       "mlb.award_vote_rank_model"
+       "mlb.award_vote_rank_model",
+       "mlb.award_electorate_procedure"
       ]
      },
      {
@@ -16086,6 +16411,24 @@
       ],
       "description": "The team leading in strikeouts thrown is the maximum over thirty staffs of strikeouts to date plus remaining batters faced times the staff's strikeout rate, where the rate is a weighted mix of rotation and bullpen pitchers' projected K% and changes with injuries and deadline trades; extra-inning games and doubleheaders add batters faced. Ties at the top pay $1/N, which matters only when two staffs are within a few strikeouts in the final week.",
       "distribution": "Order statistic of near-normal staff totals (season sd roughly 40-60 strikeouts from rate uncertainty and volume); probability concentrated on two or three high-strikeout staffs, with tie mass negligible except at the very end."
+     },
+     {
+      "id": "s9",
+      "name": "Non-BBWAA electorates: relievers' panel, beat reporters, fans and club executives",
+      "description": "Four award families are not BBWAA votes and need their own branch. Reliever of the Year: the MLB award named for Rivera and Hoffman is chosen by a panel of about six retired relievers picking three per league on regular-season work, while the BBWAA introduced a separate Relief Pitcher of the Year in 2026; the Kalshi text names only 'Reliever of the Year', so which award settles is itself uncertain. Comeback Player: 30 MLB.com beat reporters reward a return from injury or collapse, so the prior-season absence or decline is the key covariate. Hank Aaron Award: a Hall of Fame panel plus an online fan vote over club nominees, so popularity adds to offensive production. Executive of the Year: the 30 clubs vote before the postseason on regular-season improvement and resource efficiency, with no public ballots.",
+      "distribution": "Small finalist or nominee sets with concentrated winner probabilities; no public ballots for most classes, so coefficients rest on a handful of winners per award and need strong shrinkage.",
+      "categories": [
+       "situational_schedule_motivation",
+       "settlement_contract",
+       "talent_strength"
+      ],
+      "input_ids": [
+       "mlb.award_electorate_procedure",
+       "mlb.award_fan_vote_popularity",
+       "mlb.executive_award_team_improvement",
+       "mlb.award_stats_war",
+       "mlb.award_narrative"
+      ]
      }
     ],
     "category_coverage": {
@@ -16156,15 +16499,19 @@
       "input_ids": [
        "mlb.award_narrative",
        "mlb.award_voting",
-       "mlb.leader_race"
+       "mlb.leader_race",
+       "mlb.award_electorate_procedure",
+       "mlb.executive_award_team_improvement",
+       "mlb.award_fan_vote_popularity"
       ],
-      "note": "Narrative, ballot timing, games remaining."
+      "note": "Narrative flags, ballot timing and electorate per award, executive and fan-vote branches, games remaining."
      },
      "settlement_contract": {
       "status": "COVERED",
       "input_ids": [
        "m.rules_text",
-       "mlb.stat_qualification_rules"
+       "mlb.stat_qualification_rules",
+       "mlb.award_electorate_procedure"
       ],
       "note": "Source agencies, announcement conditions, tie handling."
      },
@@ -16255,7 +16602,10 @@
       "mlb.award_vote_rank_model",
       "mlb.award_timing_information_state",
       "mlb.all_star_selection_model",
-      "mlb.award_combo_joint_distribution"
+      "mlb.award_combo_joint_distribution",
+      "mlb.award_electorate_procedure",
+      "mlb.award_fan_vote_popularity",
+      "mlb.executive_award_team_improvement"
      ]
     },
     {
@@ -16370,14 +16720,15 @@
     "settlement_data_source": "Official awards announcements and ballots (BBWAA/MLB), official league statistics for leader markets; the finalist market names 'Source Agencies' without listing them in the sample.",
     "variants_and_edge_cases": [
      "Finalist versus winner: the finalist market has a fixed field (three finalists per league per award) selected from ballot ranks, so probability is rank-based (top three) rather than winner-based; the announcement condition adds a No branch.",
-     "Voter populations differ and are not all BBWAA: BBWAA ballots decide MVP, Cy Young, Rookie of the Year and Manager of the Year; the Rivera and Hoffman Reliever of the Year awards are, to my knowledge, voted by a panel of retired relievers; Hank Aaron, Comeback Player and Executive awards have other electorates (SOURCE_UNVERIFIED, see lea_electorates); managers and coaches vote Gold Glove (with a defensive-metric component) and the positional Silver Sluggers, while the electorate of the team Silver Slugger sampled in KXMLBSS is unverified; fans, players and the league choose All-Stars Each needs its own model.",
+     "Voter populations differ (verified 2026-11-08): BBWAA ballots decide MVP, Cy Young, Rookie of the Year and Manager of the Year; the Rivera/Hoffman Reliever of the Year awards are voted by a panel of retired relievers (Rivera, Hoffman, Eckersley, Fingers, Franco, Wagner in 2023); Comeback Player by the 30 MLB.com beat reporters; the Hank Aaron Award by a Hall of Fame panel plus an MLB.com fan vote; Executive of the Year by the 30 clubs before the postseason; Gold Gloves by managers and up to six coaches plus the SABR Defensive Index (about 25 percent); fans, players and the league choose All-Stars. The electorate of the team Silver Slugger sampled in KXMLBSS remains unverified. Each needs its own model (award_electorate_procedure).",
      "Statistical races (Triple Crown) are joint order statistics of three correlated categories with rate-stat qualification rules and tie handling; counting windows (regular season only) matter.",
      "Eligibility rules (rookie status limits on at-bats, innings and days on the active roster) can make candidate sets differ from the obvious field; most award texts are silent on co-winners, which only the series-MVP texts, the monthly and weekly awards and the AL Comeback 'Tie/Co-Winners' outcome address.",
      "Postseason awards and leaders: series MVPs are named from the winning team in nearly all cases and pay $1/N on co-winners; the playoff runs leader depends on how many games a player's team plays, so it is a joint bracket-and-production event; a non-playing participant resolves No rather than voiding.",
-     "Manager and Executive of the Year (moved here): Manager of the Year is a BBWAA award voted before the postseason; the executive award's electorate is unverified (see lea_eoty_electorate).",
+     "Manager and Executive of the Year (moved here): Manager of the Year is a BBWAA award voted before the postseason (3 places, 5-3-1); Executive of the Year is voted by executives of the 30 clubs before the postseason with no public ballots (verified from MLB's announcements), so it uses executive_award_team_improvement, not the BBWAA rank model or the manager score.",
      "Silver Slugger and Gold Glove series name specific awards: the sampled KXMLBSS market is the NL Silver Slugger for Team (a team-offence award) and KXMLBGG is the NL Gold Glove for Pitcher, so each series needs the award's own electorate and candidate pool (team offence for SS Team; pitcher fielding, where the SABR Defensive Index is thin, for GG); a tie for a Triple Crown category lead is not addressed.",
      "Selection versus participation: KXMLBALLSTAR resolves Yes on selection even without participation, so injury replacements named later count as separate selections; monthly and weekly awards split the payout among co-recipients.",
-     "Team counting race (KXMLBTEAMSTAT, sampled: most strikeouts thrown) is a thirty-team order statistic of staff strikeouts over the regular season with $1/N on ties; other stat variants of the series are unseen."
+     "Team counting race (KXMLBTEAMSTAT, sampled: most strikeouts thrown) is a thirty-team order statistic of staff strikeouts over the regular season with $1/N on ties; other stat variants of the series are unseen.",
+     "Reliever of the Year ambiguity: KXMLBALRELOTY/KXMLBNLRELOTY name the 'Pro Baseball ... Reliever of the Year'; from 2026 two awards exist, MLB's panel award (Rivera/Hoffman, retired relievers) and the new BBWAA Relief Pitcher of the Year (finalists announced Nov 2 2026, winners due Nov 11 2026). The text does not say which settles; the panel and the writers can disagree."
     ]
    }
   },
@@ -16468,6 +16819,21 @@
     {
      "id": "mlb.callup_eligibility_pipeline",
      "why": "Defines the missing call-up inputs for the debut series.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.labor_stoppage_regime",
+     "why": "Any 2027 KXMLBSTART, KXMLBSTARTER or KXMLBPITCH window depends on whether games are played: the CBA expires 11:59 p.m. ET Dec 1 2026 and a lockout that cancels games removes exposure from the window (the contract treatment of cancelled games is unseen).",
+     "role": "context"
+    },
+    {
+     "id": "mlb.postseason_roster_reset_eligibility",
+     "why": "The sampled single-game start markets are October playoff games; only players on that round's postseason roster can start, and rosters are reset between rounds with injury replacements, so eligibility gates the start decision in the postseason branch.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.opposing_probable_starter_vintage",
+     "why": "For platoon and part-time hitters the opposing starter's hand is the single biggest driver of a KXMLBSTART outcome before the card posts, and its vintage determines what was knowable when the market traded.",
      "role": "primary"
     }
    ],
@@ -16561,6 +16927,28 @@
      "form": "threshold",
      "how_to_test": "Compare days from activation to first appearance for starters versus position players and relievers in injured-list returns since 2015.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.opposing_probable_starter_vintage",
+      "mlb.platoon",
+      "mlb.playing_time_role"
+     ],
+     "hypothesis": "The opposing hand moves start probability only for hitters whose role is platoon or part-time: an everyday regular starts against either hand, a strong-side platoon bat sits against same-handed starters, so a late switch from a right-hander to a left-hander flips several start markets on one team at once and leaves the regulars unchanged.",
+     "form": "conditional",
+     "how_to_test": "On games where the probable changed hand after announcement, compare realised starts of platoon versus everyday hitters against predictions using the original versus the updated hand.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.postseason_roster_reset_eligibility",
+      "mlb.rest_day_patterns",
+      "mlb.clinched_rest_policy"
+     ],
+     "hypothesis": "Rest-day and clinch-rest patterns fitted on the regular season switch off in the postseason: rosters are round-specific, off days replace rest days and managers start regulars every game, so applying regular-season rest rates to October games understates start probability for regulars and overstates it for bench players left off the round roster.",
+     "form": "regime-switch",
+     "how_to_test": "Fit start probability on postseason games separately and compare coefficients on rest-day features with the regular-season fit; check calibration of the regular-season model on 2021-2025 postseason starts.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -16607,7 +16995,7 @@
      {
       "id": "s2",
       "name": "Manager's decision for the specific game",
-      "description": "Given health, the manager decides to start the player based on role (everyday, platoon, bench), the opposing starter's handedness, rest patterns after travel or a night game, catcher and veteran rest conventions, DH rotation and lineup construction style, and in September or when clinched, rest and prospect-call-up policy. Players on a platoon sit against same-handed starters unless exceptions apply.",
+      "description": "Given health, the manager decides to start the player based on role (everyday, platoon, bench), the opposing starter's handedness, rest patterns after travel or a night game, catcher and veteran rest conventions, DH rotation and lineup construction style, and in September or when clinched, rest and prospect-call-up policy. Players on a platoon sit against same-handed starters unless exceptions apply. The opposing starter is an explicit input: his identity and hand as announced at the as-of time (with the chance he is replaced) decide platoon starts, so the start probability is a mixture over the opposing hand rather than a fixed platoon flag.",
       "distribution": "Binary, with probabilities of start by role: everyday about 0.9, platoon 0.3-0.7 by opposing hand, bench near 0.1.",
       "categories": [
        "coaching_scheme",
@@ -16620,7 +17008,8 @@
        "mlb.platoon",
        "mlb.team_style",
        "mlb.rest_travel",
-       "mlb.clinched_rest_policy"
+       "mlb.clinched_rest_policy",
+       "mlb.opposing_probable_starter_vintage"
       ]
      },
      {
@@ -16684,6 +17073,23 @@
        "mlb.pitcher_rotation_slot_and_rest",
        "mlb.news"
       ]
+     },
+     {
+      "id": "s7",
+      "name": "Postseason and labour-stoppage branches",
+      "description": "Two regimes change the manager-decision stage. In October only the round's postseason roster (26 players, reset between rounds, injured players replaceable but then ineligible for the next round) can start; there are scheduled off days, no clinch rest and almost no rest days for regulars, so start probability for everyday players approaches one and the open question is the platoon or bench slot. For 2027 windows, a lockout after the CBA expiry at 11:59 p.m. ET on Dec 1 2026 would remove games from the window or the whole window; exposure is then a mixture over stoppage scenarios, and how a cancelled game settles is not stated in the sampled text.",
+      "distribution": "Postseason: start probability concentrated near 1 for regulars and bimodal for platoon players by opposing hand; labour branch: a point mass at zero exposure with the stoppage probability, otherwise the regular-season window.",
+      "categories": [
+       "situational_schedule_motivation",
+       "role_personnel",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "mlb.postseason_roster_reset_eligibility",
+       "mlb.labor_stoppage_regime",
+       "mlb.window_exposure_schedule",
+       "mlb.opposing_probable_starter_vintage"
+      ]
      }
     ],
     "category_coverage": {
@@ -16741,9 +17147,11 @@
       "input_ids": [
        "mlb.rest_travel",
        "mlb.clinched_rest_policy",
-       "mlb.rest_day_patterns"
+       "mlb.rest_day_patterns",
+       "mlb.postseason_roster_reset_eligibility",
+       "mlb.labor_stoppage_regime"
       ],
-      "note": "Rest, congestion and clinched status. Regular-season construct: postseason has no clinch-rest and different roster rules (pp_postseason_regime)."
+      "note": "Rest, congestion and clinched status in the regular season; postseason roster eligibility and the 2027 labour-stoppage regime as separate branches (stage s7)."
      },
      "settlement_contract": {
       "status": "COVERED",
@@ -16759,9 +17167,11 @@
       "note": "Player or team quality does not change whether a player starts except through role (starter versus bench), which is captured in the playing_time_role input; no talent estimate is needed beyond that for the participation event."
      },
      "opponent_matchup": {
-      "status": "GAP",
-      "input_ids": [],
-      "note": "The opposing probable starter's identity and handedness drive platoon starts, but no input carries the opposing starter's identity or its announcement vintage, so platoon-driven start decisions are modelled without it (see pp_opp_starter_vintage)."
+      "status": "COVERED",
+      "input_ids": [
+       "mlb.opposing_probable_starter_vintage"
+      ],
+      "note": "Opposing probable starter identity, hand and announcement vintage drive platoon start decisions."
      },
      "efficiency_conversion": {
       "status": "NOT_APPLICABLE",
@@ -16848,7 +17258,9 @@
       "mlb.clinched_rest_policy",
       "mlb.rest_travel",
       "mlb.window_exposure_schedule",
-      "mlb.depth_injury_war"
+      "mlb.depth_injury_war",
+      "mlb.postseason_roster_reset_eligibility",
+      "mlb.labor_stoppage_regime"
      ]
     },
     {
@@ -16924,7 +17336,8 @@
       }
      ],
      "feeds_inputs": [
-      "mlb.pitcher_rotation_slot_and_rest"
+      "mlb.pitcher_rotation_slot_and_rest",
+      "mlb.opposing_probable_starter_vintage"
      ]
     }
    ],
@@ -17512,6 +17925,11 @@
     {
      "id": "mlb.draft_prospect_selection_signal",
      "why": "Defined here while KXMLBDRAFTPICK was filed in this archetype; after the reconciliation that series is in the amateur-draft archetype, which has no review yet; kept so the definition is not lost, not staged here.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.manager_candidate_selection_signal",
+     "why": "KXMLBCOACH (next manager, filed here) is a selection among reported candidates for a vacancy; interview reports, internal status and executive ties drive the choice in stage s7.",
      "role": "primary"
     }
    ],
@@ -18569,6 +18987,81 @@
      "id": "mlb.scoreless_streak_survival",
      "why": "Gives KXMLBSISTREAK its outcome-generating process: per-out survival over the outs still needed within the starts left.",
      "role": "primary"
+    },
+    {
+     "id": "mlb.playoff_walkoff_event_rate",
+     "why": "Postseason-count family: per-game walk-off probability over remaining playoff games for KXMLBWALKOFFS.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.bracket_path_enumeration",
+     "why": "Postseason-count and series families: number of playoff games remaining by bracket path and series length, the exposure of the walk-off and playoff HR counts.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.game_shared_hr_dispersion",
+     "why": "Postseason-count family: game-level overdispersion of home runs that widens the playoff HR total distribution.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.series_hr_exposure",
+     "why": "Player-exposure family: games, starts and per-game HR rate across one series for KXMLBSERIESHR.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.series_length_distribution",
+     "why": "Player-exposure family: series length (four to seven games) sets the number of games in KXMLBSERIESHR.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.playoff_games_pa_distribution",
+     "why": "Player-exposure family: plate appearances per playoff game for the named hitter.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.hitter_hr_profile",
+     "why": "Player-exposure family: the named hitter's per-PA home-run rate for KXMLBSERIESHR and KXMLBNEXTHR.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.pitcher_hr_vulnerability",
+     "why": "Player-exposure family: HR vulnerability of the rotation the hitter will face in the series.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.hr_environment",
+     "why": "Player-exposure and postseason-count families: park HR factors of the playoff venues.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.window_exposure_schedule",
+     "why": "Player-exposure family: games and role probability per game inside the KXMLBNEXTHR date window.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.injuries_pit",
+     "why": "Player-exposure family: injured-list status that absorbs exposure in the window and series markets.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.rehab_progression_stage",
+     "why": "Player-exposure family: return timeline of an injured hitter inside the KXMLBNEXTHR window.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.pitcher_rotation_slot_and_rest",
+     "why": "Streak family: remaining starts before the regular season ends cap the outs available to KXMLBSISTREAK.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.inherited_runner_charge_risk",
+     "why": "Streak family: runners left on base who score after the streaking pitcher exits are charged to him and break the streak.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.baserunner_to_run_conversion",
+     "why": "Streak family: base-out run conversion against the pitcher sets per-out scoreless survival.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -18678,7 +19171,7 @@
     }
    ],
    "mechanism_review": {
-    "summary": "After the reconciliation this unregistered bucket holds three mechanisms. Postseason league counts (walk-offs, total home runs) are sums over a random number of playoff games: the number of games comes from the bracket and series lengths, each game contributes a walk-off with a probability set by close-late game states and the home team's last at-bat, and home runs per game come from the two lineups, parks and October weather. Player home-run exposure markets (series total, home run inside a date window) are the hitter's per-plate-appearance home-run rate times his plate appearances, where plate appearances depend on how many games the series lasts or how many games fall in the window and whether he plays them; injury acts as an absorbing state and the count is convex in exposure for 2+ rungs. The pitcher scoreless-innings streak is a survival process over outs: each out recorded without a run charged extends the streak by a third of an inning, and the streak ends at the first run charged, so the probability of reaching N innings is a product of per-out survival over the outs still needed, limited by the starts remaining before the season ends.",
+    "summary": "After the reconciliation this unregistered bucket holds three mechanisms. Postseason league counts (walk-offs, total home runs) are sums over a random number of playoff games: the number of games comes from the bracket and series lengths, each game contributes a walk-off with a probability set by close-late game states and the home team's last at-bat, and home runs per game come from the two lineups, parks and October weather. Player home-run exposure markets (series total, home run inside a date window) are the hitter's per-plate-appearance home-run rate times his plate appearances, where plate appearances depend on how many games the series lasts or how many games fall in the window and whether he plays them; injury acts as an absorbing state and the count is convex in exposure for 2+ rungs. The pitcher scoreless-innings streak is a survival process over outs: each out recorded without a run charged extends the streak by a third of an inning, and the streak ends at the first run charged, so the probability of reaching N innings is a product of per-out survival over the outs still needed, limited by the starts remaining before the season ends. The bucket is handled as three explicit branches, each with its own complete input list attached to the archetype: postseason counts (playoff_walkoff_event_rate, postseason_league_hr_count, bracket_path_enumeration, game_shared_hr_dispersion, run_dist, bullpen), player home-run exposure (series_hr_exposure, series_length_distribution, playoff_games_pa_distribution, hitter_hr_profile, pitcher_hr_vulnerability, hr_environment, window_exposure_schedule, injuries_pit, rehab_progression_stage, expected_pa, playing_time_role) and the scoreless streak (scoreless_streak_survival, pitcher_rotation_slot_and_rest, sp_workload, inherited_runner_charge_risk, baserunner_to_run_conversion); inputs of series that left the bucket are audited IRRELEVANT.",
     "stages": [
      {
       "id": "s1",
@@ -21524,6 +22017,21 @@
      "id": "mlb.velocity_feed_anomaly_rate",
      "why": "Frequency of glitch or mis-tagged readings in the raw live feed and how fast they are corrected; a non-physical route to a 107 reading.",
      "role": "secondary"
+    },
+    {
+     "id": "mlb.leaguewide_rare_game_event_hazard",
+     "why": "Eight of the eleven KXMLBSTAT events are league-wide rare feats, not velocity extremes; they need a per-game hazard over the remaining schedule, not the velocity tail engine.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.any_pitcher_season_wins_threshold",
+     "why": "KXMLBSTAT-26W20-AP is a season threshold on wins, which the velocity inputs do not touch.",
+     "role": "secondary"
+    },
+    {
+     "id": "mlb.joint_season_hr_sb_distribution",
+     "why": "KXMLBSTAT-265050-AH asks whether any hitter reaches 50 HR and 50 SB in the regular season; the joint power-speed season distribution per candidate, unioned over the two or three hitters with a live pace, prices it.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -21615,6 +22123,16 @@
      "form": "regime-switch",
      "how_to_test": "Across seasons, compare the count of live-feed readings above 105 mph that survive in corrected Savant data against the count of physical pitches above 104.5; check which grows with ceiling gap.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "mlb.leaguewide_rare_game_event_hazard",
+      "mlb.any_pitcher_season_wins_threshold"
+     ],
+     "hypothesis": "Both feats depend on how deep starters pitch: the league trend toward shorter starts lowers the chance that one pitcher records all outs of a no-hitter and also lowers the number of five-inning starts that can earn wins, so a season with a lower starter-outs mean shifts both probabilities down together while raising nothing comparable.",
+     "form": "conditional",
+     "how_to_test": "Regress league-season individual no-hitter counts and 20-win pitcher counts on mean starter outs per start; joint residual correlation across 1990-2025 shows the shared dependence.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -21632,6 +22150,11 @@
      "input_id": "mlb.velocity_tracking_calibration",
      "shape": "threshold at the decimal boundary",
      "why": "Measurement error matters only for readings within a few tenths of 107.0; one-decimal rounding and the 107.0+ versus 107+ wording create a step around the line."
+    },
+    {
+     "input_id": "mlb.leaguewide_rare_game_event_hazard",
+     "shape": "Concave saturating in remaining team-games: 1 - exp(-lambda * games)",
+     "why": "Early in the season a no-hitter is near certain over the full schedule while a perfect game or 4-HR game remains unlikely; the probability rises steeply then saturates as games accumulate, and drops to the realised outcome once the window closes."
     }
    ],
    "mechanism_review": {
@@ -21713,6 +22236,22 @@
        "mlb.velocity_feed_anomaly_rate",
        "m.rules_text"
       ]
+     },
+     {
+      "id": "s6",
+      "name": "Non-velocity KXMLBSTAT feats: rare single-game events and season thresholds",
+      "description": "The same series also lists league-wide feats that share nothing with release speed. Single-game feats (an individual no-hitter, a perfect game, four home runs or two grand slams by one hitter, twenty strikeouts, a 500-foot drive by Statcast) are unions over every remaining team-game of a tiny per-game rate set by the league strikeout and power environment and by how long starters work; playoff games count. Season thresholds (20 pitcher wins, 50 HR plus 50 SB) are regular-season races of the few candidates on pace, decided by remaining starts or plate appearances. Each is settled Yes the moment the feat occurs.",
+      "distribution": "Low-rate Poisson survival over remaining games for single-game feats (season probabilities range from small for a 20-strikeout game or a perfect game to large for at least one individual no-hitter); for season thresholds, a union over two or three candidates whose probabilities fall to zero once the pace is lost.",
+      "categories": [
+       "distribution_variance",
+       "pace_volume",
+       "talent_strength"
+      ],
+      "input_ids": [
+       "mlb.leaguewide_rare_game_event_hazard",
+       "mlb.any_pitcher_season_wins_threshold",
+       "mlb.joint_season_hr_sb_distribution"
+      ]
      }
     ],
     "category_coverage": {
@@ -21785,7 +22324,10 @@
      "distribution_variance": {
       "status": "COVERED",
       "input_ids": [
-       "mlb.max_velocity_extreme_distribution"
+       "mlb.max_velocity_extreme_distribution",
+       "mlb.leaguewide_rare_game_event_hazard",
+       "mlb.any_pitcher_season_wins_threshold",
+       "mlb.joint_season_hr_sb_distribution"
       ],
       "note": "Bounded extreme-value tail with within-day correlation."
      },
@@ -21964,10 +22506,58 @@
       "mlb.velocity_feed_anomaly_rate",
       "mlb.velocity_tracking_calibration"
      ]
+    },
+    {
+     "dataset": "League-season feat counts and season-to-date race state",
+     "grain": "one row per league-season per feat type; one row per candidate per day for season races",
+     "fields": [
+      "season",
+      "feat_type",
+      "count",
+      "league_k_pct",
+      "league_hr_per_pa",
+      "starter_outs_per_start",
+      "player_id",
+      "wins_to_date",
+      "hr_to_date",
+      "sb_to_date",
+      "remaining_team_games",
+      "hit_distance_sc",
+      "venue_id"
+     ],
+     "timestamp_requirement": "Season-to-date covariates and race state as of the market timestamp; feats already achieved are observed outcomes, not predictions.",
+     "history_needed": "1990-2025 league-season counts for rate regressions; Statcast distances 2015-present; 2015-2025 start logs for win-credit calibration.",
+     "candidate_sources": [
+      {
+       "name": "Retrosheet event files and game logs",
+       "access": "free",
+       "note": "Feat counts and start logs"
+      },
+      {
+       "name": "Baseball-Reference feat lists and game logs",
+       "access": "free_scrape",
+       "note": "No-hitters, multi-HR games, decisions"
+      },
+      {
+       "name": "Baseball Savant Statcast",
+       "access": "free",
+       "note": "hit_distance_sc for HR"
+      },
+      {
+       "name": "MLB Stats API",
+       "access": "free",
+       "note": "Daily season-to-date totals and probables"
+      }
+     ],
+     "feeds_inputs": [
+      "mlb.leaguewide_rare_game_event_hazard",
+      "mlb.any_pitcher_season_wins_threshold",
+      "mlb.joint_season_hr_sb_distribution"
+     ]
     }
    ],
    "contract_review": {
-    "settlement_definition": "KXMLBFASTPITCH settles YES if the named pitcher (sample: Jacob Misiorowski) records a pitch at or above the strike (107.0 MPH) in any game of the stated season, regular season and playoffs included; KXMLBSTAT (sample) settles YES if any pitcher records a 107+ MPH pitch in any game of the season including playoffs. A single pitch suffices. The text does not name the tracking source, does not define how a reading like 106.95 is rounded, and does not say whether spring training, exhibitions or All-Star Game pitches count.",
+    "settlement_definition": "KXMLBFASTPITCH settles YES if the named pitcher (sample: Jacob Misiorowski) records a pitch at or above the strike (107.0 MPH) in any game of the stated season, regular season and playoffs included; KXMLBSTAT (sample) settles YES if any pitcher records a 107+ MPH pitch in any game of the season including playoffs. A single pitch suffices. The text does not name the tracking source, does not define how a reading like 106.95 is rounded, and does not say whether spring training, exhibitions or All-Star Game pitches count. KXMLBSTAT is not velocity-only (verified 2026-11-08 from the Kalshi events and markets endpoints): its 2026 events are 105+, 106+ and 107+ MPH pitch; a 500+ foot home run 'per Statcast measurement'; any hitter with 50+ HR and 50+ SB in the regular season; 2+ grand slams in a game; 4+ home runs in a game; any pitcher with 20+ regular-season wins; 20+ strikeouts in a game; an individual no-hitter (a combined no-hitter does not count); and a perfect game. The single-game and distance events count regular season and playoffs; the 50/50 and 20-win events count the regular season only.",
     "rules_verification": "PARTIALLY_VERIFIED",
     "settlement_data_source": "Not named; presumed MLB Statcast (Hawk-Eye) release speed as published on Baseball Savant / MLB game feed.",
     "variants_and_edge_cases": [
@@ -21976,7 +22566,8 @@
      "'any game during the ... season (regular season and playoffs)' leaves spring training and the All-Star Game unaddressed; a position player pitching also counts as 'any pitcher'.",
      "No resolution source is named (Statcast release speed versus stadium radar or broadcast readings can differ), and later data revisions are not addressed.",
      "KXMLBSTAT is a generic season-stat series; this record covers it only for velocity markets such as KXMLBSTAT-26P107-AP, other KXMLBSTAT markets may settle on different stats and are recorded in series_mapping_issues.",
-     "A reading published in the live feed or broadcast and later corrected or removed: whether it counts is unstated (velo_first_vs_revised_reading)."
+     "A reading published in the live feed or broadcast and later corrected or removed: whether it counts is unstated (velo_first_vs_revised_reading).",
+     "Non-velocity KXMLBSTAT events (verified list): rare single-game feats (no-hitter by one pitcher only, perfect game, 4+ HR game, 20+ K game, 2+ grand slams, 500+ ft Statcast HR) over regular season plus playoffs, and season thresholds (20+ wins, 50 HR plus 50 SB) over the regular season only; all are 'any player' unions, so they are league-wide hazards rather than named-player markets."
     ]
    }
   }

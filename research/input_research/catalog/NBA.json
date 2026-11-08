@@ -1475,7 +1475,7 @@
    "category": "team_strength",
    "mechanism": "A Monte Carlo of the remaining schedule using team ratings, injuries and tiebreakers produces probabilities for seeds, playoffs, play-in, divisions and conference outcomes.",
    "rationale": "Season futures are determined by the full distribution of outcomes including tiebreaker rules (head-to-head, division record, conference record), the play-in tournament and the Cup effect on the schedule; simple win-total extrapolation misses boundary effects near seed lines. Subtle: rating uncertainty must be sampled across sims, not fixed, otherwise tails are overconfident.",
-   "measurement": "Simulate remaining games from team ratings with home advantage, rest, and injury scenarios; sample rating uncertainty; implement official tiebreaker order and play-in bracket; output seed pmf and series probabilities.",
+   "measurement": "Single shared regular-season path simulation for every season-level archetype: 20,000 seasons of the remaining schedule, game by game in date order, from team ratings with posterior uncertainty (common within a season draw), home advantage, rest and injury scenarios; store each path's game-level results so season_futures_team (win totals, records, seeds, divisions via nba.tiebreak_ledger, play-in) and season_stat_markets (streaks via nba.team_win_streak_hazard and nba.longest_streak_max_and_tie_model, last unbeaten) read the same draws; output seed pmf and series inputs to nba.title_path. As-of: nightly after final scores.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NBA schedule JSON (cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, free)",
@@ -1506,7 +1506,7 @@
    "category": "motivation",
    "mechanism": "Eligibility thresholds convert missed games into a hard cutoff that determines whether a player can win or make an All-NBA team.",
    "rationale": "A candidate on pace to miss the games threshold has a lower probability of award or selection regardless of production; teams may manage minutes to preserve eligibility or fail. Rules have specific exceptions (partial games, appeals) and changes between seasons, which must be read from official rules text.",
-   "measurement": "Track games played and games remaining vs threshold; compute probability of meeting threshold using injury risk; encode rule exceptions; flag borderline candidates.",
+   "measurement": "Per award, encode the season's governing rule from the league criteria: 65-game minimum (20+ minutes in 63, 15-20 minutes allowed in two) for MVP, DPOY, Most Improved, All-NBA and All-Defensive (verified 2025-26, no change reported for 2026-27); none for ROY, Sixth Man, All-Rookie; flag Clutch as unconfirmed. Track counting games and games remaining vs the threshold via nba.eligibility_minutes_ledger, add the Extraordinary Circumstances challenge branch from nba.eligibility_appeal_grant_model, and flag candidates within 5 games of the line.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NBA official award eligibility rules (nba.com/official, free)",
@@ -1532,7 +1532,7 @@
    "category": "team_strength",
    "mechanism": "Series winner and title probabilities depend on the bracket path (seed, opponent strength, home-court) and matchup-specific adjustments.",
    "rationale": "Title odds are the product of series-win probabilities along a path that depends on which seed you are, who you face and the rest/injury states. A given team's path difficulty can differ substantially even for equal rating. Subtle: series outcomes are correlated through injuries to key players across rounds.",
-   "measurement": "Simulate the full bracket 50,000 times: draw final regular-season seeds from nba.standings_sim, play-in outcomes from nba.play_in_path_model, then each series winner from game-by-game win probabilities p_g = f(rating difference from nba.ratings playoff version, home advantage, injury status) with a series dependence parameter and the 2-2-1-1-1 pattern from nba.series_length_distribution; matchup tweak = nba.playoff_matchup_assignment_shift and nba.playoff_rotation effects applied to ratings, not ad hoc. Output P(reach round r), P(title), opponent distributions and home-court indicators per round, with sd from simulation. As-of: nightly; completed games condition the paths.",
+   "measurement": "Single shared playoff bracket simulation for every archetype that needs advancement or series length (season_futures_team, series_and_cup, player_milestones playoff triple-double, playoff single-game points, series cumulative points): 50,000 draws; seeds from nba.standings_sim paths, play-in from nba.play_in_path_model, each series game by game with p_g from playoff ratings, home court (2-2-1-1-1) and injury state, series dependence as in nba.series_length_distribution; store per-path series lengths, game venues and advancement so consumers read the same draws. Output P(reach round r), P(title), opponent distributions and games played per team. As-of: nightly; completed games condition the paths.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Basketball-Reference (free; polite scraping, rate-limited)",
@@ -1644,7 +1644,7 @@
    "category": "schedule_context",
    "mechanism": "Cup outcomes depend on group-stage point-differential tiebreakers, wildcard rules and single-elimination knockout games, with unusual incentives and neutral sites.",
    "rationale": "Group-stage point differential makes blowout margins matter in Cup games; rest decisions and star availability vary relative to regular-season games; the knockout games are neutral-site single games. Subtle: rules details change by season and the settlement rule for Cup counts must be read from official documentation.",
-   "measurement": "Enumerate remaining group games with margin/tiebreaker simulation, apply wildcard rules, knockout bracket at neutral site; adjust for star minutes and motivation.",
+   "measurement": "2026-27 format (verified NBA.com/ESPN): six groups of five, group winners plus one wild card per conference (best non-winner, wild-card ties start at point differential) seeded 1-4 per conference; quarterfinals 1v4 and 2v3 hosted by the higher seed; semifinals at the higher seed's arena (Dec 8-9); final neutral at Hinkle Fieldhouse, Indianapolis (Dec 11). Enumerate remaining group games with margin simulation and the group tiebreak order (nba.cup_group_tiebreak_state), then knockout games with home court for the higher seed through the semifinal and none in the final; Cup final excluded from regular-season stats.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NBA Cup rules (nba.com, public)",
@@ -1845,7 +1845,7 @@
    "category": "availability",
    "mechanism": "The award eligibility count is a deterministic ledger that only the league's definition of a qualifying game updates; slack to the line plus injury hazard gives the probability of staying eligible.",
    "rationale": "The existing eligibility input restates the rule but not the arithmetic; a player at 50 qualifying games with 20 left has a very different conditional risk from one at 62 with a nagging injury, and games of 15-20 minutes count only in a small allowance.",
-   "measurement": "Per player: qualifying = games with minutes >= 20 (allow up to 2 games of 15-20 minutes per league rule, SOURCE_UNVERIFIED for the 2026-27 rule); slack = games_remaining - (65 - qualifying); P(eligible) = P(missed games among remaining <= slack) under a Poisson-binomial with per-game miss probability = player-season availability rate shrunk with k=20 games toward position prior, updated nightly after the 6pm ET injury report; as-of timestamp = last completed game. Apply the ledger only to awards the league criteria say it governs (flag per award; SOURCE_UNVERIFIED), and not to monthly awards, Coach or Executive of the Year, All-Star selection or draft markets.",
+   "measurement": "Per player: counting games = games with minutes >= 20, plus up to 2 games with 15-20 minutes (verified 2025-26 rule: 20+ minutes in at least 63 of the 65 games, 15+ in the other two); slack = games_remaining - (65 - counting); P(ledger) = P(missed or sub-threshold games among remaining <= slack) under a Poisson-binomial with per-game miss probability = player-season availability rate shrunk with k=20 games toward the position prior, updated nightly after the 6pm ET injury report; P(eligible) = P(ledger) + (1 - P(ledger)) x P(appeal granted) from nba.eligibility_appeal_grant_model. As-of: last completed game. Governed awards (verified): MVP, DPOY, Most Improved, All-NBA, All-Defensive; ROY, Sixth Man and All-Rookie exempt; not applied to monthly awards, Coach/Executive of the Year, All-Star or draft markets; Clutch POY coverage unconfirmed (flag).",
    "pregame_knowable": "yes",
    "free_sources": [
     "nba_api boxscore minutes",
@@ -2109,11 +2109,11 @@
    }
   },
   "nba.allstar_fan_vote_composite": {
-   "label": "All-Star starter composite (fan 50% / player 25% / media 25%) and positional slot arithmetic",
+   "label": "All-Star starter composite (fan 50% / player 25% / media 25%), positionless top five per conference",
    "category": "other",
-   "mechanism": "Starters are the top weighted-average ranks within position groups per conference: each candidate's rank in the fan vote, the current-player vote and the media vote is combined 50/25/25 and the best composite fill two backcourt and three frontcourt slots in each conference.",
+   "mechanism": "Starters are the five best weighted-average ranks per conference without regard to position (2026 rules): each candidate's rank in the fan, current-player and media votes is combined 50/25/25 and the fan vote breaks composite ties.",
    "rationale": "KXNBAASSTARTERS, KXNBAALLSTARS and KXNBAALLSTAR are not decided by the ballot of about 100 media voters in stage s4: the fan vote carries half the weight, is public in early-return snapshots during the voting window, and depends on market size and social following, while the player and media votes follow production. The slot arithmetic (guard versus frontcourt, per conference) decides who is displaced.",
-   "measurement": "For each candidate and conference compute composite = 0.50 x fan_rank + 0.25 x player_rank + 0.25 x media_rank within the guard or frontcourt group; fan_rank at close = last published early-return rank plus a random-walk adjustment scaled by the share of voting window remaining (estimate step variance from past years' return snapshots), with the prior from last year's final fan rank, market size and social following; player and media ranks from the production rank in nba.award_stats with beta noise estimated from past ballot-vs-stat rank gaps; starters = lowest composites filling 2 guard and 3 frontcourt slots per conference (SOURCE_UNVERIFIED for the 2027 formula and slot split); simulate 10,000 draws and report P(starter) per candidate.",
+   "measurement": "For each candidate and conference compute composite = 0.50 x fan_rank + 0.25 x player_rank + 0.25 x media_rank over all positions (verified for 2026: positionless, fan vote breaks ties, as with Wembanyama over Edwards in the West); fan_rank at close = last published early-return rank plus a random-walk adjustment scaled by the share of voting window remaining (step variance from past return snapshots), prior from last year's final fan rank, market size and social following; player and media ranks from the production rank in nba.award_stats with beta noise from past ballot-vs-stat rank gaps; starters = five lowest composites per conference; 10,000 draws, P(starter) per candidate. Use the 2027 rules when announced; until then the 2026 rules apply.",
    "pregame_knowable": "partial",
    "free_sources": [
     "NBA.com All-Star voting returns pages (snapshots)",
@@ -2123,11 +2123,11 @@
    "registry_ids": []
   },
   "nba.allstar_reserve_coach_vote": {
-   "label": "All-Star reserve selection by coaches (7 per conference) and injury replacement",
+   "label": "All-Star reserve selection by coaches (7 per conference, positionless) and Commissioner replacements",
    "category": "other",
-   "mechanism": "After starters are fixed, conference head coaches vote for seven reserves each (not their own players) and the commissioner names injury replacements, so P(All-Star) for a non-starter is the chance of ranking among the best remaining players by position and wildcard slots.",
+   "mechanism": "After starters are fixed, each conference's head coaches vote seven reserves without regard to position (not their own players), the Commissioner names injury replacements and, under the USA-vs-World format, adds players to meet the 16 US / 8 international minimum.",
    "rationale": "KXNBAALLSTARS and KXNBAALLSTAR settle on the full roster, so reserve probability matters as much as starter probability; coaches value team record and recent play more than fan appeal, and an injured selectee is replaced by a commissioner choice that is hard to forecast.",
-   "measurement": "For each non-starter candidate: coach-vote score = z-score of production rank (nba.award_stats) plus team win% rank, calibrated to past reserve selections by logistic regression on 10 seasons with position group and conference as strata; P(reserve) = P(rank among the 7 reserve slots after starters are removed) via 10,000 simulations conditional on the starter simulation; injury-replacement probability = P(a selectee is injured) x P(commissioner picks the next-ranked player); the 2 wildcard slots are position-free (SOURCE_UNVERIFIED for 2027 rules).",
+   "measurement": "For each non-starter candidate: coach-vote score = z-score of production rank (nba.award_stats) plus team win% rank, calibrated by logistic regression on 10 seasons of reserve selections with conference strata only (positionless since 2026; earlier seasons had position slots, so fit with a pre/post-2026 indicator); P(reserve) = P(rank among the 7 conference reserve slots after starters are removed) via 10,000 draws conditional on the starter simulation; then apply the nationality minimum from nba.allstar_nationality_quota; injury replacement = P(a selectee is injured) x P(Commissioner picks the next-ranked player of the same conference).",
    "pregame_knowable": "partial",
    "free_sources": [
     "Basketball-Reference All-Star selections history",
@@ -5285,7 +5285,7 @@
    "category": "schedule_context",
    "mechanism": "Seeds and division winners are decided by the league's tiebreak hierarchy (head-to-head, division winner, conference record and so on), so exact ties are resolved by information that accumulates over the season.",
    "rationale": "Simulating only win totals misses the probability that a tie is broken in a team's favor; at seed boundaries (6th vs 7th, 10th vs 11th, play-in cutoff) a tie occurs in about 8-15% of final standings and the tiebreak ledger is partly known before the season ends.",
-   "measurement": "For each team pair compute season-to-date head-to-head wins/losses and remaining games, division record, conference record and record vs playoff teams, updated nightly from game results; in the simulation, apply the official tiebreak procedure (stored as code from league rules) to simulated ties and output P(win tie) by pair. As-of: nightly after final scores.",
+   "measurement": "For each team pair keep season-to-date head-to-head, division and conference records, record vs playoff-eligible teams in each conference, and net points, updated nightly. In the simulation apply the league order (verified on NBA.com standings, 2025-26): two-team ties - head-to-head, division leader over non-leader, division record (same division only), conference record, record vs playoff-eligible own-conference teams, record vs playoff-eligible other-conference teams, net points; three or more - division leader first, then head-to-head among all tied, division record (all same division), conference record, the two playoff-eligible records, net points; re-check the 2026-27 standings page before each season. Output P(win tie) per pair and seed. As-of: nightly after final scores.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NBA.com official tiebreaker rules",
@@ -6397,7 +6397,7 @@
    "category": "distribution",
    "mechanism": "A 20-game win streak requires 20 consecutive wins; with game win probabilities of 75-85% for the best team, the chance depends on the full sequence of probabilities, their correlation through star health and schedule, and the number of teams that could qualify.",
    "rationale": "Averaging a team's win probability underestimates the chance because a streak concentrates in stretches of weak opponents and healthy rosters; the league-wide market is a union over 30 teams and 63 windows each (82 games minus 19).",
-   "measurement": "For each team, with per-game win probabilities p_g from own-model ratings, rest and home/away for the remaining schedule (plus a star-health scenario mixture), compute P(run of >= 20 consecutive wins occurs at some point in the remaining games) exactly by a dynamic-programming recursion with state = current run length r (0..19, absorbing 20): from state r, win with p_g to r+1 and lose with 1-p_g to 0, starting from the team's current run length. Cup group games count, the Cup final and playoffs are excluded. Combine across teams assuming independence except through shared head-to-head games (simulate those jointly). As-of: nightly; update the current run after each result.",
+   "measurement": "View of the shared season paths: for each team, P(run of >= 20 consecutive wins at some point) = share of nba.standings_sim paths whose game sequence (current run carried in, Cup group and knockout games before the final counted, play-in and playoffs excluded) contains such a run; an exact dynamic-programming recursion on the same per-game probabilities (state = run length 0..19, absorbing 20) is the check for each team, and head-to-head games are consistent across teams because they come from the same path. As-of: nightly.",
    "pregame_knowable": "yes",
    "free_sources": [
     "nba_api schedule and results",
@@ -6461,11 +6461,11 @@
    }
   },
   "nba.division_race_tiebreak_state": {
-   "label": "Division-race state: records, remaining division games and tiebreak ledger",
+   "label": "Division-race state (view of nba.tiebreak_ledger inside nba.standings_sim)",
    "category": "schedule_context",
-   "mechanism": "Division winner contracts are decided by the best record in a five-team division with the league's tiebreak procedure; division head-to-head games and divisional records feed the tiebreak.",
+   "mechanism": "Duplicate of nba.tiebreak_ledger: division winner contracts are read off the same simulated standings and the same official tiebreak order; this id is kept only as the division-level view of that ledger and must not be built separately.",
    "rationale": "Division races are narrower than conference races; a tie for the best record is hypothesised to occur in roughly 10% of divisions (unverified estimate, to be computed from history) and division records are the first tiebreaker after head-to-head, so the state of divisional games matters more than overall strength.",
-   "measurement": "For each division compute records, remaining intra-division games, head-to-head ledger and division record to date; simulate remaining season with team-strength uncertainty and apply the official tiebreak order for ties; output P(division winner) with tie contributions; update nightly. As-of: after each game.",
+   "measurement": "No separate computation: P(division winner) = share of nba.standings_sim season paths in which the team finishes first in its division after ties are resolved by nba.tiebreak_ledger; report the tie contribution separately. As-of: after each game.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NBA.com standings and tiebreaker rules",
@@ -6478,7 +6478,7 @@
    "category": "schedule_context",
    "mechanism": "The Cup Finals pair is formed by the two semifinal winners (one from each conference bracket, if the bracket is conference-based), so the pair probability is a product of two independent single-elimination outcomes.",
    "rationale": "The matchup contract resolves immediately upon qualification, not when the game is played; its probability depends on group results, quarterfinal and semifinal match-ups and neutral-site single-game probabilities.",
-   "measurement": "P(team reaches final) = P(qualifies from group) * P(wins quarterfinal) * P(wins semifinal), computed from team ratings with home-court advantage in the quarterfinal (hosted by the higher seed at its arena) and zero home advantage in the neutral-site semifinal, each with rest-days adjustment; P(pair) = P(A final)*P(B final) under independence, plus a Gaussian-copula version with correlation rho in [0, 0.3] bounding shared rest, travel and injury shocks if semifinals share a venue and weekend; report the range. Rules (venue by round, seeding, wildcard) read from the season's Cup rules text; as-of nightly during the Cup.",
+   "measurement": "P(team reaches final) = P(qualifies as group winner or wild card) x P(wins quarterfinal) x P(wins semifinal), from team ratings with home-court advantage for the higher seed in both the quarterfinal and the semifinal (2026-27: semifinals at the higher seed's arena, verified), with rest-days adjustment; East and West brackets are disjoint until the final, so P(pair) = P(A reaches final) x P(B reaches final) with no shared-venue correlation; the final itself is at neutral Hinkle Fieldhouse. Re-read the season's Cup rules each year; as-of nightly during the Cup.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NBA.com Cup bracket rules",
@@ -6836,7 +6836,7 @@
    "category": "team_strength",
    "mechanism": "P(Yes) = P(named NBA team wins the title) x P(named NHL team wins the Stanley Cup), with no shared games or players to create dependence; Yes is lost at the first elimination of either team.",
    "rationale": "KXNBANHL is the only live series under this key and it is a futures pair, not a same-game parlay, so none of the same-game dependence inputs apply. The NHL probability is outside the NBA catalog and must come from the NHL model on the same as-of timestamp; the subtle parts are the path (elimination of either leg ends the contract early) and that thin, longshot-heavy pair prices are where market miscalibration is likely, which this input must not borrow from prices.",
-   "measurement": "P_NBA from the NBA title simulation (nba.title_path over simulated seeds, at least 10,000 bracket draws, as-of the quote timestamp); P_NHL from the NHL catalog's championship model at the same timestamp; joint = P_NBA x P_NHL, with independence checked on historical seasons (correlation of title indicators for same-metro NBA/NHL pairs, expected near zero). Also output P(both alive after each playoff round) by combining the two round-survival curves, and set the value to zero at either elimination.",
+   "measurement": "P_NBA from nba.title_path (at least 10,000 bracket draws, as-of the quote timestamp); P_NHL from the NHL catalog at the same timestamp: seeds from nhl.season_sim_distribution, bracket from nhl.bracket_path_difficulty, each series from nhl.series_context, giving P(named NHL team wins the Stanley Cup); both legs must use snapshots taken within the same nightly run (as-of = min of the two model timestamps). Joint = P_NBA x P_NHL, independence checked on historical seasons (correlation of title indicators for same-metro NBA/NHL pairs, expected near zero). Also output P(both alive after each round) from the two round-survival curves and set the value to zero at either elimination.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Basketball-Reference playoff history",
@@ -7940,7 +7940,7 @@
    "category": "team_strength",
    "mechanism": "A Shooting Stars team (franchise-named; recent editions mixed current players with retired or other-league shooters) scores by making shots from a sequence of locations within a time limit; the team with the higher score wins.",
    "rationale": "Kalshi's rules give no format, so the conversion of skill to score is unverified; retired legends have no current shooting data, which makes team skill a composite of current catch-and-shoot rates and old or exhibition-only evidence. Location sequence and time limit make tempo and long-range accuracy matter as in the 3PT contest.",
-   "measurement": "For each team member: P(make) by location from nba.threept_spot_and_tempo_profile for active players; for retired or non-NBA members use last available career rates (regular-season 3P% and FT%) shrunk to a field mean with k estimated as the number of shots at which sampling variance equals the between-player variance of contest results (placeholder 50 until estimated), plus an age discount. Simulate the contest format from the event's published rules 20000 times and report P(win), expected score and sd; if rules are not confirmed, output only a rank composite explicitly labelled unverified and give no probability. As-of: team announcement time.",
+   "measurement": "2026 format (verified NBA release coverage): four teams of three, two current players plus one legend; seven designated spots shot in a fixed order of spots and players; 70-second limit; round 1 all four teams, top two to the final. Current players: P(make) by spot from nba.threept_spot_and_tempo_profile. Legend component: last five career seasons' 3P% and FT% with an age discount of 1.5 points of 3P% per year since retirement, shrunk to the past legends' contest make rate with k = 50 shots; a shot-tempo term for the legend's attempts within the clock. Point values per spot and the tiebreak are taken from the league's rules document for the year (not verified here); simulate 20,000 contests and report P(win); without the point table output only a labelled rank composite.",
    "pregame_knowable": "partial",
    "free_sources": [
     "NBA.com Shooting Stars announcements and recaps",
@@ -7981,7 +7981,7 @@
    "category": "other",
    "mechanism": "The All-Star MVP is chosen by a selection panel after the event; winners almost always come from the champion team and are the standout scorer or narrative figure, so P(MVP) = P(team wins) x P(selected | team wins, box score, narrative).",
    "rationale": "In a tournament with short games the MVP depends on the whole path, and home-market or farewell narratives can beat raw points. The selection method (media panel, any fan component) and whether it covers only the championship game are not in the Kalshi rules, and a withdrawn named player resolves No.",
-   "measurement": "Fit on past All-Star MVPs (20+ events): conditional logit over players of the winning team on share of team points, made threes, minutes, starter status, home-market flag and prior All-Star MVP; P(MVP) = sum over teams of P(team champion) from nba.asg_tournament_path_sim x conditional choice, plus a small residual for a non-champion MVP estimated from the historical share of MVPs on losing teams (the champion link is convention, not a rule), with per-player points drawn from usage x minutes plans; multiply by P(participates); as-of = final rosters; units = probability.",
+   "measurement": "2026 rule: media panel vote after the championship game combined with a 25% fan vote; scope = the whole tournament (Edwards 2026 cited for totals across three games). Model: P(MVP) = sum over teams P(team wins the tournament) from nba.asg_tournament_path_sim x conditional logit over that team's players on tournament points share, made threes, minutes, home-market flag and prior All-Star MVP (panel part, fit on 20+ events), blended 0.75/0.25 with a fan-popularity share from the All-Star fan-vote rank (nba.allstar_fan_vote_composite); plus a residual for a non-champion MVP from the historical share; multiply by P(participates). As-of: final rosters.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Basketball-Reference All-Star MVP history and box scores",
@@ -8249,6 +8249,113 @@
     ],
     "verified": true
    }
+  },
+  "nba.eligibility_appeal_grant_model": {
+   "label": "Award-eligibility Extraordinary Circumstances challenge: filing and grant probability",
+   "category": "availability",
+   "mechanism": "A player who misses the 65-game line can file an Extraordinary Circumstances challenge decided jointly by the NBA and NBPA (or an independent arbitrator), so eligibility is ledger slack plus a discretionary appeal branch, not a pure count.",
+   "rationale": "Verified for 2025-26 (announced 16 Apr 2026): Doncic (64 games) and Cunningham (63) were granted eligibility on the totality of circumstances, while Edwards (60 games, 58 counting) was denied by an arbitrator. An MVP or All-NBA price that treats a 62-64 game candidate as ineligible ignores a branch that was granted twice in one season; the branch is near zero far below the line.",
+   "measurement": "Per candidate below the qualifying line at season end: P(file) = 1 if qualifying games >= 60 and the player is an award contender (top-15 award score in nba.award_stats), else 0.2; P(grant | file) from a logistic on shortfall (65 - counting games), share of absences with documented injury, and whether absences were team-imposed rest, fitted on the challenge record since 2023-24 (2025-26: 2 granted of 3 reported) with a beta(2,2) prior and pooled shortfall slope; P(eligible) = P(ledger) + (1 - P(ledger)) x P(file) x P(grant | file). As-of: nightly; decisions dated from league/NBPA announcements.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NBA and NBPA joint announcements (AP coverage, 16 Apr 2026)",
+    "Basketball-Reference game logs"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "Challenge filings and outcomes by season with announcement dates",
+    "Player games and minutes",
+    "Injury designations for missed games"
+   ]
+  },
+  "nba.allstar_nationality_quota": {
+   "label": "All-Star nationality composition (US vs international) and Commissioner additions",
+   "category": "other",
+   "mechanism": "Under the 2026 USA-vs-World format the 24 voted All-Stars must contain 16 US and 8 international players; if voting does not produce that split the Commissioner adds All-Stars to the short group, so a player's selection probability depends on his nationality group's depth.",
+   "rationale": "Verified in the NBA's 2026 format release: if voting does not produce 16 US and 8 international players the Commissioner adds players to reach the minimum (international can include US-born players with ties to another country). A ninth-best international or seventeenth-best American can therefore be selected or pushed out independently of conference rank; the 2027 format has not been announced and may differ.",
+   "measurement": "For each candidate tag nationality group from the league's roster designation (US / international, with dual-tie players flagged per the release); in each simulation draw of starters (nba.allstar_fan_vote_composite) and reserves (nba.allstar_reserve_coach_vote) count US and international selectees; if a group is short of 16/8, add the highest-ranked unselected players of that group by the coach-vote score until filled (Commissioner choice modelled as rank order with 20% random swap among the top three); P(All-Star) = share of 10,000 draws selected. Apply only when the season's format release states a nationality rule; else set inactive.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "NBA 2026 All-Star format release (pr.nba.com)",
+    "NBA.com player bios (nationality)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "Player nationality / national-team designation",
+    "Season All-Star format release",
+    "Voted starters and reserves with conference"
+   ]
+  },
+  "nba.hustle_stat_index": {
+   "label": "Hustle Award index: per-minute rank aggregate over the nine tracked hustle categories",
+   "category": "player_role",
+   "mechanism": "The Hustle Award is not voted: the league ranks qualifying players per minute in nine tracked hustle categories and the best aggregate wins, so the winner is a deterministic function of tracked counts and minutes.",
+   "rationale": "The league's award releases state the nine categories (deflections, charges drawn, screen assists, contested 2PT and 3PT shots, offensive and defensive loose balls recovered, offensive and defensive box-outs) measured per minute; Diabate (2025-26) ranked top-11 in six, Green (2024-25) top-40 in all nine. The weights are not published, so the index must be fitted to past winners rather than assumed; low-minute energy players are favoured by the per-minute basis subject to the qualification floor.",
+   "measurement": "For each player meeting the qualification floor (league hustle leaderboard minimum, default 58 games and 24 minutes per game until confirmed for the award): per-36 rate in each of the nine categories from the league hustle-stats tracking, season to date; rank each category; index = weighted sum of category percentile ranks with weights fitted by rank-ordered logit to winners and top-5 finishers 2016-17 to 2025-26 (equal weights as prior, ridge lambda chosen by leave-one-season-out); project end-of-season rates with shrinkage k = 600 minutes toward the player's prior-season rate; P(win) from 10,000 draws of remaining-season rates and the qualification ledger. As-of: nightly.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NBA.com stats hustle leaderboards (stats.nba.com leaguehustlestatsplayer)",
+    "NBA.com Hustle Award releases 2017-2026"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "Player-season hustle counts by category",
+    "Minutes and games played",
+    "Hustle Award winners and finalists by season"
+   ]
+  },
+  "nba.expansion_realignment_joint_tree": {
+   "label": "Joint governance scenario tree: expansion award -> conference realignment -> NBA Europe announcement",
+   "category": "other",
+   "mechanism": "Expansion, realignment and the European league are sequential Board of Governors decisions on one calendar: awarding Seattle and Las Vegas forces a 16/16 conference split (one Western team moving East) and shares negotiating bandwidth with the Europe project, so the three contracts are dependent events.",
+   "rationale": "Verified: on 25 Mar 2026 the Board approved exploring two franchises in Las Vegas and Seattle (23 of 30 votes needed), with a later final vote, a 2028-29 target and Memphis or Minnesota the likely team to move East. KXNBAJOINCONF has near-zero probability unless expansion is awarded, and KXNBACITYEXPAND, KXNBAJOINCONF and KXNBAEUROPEANNOUNCE priced as independent hazards mis-state every joint and conditional price.",
+   "measurement": "Tree with dated nodes keyed to Board of Governors meeting calendar: node 1 P(final expansion vote passes by window end) from nba.governance_approval_pipeline stage (exploration approved -> bids -> final vote, 23/30 threshold); node 2 P(realignment announced | expansion) and the moving-team pmf (Memphis, Minnesota, other) from geography and reported statements, P(realignment | no expansion) = 0.02; node 3 P(Europe inaugural season announced) with a shared Board-calendar factor (correlation estimated as a beta-distributed shift of +/-0.1 in node-3 hazard when expansion votes occupy the same meeting). Each contract's price = the tree marginal for its window; joint and conditional values come from the same tree. As-of: after each Board meeting and dated report.",
+   "pregame_knowable": "partial",
+   "free_sources": [
+    "AP/ESPN coverage of Board of Governors votes (25 Mar 2026)",
+    "NBA.com press releases"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "Board of Governors meeting dates and agenda reports",
+    "Expansion vote stages and thresholds",
+    "Realignment statements by team",
+    "NBA Europe announcements"
+   ]
+  },
+  "nba.second_half_reg_ot_joint_margin": {
+   "label": "Joint second-half margin: regulation-only and overtime-inclusive outputs from one simulated game",
+   "category": "game_state",
+   "mechanism": "The OT-inclusive second-half margin equals the regulation second-half margin plus the overtime margin, and overtime happens only when the regulation full-game margin is zero, so both 2H contract versions come from one draw.",
+   "rationale": "Rules text: KXNBA2H, KXNBA2HSPREAD and KXNBA2HTOTAL count the 2nd half including overtime, KXNBA2HWINNER excludes it. Pricing the two separately breaks the identity that they differ only in games tied after regulation; e.g. a 2H tie under KXNBA2HWINNER plus OT gives a decided KXNBA2H.",
+   "measurement": "Per simulated game: draw H1 and regulation H2 margins from nba.period_margin_pmf (correlated via nba.second_half_adjustment_effect); regulation full margin = H1 + H2reg; if zero, draw number of OT periods and each OT margin from nba.ot_prob_ratings_margin (5-minute periods, repeat while tied); outputs: M2H_reg = H2reg (settles KXNBA2HWINNER, tie possible), M2H_ot = H2reg + sum(OT margins) (settles KXNBA2H, KXNBA2HSPREAD; totals add OT points); 50,000 draws per game; as-of tip. Check on settled pairs from every overtime game.",
+   "pregame_knowable": "yes",
+   "free_sources": [
+    "NBA.com linescores (period and OT points)",
+    "Basketball-Reference linescores"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "Period-by-period scores including each overtime",
+    "Kalshi 2H series rules text"
+   ]
+  },
+  "nba.live_period_state": {
+   "label": "In-play game state for later-period markets (score, clock, on-court lineups, team fouls, timeouts)",
+   "category": "game_state",
+   "mechanism": "Later-period and second-half markets keep trading after tipoff, so their value is conditional on the realised state at the quote time rather than the pregame distribution.",
+   "rationale": "Verified on the Kalshi API (8 Nov 2026): KXNBA2H markets for 9 Nov games have close_time 12 Nov 03:00Z, two days after the game, with early close 'after a winner is declared', so they trade in play. Q2-Q4 and 2H prices then depend on the current margin, period, on-court five, team fouls toward the bonus, and timeouts left, none of which a pregame input carries.",
+   "measurement": "At each quote timestamp: period, game clock (seconds), score by team, score at the start of the current period, five players on court per team, team fouls in the period (bonus at 5), timeouts remaining, possession; source cdn.nba.com liveData play-by-play and boxscore JSON polled every 5-10 s with receipt timestamps; the period-margin model is re-run conditional on elapsed time and remaining possessions (nba.period_possession_split scaled by remaining clock) and the on-court units' ratings from nba.quarter_unit_projection. As-of: quote timestamp minus feed latency (record both).",
+   "pregame_knowable": "no",
+   "free_sources": [
+    "cdn.nba.com liveData play-by-play and boxscore JSON (free, unofficial)"
+   ],
+   "registry_ids": [],
+   "raw_data": [
+    "Live play-by-play events with clock",
+    "Live boxscore with on-court flags and team fouls",
+    "Kalshi quote timestamps"
+   ]
   }
  },
  "blueprints": {
@@ -10285,6 +10392,23 @@
        "nba.team_bench_points_model",
        "nba.early_exit_hazard"
       ]
+     },
+     {
+      "id": "s7",
+      "name": "Team bench-points total filed here (KXNBABENCHPTS)",
+      "description": "KXNBABENCHPTS is not a player contract: the Kalshi series metadata (checked 8 Nov 2026) uses the BASKETBALLENTITYSTAT terms with scope 'Bench Points' and ESPN/NBA as settlement sources, the same team-entity stat as KXNBAH2HBENCHPTS. It is a team sum over players who did not start, so who counts as bench is fixed by the starting five at tip, blowout minutes for reserves raise it on both sides, and a late scratch moves a starter-calibre player into or out of the bench pool. It is modelled with the team-level bench inputs, not the single-player ladder.",
+      "distribution": "Team bench points are roughly normal (mean 30-40, sd 9-11) with right skew in blowouts and a mixture over who starts; no listed markets yet, so strike construction is unseen.",
+      "categories": [
+       "role_personnel",
+       "game_context_script",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "nba.team_bench_points_model",
+       "nba.starter_bench_definition_ledger",
+       "nba.rating_blowout_minutes_curve",
+       "nba.starters_pit"
+      ]
      }
     ],
     "category_coverage": {
@@ -10577,7 +10701,8 @@
       "nba.status_resolution_prob",
       "nba.starters_pit",
       "nba.referee_crew",
-      "nba.rest_travel"
+      "nba.rest_travel",
+      "nba.starter_bench_definition_ledger"
      ]
     },
     {
@@ -14979,7 +15104,8 @@
        "nba.series_length_distribution",
        "nba.playoff_star_health_hazard",
        "nba.playoff_rotation",
-       "nba.milestone_rates"
+       "nba.milestone_rates",
+       "nba.title_path"
       ]
      }
     ],
@@ -15320,7 +15446,8 @@
       "nba.series_player_exposure",
       "nba.series_length_distribution",
       "nba.playoff_star_health_hazard",
-      "nba.playoff_rotation"
+      "nba.playoff_rotation",
+      "nba.title_path"
      ]
     }
    ],
@@ -18556,6 +18683,16 @@
      "id": "nba.ot_prob_ratings_margin",
      "why": "The 2H winner, spread and total include overtime while Q1-Q4 and 1H do not, so the wedge between 2H and Q3+Q4 is exactly P(OT) times the combined OT points; this supplies both without a spread bucket.",
      "role": "secondary"
+    },
+    {
+     "id": "nba.second_half_reg_ot_joint_margin",
+     "why": "Produces both settlement variants of the second half from one coherent game draw.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.live_period_state",
+     "why": "Q2-Q4 and 2H markets trade in play, so value is conditional on the live state at the quote time.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -18754,7 +18891,25 @@
       "input_ids": [
        "m.rules_text",
        "nba.ot_prob_ratings_margin",
-       "nba.period_margin_pmf"
+       "nba.period_margin_pmf",
+       "nba.second_half_reg_ot_joint_margin"
+      ]
+     },
+     {
+      "id": "s7",
+      "name": "In-play conditioning for later-period markets",
+      "description": "Because the second-half and later-quarter markets stay open until a winner is declared, a quote placed during the game is a bet on the remaining part of a period given what has already happened. The value is the conditional distribution of the remaining margin given the current score, period start score, clock, the lineups actually on the floor, team-foul and bonus state and timeouts. Pregame inputs set the prior; the live state dominates once a period is under way.",
+      "distribution": "Remaining-margin variance shrinks roughly linearly with remaining possessions; a period lead late in the quarter makes the outcome near-deterministic, with discrete jumps at each score.",
+      "categories": [
+       "game_context_script",
+       "pace_volume",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "nba.live_period_state",
+       "nba.period_possession_split",
+       "nba.quarter_unit_projection",
+       "nba.period_foul_bonus_state"
       ]
      }
     ],
@@ -18900,7 +19055,8 @@
       "nba.period_margin_pmf",
       "nba.q_scoring",
       "nba.ot_prob_ratings_margin",
-      "nba.second_half_adjustment_effect"
+      "nba.second_half_adjustment_effect",
+      "nba.second_half_reg_ot_joint_margin"
      ]
     },
     {
@@ -19076,6 +19232,37 @@
      ],
      "feeds_inputs": [
       "nba.ot_prob_ratings_margin"
+     ]
+    },
+    {
+     "dataset": "Live play-by-play and boxscore snapshots during games",
+     "grain": "event x game (5-10 s polling)",
+     "fields": [
+      "period",
+      "clock",
+      "home_score",
+      "away_score",
+      "on_court_players",
+      "team_fouls_period",
+      "timeouts_remaining",
+      "possession",
+      "receipt_ts"
+     ],
+     "timestamp_requirement": "Feed receipt timestamp aligned to Kalshi quote timestamps; history must be captured prospectively.",
+     "history_needed": "One full season of captured live snapshots to calibrate conditional models; historical play-by-play for backfill of score/clock.",
+     "candidate_sources": [
+      {
+       "name": "cdn.nba.com liveData JSON",
+       "access": "free",
+       "note": "unofficial; schema stable but undocumented"
+      },
+      {
+       "name": "Own capture of Kalshi quotes",
+       "access": "own_capture"
+      }
+     ],
+     "feeds_inputs": [
+      "nba.live_period_state"
      ]
     }
    ],
@@ -21682,7 +21869,7 @@
      {
       "id": "s2",
       "name": "Coach role decision and rotation",
-      "description": "For the starter market the coach chooses five from the roster given health, camp performance, lineup chemistry and the game-one opponent; incumbents start unless displaced by an addition, an injury or a strategic change (small-ball, defence-first). For the compete market a signed veteran still needs the coach to use him for one second in a regular-season game, which is likely but not certain for an end-of-bench signing, and for play-together markets the rotation determines whether two players share minutes.",
+      "description": "For the starter market the coach chooses five from the roster given health, camp performance, lineup chemistry and the game-one opponent; incumbents start unless displaced by an addition, an injury or a strategic change (small-ball, defence-first). For the compete market a signed veteran still needs the coach to use him for one second in a regular-season game, which is likely but not certain for an end-of-bench signing, and for play-together markets the rotation determines whether two players share minutes. KXNBASTARTERS is itself a single-game contract (verified rules and API: start the team's first 2026-27 regular-season game and be on the floor at the opening tip; announced-but-not-starting resolves No), so the game-level starter mechanism is live inside this archetype once per season, consistent with the catalog label 'starting lineup / player availability'.",
       "distribution": "Discrete choice over the roster with strong incumbency (starters last season retain the role about 80% of the time, SOURCE_UNVERIFIED); role changes cluster in the off-season.",
       "categories": [
        "role_personnel",
@@ -23091,7 +23278,7 @@
      {
       "id": "s4",
       "name": "Within-game score extremes compounded over a series",
-      "description": "KXNBASERIESGCOMEBACK pays if any game in the series is won by a team that trailed by 30 or more, and KXNBAFINBLOWOUT if any Finals game ends with a 40-point margin. Both need the score path or final margin distribution of playoff games, conditional on the strength gap and pace, compounded over a random number of games. Even matchups produce longer series (more chances) but fewer huge leads; uneven ones produce blowouts but end sooner, so the series length and the per-game tail interact.",
+      "description": "KXNBASERIESGCOMEBACK pays if any game in the series is won by a team that trailed by 30 or more, and KXNBAFINBLOWOUT if any Finals game ends with a 40-point margin. Both need the score path or final margin distribution of playoff games, conditional on the strength gap and pace, compounded over a random number of games. Even matchups produce longer series (more chances) but fewer huge leads; uneven ones produce blowouts but end sooner, so the series length and the per-game tail interact. These two series are deliberately kept with the series contracts but staged separately, fed by play-by-play score paths (required_data 3), because the compounding over series length is what couples them to the bracket.",
       "distribution": "Per-game P(margin >= 40) and P(win after trailing by 30+) are well below 1% for even playoff teams; union over 4-7 games with dependence through matchup and pace.",
       "categories": [
        "game_context_script",
@@ -23106,7 +23293,7 @@
      {
       "id": "s5",
       "name": "Cup group stage and knockout",
-      "description": "Cup group winners and qualifiers are determined by group record and tiebreakers (including point differential), and the knockout stage is single-elimination. The Finals-matchup contract resolves when both finalists are known, so it is the joint probability of two bracket paths, group-to-win sums title chances of teams that played each other in the group, and the champion contract is three knockout wins after qualification. Incentives in the last group games depend on the standings state, and margin matters for tiebreaks.",
+      "description": "Cup group winners and qualifiers are determined by group record and tiebreakers (including point differential), and the knockout stage is single-elimination. The Finals-matchup contract resolves when both finalists are known, so it is the joint probability of two bracket paths, group-to-win sums title chances of teams that played each other in the group, and the champion contract is three knockout wins after qualification. Incentives in the last group games depend on the standings state, and margin matters for tiebreaks. Filing decision (resolver, 8 Nov 2026): the Cup contracts stay in this archetype as this separate stage with their own inputs and data set (Cup schedule and group tables) rather than a new archetype, because they share the team-strength and single-elimination machinery but none of the best-of-seven inputs. 2026-27 format: group winners and one wild card per conference make conference-split quarterfinals hosted by the higher seed, semifinals at the higher seed's arena, final at Hinkle Fieldhouse.",
       "distribution": "Small group tables with discrete outcomes; margin enters via the tiebreak; knockout rounds are single games with win probability near rating-implied values.",
       "categories": [
        "situational_schedule_motivation",
@@ -24283,6 +24470,21 @@
      "id": "nba.draft_order_joint_simulation",
      "why": "Prices all draft range, matchup, count and comparison markets from one coherent order.",
      "role": "primary"
+    },
+    {
+     "id": "nba.eligibility_appeal_grant_model",
+     "why": "Turns MVP/All-NBA eligibility from a hard ledger into ledger plus a dated appeal branch, which moved 2025-26 award prices.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.allstar_nationality_quota",
+     "why": "The 16/8 minimum with Commissioner additions is a selection stage the vote composite cannot produce.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.hustle_stat_index",
+     "why": "KXNBAHUSTLE is settled by a tracked-stat formula; without this index the series has no driver.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -24403,7 +24605,7 @@
      {
       "id": "s1",
       "name": "Eligibility and games-played gate",
-      "description": "A candidate must clear league thresholds (65 games with at least 20 minutes in the current CBA for major awards and All-NBA, role rules such as bench-starts for Sixth Man, rookie status for ROY, clutch minimum for Clutch POY, qualifying-games rule for stat leaders). The state is a running ledger that moves with each injury, rest night and minute total, and the cost of a missed qualifying game is permanent. Probability of crossing the line depends on games remaining and injury hazard, not on the season-to-date average. The 65-game rule is described from memory of the league criteria; which awards it governs is not established here: the monthly awards, Coach and Executive of the Year, the All-Star selection and the draft are not governed by it, and the 15-19 minute allowance and the Clutch and All-Rookie specifics are unverified (u3).",
+      "description": "A candidate must clear league thresholds before production matters. Verified for 2025-26 and unchanged as of Nov 2026: the 65-game rule governs MVP, DPOY, Most Improved, All-NBA and All-Defensive, counting games with 20+ minutes in at least 63 and 15-20 minutes in up to two more; ROY, Sixth Man and All-Rookie are exempt, and monthly awards, Coach/Executive of the Year, All-Star and the draft are outside it. The ledger moves with each injury, rest night and minute total, but it is not the last word: an Extraordinary Circumstances challenge decided by the NBA and NBPA granted Doncic and Cunningham eligibility in April 2026 and an arbitrator denied Edwards, so eligibility = ledger survival plus a discretionary appeal branch. Clutch-award coverage is not confirmed (u3).",
       "distribution": "Bimodal near the line: mass near 0 or 1 for most players, with a narrow band of players with zero slack whose probability is a binomial-style survival over remaining games and injury hazard.",
       "categories": [
        "availability_news",
@@ -24412,7 +24614,8 @@
       "input_ids": [
        "nba.games_played_eligibility",
        "nba.injury_risk_season",
-       "nba.eligibility_minutes_ledger"
+       "nba.eligibility_minutes_ledger",
+       "nba.eligibility_appeal_grant_model"
       ]
      },
      {
@@ -24480,8 +24683,8 @@
      },
      {
       "id": "s6",
-      "name": "All-Star selection: weighted vote composite, positional slots and coach reserves",
-      "description": "All-Star starters are fixed by a composite of three electorates, not a media ballot: fan vote 50%, current players 25% and media 25%, combined as weighted ranks within guard and frontcourt groups per conference (two backcourt and three frontcourt starters). The fan share is public in early-return snapshots, moves with market size and social following, and can place a less productive player in a slot; reserves are then chosen by conference coaches (seven per conference, two of them wildcards) who weight production and team record, and injured selectees are replaced by the commissioner. KXNBAASSTARTERS and KXNBAALLSTARS therefore need fan-return dynamics, the weighted-rank arithmetic and a separate coach-vote model.",
+      "name": "All-Star selection: positionless vote composite, coach reserves and nationality minimum",
+      "description": "Verified for 2026: starters are the top five per conference on a 50/25/25 fan/player/media composite chosen without regard to position (fan vote breaks composite ties), reserves are seven per conference voted by head coaches without regard to position and not for their own players, and injured selectees are replaced by the Commissioner. The USA-vs-World format then imposes a 16 US / 8 international minimum filled by Commissioner additions, so a fringe candidate's chance depends on conference rank and on the depth of his nationality group. The 2027 format has not been announced; the stage applies the 2026 rules until it is.",
       "distribution": "Weighted-rank composite with a random-walk fan component that shrinks as the voting window closes; discrete slot allocation (5 starters and 7 reserves per conference) with correlated displacement within a position group.",
       "categories": [
        "distribution_variance",
@@ -24492,7 +24695,8 @@
        "nba.allstar_fan_vote_composite",
        "nba.allstar_reserve_coach_vote",
        "nba.all_star_process",
-       "nba.award_stats"
+       "nba.award_stats",
+       "nba.allstar_nationality_quota"
       ]
      },
      {
@@ -24527,6 +24731,20 @@
        "nba.hof_committee_vote_model",
        "nba.award_vote_and_cowinner_model",
        "nba.news"
+      ]
+     },
+     {
+      "id": "s9",
+      "name": "Formula-decided Hustle Award",
+      "description": "KXNBAHUSTLE is settled by the league's statistical formula, not a ballot: qualifying players are ranked per minute in nine tracked hustle categories and the top aggregate wins. The outcome therefore depends on season-long tracked rates, the minutes floor that filters out small samples, and the unpublished category weights, which must be inferred from past winners. Low-usage bigs and defensive guards dominate; production and team record are irrelevant except through minutes.",
+      "distribution": "Winner is an argmax over a few dozen qualifiers; rates per minute are approximately normal after 1,000 minutes, so the probability concentrates on 3-5 players with heavy weight uncertainty.",
+      "categories": [
+       "distribution_variance",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "nba.hustle_stat_index",
+       "nba.eligibility_minutes_ledger"
       ]
      }
     ],
@@ -24704,7 +24922,8 @@
       "nba.monthly_window_schedule",
       "nba.games_played_eligibility",
       "nba.injury_risk_season",
-      "nba.player_impact"
+      "nba.player_impact",
+      "nba.eligibility_appeal_grant_model"
      ]
     },
     {
@@ -24851,7 +25070,8 @@
      "feeds_inputs": [
       "nba.allstar_fan_vote_composite",
       "nba.allstar_reserve_coach_vote",
-      "nba.all_star_process"
+      "nba.all_star_process",
+      "nba.allstar_nationality_quota"
      ]
     },
     {
@@ -24925,6 +25145,39 @@
       "nba.finals_mvp_given_title_share",
       "nba.award_vote_and_cowinner_model",
       "nba.hof_committee_vote_model"
+     ]
+    },
+    {
+     "dataset": "League hustle-stat tracking by player-season",
+     "grain": "player x season (and player x game for projection)",
+     "fields": [
+      "deflections",
+      "charges_drawn",
+      "screen_assists",
+      "contested_2pt",
+      "contested_3pt",
+      "loose_balls_off",
+      "loose_balls_def",
+      "box_outs_off",
+      "box_outs_def",
+      "minutes",
+      "games"
+     ],
+     "timestamp_requirement": "Nightly snapshot with retrieval timestamp; tracking counts are occasionally revised, keep vintages.",
+     "history_needed": "2016-17 to date (tracking began in the 2016 postseason) plus Hustle Award winners/finalists.",
+     "candidate_sources": [
+      {
+       "name": "stats.nba.com leaguehustlestatsplayer endpoint",
+       "access": "free_limited",
+       "note": "undocumented, rate-limited, blocks some cloud IPs"
+      },
+      {
+       "name": "NBA.com Hustle Award releases",
+       "access": "free"
+      }
+     ],
+     "feeds_inputs": [
+      "nba.hustle_stat_index"
      ]
     }
    ],
@@ -25081,6 +25334,11 @@
      "id": "nba.overseas_signing_hazard",
      "why": "Base rate and timing for the CBA-signing market.",
      "role": "primary"
+    },
+    {
+     "id": "nba.expansion_realignment_joint_tree",
+     "why": "Wires KXNBACITYEXPAND, KXNBAJOINCONF and KXNBAEUROPEANNOUNCE to one dependent scenario tree instead of three independent hazards.",
+     "role": "primary"
     }
    ],
    "interactions": [
@@ -25174,6 +25432,16 @@
      "form": "regime-switch",
      "how_to_test": "Compare leaked versus final Christmas slates over 10 seasons and the timing of leaks relative to release.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "nba.expansion_realignment_joint_tree",
+      "nba.governance_approval_pipeline"
+     ],
+     "hypothesis": "Realignment probability is near zero unless the expansion vote passes; once two Western cities are awarded, one Western incumbent must move East to make 16/16, so KXNBAJOINCONF jumps from a residual to a high conditional probability exactly at the final expansion vote.",
+     "form": "conditional",
+     "how_to_test": "Compare realignment announcements against expansion decisions in past leagues (NBA 2004 Charlotte, NHL 2021 Seattle) and check the conditional jump at vote dates.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -25248,7 +25516,8 @@
        "nba.transaction_flow",
        "nba.rule_change_pipeline",
        "nba.top_pick_trade_hazard",
-       "nba.draft_board"
+       "nba.draft_board",
+       "nba.expansion_realignment_joint_tree"
       ]
      },
      {
@@ -25546,7 +25815,8 @@
      ],
      "feeds_inputs": [
       "nba.governance_approval_pipeline",
-      "nba.offfield_base_rate"
+      "nba.offfield_base_rate",
+      "nba.expansion_realignment_joint_tree"
      ]
     },
     {
@@ -26886,16 +27156,12 @@
  },
  "unregistered_archetypes": {
   "team_and_player_counting_specials": {
-   "label": "NBA player/team counting specials (triple doubles, stat averages, one-off thresholds)",
+   "label": "NBA playoff single-game scoring milestone (any player 50+ points in any playoff game; union over the playoff games)",
    "blueprint": "player_other",
    "contract_types": [
-    "Player triple double",
-    "Player stat average",
-    "Highest-scoring performance",
-    "Players to make one three",
-    "Combo ladders"
+    "Any player scores 50+ points in a playoff game"
    ],
-   "target": "A player or team reaching a single-game milestone or a season average threshold.",
+   "target": "Whether at least one player scores 50 or more points in at least one game of the playoffs (a union event over a random number of games and players).",
    "mechanism": "Milestones are joint events across stat components driven by minutes, usage and role; their probability is a tail of a covariance-aware distribution, not a product of marginals. Season-average and extreme-performance markets add a long-horizon component: availability, minutes trajectory and the variance of single-game performance.",
    "inputs": [
     {
@@ -28110,7 +28376,7 @@
      {
       "id": "s8",
       "name": "All-Star MVP selection",
-      "description": "After the tournament a selection panel names the All-Star MVP, historically almost always a player from the winning team with the standout scoring line or a strong narrative such as a home-market star. P(MVP) is therefore the champion probability times the conditional choice among that team's players, driven by usage and minutes in short games; a withdrawn named player resolves No.",
+      "description": "After the tournament a selection panel names the All-Star MVP, historically almost always a player from the winning team with the standout scoring line or a strong narrative such as a home-market star. P(MVP) is therefore the champion probability times the conditional choice among that team's players, driven by usage and minutes in short games; a withdrawn named player resolves No. 2026 check: the media panel votes right after the championship game and the fan vote counts 25% (Edwards won 10 of 14 panel votes); the award covered the whole three-game tournament, not the final alone, so popularity enters through the fan share.",
       "distribution": "Categorical over roughly 8-12 players per champion team, highly concentrated on one or two players once the champion is known; heavy uncertainty pregame.",
       "categories": [
        "officiating_rules",
@@ -28122,7 +28388,8 @@
        "nba.asg_tournament_path_sim",
        "nba.voting_narrative",
        "nba.usage",
-       "nba.asg_minutes_rotation_plan"
+       "nba.asg_minutes_rotation_plan",
+       "nba.allstar_fan_vote_composite"
       ]
      },
      {
@@ -28381,7 +28648,8 @@
       "nba.target_score_race_model",
       "nba.asg_mvp_vote_model",
       "nba.usage",
-      "nba.voting_narrative"
+      "nba.voting_narrative",
+      "nba.allstar_fan_vote_composite"
      ]
     },
     {

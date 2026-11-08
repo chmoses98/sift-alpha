@@ -53,7 +53,7 @@
     {
      "id": "s1",
      "name": "Team scoring intensities",
-     "description": "Each side's regulation goal rate is the product of shot volume against this specific opposition (tempo, territory, set-piece route) and chance quality given lineup and keeper. BTTS needs BOTH rates to be non-trivial, so the binding quantity is min(lambda_home, lambda_away), not the total: a 3.0 total split 2.7/0.3 is a low BTTS price while 1.6/1.4 is high. The weaker side's attack against the stronger side's current back line and keeper is the swing stage.",
+     "description": "Each side's regulation goal rate is the product of shot volume against this specific opposition (tempo, territory, set-piece route) and chance quality given lineup and keeper. BTTS needs BOTH rates to be non-trivial, so the binding quantity is min(lambda_home, lambda_away), not the total: a 3.0 total split 2.7/0.3 is a low BTTS price while 1.6/1.4 is high. The weaker side's attack against the stronger side's current back line and keeper is the swing stage. In cross-division cup ties (Copa del Rey, Copa do Brasil, Coupe de France, FA Cup and DFB-Pokal early rounds, the Israeli Cup) the two sides share no league opponents, so the weaker side's lambda, which binds BTTS Yes and the favourite's clean sheet, is set on a common scale by soc.cross_tier_strength_link and then scaled by the favourite's expected rotation (soc.favourite_rotation_in_mismatch), which raises the underdog's scoring chance when the big club rests starters.",
      "distribution": "Poisson-like counts per side with overdispersion; P(side scores>=1)=1-exp(-lambda) is concave, so uncertainty in lambda matters most for the low-lambda side.",
      "categories": [
       "talent_strength",
@@ -66,7 +66,9 @@
       "soc.xi_strength_delta",
       "soc.lineups_pit",
       "soc.gk",
-      "soc.team_fail_to_score_propensity"
+      "soc.team_fail_to_score_propensity",
+      "soc.cross_tier_strength_link",
+      "soc.favourite_rotation_in_mismatch"
      ]
     },
     {
@@ -159,9 +161,10 @@
      "status": "COVERED",
      "input_ids": [
       "soc.xg_adjusted_ratings",
-      "soc.gk"
+      "soc.gk",
+      "soc.cross_tier_strength_link"
      ],
-     "note": "Attack and defence ratings per side give lambda_home/lambda_away; keeper PSxG-GA adjusts the conceding side."
+     "note": "Opponent-adjusted strengths within a league; the cross-division bridge rating puts both sides of a cup mismatch on one scale."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -184,9 +187,10 @@
      "status": "COVERED",
      "input_ids": [
       "soc.lineups_pit",
-      "soc.xi_strength_delta"
+      "soc.xi_strength_delta",
+      "soc.favourite_rotation_in_mismatch"
      ],
-     "note": "Confirmed XI about an hour before kickoff; missing striker/keeper is the largest pregame shock."
+     "note": "Confirmed XIs and the favourite's predicted rotation in cup mismatches."
     },
     "coaching_scheme": {
      "status": "COVERED",
@@ -433,6 +437,16 @@
     "form": "conditional",
     "mechanism": "For 2H BTTS the half-time state selects the second-half multipliers: a level half-time score keeps both rates near baseline, a one-goal lead raises the trailer's and lowers the leader's 2H rate, which raises P(trailer scores) but lowers P(leader scores), so the net effect on 2H BTTS depends on the asymmetry.",
     "how_to_test": "Bin historical 2H BTTS outcomes by half-time margin and compare with an independent-half model."
+   },
+   {
+    "inputs": [
+     "soc.cross_tier_strength_link",
+     "soc.favourite_rotation_in_mismatch",
+     "soc.team_fail_to_score_propensity"
+    ],
+    "form": "conditional",
+    "mechanism": "Only in cross-division cup ties: the lower-tier side's goal rate comes from the bridge rating gap, and a heavily rotated favourite (7+ changes) raises that rate and lowers its own clean-sheet probability, so BTTS Yes moves up most when a large tier gap coincides with heavy rotation; within-league fixtures are unaffected.",
+    "how_to_test": "On cross-tier cup ties, compare calibration of P(weaker side scores) by rating-gap bucket with and without the bridge term, split by realised starters changed by the favourite."
    }
   ],
   "nonlinearities": [
@@ -720,6 +734,42 @@
      "soc.half_level_dependence_rho",
      "soc.second_half_state_multiplier"
     ]
+   },
+   {
+    "dataset": "Inter-division cup and European fixtures for the cross-tier bridge",
+    "grain": "one row per match between clubs of different divisions or leagues",
+    "fields": [
+     "date",
+     "competition and round",
+     "home and away club with division at kickoff",
+     "venue",
+     "final score",
+     "starting XI of each side",
+     "previous-match XI of each side"
+    ],
+    "timestamp_requirement": "Only matches before the as-of kickoff; division membership as of the match date; XI as published about 1h before kickoff.",
+    "history_needed": "At least 8 seasons of domestic cup and UEFA club competition ties to estimate league effects with posterior sd.",
+    "candidate_sources": [
+     {
+      "name": "ClubElo",
+      "access": "free",
+      "note": "Cross-league Elo history usable as a prior for league effects."
+     },
+     {
+      "name": "football-data.co.uk cup results",
+      "access": "free_limited",
+      "note": "Coverage of lower-tier cup rounds is partial."
+     },
+     {
+      "name": "Transfermarkt lineups",
+      "access": "free_scrape",
+      "note": "Starting XIs for rotation counts."
+     }
+    ],
+    "feeds_inputs": [
+     "soc.cross_tier_strength_link",
+     "soc.favourite_rotation_in_mismatch"
+    ]
    }
   ],
   "unresolved": [
@@ -751,8 +801,8 @@
    {
     "id": "cross_tier_lambda_floor",
     "type": "INPUT_DEFINITION_UNCERTAIN",
-    "description": "In Copa del Rey, Israeli Cup and Copa do Brasil early rounds the weaker side lambda (the binding quantity for BTTS) is poorly identified; the cross-tier link soc.cross_tier_strength_link and soc.favourite_rotation_in_mismatch are defined in the handicap_and_exact_score record, not in the catalog yet.",
-    "what_would_resolve": "Share the handicap record cross-tier inputs after catalog merge and attach them here; test min-lambda calibration on cross-tier cup games."
+    "description": "Cross-tier inputs (soc.cross_tier_strength_link, soc.favourite_rotation_in_mismatch) are now attached to stage s1 for cross-division cup ties; what stays open is the calibration of the weaker side's lambda floor in early-round Copa del Rey, Israeli Cup and Copa do Brasil games, where bridge samples are thin.",
+    "what_would_resolve": "Test min-lambda calibration on cross-tier cup games by rating-gap bucket and rotation level."
    },
    {
     "id": "event_source_red_cards",
@@ -874,7 +924,7 @@
     {
      "id": "s4",
      "name": "Squad shocks over the remaining horizon",
-     "description": "Over a multi-month horizon injuries, suspensions, transfer windows and manager changes shift one team's strength relative to the other; squad depth determines how much a typical injury wave costs. Competing in cups and Europe adds minutes load and rotation that reduces league-priority quality.",
+     "description": "Over a multi-month horizon injuries, suspensions, transfer windows and manager changes shift one team's strength relative to the other; squad depth determines how much a typical injury wave costs. Competing in cups and Europe adds minutes load and rotation that reduces league-priority quality. A manager change inside the remaining horizon is simulated rather than ignored: each simulated week draws a dismissal from soc.manager_dismissal_hazard given the club's simulated results, and after a change the club's rating is re-blended by soc.transfers (prior weight k/(k+m) over m matches under the new manager); the size of the post-change shift is left to the event study.",
      "distribution": "Random strength drift over weeks; heavy right tail for key-player long-term injuries; depth modulates the tail.",
      "categories": [
       "availability_news",
@@ -884,7 +934,9 @@
      "input_ids": [
       "soc.injuries",
       "soc.squad_depth_value",
-      "soc.motivation"
+      "soc.motivation",
+      "soc.manager_dismissal_hazard",
+      "soc.transfers"
      ]
     },
     {
@@ -1001,9 +1053,12 @@
      "note": "Injuries and suspensions to key players across the remaining horizon shift the gap; no timestamps for lineup vintage needed for season-long contracts."
     },
     "coaching_scheme": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Managerial change, tactical shift and in-season coaching tenure change a team's points-per-game, and a pending sacking or appointment is not modelled by any listed input; the effect size of a mid-season manager change on points is debated."
+     "status": "COVERED",
+     "input_ids": [
+      "soc.manager_dismissal_hazard",
+      "soc.transfers"
+     ],
+     "note": "In-window dismissal hazard and the post-change rating re-blend; the size of the new-manager shift remains an empirical question."
     },
     "environment": {
      "status": "NOT_APPLICABLE",
@@ -1293,6 +1348,16 @@
     "form": "conditional",
     "mechanism": "For KXWCTEAMH2H the two teams' stage outcomes are independent only if their bracket paths cannot cross before the final; when they share a group or bracket half, one's progress removes the other's, shifting mass away from 'same stage' at late rounds.",
     "how_to_test": "Compare same-stage frequencies for pairs in the same vs different bracket halves in simulations and past tournaments."
+   },
+   {
+    "inputs": [
+     "soc.manager_dismissal_hazard",
+     "soc.transfers",
+     "soc.comp_sim"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Finish-ahead contracts depend on two clubs' rest-of-season points; a club underperforming its rating has a raised dismissal hazard, and a dismissal switches its rating regime for the remaining fixtures, so the pairwise order probability is a mixture over change/no-change paths, mattering most when the two clubs are close and many matches remain.",
+    "how_to_test": "Compare finish-order calibration with and without the simulated dismissal branch on seasons with in-season changes among paired clubs."
    }
   ],
   "nonlinearities": [
@@ -1552,7 +1617,7 @@
    {
     "id": "gap_coaching_scheme",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Mid-season managerial change, tactical shift and a pending sacking or appointment change points-per-game and no listed input captures them; effect size and persistence are debated (this entry merges the earlier mid_season_manager_effect item).",
+    "description": "Managerial change is now modelled in stage s4 (soc.manager_dismissal_hazard for an in-window sacking, soc.transfers for the rating re-blend after a change); the effect size and persistence of a mid-season change on points-per-game remain debated and are set to zero shift until estimated.",
     "what_would_resolve": "Event study of league points-per-game before and after managerial changes over 10 seasons with matched controls, then define a manager-change input.",
     "category": "coaching_scheme"
    },
@@ -1605,6 +1670,11 @@
      "ticker": "KXARSENALCUPS",
      "quote": "Winning one or more of these competitions counts toward this market.",
      "establishes": "Trophy-count ladders count titles across four named competitions, so the joint distribution of one club's titles is required."
+    },
+    {
+     "ticker": "KXWCHOSTWIN",
+     "quote": "If any host nation (USA, Mexico, Canada) wins the 2026 Men's FIFA World Cup",
+     "establishes": "The host-win series is a union over three named hosts settling on the tournament winner, so it belongs in the joint-finish stage with host advantage applied."
     }
    ],
    "variants_and_edge_cases": [
@@ -1736,7 +1806,7 @@
     {
      "id": "s7",
      "name": "Team-set unions, exact orders and group outcomes from the joint tournament draw",
-     "description": "Many World Cup and UCL series are functions of the whole simulated tournament rather than one team's title: unions over a named set (group, confederation by qualification pathway, host nations, first-time winners, league of origin) sum disjoint title probabilities, while exact orders (top four via final and third-place match, a group's 1-4 order under FIFA tiebreaks) and 'any nation of a set wins its group' need the joint distribution of placings, because group-mates and bracket neighbours cannot both progress. Marginal title odds are insufficient; the correlation induced by the bracket and shared groups must be kept.",
+     "description": "Many World Cup and UCL series are functions of the whole simulated tournament rather than one team's title: unions over a named set (group, confederation by qualification pathway, host nations, first-time winners, league of origin) sum disjoint title probabilities, while exact orders (top four via final and third-place match, a group's 1-4 order under FIFA tiebreaks) and 'any nation of a set wins its group' need the joint distribution of placings, because group-mates and bracket neighbours cannot both progress. Marginal title odds are insufficient; the correlation induced by the bracket and shared groups must be kept. Host-nation unions (KXWCHOSTWIN: any of USA, Mexico, Canada wins) need soc.home_advantage set on for each host's matches played in its own country and zero for neutral-venue matches, so the hosts' group and knockout probabilities carry the host edge before summing their disjoint title probabilities.",
      "distribution": "Multinomial over permutations from a joint Monte Carlo of groups and bracket; exact-order outcomes have small probabilities (often below 2%) and are sensitive to tiebreak modelling.",
      "categories": [
       "distribution_variance",
@@ -1747,7 +1817,8 @@
       "soc.tournament_joint_finish_distribution",
       "soc.group_stage_scenarios",
       "soc.bracket_path_difficulty",
-      "soc.tiebreaker_rules"
+      "soc.tiebreaker_rules",
+      "soc.home_advantage"
      ]
     },
     {
@@ -2269,7 +2340,8 @@
      "bracket_slot",
      "confederation_pathway",
      "host_flag",
-     "previous_winner_flag"
+     "previous_winner_flag",
+     "match venue country versus team nationality (host flag)"
     ],
     "timestamp_requirement": "Structure as published by the governing body before the as-of time; results only of completed matches.",
     "history_needed": "Current tournament plus 3 previous editions to validate simulated vs realised placings",
@@ -2295,7 +2367,8 @@
      "soc.group_stage_scenarios",
      "soc.winning_margin_distribution",
      "soc.extra_time_shootout_model",
-     "soc.european_slot_spillover"
+     "soc.european_slot_spillover",
+     "soc.home_advantage"
     ]
    }
   ],
@@ -2430,7 +2503,7 @@
     {
      "id": "s2",
      "name": "Time profile of scoring across halves",
-     "description": "About 44-46% of goals arrive in the first half and 54-56% in the second, driven by fatigue, substitutions, tactical commitment when trailing, and longer second-half stoppage. A cautious opening raises P(0-0 at half-time), and team style (pressing intensity early, deep block) changes the split; the first-half share also varies by competition (heat, schedule) and kickoff time.",
+     "description": "About 44-46% of goals arrive in the first half and 54-56% in the second, driven by fatigue, substitutions, tactical commitment when trailing, and longer second-half stoppage. A cautious opening raises P(0-0 at half-time), and team style (pressing intensity early, deep block) changes the split; the first-half share also varies by competition (heat, schedule) and kickoff time. Kickoff heat, humidity and altitude (soc.weather) can lower second-half intensity relative to the first, shifting the 2H share of lambda downward in hot afternoon or high-altitude venues (Liga MX at Toluca/Mexico City, summer Brasileiro, the 2026 World Cup afternoon slots); the sign is expected but the size is unestablished.",
      "distribution": "Time-inhomogeneous intensity, roughly increasing across the match; team-level share varies with a heavy shrinkage to the league (sd about 4 percentage points).",
      "categories": [
       "coaching_scheme",
@@ -2442,7 +2515,8 @@
       "soc.period_split",
       "soc.half_specific_xg_ratings",
       "soc.first_goal_hazard",
-      "soc.pace_press"
+      "soc.pace_press",
+      "soc.weather"
      ]
     },
     {
@@ -2532,9 +2606,11 @@
      "note": "Managers' substitution timing and chase/park behaviour determine the half-specific rates."
     },
     "environment": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Heat, humidity, altitude and pitch reduce second-half intensity relative to the first; the size of the effect on the 1H/2H goal split by league and month is not established and the catalog weather input is not tied to halves."
+     "status": "COVERED",
+     "input_ids": [
+      "soc.weather"
+     ],
+     "note": "Heat, humidity and altitude at kickoff shifting the second-half share of the full-match lambda."
     },
     "game_context_script": {
      "status": "COVERED",
@@ -2755,6 +2831,15 @@
     "form": "conditional",
     "mechanism": "Late lineup news (a missing first-choice striker) affects the opening-period rate more than the match average, because replacements need time and bench players are used later; the effect is conditional on the half.",
     "how_to_test": "Compare 1H vs 2H goals by lineup-change indicator."
+   },
+   {
+    "inputs": [
+     "soc.weather",
+     "soc.period_split"
+    ],
+    "form": "threshold",
+    "mechanism": "Above a heat-index or altitude threshold the second half loses intensity (fewer high-intensity runs, more drinks-break pauses), so the first-half share of goals rises and 1H totals/1H BTTS gain probability relative to the full-match lambda; in temperate sea-level matches the split is unchanged.",
+    "how_to_test": "Regress the second-half share of goals on kickoff heat index and venue altitude with league and kickoff-hour fixed effects, pooled over multiple seasons."
    }
   ],
   "nonlinearities": [
@@ -2944,6 +3029,27 @@
     "feeds_inputs": [
      "soc.penalty_rate"
     ]
+   },
+   {
+    "dataset": "Kickoff weather and venue altitude",
+    "grain": "one row per match",
+    "fields": [
+     "venue latitude, longitude and altitude (m)",
+     "roof flag",
+     "hourly temperature, relative humidity, wind and precipitation from kickoff to kickoff+2h"
+    ],
+    "timestamp_requirement": "Forecast issued before the as-of time for pricing; archive (observed) values only for fitting.",
+    "history_needed": "At least 5 seasons in leagues with hot or high-altitude venues to identify the 2H-share effect.",
+    "candidate_sources": [
+     {
+      "name": "Open-Meteo forecast and historical archive",
+      "access": "free",
+      "note": "Hourly temperature, humidity, wind, precipitation by coordinates; past forecasts vintages limited."
+     }
+    ],
+    "feeds_inputs": [
+     "soc.weather"
+    ]
    }
   ],
   "unresolved": [
@@ -2968,7 +3074,7 @@
    {
     "id": "gap_environment",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Heat, humidity, altitude and pitch reduce second-half intensity relative to the first; the size of the effect on the 1H/2H goal split by league and month is not established and the catalog weather input is not tied to halves.",
+    "description": "soc.weather is now attached to the half-split stage s2 with a threshold interaction against soc.period_split; the size of the heat/humidity/altitude effect on the 1H/2H goal split by league and month remains unestablished.",
     "what_would_resolve": "Regress 2H share of goals on kickoff temperature/humidity and altitude using multi-season data with kickoff hour as control.",
     "category": "environment"
    },
@@ -3032,13 +3138,14 @@
     "No FTTS text contains a postponement or abandonment clause (the 48-hour fair-price rule appears only in sibling game/half texts), so settlement of a match abandoned after the first goal, or postponed, is not visible.",
     "Method of Victory/Finish contracts (KX*MOV, KX*MOF) are TITLE_ONLY; the outcomes are plausibly win in regulation / in extra time / on penalties for knockouts, but six MOV series are league fixtures (KXLALIGAMOV, KXSERIEAMOV, KXBUNDESLIGAMOV, KXLIGUE1MOV, KXBRASILEIROMOV, KXLIGAMXMOV) where extra time cannot occur and the outcome set is unknown (stage s7 is a conditional placeholder).",
     "Draw at 90 minutes in two-leg ties may end the tie without extra time (aggregate leader advances) so the MOV/MOF path tree is competition-specific; no sampled text says how single-leg vs two-leg is treated.",
-    "KXWCFTTS has rules text with the entire-game window and the no-goal leg; KXWCTTSF (World Cup Team To Score First) has none and is assumed identical."
+    "KXWCFTTS has rules text with the entire-game window and the no-goal leg; KXWCTTSF (World Cup Team To Score First) has none and is assumed identical.",
+    "The Kalshi MOV/MOF template is verified on KXUCLMOF, KXUELMOV, KXWCMOF and KXWCMOV (now filed to unreg:knockout_method_of_victory): 'Regular Time' includes stoppage and excludes extra time and the shootout; MOF settles on either team, MOV on the named team; cancellation or rescheduling beyond two weeks resolves to a fair price. The 37 Method series left here have no listed markets and are assumed to follow it."
    ],
    "settlement_data_source": "Official match report goal events with scorer team and minute (own goals credited to the team awarded), including extra-time periods, for FTTS; not verified for the Method series (presumably official result including extra time and shootout).",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Two distinct mechanisms live under this key. A Method of Victory/Finish contract is a path tree over regulation, extra time and penalties: the regulation result gates everything, knockout-specific cautiousness inflates the draw gate, extra time is a low-scoring tired period of 30 minutes, and a shootout is close to a coin flip with small first-kicker and goalkeeper edges. A First-Team-To-Score contract is a competing-risk race between two time-varying scoring intensities with a no-goal outcome, where early goals have a distinctive set-piece and penalty mix. Both settle from official match records, the FTTS settlement (entire-game window, own-goal credit, a listed No Goal outcome) is verified from 23 texts, while none of the 37 Method series has rules text. The Method-of-Victory path tree (s2-s4) applies only to knockout series with a possible extra time; the six domestic-league MOV series are handled by the conditional margin stage s7 until their rules are read.",
+   "summary": "Two distinct mechanisms live under this key. A Method of Victory/Finish contract is a path tree over regulation, extra time and penalties: the regulation result gates everything, knockout-specific cautiousness inflates the draw gate, extra time is a low-scoring tired period of 30 minutes, and a shootout is close to a coin flip with small first-kicker and goalkeeper edges. A First-Team-To-Score contract is a competing-risk race between two time-varying scoring intensities with a no-goal outcome, where early goals have a distinctive set-piece and penalty mix. Both settle from official match records, the FTTS settlement (entire-game window, own-goal credit, a listed No Goal outcome) is verified from 23 texts, while none of the 37 Method series has rules text. The Method path tree (s2) is a consolidated copy of unreg:knockout_method_of_victory, whose rules-verified MOV/MOF template covers the knockout series; it applies only to knockout series with a possible extra time; the six domestic-league MOV series are handled by the conditional margin stage s7 until their rules are read.",
    "stages": [
     {
      "id": "s1",
@@ -3060,45 +3167,23 @@
     },
     {
      "id": "s2",
-     "name": "Knockout-specific draw inflation",
-     "description": "Knockout matches differ from league matches: the goal rate falls (cautious play, cup upsets, second-leg aggregate states), the favourite's win probability compresses, and managers play for ET. In two-leg ties a first-leg lead changes risk-taking in the return leg and the draw rate sharply.",
-     "distribution": "Mixture: a regular league-like regime and a cagey regime; draw rate up by 3-6 percentage points in knockout ties, leg-state dependent.",
+     "name": "Knockout Method-of-Victory/Finish path tree (consolidated onto unreg:knockout_method_of_victory)",
+     "description": "The Method series still filed here (title-only, no markets listed) share Kalshi's MOV/MOF template verified on KXUCLMOF, KXUELMOV, KXWCMOF and KXWCMOV, which the reconciliation filed to unreg:knockout_method_of_victory: Regular Time (90 plus stoppage), Extra Time, Penalty Shootout. They are priced with that record's path tree and the same inputs, not a separate copy: knockout draw inflation and leg state, the extra-time phase rate and late risk appetite, then the shootout. This duplicates the knockout record on purpose; the two must not diverge.",
+     "distribution": "Three-branch path tree: P(regulation decisive), P(ET decisive)=P(level at 90)xP(ET goal decides), P(shootout); shootout near 0.5 per side.",
      "categories": [
-      "coaching_scheme",
       "game_context_script",
-      "situational_schedule_motivation"
+      "coaching_scheme",
+      "efficiency_conversion",
+      "settlement_contract"
      ],
      "input_ids": [
       "soc.knockout_cagey_factor",
-      "soc.second_leg_aggregate_state"
-     ]
-    },
-    {
-     "id": "s3",
-     "name": "Extra-time goal process",
-     "description": "Extra time is two 15-minute periods of tired play with a lower goal rate (the ratio to the 90-minute rate, typically 0.4-0.5 goals per ET and a goalless share near half are unsourced hypotheses to be estimated from knockout history). Squad depth and substitutes (a fifth substitute in some competitions) and the immediate state at 90 decide which team has the edge.",
-     "distribution": "Poisson with low mean 0.4-0.5 combined for both teams; P(goalless ET) about 50%; edge to the stronger and fitter side small.",
-     "categories": [
-      "pace_volume",
-      "role_personnel",
-      "situational_schedule_motivation"
-     ],
-     "input_ids": [
-      "soc.extra_time_shootout_model"
-     ]
-    },
-    {
-     "id": "s4",
-     "name": "Penalty shootout",
-     "description": "A shootout is close to a coin flip with small edges: the first-kicker win rate (reported above 50%, magnitude unsourced here and to be estimated), and the keeper's record and each taker's conversion shift it by a couple of percent. The elite favourite's advantage over 90 minutes is largely washed out here, so P(win on pens | goes to pens) is near 50% for almost every pairing. The shootout history is sized for the match-level path tree only.",
-     "distribution": "Binomial sequences of ~5+ kicks per side with kick conversion about 0.75-0.78; coin-flip-like at team level, slight first-kicker bias.",
-     "categories": [
-      "efficiency_conversion",
-      "distribution_variance"
-     ],
-     "input_ids": [
+      "soc.second_leg_aggregate_state",
+      "soc.extra_time_phase_scoring_rate",
+      "soc.late_level_risk_appetite",
+      "soc.extra_time_shootout_model",
       "soc.penalty_shootout_skill",
-      "soc.extra_time_shootout_model"
+      "soc.method_path_tree_calibration"
      ]
     },
     {
@@ -3479,7 +3564,9 @@
      "soc.method_path_tree_calibration",
      "soc.extra_time_shootout_model",
      "soc.penalty_shootout_skill",
-     "soc.second_leg_aggregate_state"
+     "soc.second_leg_aggregate_state",
+     "soc.extra_time_phase_scoring_rate",
+     "soc.late_level_risk_appetite"
     ]
    },
    {
@@ -3601,8 +3688,8 @@
    {
     "id": "archetype_mismatch",
     "type": "INPUT_DEFINITION_UNCERTAIN",
-    "description": "After the reconciliation the key holds two contract families: 32 First Team to Score series (target verified from rules text) and 37 Method of Victory/Finish series (23 MOV, 14 MOF) whose settlement is unseen; the MOV/MOF stages (s2-s4, s7) are untested against any contract text.",
-    "what_would_resolve": "Rules text for at least one knockout MOF and one league MOV series, or splitting the Method series into their own key."
+    "description": "The reconciliation already re-filed every Method series with listings or rules (KXUCLMOF, KXUELMOV, KXWCMOF, KXWCMOV to unreg:knockout_method_of_victory; KXUCLMOV to relegation; KXWCLONGESTPEN to tournament aggregates). The 37 MOV/MOF rows still here have no listed markets; their stage s2 now reuses the knockout record's inputs and path tree, and only the league MOV placeholder s7 has no verified template.",
+    "what_would_resolve": "Re-file the 37 unlisted MOV/MOF rows to unreg:knockout_method_of_victory in the ledger when they list, and read rules text for any listed league MOV series."
    },
    {
     "id": "shootout_sample_size",
@@ -6508,6 +6595,11 @@
      "ticker": "KXUCLRO16",
      "quote": "Teams can qualify by either finishing in the top 8 of the league phase table or by winning their respective knockout phase play-off.",
      "establishes": "Reaching the round of 16 is a union of a league-phase rank event and a play-off tie event, needing both the league-phase simulation and the tie tree."
+    },
+    {
+     "ticker": "KXWCHOSTKO",
+     "quote": "If all host nations qualify for the knockout stage in the 2026 Men's FIFA World Cup",
+     "establishes": "An all-hosts intersection settled on knockout qualification; modelled from the joint stage-reached vector with host advantage on home matches."
     }
    ],
    "variants_and_edge_cases": [
@@ -6562,7 +6654,7 @@
     {
      "id": "s2",
      "name": "Table state and the schedule left to play",
-     "description": "Remaining fixtures determine how points can still be earned: points gap to the cut line, number of matches remaining, strength and venue of the opposition (including direct clashes between rivals for survival or a slot), all of which determine a team's distribution of final points relative to the line.",
+     "description": "Remaining fixtures determine how points can still be earned: points gap to the cut line, number of matches remaining, strength and venue of the opposition (including direct clashes between rivals for survival or a slot), all of which determine a team's distribution of final points relative to the line. Bottom-six clubs dismiss managers often, so the remaining-fixture simulation draws in-season dismissals from soc.manager_dismissal_hazard (driven by simulated winless runs and points below expectation) and applies the re-blended post-change rating from soc.transfers; the new-manager bounce magnitude stays at zero until estimated, since much of it is mean reversion.",
      "distribution": "Sum of remaining match lotteries (0/1/3); variance of gap relative to cut line scales with matches remaining.",
      "categories": [
       "game_context_script",
@@ -6573,13 +6665,15 @@
       "soc.remaining_schedule_strength",
       "soc.comp_sim",
       "soc.stakes_leverage",
-      "soc.rotation_index"
+      "soc.rotation_index",
+      "soc.manager_dismissal_hazard",
+      "soc.transfers"
      ]
     },
     {
      "id": "s3",
      "name": "Where the cut line sits",
-     "description": "For relegation, promotion and qualification the line is not fixed: relegation can be shifted by play-offs (Bundesliga 16th place) or deductions, promotion runs partly through a play-off mini-tournament, and Champions League qualification depends on coefficient slots and on cup winners already holding a place. KXUCLQUAL settles on a main-tournament place, so spillover and qualifying rounds move its effective threshold; last-place and relegation series settle on rank only.",
+     "description": "For relegation, promotion and qualification the line is not fixed: relegation can be shifted by play-offs (Bundesliga 16th place) or deductions, promotion runs partly through a play-off mini-tournament, and Champions League qualification depends on coefficient slots and on cup winners already holding a place. KXUCLQUAL settles on a main-tournament place, so spillover and qualifying rounds move its effective threshold; last-place and relegation series settle on rank only. Promotion and relegation play-offs are an explicit bracket (soc.promotion_relegation_playoff_bracket): P(promoted) = P(automatic rank) + sum over play-off ranks of P(rank) x P(win bracket | rank). KXEFLPROMO is for 2026-27, the first season of the six-team Championship play-off (3rd-8th: single-leg eliminators 5v8 and 6v7 at the higher-placed club, two-legged semi-finals against 3rd and 4th, Wembley final); KXLALIGA2PROMO uses 3v6 and 4v5 two-legged semis and a two-legged final where a level aggregate after extra time goes to the better-placed club with no shootout.",
      "distribution": "Discrete random threshold determined by cup winners and administrative rulings; effect is 0 or 1 place shifts with probabilities to be estimated (10-30% is a placeholder) in the cup-spillover case.",
      "categories": [
       "settlement_contract",
@@ -6588,7 +6682,8 @@
      "input_ids": [
       "soc.tiebreaker_rules",
       "soc.points_deductions",
-      "soc.european_slot_spillover"
+      "soc.european_slot_spillover",
+      "soc.promotion_relegation_playoff_bracket"
      ]
     },
     {
@@ -6645,7 +6740,7 @@
     {
      "id": "s7",
      "name": "Stage reached by sets of teams in a bracket tournament",
-     "description": "World Cup and UCL stage-reach series ask how far one team or a set of teams goes: the furthest stage by any nation of a qualification pathway, which host or which confederation nation goes furthest (dead heat if several share the stage), exactly N debutants reaching the knockouts, all hosts qualifying, or a non-top-10 nation reaching the semi-finals. These are functions of the joint stage-reached vector: bracket placement makes teams of the same group or half negatively dependent, so counts and maxima over a set cannot be built from independent marginals, and tie probabilities at a stage must be kept for the $1/N payouts.",
+     "description": "World Cup and UCL stage-reach series ask how far one team or a set of teams goes: the furthest stage by any nation of a qualification pathway, which host or which confederation nation goes furthest (dead heat if several share the stage), exactly N debutants reaching the knockouts, all hosts qualifying, or a non-top-10 nation reaching the semi-finals. These are functions of the joint stage-reached vector: bracket placement makes teams of the same group or half negatively dependent, so counts and maxima over a set cannot be built from independent marginals, and tie probabilities at a stage must be kept for the $1/N payouts. Host series (KXWCHOSTKO: all three hosts reach the knockout stage; KXWCHOSTSTAGE) apply soc.home_advantage to each host's group matches in its own country; KXWCHOSTKO is an intersection over hosts in different groups, so it is the product of near-independent group-qualification probabilities, each lifted by the host edge.",
      "distribution": "Joint categorical vector of stages reached per team; counts over a set are dependent-Bernoulli sums, maxima have heavy mass at the round of 32 and round of 16.",
      "categories": [
       "distribution_variance",
@@ -6656,7 +6751,8 @@
       "soc.tournament_joint_finish_distribution",
       "soc.group_stage_scenarios",
       "soc.tie_advancement_state_tree",
-      "soc.ratings_uncertainty"
+      "soc.ratings_uncertainty",
+      "soc.home_advantage"
      ]
     }
    ],
@@ -6693,9 +6789,12 @@
      "note": "Availability news; matters for ties more than for season-long placement."
     },
     "coaching_scheme": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Mid-season managerial changes ('new manager bounce') are a recognised driver of relegation-zone teams, yet no input quantifies their effect size or timing, and the catalog only holds a manager-change flag under transfers."
+     "status": "COVERED",
+     "input_ids": [
+      "soc.manager_dismissal_hazard",
+      "soc.transfers"
+     ],
+     "note": "In-season dismissal hazard for relegation-threatened clubs and the post-change rating re-blend; bounce size empirical."
     },
     "environment": {
      "status": "NOT_APPLICABLE",
@@ -6836,6 +6935,26 @@
     ],
     "why": "Prices stage-reach counts, maxima and $1/N dead heats over sets of teams (furthest-advancing confederation nation, debutant and host counts, non-top-10 semi-finalist) from the per-draw stage-reached vector; the same simulation already serves competition_winner_and_top_n.",
     "role": "primary"
+   },
+   "soc.promotion_relegation_playoff_bracket": {
+    "label": "Promotion and relegation play-off bracket conversion",
+    "category": "game_state",
+    "mechanism": "Maps the simulated regular-season rank to the probability of promotion (or survival) through the competition's post-season play-off bracket, tie by tie, under that season's format rules.",
+    "rationale": "Promotion series settle on being promoted by any route, so ranks 3-8 (EFL Championship from 2026-27) or 3-6 (Segunda) carry probability through a short knockout: the format decides how much rank matters. The EFL six-team format adds single-leg eliminators hosted by the higher seed, so 5th-8th face an extra ~50% gate that 3rd and 4th skip; in Segunda the better-placed side wins a level tie after extra time, which tilts every semi and the final toward the higher seed with no shootout coin-flip. Subtle: the Segunda reserve-team rule (filial sides ineligible) shifts which ranks qualify, and formats change between seasons (EFL change confirmed March 2026, final details pending).",
+    "measurement": "Per competition-season, encode the format: entrant ranks, round structure, legs, host rule, away-goals (none in either), extra time and tie-break (EFL: ET then penalties; Segunda: ET then higher regular-season rank). For each simulated final table, simulate each tie with team goal rates from the as-of ratings: single legs via soc.extra_time_shootout_model at the higher seed's venue, two-leg ties via soc.tie_advancement_state_tree (second leg at the higher seed), Segunda ties replacing the shootout branch with P=1 for the higher seed. P(promoted_i) = sum over simulated tables of [rank_i automatic] + [rank_i in play-off] x P(win bracket | bracket draw). Calibrate P(win bracket | seed) against 20 seasons of EFL and Segunda play-off results (Wilson intervals, shrink to the simulation with k=10 seasons). As-of: format rules published before the season; ratings as of the pricing timestamp.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "EFL and LaLiga official competition regulations (free)",
+     "Wikipedia/RSSSF historical play-off results (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-off format rules per competition-season (entrant ranks, legs, host, tie-break)",
+     "historical play-off ties with seeds, leg scores, extra time and shootout outcomes",
+     "reserve-team eligibility list (Segunda)"
+    ],
+    "why": "Converts the table simulation into promotion probability for KXEFLPROMO and KXLALIGA2PROMO, whose YES includes the play-off route.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -6958,6 +7077,25 @@
     "form": "joint-distribution",
     "mechanism": "When two nations of the same set share a group, at most one can win it and their knockout paths diverge, which lowers the expected count reaching the knockouts and raises the chance that the set's furthest stage is decided by one team; independence over-prices 'all hosts qualify' or 'exactly N debutants' outcomes when set members are drawn together.",
     "how_to_test": "Compare count-over-set probabilities from the joint simulation with an independent-marginals product for past World Cups."
+   },
+   {
+    "inputs": [
+     "soc.manager_dismissal_hazard",
+     "soc.transfers",
+     "soc.comp_sim"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Relegation-zone clubs on a winless run have the highest dismissal hazard; a dismissal switches their rating regime for the remaining fixtures, so P(relegated) is a mixture over change paths and survival odds of a struggling club are not simply its current rating projected forward.",
+    "how_to_test": "Event study of bottom-six points per game after in-season changes versus matched non-changing clubs, then compare relegation calibration with and without the dismissal branch."
+   },
+   {
+    "inputs": [
+     "soc.promotion_relegation_playoff_bracket",
+     "soc.comp_sim"
+    ],
+    "form": "piecewise",
+    "mechanism": "Promotion probability is piecewise in final rank: near-certain in automatic places, then a drop to the bracket win probability for 3rd-4th (semi only), and a further drop for 5th-8th in the 2026-27 EFL format because of the extra single-leg eliminator; in Segunda the higher-seed tie-break flattens the drop between 3rd and 6th less than penalties would.",
+    "how_to_test": "Compare historical promotion rates by final rank to the bracket-composed prediction, separately for EFL (pre and post 2026-27) and Segunda."
    }
   ],
   "nonlinearities": [
@@ -7039,7 +7177,8 @@
      "leg2_score",
      "et_goals",
      "pens_h",
-     "pens_a"
+     "pens_a",
+     "play-off round, seeds and tie-break applied"
     ],
     "timestamp_requirement": "Past ties only",
     "history_needed": "Up to 15 seasons would be wanted but completeness of RSSSF/Wikipedia tie records is unverified",
@@ -7064,7 +7203,8 @@
      "soc.tie_advancement_state_tree",
      "soc.second_leg_aggregate_state",
      "soc.extra_time_shootout_model",
-     "soc.penalty_shootout_skill"
+     "soc.penalty_shootout_skill",
+     "soc.promotion_relegation_playoff_bracket"
     ]
    },
    {
@@ -7134,7 +7274,8 @@
      "host_flag",
      "debut_flag",
      "fifa_rank_at_issuance",
-     "stage_reached"
+     "stage_reached",
+     "match venue country versus team nationality (host flag)"
     ],
     "timestamp_requirement": "Structure as published before the as-of time; team-set lists exactly as in the contract text at issuance.",
     "history_needed": "Current edition plus 3 past editions to check simulated stage distributions against realised ones",
@@ -7158,7 +7299,8 @@
     "feeds_inputs": [
      "soc.tournament_joint_finish_distribution",
      "soc.group_stage_scenarios",
-     "soc.method_path_tree_calibration"
+     "soc.method_path_tree_calibration",
+     "soc.home_advantage"
     ]
    }
   ],
@@ -7178,13 +7320,13 @@
    {
     "id": "playoff_promotion_model",
     "type": "INPUT_DEFINITION_UNCERTAIN",
-    "description": "EFL promotion via play-offs is a short knockout tournament after the regular season, and no input models the play-off stage or the semi-final tie structure.",
+    "description": "The promotion play-off route is now an explicit bracket input (soc.promotion_relegation_playoff_bracket, stage s3) for the EFL six-team 2026-27 format and Segunda; open are the EFL semi-final pairing after the eliminators and the final's format, which the EFL said would be agreed later in 2026, and calibration of P(win bracket | seed).",
     "what_would_resolve": "Add a play-off bracket model fitted to historical play-off results (about 20 seasons of EFL data)."
    },
    {
     "id": "gap_coaching_scheme",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Mid-season managerial changes ('new manager bounce') are a recognised driver of relegation-zone teams, yet no input quantifies their effect size or timing, and the catalog only holds a manager-change flag under transfers.",
+    "description": "Mid-season managerial change is now in stage s2 (soc.manager_dismissal_hazard plus soc.transfers re-blend); the size and timing of the 'new manager bounce' for relegation-zone teams is not quantified and is held at zero until the event study.",
     "what_would_resolve": "Event study of points per game after in-season manager changes for bottom-six teams across top leagues with matched controls.",
     "category": "coaching_scheme"
    },
@@ -7976,8 +8118,8 @@
    {
     "id": "host_result_series_misfiled",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "The host-nation result series sit in competition_winner_and_top_n (KXWCHOSTWIN) and relegation_qualification_advancement (KXWCHOSTKO, KXWCHOSTSTAGE), with the best-host comparison KXWCBESTHOST in competition_head_to_head; this key keeps only host announcements (KXWCHOST, KXCOPAAMERICAHOST, KXCLUBWCHOST), whose 'Source Agencies' are undefined and whose co-host outcomes are non-exclusive.",
-    "what_would_resolve": "Definition of Source Agencies in the host-announcement rules and the receiving records' coverage of host-result series."
+    "description": "Verified in series_assignment.json: KXWCHOSTWIN is filed to competition_winner_and_top_n and KXWCHOSTKO/KXWCHOSTSTAGE to relegation_qualification_advancement, whose stage s7 now applies soc.home_advantage to hosts; this key keeps only host announcements (KXWCHOST, KXCOPAAMERICAHOST, KXCLUBWCHOST), whose 'Source Agencies' remain undefined and whose co-host outcomes are non-exclusive.",
+    "what_would_resolve": "Definition of Source Agencies in the host-announcement rules text."
    }
   ]
  },
@@ -8107,7 +8249,7 @@
     {
      "id": "s6",
      "name": "Season points total for the Team Points thresholds",
-     "description": "For the Team Points series the final total is points already banked plus 3 per win and 1 per draw over the remaining league fixtures; each fixture's win and draw probabilities come from opponent-adjusted ratings, venue and draw propensity, and the sum is wider than a binomial because rating uncertainty is shared across all remaining fixtures. Points in the official standings also absorb any administrative deduction, which shifts the whole distribution.",
+     "description": "For the Team Points series the final total is points already banked plus 3 per win and 1 per draw over the remaining league fixtures; each fixture's win and draw probabilities come from opponent-adjusted ratings, venue and draw propensity, and the sum is wider than a binomial because rating uncertainty is shared across all remaining fixtures. Points in the official standings also absorb any administrative deduction, which shifts the whole distribution. In-season managerial change is drawn inside the points simulation from soc.manager_dismissal_hazard and, when it occurs, the remaining matches use the soc.transfers re-blended rating, which widens the points distribution of under-performing clubs and, for contenders, the champion margin; the shift size is set to zero until the event study.",
      "distribution": "Sum of about 24-28 categorical outcomes (0/1/3) with shared rating error; sd of the remaining-points total roughly 6-8 for a mid-table club; a deduction is a discrete left shift.",
      "categories": [
       "talent_strength",
@@ -8121,7 +8263,9 @@
       "soc.xg_adjusted_ratings",
       "soc.draw_propensity",
       "soc.ratings_uncertainty",
-      "soc.points_deductions"
+      "soc.points_deductions",
+      "soc.manager_dismissal_hazard",
+      "soc.transfers"
      ]
     },
     {
@@ -8174,9 +8318,12 @@
      "note": "Availability news for the matches in the next weeks; vintage matters less over a multi-month window."
     },
     "coaching_scheme": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "A managerial change or tactical regime shift mid-season changes every remaining match probability at once, moving a club's points total and, for contenders, the champion margin; no existing input quantifies the size of a manager-change effect."
+     "status": "COVERED",
+     "input_ids": [
+      "soc.manager_dismissal_hazard",
+      "soc.transfers"
+     ],
+     "note": "In-season dismissal hazard and the post-change re-blended rating inside the points simulation; shift size empirical."
     },
     "environment": {
      "status": "NOT_APPLICABLE",
@@ -8360,6 +8507,16 @@
     "form": "threshold",
     "mechanism": "A key injury during a congested stretch lowers expected points over many fixtures at once; below a squad-depth threshold the loss compounds with rotation, shifting the season total and, for contenders, the margin.",
     "how_to_test": "Regress points-per-game residuals on key-player absence interacted with congestion."
+   },
+   {
+    "inputs": [
+     "soc.manager_dismissal_hazard",
+     "soc.transfers",
+     "soc.points_total_distribution"
+    ],
+    "form": "regime-switch",
+    "mechanism": "A club below its expected points has a raised dismissal hazard; a dismissal switches the rating regime for all remaining matches, so the season-points distribution is a mixture that is wider and left-skewed for struggling clubs, and a contender's change moves both its points threshold and the first-minus-second margin.",
+    "how_to_test": "Compare season-points calibration (PIT histograms) for clubs that changed manager in-season, with and without the simulated dismissal branch."
    }
   ],
   "nonlinearities": [
@@ -8440,7 +8597,9 @@
      "player_id",
      "status",
      "expected_return",
-     "minutes_last_7d"
+     "minutes_last_7d",
+     "manager appointment and exit dates",
+     "squad market values by window"
     ],
     "timestamp_requirement": "Snapshot at as-of date",
     "history_needed": "2 seasons",
@@ -8464,7 +8623,9 @@
     "feeds_inputs": [
      "soc.injuries",
      "soc.rotation_index",
-     "soc.congestion_load"
+     "soc.congestion_load",
+     "soc.manager_dismissal_hazard",
+     "soc.transfers"
     ]
    },
    {
@@ -8535,7 +8696,7 @@
    {
     "id": "gap_coaching_scheme",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "A managerial change or tactical regime shift changes a club's expected points per match for the rest of the season at once; no input quantifies the effect, and for contenders it moves both the points threshold and the champion margin.",
+    "description": "Managerial change is now simulated in the points-total stage s6 (soc.manager_dismissal_hazard, soc.transfers re-blend); what remains is the effect size of a change on points per match, which an event study must set.",
     "what_would_resolve": "Event-study of PPG before and after managerial changes in top leagues with matched controls.",
     "category": "coaching_scheme"
    },
@@ -8624,7 +8785,7 @@
     {
      "id": "s1",
      "name": "Two scoring intensities and their sum",
-     "description": "The total's mean is the sum of both teams' opponent-adjusted lambdas; the lineup's attack/defence composition (which attackers and which defenders play) determines each side's contribution separately, and the sum rewards openness on both sides. League goal environment, home goal share and season trend set the baseline, with strong cross-league differences (2.3 to 3.3 goals per match).",
+     "description": "The total's mean is the sum of both teams' opponent-adjusted lambdas; the lineup's attack/defence composition (which attackers and which defenders play) determines each side's contribution separately, and the sum rewards openness on both sides. League goal environment, home goal share and season trend set the baseline, with strong cross-league differences (2.3 to 3.3 goals per match). Stakes and rotation shift both lambdas: soc.rotation_index lowers the rotating side's attack and raises the opponent's via a weaker defence, and soc.stakes_leverage flags dead rubbers and six-pointers whose effect on the total has no established sign (more open in dead rubbers, cagier in high-leverage relegation games are both plausible).",
      "distribution": "Sum of two overdispersed counts; mean around 2.7 with variance excess over Poisson to be estimated (10-15% is a placeholder).",
      "categories": [
       "talent_strength",
@@ -8636,7 +8797,9 @@
       "soc.xg_adjusted_ratings",
       "soc.league_baseline_environment",
       "soc.xi_attack_defence_split",
-      "soc.lineups_pit"
+      "soc.lineups_pit",
+      "soc.stakes_leverage",
+      "soc.rotation_index"
      ]
     },
     {
@@ -8785,9 +8948,12 @@
      "note": "Overdispersion and tail of the total."
     },
     "situational_schedule_motivation": {
-     "status": "GAP",
-     "input_ids": [],
-     "note": "Late-season dead rubbers, rotation after midweek ties, and stakes alter scoring environment (more open or more cautious) but the catalog attaches no stakes or rotation inputs to totals and the sign of the effect is not established."
+     "status": "COVERED",
+     "input_ids": [
+      "soc.stakes_leverage",
+      "soc.rotation_index"
+     ],
+     "note": "Leverage of the result and predicted rotation shift both team lambdas; the sign of the stakes effect on totals is empirical."
     },
     "officiating_rules": {
      "status": "COVERED",
@@ -8996,6 +9162,16 @@
     "form": "joint-distribution",
     "mechanism": "Totals depend on both teams' finishing and both keepers; hot finishing against a hot keeper nets out; the joint distribution of finishing and keeper residuals sets the variance, not each separately.",
     "how_to_test": "Compare totals variance with joint shrinkage of finishing and keeper residuals vs separate."
+   },
+   {
+    "inputs": [
+     "soc.stakes_leverage",
+     "soc.rotation_index",
+     "soc.xg_adjusted_ratings"
+    ],
+    "form": "conditional",
+    "mechanism": "Only for low-leverage or very high-leverage league fixtures: rotation is likelier in dead rubbers and changes both sides' attack/defence ratings, while leverage itself may open or close the game; the total-goals shift is conditional on the leverage regime and of unknown sign.",
+    "how_to_test": "Pooled regression of totals residuals on leverage percentile buckets and realised starters changed, league fixed effects, 5 seasons."
    }
   ],
   "nonlinearities": [
@@ -9029,7 +9205,8 @@
      "goals_a",
      "xg_h",
      "xg_a",
-     "date"
+     "date",
+     "standings and remaining fixtures for leverage"
     ],
     "timestamp_requirement": "Previous matches only; xG as published at the time",
     "history_needed": "10 seasons for tails, 3 for ratings",
@@ -9064,7 +9241,8 @@
      "soc.xg",
      "soc.finishing_regression",
      "soc.score_effects_adjusted_xg",
-     "soc.dixon_coles_low_score"
+     "soc.dixon_coles_low_score",
+     "soc.stakes_leverage"
     ]
    },
    {
@@ -9076,7 +9254,8 @@
      "starter",
      "xg_on",
      "xga_on",
-     "minutes"
+     "minutes",
+     "previous-match XI"
     ],
     "timestamp_requirement": "Lineup snapshot at release; player values from past matches",
     "history_needed": "3 seasons",
@@ -9113,7 +9292,8 @@
      "soc.lineups_pit",
      "soc.gk",
      "soc.keeper_shot_stopping_regression",
-     "soc.set_pieces"
+     "soc.set_pieces",
+     "soc.rotation_index"
     ]
    },
    {
@@ -9180,7 +9360,7 @@
    {
     "id": "gap_situational_schedule_motivation",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "Late-season dead rubbers, rotation after midweek ties, and stakes alter scoring environment (more open or more cautious) but the catalog attaches no stakes or rotation inputs to totals and the sign of the effect is not established.",
+    "description": "soc.stakes_leverage and soc.rotation_index are now attached to the lambda stage s1 with a conditional interaction; the sign and size of the stakes effect on totals (open vs cautious) is not established.",
     "what_would_resolve": "Backtest totals residuals against stakes leverage and rotation indices in league matches over 5 seasons.",
     "category": "situational_schedule_motivation"
    },

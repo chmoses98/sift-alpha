@@ -101,6 +101,8 @@ def load_universe(sport: str) -> dict:
 def load_all(sport: str) -> dict:
     d = load_universe(sport); r = expand_rest(sport)
     d["series"].update(r["series"]); d["new_archetypes"].update(r["new_archetypes"]); d["out_of_scope_categories"].update(r["out_of_scope_categories"])
+    for f in sorted(UD.glob(f"{sport}_zblk*.json")):   # last-word corrections made after the blocker review (applied over every earlier pass)
+        z = rd(f); d["series"].update(z.get("series") or {}); d["new_archetypes"].update(z.get("new_archetypes") or {}); d["out_of_scope_categories"].update(z.get("out_of_scope_categories") or {})
     return d
 
 
@@ -113,13 +115,13 @@ def validate(sport: str, doc: dict, pack: dict | None = None) -> list[str]:
             pack["series"] = {**pack["series"], **rd(hp)["series"]}
     rules = rd(RULES)
     existing = set(pack["existing_archetypes"])
-    new = {"unreg:" + k for k in doc["new_archetypes"]}
+    new = {"unreg:" + k for k in doc["new_archetypes"]} | {"unreg:" + k for k in load_all(sport)["new_archetypes"]}   # new archetypes may be declared in any pass
     for t in pack["series"]:
         if t not in doc["series"]:
             e.append(f"series {t} not classified")
     for t, r in doc["series"].items():
-        if t not in pack["series"]:
-            e.append(f"{t}: not in the pack"); continue
+        if t not in pack["series"] and t not in {r["ticker"] for r in rd(LEDGER)["rows"]}:
+            e.append(f"{t}: not a ledger series"); continue
         final, basis = r.get("final", ""), r.get("basis")
         if not (final in existing or final in new or final.startswith(OOS + ":")):
             e.append(f"{t}: final {final!r} is neither an existing archetype, a declared new archetype nor OUT_OF_SCOPE:<category>")

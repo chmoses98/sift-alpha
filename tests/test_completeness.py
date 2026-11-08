@@ -161,3 +161,75 @@ class TrackerShowsTheGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UniverseReconciliation(unittest.TestCase):
+    """The PR #62 ledger is preserved; the overlay must reconcile exactly and every claim must be checkable against the sampled Kalshi rules."""
+
+    def setUp(self):
+        from alpha_engine.input_research import universe_review as U
+        self.U = U
+        self.asg = C.rd(ROOT / "research/input_research/market_universe/series_assignment.json")
+        self.led = C.rd(C.LEDGER)
+
+    def test_every_ledger_series_has_exactly_one_assignment(self):
+        self.assertEqual(self.asg["total"], len(self.led["rows"]))
+        self.assertEqual({r["ticker"] for r in self.asg["rows"]}, {r["ticker"] for r in self.led["rows"]})
+        self.assertEqual(len(self.asg["rows"]), len({r["ticker"] for r in self.asg["rows"]}))
+
+    def test_in_scope_series_land_in_a_catalog_archetype_and_out_of_scope_is_explicit(self):
+        arch = {s: set(C.arch_keys(cat.load(s))) for s in C.SPORTS}
+        for r in self.asg["rows"]:
+            if r["scope"] == "IN_SCOPE":
+                self.assertIn(r["final"], arch[r["sport"]], r["ticker"])
+            if r["scope"] == "OUT_OF_SCOPE":
+                self.assertTrue(r["final"].startswith("OUT_OF_SCOPE:"), r["ticker"])
+
+    def test_assignment_matches_a_recomputation_from_the_reviewer_files(self):
+        self.assertEqual(self.U.apply()["total"], self.asg["total"])
+        again = {r["ticker"]: (r["final"], r["scope"]) for r in C.rd(ROOT / "research/input_research/market_universe/series_assignment.json")["rows"]}
+        self.assertEqual(again, {r["ticker"]: (r["final"], r["scope"]) for r in self.asg["rows"]})
+
+    def test_reviewer_files_validate_against_the_rules_text(self):
+        for s in C.SPORTS:
+            doc = self.U.load_universe(s)
+            self.assertEqual(self.U.validate(s, doc), [], s)
+            self.assertEqual(self.U.validate_rest(s), [], s)
+
+    def test_basis_is_never_claimed_without_rules_text_and_never_denied_when_present(self):
+        rules = C.rd(C.RULES)
+        for r in self.asg["rows"]:
+            if r["scope"] in ("IN_SCOPE", "OUT_OF_SCOPE") and r["sport"] in C.SPORTS:
+                have = bool((rules.get(r["ticker"]) or {}).get("rules_primary"))
+                self.assertEqual(r["basis"] == "RULES_TEXT", have, r["ticker"])
+
+    def test_every_new_archetype_has_series_and_a_review(self):
+        for s in C.SPORTS:
+            c = cat.load(s)
+            for name in c.get("unregistered_archetypes") or {}:
+                k = "unreg:" + name
+                self.assertIn(k, C.load_reviews(s), f"{s}:{k} has no review")
+
+
+class CatalogIntegration(unittest.TestCase):
+    def test_review_content_is_integrated_into_the_authoritative_catalog(self):
+        for s in C.SPORTS:
+            c = cat.load(s)
+            for k, rec in C.load_reviews(s).items():
+                a = C.arch_entry(c, k)
+                for iid in rec.get("new_inputs") or {}:
+                    self.assertIn(iid, c["inputs"], (s, k, iid))
+                    self.assertIn(iid, {i["id"] for i in a["inputs"]}, (s, k, iid))
+                have = {(tuple(sorted(x["inputs"])), x.get("form")) for x in a["interactions"]}
+                for x in rec.get("interactions") or []:
+                    self.assertIn((tuple(sorted(x["inputs"])), x["form"]), have, (s, k))
+                self.assertTrue(a.get("mechanism_review"), (s, k))
+            self.assertEqual(cat.validate(c, s), [], s)
+
+    def test_acceptance_never_claims_approval_and_reports_exact_counts(self):
+        g = C.rd(C.CD / "gate.json")
+        ac = g["acceptance"]
+        self.assertFalse(g["approval"]["approved"])
+        self.assertIn("never approval", ac["note"].lower())
+        self.assertEqual(ac["catalog_totals"]["TOTAL"]["inputs"], sum(len(cat.load(s)["inputs"]) for s in C.SPORTS))
+        self.assertEqual(g["totals"]["archetypes"], sum(len(C.arch_keys(cat.load(s))) for s in C.SPORTS))

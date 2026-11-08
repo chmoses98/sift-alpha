@@ -463,6 +463,8 @@ def integrate(write: bool = True) -> dict:
                 if iid not in c["inputs"]:
                     c["inputs"][iid] = {x: ni[x] for x in ("label", "category", "mechanism", "rationale", "measurement", "pregame_knowable", "free_sources", "registry_ids")}
                     c["inputs"][iid]["raw_data"] = ni["raw_data"]; st["new_inputs"] += 1
+                elif not c["inputs"][iid].get("raw_data"):
+                    c["inputs"][iid]["raw_data"] = ni["raw_data"]
                 if iid not in {i["id"] for i in a["inputs"]}:
                     a["inputs"].append({"id": iid, "why": ni["why"], "role": ni["role"]})
             have = {(tuple(sorted(x["inputs"])), x.get("form")) for x in a["interactions"]}
@@ -539,10 +541,65 @@ def compute_gate() -> dict:
     return gate
 
 
+def catalog_totals() -> dict:
+    out = {}; tot = collections.Counter()
+    for sp in SPORTS:
+        c = cat.load(sp)
+        arch = list(c["archetypes"].values()); un = list((c.get("unregistered_archetypes") or {}).values())
+        ix = sum(len(a["interactions"]) for a in arch + un); bp = sum(len(b["interactions"]) for b in c["blueprints"].values())
+        out[sp] = {"inputs": len(c["inputs"]), "registered_archetypes": len(arch), "unregistered_archetypes": len(un), "archetype_interactions": ix, "blueprint_interactions": bp,
+                   "nonlinearities": sum(len(a.get("nonlinearities") or []) for a in arch + un), "inputs_with_raw_data_definition": sum(1 for i in c["inputs"].values() if i.get("raw_data"))}
+        tot.update(out[sp])
+    out["TOTAL"] = dict(tot)
+    return out
+
+
+def verification_totals() -> dict:
+    fv = collections.Counter(); ra = collections.Counter(); rl = collections.Counter(); iv = collections.Counter(); res = collections.Counter()
+    for sp in SPORTS:
+        for rec in load_reverification(sp).values():
+            for v in (rec.get("findings") or {}).values():
+                fv[v.get("verdict")] += 1
+            fv["new_issues_found"] += len(rec.get("new_issues") or []); fv["new_issues_fixed"] += sum(1 for x in rec.get("new_issues") or [] if x.get("fixed"))
+        for rec in load_dir(sp, "reconcile_audit").values():
+            ra[rec.get("verdict")] += 1; ra["issues"] += len(rec.get("issues") or [])
+        for rec in load_dir(sp, "reconcile").values():
+            rl["archetypes_reconciled"] += 1 if rec.get("changes") else 0
+        for rec in load_independent(sp).values():
+            iv[rec.get("verdict")] += 1
+            for f in rec.get("findings") or []:
+                iv["findings_" + str(f.get("severity"))] += 1; res[str(f.get("resolution", "OPEN")).split(":")[0]] += 1
+    return {"second_verification_of_closed_blocker_major": dict(fv), "post_reconcile_audit": dict(ra), "reconcile": dict(rl), "independent_reviews": dict(iv), "finding_resolutions": dict(res)}
+
+
+def acceptance(g: dict) -> dict:
+    """Documented acceptance criteria evaluated from artifacts. `meets_criteria` is NOT approval: only approval.json (human) approves."""
+    from . import gap_audit, input_audit
+    ct = catalog_totals(); ga = gap_audit.summary(); ia = input_audit.summary()
+    asg = rd(IN / "market_universe/series_assignment.json")["rows"]
+    led = rd(LEDGER)["rows"]
+    rows = g["rows"]
+    in_scope = [r for r in asg if r["scope"] == "IN_SCOPE"]
+    new_ids = sum(input_audit.mechanical()["by_sport"][s]["new"] for s in SPORTS)
+    audited = sum(ia["audited"].values())
+    mf = ia["market_free"]
+    crit = [
+        ("every archetype passes the structural gate and independent review with no open blocker/major finding and a second verification", all(r["status"] == "READY_FOR_USER_APPROVAL" for r in rows), f"{sum(1 for r in rows if r['status'] == 'READY_FOR_USER_APPROVAL')} of {len(rows)}"),
+        ("every ledger series has exactly one final assignment (reconciles exactly)", len(asg) == len(led) and len({r["ticker"] for r in asg}) == len(led), f"{len(asg)} assigned of {len(led)} ledger series"),
+        ("every in-scope series is assigned to an archetype that exists in the catalog", all(r["final"] in {k for k in {x["archetype"] for x in rows if x["sport"] == r["sport"]}} for r in in_scope), f"{len(in_scope)} in-scope series"),
+        ("every review-added input is audited (definition, provenance, market-free class)", audited >= new_ids, f"{audited} audited of {new_ids} review-added inputs"),
+        ("every declared gap is classified", ga["classified"] == ga["declared"] and ga["declared"] > 0, f"{ga['classified']} of {ga['declared']}"),
+        ("no declared gap is a catalog blocker", ga["by_class"].get("CATALOG_BLOCKER", 0) == 0 and ga["classified"] > 0, f"{ga['by_class'].get('CATALOG_BLOCKER', 0)} catalog blockers"),
+    ]
+    return {"criteria": [{"criterion": a, "pass": b, "detail": c} for a, b, c in crit], "meets_criteria": all(b for _, b, _ in crit),
+            "note": "Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.",
+            "catalog_totals": ct, "gap_classification": ga, "input_audit": {k: v for k, v in ia.items() if k != "mechanical"}, "verification": verification_totals()}
+
+
 def summarize(gate: dict) -> dict:
     """Small dashboard summary: no per-archetype problem text, just counts."""
     keep = ("sport", "archetype", "label", "registered", "live_series", "rules_text_series", "status", "stages", "new_inputs", "existing_inputs_audited", "interactions", "nonlinearities", "datasets", "unresolved", "gaps", "rules_verification", "independent", "open_findings", "independent_findings", "n_problems", "reverification", "reverification_open", "post_reconcile_audit")
-    return {**{k: gate[k] for k in ("schema_version", "status", "phase", "totals", "by_sport", "contract_universe", "approval", "criteria", "series_mapping_proposals") if k in gate}, "rows": [{k: r.get(k) for k in keep} for r in gate["rows"]]}
+    return {**{k: gate[k] for k in ("schema_version", "status", "phase", "totals", "by_sport", "contract_universe", "approval", "criteria", "series_mapping_proposals", "acceptance") if k in gate}, "rows": [{k: r.get(k) for k in keep} for r in gate["rows"]]}
 
 
 def main():
@@ -555,6 +612,7 @@ def main():
     (CD / "summary.json").write_text(json.dumps(summarize(g), indent=0, sort_keys=True))
     rp = series_remap_proposals()
     (CD / "series_remap_proposals.json").write_text(json.dumps(rp, indent=0, sort_keys=True))
+    g["acceptance"] = acceptance(g)
     g["series_mapping_proposals"] = {"total_entries": len(rp["rows"]), "distinct_series": rp["distinct_series"], "by_sport": rp["by_sport"], "new_archetypes_needed": len(rp["new_archetype_needed"])}
     (CD / "gate.json").write_text(json.dumps(g, indent=1, sort_keys=True))
     (CD / "summary.json").write_text(json.dumps(summarize(g), indent=0, sort_keys=True))

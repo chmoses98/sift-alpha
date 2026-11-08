@@ -89,11 +89,30 @@ def _completeness_md(p: dict) -> list[str]:
         return L + ["## Catalog completeness gate", "Not yet generated (`python -m alpha_engine.input_research.completeness`).", ""]
     t = g["totals"]
     L += ["## Catalog completeness gate (the sole active research priority)",
-          f"{t['archetypes']} market archetypes (registered + unregistered contract types) across the eight sports. **{t['READY_FOR_USER_APPROVAL']} are ready for your approval; none is declared complete.** "
+          f"{t['archetypes']} market archetypes (registered + unregistered contract types) across the eight sports. **{t['READY_FOR_USER_APPROVAL']} have reached the code's ceiling (ready for your approval); none is declared complete, and the catalog is only complete if the acceptance criteria below are all met and you approve.** "
           f"Approval recorded: **{'YES' if g['approval'].get('approved') else 'NO'}**. A populated list or a passing automated check is necessary, never sufficient; the ceiling the code can award is *ready for your approval*.", "",
           "Acceptance criteria (all must hold per archetype): " + "; ".join(g["criteria"]) + ".", "",
           "| Sport | Archetypes | Not started | Structure incomplete | Authored, awaiting independent review | Independent review: open findings | Awaiting second verification | Ready for your approval | Inputs in catalog |", "|---|---|---|---|---|---|---|---|---|"]
     L += [f"| {s_} | {v['archetypes']} | {v['NOT_STARTED']} | {v['STRUCTURE_INCOMPLETE']} | {v['AUTHORED_NOT_INDEPENDENTLY_REVIEWED']} | {v['INDEPENDENT_REVIEW_OPEN_FINDINGS']} | {v['REVERIFICATION_PENDING']} | {v['READY_FOR_USER_APPROVAL']} | {v['inputs']} |" for s_, v in g["by_sport"].items()]
+    ac = g.get("acceptance")
+    if ac:
+        L += ["", "### Documented acceptance criteria, evaluated from the artifacts", "| Criterion | Result | Detail |", "|---|---|---|"]
+        L += [f"| {c['criterion']} | {'PASS' if c['pass'] else '**NOT MET**'} | {c['detail']} |" for c in ac["criteria"]]
+        L += ["", f"**All documented criteria met: {'yes' if ac['meets_criteria'] else 'no'}.** {ac['note']}", "",
+              "### Authoritative catalog totals (after integrating every review)", "| Sport | Inputs | Registered archetypes | Unregistered / new archetypes | Interactions (archetype + blueprint) | Non-linearities | Inputs with raw-data definition |", "|---|---|---|---|---|---|---|"]
+        for s_, v in ac["catalog_totals"].items():
+            L.append(f"| {s_} | {v['inputs']} | {v['registered_archetypes']} | {v['unregistered_archetypes']} | {v['archetype_interactions']} + {v['blueprint_interactions']} = {v['archetype_interactions'] + v['blueprint_interactions']} | {v['nonlinearities']} | {v['inputs_with_raw_data_definition']} |")
+        ver = ac["verification"]
+        L += ["", "### Verification record (agents, not human experts)",
+              f"* Independent reviews: {ver['independent_reviews']}. Finding resolutions: {ver['finding_resolutions']}.",
+              f"* Second verification (different model) of closed blocker/major findings: {ver['second_verification_of_closed_blocker_major']}.",
+              f"* Post-reconcile audit of edited records: {ver['post_reconcile_audit']} (reconciled archetypes: {ver['reconcile'].get('archetypes_reconciled', 0)}).",
+              "", "### Gap classification (every declared `unresolved` entry)", f"{ac['gap_classification']['classified']} of {ac['gap_classification']['declared']} classified: {ac['gap_classification']['by_class']}.", "",
+              "| Sport | Declared | Catalog blocker | Unverifiable contract | Data-source limitation | Future data collection |", "|---|---|---|---|---|---|"]
+        for s_, v in ac["gap_classification"]["by_sport"].items():
+            L.append(f"| {s_} | {v['declared']} | {v.get('CATALOG_BLOCKER', 0)} | {v.get('UNVERIFIABLE_CONTRACT', 0)} | {v.get('DATA_SOURCE_LIMITATION', 0)} | {v.get('FUTURE_DATA_COLLECTION', 0)} |")
+        ia = ac["input_audit"]
+        L += ["", f"### Input audit (definition, raw data, provenance, market-free class)", f"Audited {sum(ia['audited'].values())} inputs. Market-free class: {ia['market_free']}. Verdicts: {ia['verdicts']}."]
     L += ["", "### Per-archetype status", "Stages = mechanism stages; New = inputs discovered by this review; Audit = existing inputs individually judged; Ix/NL = interactions / non-linearities; Data = required datasets; Open = unresolved gaps declared; Rules = contract text verification; Ind = independent review.", "",
           "| Sport | Archetype | Status | Live series (rules read) | Stages | New | Audit | Ix/NL | Data | Open | Rules | Ind (open findings) |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in g["rows"]:
@@ -121,7 +140,7 @@ def render(p: dict) -> str:
     m = p["mechanism_audit"]
     L += ["", f"Mechanism checklist: {m['checklist_flags']} (archetype, category) flags, every one adjudicated ({m['unadjudicated_archetypes']} unadjudicated): " + ", ".join(f"{k} {v}" for k, v in m["verdicts"].items()) + ". Detail: `research/input_research/gap_adjudication.json`.", ""]
     u = p["market_universe"]
-    L += ["## Market universe reconciliation (exact ledger: every series has exactly one status; rows sum to the series total)", f"{u['live_series']} live Kalshi sports series; {p['series_ledger']['out_of_scope']} are outside the eight sports (unsupported), {p['series_ledger']['in_scope']} in scope.", "",
+    L += ["## Market universe reconciliation as filed in the preserved PR #62 ledger (superseded for archetype coverage by the reconciled assignment in the completeness gate above; every series has exactly one status; rows sum to the series total)", f"{u['live_series']} live Kalshi sports series; {p['series_ledger']['out_of_scope']} are outside the eight sports (unsupported), {p['series_ledger']['in_scope']} in scope.", "",
           "| Sport | Series | Covered (registered archetype) | Covered (unregistered-contract archetype) | No listed market (rules unreadable) | Excluded (test / non-sport / combo) | Classified, no archetype | Unclassified | Sum |", "|---|---|---|---|---|---|---|---|---|"]
     for s_, v in p["series_ledger"]["by_sport"].items():
         ex = v.get("EXCLUDED_TEST", 0) + v.get("EXCLUDED_NONSPORT", 0) + v.get("EXCLUDED_COMBO", 0)
@@ -153,7 +172,7 @@ def render(p: dict) -> str:
     L += [f"| {s} | {v.get('AVAILABLE', 0)} | {v.get('PARTIAL', 0)} | {v.get('MISSING', 0)} | {v.get('EXCLUDED_BENCHMARK_ONLY', 0)} | " + ", ".join(f"{k} {n}" for k, n in dd['archetype_readiness_by_sport'][s].items()) + " |" for s, v in dd["by_sport"].items()]
     L += ["", "Largest raw-data unlocks (inputs that become fully available if the class reaches full coverage): " + "; ".join(f"{u['sport']} {u['class'].lower()} (+{u['inputs_unlocked_by_upgrading_to_full']})" for u in dd["top_unlocks"][:8]) + ".", ""]
     sl = p["series_ledger"]
-    L += ["## Exact series ledger", f"{sl['total']} series = {sl['in_scope']} in scope + {sl['out_of_scope']} out of scope (reconciles: {sl['reconciles']}). Status totals: " + ", ".join(f"{k} {v}" for k, v in sorted(sl["status_totals"].items())) + ".", ""]
+    L += ["## Exact series ledger (PR #62, preserved; the reconciled assignment is in series_assignment.json)", f"{sl['total']} series = {sl['in_scope']} in scope + {sl['out_of_scope']} out of scope (reconciles: {sl['reconciles']}). Status totals: " + ", ".join(f"{k} {v}" for k, v in sorted(sl["status_totals"].items())) + ".", ""]
     dc = p["data_collected"]
     L += ["## Raw data in hand", "From the project's own repositories (`git show`, no new host): " + "; ".join(f"{k} {v['rows']:,} rows ({v['date_min']}..{v['date_max']})" for k, v in dc["repo_archives"].items() if v.get("rows")) + ".", "",
           "Collected from free APIs this round: " + "; ".join(f"{k} {v['rows']:,}" for k, v in dc["api_collectors"].items() if v.get("rows")) + ".", ""]

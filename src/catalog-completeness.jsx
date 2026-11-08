@@ -93,9 +93,10 @@ export function CatalogCompleteness() {
           <td><Chip s={r.status}/></td><td>{r.live_series} ({r.rules_text_series})</td><td>{r.stages ?? "–"}</td><td>{r.new_inputs ?? "–"}</td><td>{r.existing_inputs_audited ?? "–"}</td>
           <td>{r.interactions ?? "–"} / {r.nonlinearities ?? "–"}</td><td>{r.datasets ?? "–"}</td><td>{r.unresolved ?? "–"}</td><td>{nice(r.rules_verification) || "–"}</td><td>{r.independent ? nice(r.independent) : "–"} ({r.open_findings ?? "–"})</td></tr>
         {open === id && <tr className="cc-open"><td colSpan={12}><Detail sport={r.sport} k={r.archetype}/></td></tr>}</React.Fragment>; })}</tbody></table></div>
-    <details><summary><b>Contract universe behind the review</b> (exact ledger)</summary>
-      <div className="ir-scroll"><table className="ir-table" style={{minWidth: 600}}><thead><tr><th>Sport</th><th>Series</th><th>Covered (registered)</th><th>Covered (unregistered type)</th><th>No listed market: contract unreadable, unresolved</th><th>Classified, no archetype</th><th>Rules text read / title only</th></tr></thead>
-        <tbody>{Object.entries(summary.contract_universe).map(([s, v]) => <tr key={s}><td>{s}</td><td>{v.series}</td><td>{v.COVERED_REGISTERED || 0}</td><td>{v.COVERED_UNREGISTERED || 0}</td><td>{v.NO_LISTED_MARKETS || 0}</td><td>{v.CLASSIFIED_NO_ARCHETYPE || 0}</td><td>{v.evidence.RULES_TEXT || 0} / {v.evidence.TITLE_ONLY || 0}</td></tr>)}</tbody></table></div>
-      <p className="ir-fine">Series that list no market, and series classified from the title alone, are explicitly unresolved rather than complete.</p></details>
+    <details><summary><b>Contract universe behind the review</b> (exact reconciled assignment of every ledger series)</summary>
+      <div className="ir-scroll"><table className="ir-table" style={{minWidth: 760}}><thead><tr><th>Sport</th><th>Series</th><th>In scope</th><th>Out of scope (explicit)</th><th>No listed market: contract unreadable</th><th>In scope: rules text read</th><th>In scope: title only</th><th>In scope: no listing</th><th>Reviewed</th><th>Re-filed</th><th>In new archetypes</th></tr></thead>
+        <tbody>{Object.entries(summary.contract_universe).map(([s, v]) => <tr key={s}><td>{s}</td><td>{v.series}</td><td>{v.in_scope}</td><td>{v.out_of_scope}</td><td>{v.no_listed_market}</td><td>{v.in_scope_rules_text_read}</td><td>{v.in_scope_title_only}</td><td>{v.in_scope_no_listing}</td><td>{v.reviewed_against_rules_or_title}</td><td>{v.refiled_by_review}</td><td>{v.in_new_archetypes}</td></tr>)}</tbody></table></div>
+      <p className="ir-fine">Series that list no market, and series classified from the title alone, are explicitly unresolved rather than complete.</p>
+      </details>
   </section>;
 }

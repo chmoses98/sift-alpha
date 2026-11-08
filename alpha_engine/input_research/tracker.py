@@ -99,10 +99,14 @@ def _completeness_md(p: dict) -> list[str]:
     for r in g["rows"]:
         L.append(f"| {r['sport']} | {r['archetype']} | {SHORT[r['status']]} | {r['live_series']} ({r['rules_text_series']}) | {r.get('stages', '–')} | {r.get('new_inputs', '–')} | {r.get('existing_inputs_audited', '–')} | "
                  f"{r.get('interactions', '–')}/{r.get('nonlinearities', '–')} | {r.get('datasets', '–')} | {r.get('unresolved', '–')} | {(r.get('rules_verification') or '–').replace('_', ' ').lower()} | {r.get('independent', '–')} ({r.get('open_findings', '–')}) |")
-    L += ["", "### Contract universe behind the review (exact ledger; the review cannot cover what has no readable contract)",
-          "| Sport | Series | Covered (registered) | Covered (unregistered type) | No listed market (contract unreadable, unresolved) | Classified, no archetype | Evidence (rules text / title only) |", "|---|---|---|---|---|---|---|"]
+    L += ["", "### Contract universe behind the review (exact reconciled assignment of every ledger series; the PR #62 ledger is preserved, overridden only by series_assignment.json)",
+          "| Sport | Series | In scope | Out of scope (explicit) | No listed market (contract unreadable) | In scope: rules text read | In scope: title only | In scope: no listing | Reviewed vs rules/title | Re-filed by review | In new archetypes |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    tot = {}
     for s_, v in g["contract_universe"].items():
-        L.append(f"| {s_} | {v['series']} | {v.get('COVERED_REGISTERED', 0)} | {v.get('COVERED_UNREGISTERED', 0)} | {v.get('NO_LISTED_MARKETS', 0)} | {v.get('CLASSIFIED_NO_ARCHETYPE', 0)} | {v['evidence'].get('RULES_TEXT', 0)} / {v['evidence'].get('TITLE_ONLY', 0)} |")
+        L.append(f"| {s_} | {v['series']} | {v['in_scope']} | {v['out_of_scope']} | {v['no_listed_market']} | {v['in_scope_rules_text_read']} | {v['in_scope_title_only']} | {v['in_scope_no_listing']} | {v['reviewed_against_rules_or_title']} | {v['refiled_by_review']} | {v['in_new_archetypes']} |")
+        for k_, n_ in v.items():
+            tot[k_] = tot.get(k_, 0) + n_
+    L.append(f"| **all eight sports** | {tot['series']} | {tot['in_scope']} | {tot['out_of_scope']} | {tot['no_listed_market']} | {tot['in_scope_rules_text_read']} | {tot['in_scope_title_only']} | {tot['in_scope_no_listing']} | {tot['reviewed_against_rules_or_title']} | {tot['refiled_by_review']} | {tot['in_new_archetypes']} |")
     L += ["", "Series whose classification rests on the title only, and series that list no market, are **explicitly unresolved**, not complete. Per-archetype detail (mechanism stages, inputs, formulas, interactions, raw data, gaps, independent findings): `research/input_research/completeness/` and the dashboard Catalog completeness panel.", ""]
     return L
 

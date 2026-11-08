@@ -1,0 +1,1735 @@
+{
+ "unreg:fifa_ranking_outcome": {
+  "reviewer": "soccer_new_author",
+  "review_date": "2026-11-07",
+  "catalog_entry": {
+   "label": "FIFA ranking outcomes",
+   "blueprint": "season_outcome",
+   "contract_types": [
+    "World Cup FIFA Top 10"
+   ],
+   "target": "A national team's rank or presence in the top 10 of the FIFA men's world ranking at a stated date.",
+   "mechanism": "The outcome is a deterministic table produced by FIFA's points formula: each ranked match exchanges points between the two teams in proportion to match importance and the gap between result and expectation, then teams are sorted at a published release. The inputs that matter are therefore the carried points table, the matches still to be played with their importance weights, the result probabilities for those matches, and the release calendar, not a league-style standings simulation.",
+   "inputs": [
+    {
+     "id": "soc.fifa_points_formula_state",
+     "why": "Carried points and the exact exchange rule define the table that settles the contract; it is the structural engine.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.fifa_match_importance_calendar",
+     "why": "Remaining matches and their importance weights determine how far each contender can move before the cut date.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.fifa_ranking_publication_calendar",
+     "why": "Defines which release and which matches count at settlement; a missed cut-off silently drops a result.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.ratings",
+     "why": "National-team Elo or goal-model strength gives the win, draw and loss probabilities for every remaining ranked match.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.comp_sim",
+     "why": "Simulating the competitions inside the window (qualifiers, World Cup stages) generates which matches exist and their results.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.ratings_uncertainty",
+     "why": "Wide strength uncertainty for teams with few recent matches widens the spread of final points near the top-10 cut.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.extra_time_shootout_model",
+     "why": "FIFA scores shootout results differently from regulation results, so the path of a knockout tie changes points.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.bracket_path_difficulty",
+     "why": "Bracket path sets opponent points and number of knockout matches, which drive the largest points swings.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.friendly_match_intensity",
+     "why": "Friendlies carry low importance but rotated squads raise upset risk against high-points opponents.",
+     "role": "context"
+    },
+    {
+     "id": "soc.international_break_effect",
+     "why": "Window congestion and travel in short international breaks affect result probabilities for ranked friendlies.",
+     "role": "context"
+    },
+    {
+     "id": "soc.group_stage_scenarios",
+     "why": "Group-stage qualification scenarios decide who plays knockout matches that carry high importance.",
+     "role": "secondary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Listing wording fixes the date, top-10 definition and tie handling.",
+     "role": "primary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "soc.fifa_match_importance_calendar",
+      "soc.ratings"
+     ],
+     "hypothesis": "A high-importance knockout match against a strong opponent moves points several times more than a friendly, so rating uncertainty matters far more for contenders who still have such a match."
+    },
+    {
+     "inputs": [
+      "soc.fifa_points_formula_state",
+      "soc.fifa_ranking_publication_calendar"
+     ],
+     "hypothesis": "Teams just above or below the tenth rank are decided by small point gaps, and a match falling after the cut-off date can flip the order without any change in strength."
+    },
+    {
+     "inputs": [
+      "soc.extra_time_shootout_model",
+      "soc.fifa_points_formula_state"
+     ],
+     "hypothesis": "Shootout credit differs from a regulation win, so the same advancing team gains fewer points when it wins on penalties than when it wins in 90 minutes."
+    }
+   ]
+  },
+  "contract": {
+   "settlement_definition": "No rules text was sampled for KXWCFIFATOP10 (NO_LISTING, title only: 'World Cup FIFA Top 10'), so settlement is not verified. The title implies a national team ranking inside the top 10 of the FIFA men's world ranking, but the ranking release that settles it, the date, whether the question is team-specific or a count, ties in rounded points, and handling of a delayed release are all unknown.",
+   "rules_verification": "NOT_VERIFIED_NO_RULES_TEXT",
+   "rules_evidence": [],
+   "variants_and_edge_cases": [
+    "Which published release settles the market (the first after a date, or a named release) is unstated; a ranking published after the nominal date or skipped changes the cut-off matches.",
+    "Teams with equal rounded points: FIFA lists a rank by points to two decimals, so a tie in the displayed value could produce a shared rank and an ambiguous top-10 boundary.",
+    "FIFA can revise its formula or retroactively correct a result; a market written before a methodology change may settle under the new rules.",
+    "The contract may be a per-team 'in top 10' binary, a count of host or confederation teams in the top 10, or an exact-rank question; the title does not say."
+   ],
+   "settlement_data_source": "The FIFA/Coca-Cola Men's World Ranking page as published by FIFA; the exact release and archival copy used by Kalshi are unknown."
+  },
+  "mechanism": {
+   "summary": "The ranking is a sorted points table. Points move by an Elo-style exchange after every ranked match: the change equals an importance weight times the difference between the actual result score and the expectation implied by the two teams' points. So a team's rank at a future release is its snapshot points plus the sum of match-by-match changes from games played before the cut-off, sorted against rivals who also move. The generating chain is therefore the snapshot table, the set of matches each contender will play and their importance, the result of each (including how knockout ties end), the arithmetic update, and the release timing. The open question is rarely strength alone; it is calendar and importance, which a standings-style simulation would not capture.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Snapshot points table",
+     "description": "The starting point is the last published table with points to two decimals for every nation. Teams near the tenth place are typically separated by tens of points, a gap that one or two high-importance results can close. Rank is a sort of this table, so the stage fixes who is the incumbent and how large the buffer is before any match is played. The table also embeds the rolling credit decay of the formula, so old results leaving the table matter if the rule uses a window.",
+     "distribution": "Deterministic and known at the snapshot; the uncertainty enters only through later stages. Gaps near rank ten are small and discrete in points.",
+     "categories": [
+      "talent_strength",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "soc.fifa_points_formula_state"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Matches played before the cut-off",
+     "description": "Between the snapshot and the cut-off each contender plays a set of qualifiers, finals matches, Nations League games and friendlies. The set is partly fixed by the schedule and partly endogenous: a team that advances plays more knockout matches. Importance weights step from friendly to World Cup knockout, so the mix of competitions determines how much movement is even possible. Opponents' own points set the expectation term, so beating a high-points side pays more.",
+     "distribution": "Count of matches is discrete (a handful per team) and importance is a heavy-tailed step distribution; knockout matches carry the largest weights.",
+     "categories": [
+      "situational_schedule_motivation",
+      "pace_volume"
+     ],
+     "input_ids": [
+      "soc.fifa_match_importance_calendar",
+      "soc.comp_sim",
+      "soc.group_stage_scenarios"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Result of each ranked match",
+     "description": "Each match produces win, draw or loss from the two teams' strengths, venue, rotation and stakes; knockout ties may also end after extra time and a shootout, which FIFA scores separately. Strength estimates for national teams are noisy because they play few matches against varied opposition, so the uncertainty in each win probability is large. Friendlies add rotation noise.",
+     "distribution": "Trinary outcome per match with draw mass of roughly a quarter; correlated across a team's matches through the shared strength uncertainty.",
+     "categories": [
+      "talent_strength",
+      "game_context_script",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "soc.ratings",
+      "soc.ratings_uncertainty",
+      "soc.extra_time_shootout_model",
+      "soc.friendly_match_intensity",
+      "soc.bracket_path_difficulty"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Points exchange and release cut-off",
+     "description": "The formula converts each result into a points change using importance and expected result, then the release applies the cut-off: only matches before a stated date count. Rounding to two decimals and any shielding of knockout losers affect small gaps. A release that slips after the market date changes which matches are included.",
+     "distribution": "Piecewise-linear response of points to result, with a kink for shootouts and a hard cut-off in time; outcome is a sorted ordering, so ties and rounding act as discrete boundary events.",
+     "categories": [
+      "settlement_contract",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "soc.fifa_points_formula_state",
+      "soc.fifa_ranking_publication_calendar",
+      "m.rules_text"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.ratings",
+      "soc.fifa_points_formula_state"
+     ],
+     "note": "Elo strength feeds result odds; FIFA points define the table."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.bracket_path_difficulty",
+      "soc.fifa_match_importance_calendar"
+     ],
+     "note": "Opponent points set the expected-result term and the path sets opponents."
+    },
+    "role_personnel": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "The ranking is a function of team results and competition weights; individual lineups only act through result probabilities already represented by team strength, so no separate personnel input is proposed for the settlement mechanism."
+    },
+    "availability_news": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Squad news changes a single match's win probability marginally and is absorbed by the strength input; for a table that sums many results over months it has no separate role here beyond that."
+    },
+    "coaching_scheme": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Tactics matter only via match results already represented by the strength input; the ranking formula itself ignores how a result was achieved, including goal margin."
+    },
+    "environment": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Venue and climate shift single-match odds by small amounts that are absorbed by strength ratings and do not enter the points formula, which has no home-advantage term."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.extra_time_shootout_model"
+     ],
+     "note": "How a knockout tie ends changes the credit FIFA gives each side."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.fifa_match_importance_calendar"
+     ],
+     "note": "The number and type of ranked matches is the volume over which points can move."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.ratings"
+     ],
+     "note": "Conversion enters through the result probability only; the formula ignores goal difference."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.ratings_uncertainty"
+     ],
+     "note": "Strength uncertainty and shootout randomness spread the points outcomes."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.friendly_match_intensity",
+      "soc.group_stage_scenarios",
+      "soc.international_break_effect"
+     ],
+     "note": "Friendly rotation and group stakes move result odds."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.fifa_points_formula_state"
+     ],
+     "note": "The formula rules (importance, shootout credit, knockout shielding) are the governing rules here."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.fifa_ranking_publication_calendar",
+      "m.rules_text"
+     ],
+     "note": "Release and cut-off wording; no rules text sampled."
+    }
+   }
+  },
+  "new_inputs": {
+   "soc.fifa_points_formula_state": {
+    "label": "FIFA men's ranking points state and exchange formula",
+    "category": "team_strength",
+    "mechanism": "Each team's ranking points are carried forward and moved by an Elo-style exchange per match: new = old + importance x (result - expected), with expected derived from the points gap.",
+    "rationale": "The ranking is a deterministic function of a points table, not a strength estimate. Two teams of equal true strength can sit far apart because of past points and because only a rolling set of results is in the table. A subtle point: shootout results score differently from 90-minute wins, and knockout losers may be shielded from deductions, so the sign of the update depends on how a match ended.",
+    "measurement": "Snapshot at the last published ranking before the as-of date: points to two decimals and rank for every team. Reimplement the SUM exchange P_new = P_old + I x (W - We), We = 1/(10^(-dP/600)+1), W = 1 win, 0.5 draw, 0 loss, shootout 0.75/0.5 (verify against the current FIFA methodology document). Backtest the reimplementation against each past published ranking and require the points to match to the second decimal before use. As-of = publication timestamp of the snapshot; never use the revised table.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "FIFA ranking pages and published methodology (free)",
+     "Historic FIFA ranking archives (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "ranking table per publication date",
+     "match results with competition code"
+    ],
+    "why": "The contract resolves on a rank in a formula-defined table; the exact update rule and carried points are what turn a result into a rank change.",
+    "role": "primary"
+   },
+   "soc.fifa_match_importance_calendar": {
+    "label": "Remaining ranked matches, importance coefficients and opponent points before the cut date",
+    "category": "schedule_context",
+    "mechanism": "Matches played between the snapshot and the ranking cut date, each with an importance weight and an opponent whose points set the expected result.",
+    "rationale": "Importance is a step function of competition type (friendly, Nations League, qualifier, continental finals, World Cup group, World Cup knockout), so a single knockout-round result can move points several times more than a friendly. The hard part is that the set of matches is itself random: it depends on who advances, so the importance mix is endogenous to results.",
+    "measurement": "From the official fixture lists, enumerate every FIFA-recognised match for the top ~30 teams between snapshot and cut date; attach the importance value for the competition and stage and the opponent's snapshot points; for conditional knockout fixtures attach the advancement probability from the bracket simulation. Output the expected and 10th/90th percentile points change per team. As-of = fixture-list date, updated at each result.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "FIFA and confederation fixture lists (free)",
+     "Wikipedia competition pages (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "fixture lists with competition and stage",
+     "opponent snapshot points"
+    ],
+    "why": "Top-10 membership near the cut line is decided by how many high-importance matches each contender still plays and against whom.",
+    "role": "primary"
+   },
+   "soc.fifa_ranking_publication_calendar": {
+    "label": "FIFA ranking release schedule and data cut-off timing",
+    "category": "other",
+    "mechanism": "FIFA publishes updated rankings on a calendar; the ranking that settles a question is the one published on or after a stated date, built from matches up to a cut-off before it.",
+    "rationale": "A match played after the cut-off but before the nominal date does not count; a publication slipping past the market's resolution date changes which table settles it. This is a calendar mechanic the formula alone does not give.",
+    "measurement": "Collect FIFA's published release dates for the last five years and the last match date included in each release (read from the release notes or inferred by reconstructing points); compute for each match whether it falls before the cut-off of the target release. As-of = the release calendar as announced; flag any release not yet scheduled.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "FIFA ranking release notes (free)",
+     "Reconstruction from published points (derived)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "release dates",
+     "last included match date"
+    ],
+    "why": "Settlement hinges on which release is read and which matches it contains.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "soc.ratings": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Elo or goal-model strength is needed to price every remaining match, but it is not the target quantity: the ranking uses its own formula, so the rating should only feed result probabilities, never the ranking itself."
+   },
+   "soc.comp_sim": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Needed to generate which matches happen; must be wired to the FIFA update rule rather than to a standings finish, which is a different output."
+   },
+   "soc.ratings_uncertainty": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Matters for teams with thin recent schedules whose strength is poorly pinned; secondary because the ranking itself is deterministic once results are known."
+   },
+   "soc.extra_time_shootout_model": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Needed because the FIFA formula gives shootout winners and losers different credit than a 90-minute result."
+   },
+   "soc.bracket_path_difficulty": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Opponent points and the count of high-importance matches both depend on the path; useful but only inside World Cup windows."
+   },
+   "soc.friendly_match_intensity": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Only moves friendly result probabilities modestly, and friendlies carry the smallest importance weights."
+   },
+   "soc.international_break_effect": {
+    "verdict": "WEAK",
+    "reason": "Travel and fatigue effects are small relative to rating differences and the importance weighting, so this adds little to a points-table outcome."
+   },
+   "soc.group_stage_scenarios": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Determines who survives into high-importance knockout matches; relevant only while the group stage is unresolved."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "No rules text is available for this series, so the wording must be fetched before trading; the input is a requirement, not a value."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "soc.fifa_match_importance_calendar",
+     "soc.ratings_uncertainty"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Points at risk in a match equal importance times result surprise; uncertainty about a team's strength matters most in the matches with the highest importance weights, so the same rating error costs more in a World Cup knockout than in a friendly.",
+    "how_to_test": "Bucket simulated contenders by their expected sum of importance weights and compare variance of final points against a model using flat weights."
+   },
+   {
+    "inputs": [
+     "soc.fifa_points_formula_state",
+     "soc.fifa_ranking_publication_calendar"
+    ],
+    "form": "threshold",
+    "mechanism": "Rank ten is a hard cut: a team 3 points outside it is in or out depending on whether a late match falls before the cut-off; the calendar converts a continuous points race into a discrete inclusion event.",
+    "how_to_test": "Re-run the simulation with each remaining match shifted across the cut-off and measure the change in top-10 probability for teams within one match swing of the line."
+   },
+   {
+    "inputs": [
+     "soc.extra_time_shootout_model",
+     "soc.fifa_points_formula_state"
+    ],
+    "form": "conditional",
+    "mechanism": "A knockout tie decided on penalties gives the winner 0.75 and the loser 0.5 rather than 1 and 0, so conditional on a tie reaching a shootout, the points change is far smaller than after a 90-minute result; the direction depends on which team was favoured.",
+    "how_to_test": "Split simulated knockout ties by method of decision and compare the points change distribution for the favourite and underdog."
+   },
+   {
+    "inputs": [
+     "soc.comp_sim",
+     "soc.fifa_match_importance_calendar"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Advancement in a competition both creates future high-importance matches and determines results, so the number of knockout matches played and the result of each are jointly distributed; treating them independently misstates the right tail of points gain for deep runs.",
+    "how_to_test": "Compare points-gain distributions from a joint simulation against one that draws the match count and results independently."
+   },
+   {
+    "inputs": [
+     "soc.bracket_path_difficulty",
+     "soc.fifa_points_formula_state"
+    ],
+    "form": "conditional",
+    "mechanism": "Beating a high-points opponent pays more because the expectation term is lower, so a favourable bracket for a fixed true strength raises expected points only if it does not also hand the team weak opponents that pay little.",
+    "how_to_test": "Regress simulated points gain on mean opponent points conditional on advancement depth."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "soc.fifa_match_importance_calendar",
+    "shape": "Step function of competition stage, with knockout weights several times the friendly weight",
+    "why": "Importance weights are discrete by competition type rather than smooth, so a linear count of matches misstates how much a team can move in a window dominated by a few high-weight games."
+   },
+   {
+    "input_id": "soc.fifa_points_formula_state",
+    "shape": "Logistic expectation term in the points gap, saturating when gaps are large",
+    "why": "A very large gap makes the favourite's expectation close to one, so a win adds almost nothing and a loss costs the most; points changes are asymmetric near the extremes."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "FIFA ranking table snapshots",
+    "grain": "one row per team per published ranking release",
+    "fields": [
+     "release_date",
+     "team",
+     "rank",
+     "points",
+     "previous_points",
+     "confederation"
+    ],
+    "timestamp_requirement": "Each snapshot keyed to its publication timestamp; never overwrite with revised tables",
+    "history_needed": "All releases since the 2018 formula change",
+    "candidate_sources": [
+     {
+      "name": "FIFA ranking site",
+      "access": "free",
+      "note": "Current and recent tables; archived releases reachable but not verified as complete"
+     },
+     {
+      "name": "Third-party mirrors of FIFA history",
+      "access": "free_scrape",
+      "note": "Completeness and accuracy of old releases unverified"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.fifa_points_formula_state",
+     "soc.fifa_ranking_publication_calendar"
+    ]
+   },
+   {
+    "dataset": "International match results with competition and stage codes",
+    "grain": "one row per match",
+    "fields": [
+     "date",
+     "home",
+     "away",
+     "score",
+     "decided_by",
+     "competition",
+     "stage",
+     "neutral_venue"
+    ],
+    "timestamp_requirement": "Result timestamped at full time; exclude matches after the cut-off",
+    "history_needed": "All FIFA-recognised matches since 2018",
+    "candidate_sources": [
+     {
+      "name": "martj42 international results dataset",
+      "access": "free",
+      "note": "Community-maintained; stage and decided_by coverage not verified"
+     },
+     {
+      "name": "Wikipedia competition pages",
+      "access": "free_scrape",
+      "note": "Manual and inconsistent structure"
+     },
+     {
+      "name": "Opta / Stats Perform",
+      "access": "paid",
+      "note": "Reliable but licensed"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.ratings",
+     "soc.comp_sim",
+     "soc.ratings_uncertainty",
+     "soc.extra_time_shootout_model",
+     "soc.friendly_match_intensity",
+     "soc.group_stage_scenarios",
+     "soc.bracket_path_difficulty",
+     "soc.international_break_effect"
+    ]
+   },
+   {
+    "dataset": "Fixture lists for the window to the cut-off",
+    "grain": "one row per scheduled match",
+    "fields": [
+     "date",
+     "teams",
+     "competition",
+     "stage",
+     "venue"
+    ],
+    "timestamp_requirement": "As announced at the as-of date",
+    "history_needed": "Current window only plus past windows for calibration",
+    "candidate_sources": [
+     {
+      "name": "FIFA and confederation sites",
+      "access": "free",
+      "note": "Conditional knockout fixtures are not listed until known"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.fifa_match_importance_calendar"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "contract_no_rules",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXWCFIFATOP10 has no sampled rules text and no listing evidence; the settlement release, date, team or count definition and tie handling are all unknown.",
+    "what_would_resolve": "Fetch rules_primary and rules_secondary for the series or a live market and read the named release date and ranking source.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "importance_values_unverified",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "The importance coefficients, shootout credit of 0.75 and 0.5 and any shielding of knockout losers are recalled from the FIFA methodology and not checked against the current document.",
+    "what_would_resolve": "Compare a reimplementation with FIFA's published points for at least five consecutive releases; mismatches reveal wrong coefficients."
+   },
+   {
+    "id": "event_timing_vs_today",
+    "type": "OTHER",
+    "description": "The series is named for the World Cup, which may already have been played by the as-of date; the relevant ranking release and matches may be historical, and no listing exists to say if the market is live.",
+    "what_would_resolve": "Check the series status and close time on Kalshi and which FIFA release is the stated reference."
+   }
+  ]
+ },
+ "unreg:tournament_aggregate_event_props": {
+  "reviewer": "soccer_new_author",
+  "review_date": "2026-11-07",
+  "catalog_entry": {
+   "label": "Tournament aggregate and match-event count props",
+   "blueprint": "season_stat",
+   "contract_types": [
+    "World Cup Tournament Goals",
+    "World Cup Group Stage Goals",
+    "World Cup Team Goals",
+    "World Cup Highest Scoring Game",
+    "World Cup Matches to go to Penalties",
+    "World Cup Longest Penalty Shootout",
+    "World Cup Winner to Trail in a Match",
+    "World Cup Every Team to Score a Goal",
+    "World Cup Concede First"
+   ],
+   "target": "A count, sum or extreme of goals or match events aggregated across many matches in a tournament, relative to a strike or condition.",
+   "mechanism": "These markets settle on a count or extreme drawn from the 104-match tournament: total goals, the single highest score, how many ties go to penalties, how long the longest shootout lasts, whether the eventual winner ever trails, and whether every team scores. The outcome is generated by a goal-environment level for international football, the mismatch mix of the draw, the knockout structure that creates shootouts, and shared tournament-wide factors that make matches correlated; it is not a single-match total or a player race.",
+   "inputs": [
+    {
+     "id": "soc.tournament_goal_environment",
+     "why": "The level of goals per match times match count sets strikes for tournament and group-stage totals.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.tournament_common_shock_factor",
+     "why": "Shared tournament effects widen the totals distribution beyond independent matches.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.shootout_length_distribution",
+     "why": "Governs the longest-shootout and matches-to-penalties contracts.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.group_gap_composition",
+     "why": "Mismatch mix of the fixture list changes goals, blanks and comeback events.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.goal_dist",
+     "why": "Match-level goal count distribution is the building block of every aggregate here.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.total_goal_tail_dispersion",
+     "why": "Tail dispersion of match totals drives the highest-scoring-game strike.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.extra_time_shootout_model",
+     "why": "Probability a knockout tie reaches penalties determines the penalties count.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.penalty_shootout_skill",
+     "why": "Team shootout skill alters whether a tie ends early or goes to sudden death.",
+     "role": "context"
+    },
+    {
+     "id": "soc.first_goal_hazard",
+     "why": "Sets which side concedes first for Concede First type contracts.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.trailing_team_response_hazard",
+     "why": "Drives probability a team that falls behind recovers, which feeds Winner to Trail.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.team_fail_to_score_propensity",
+     "why": "Zero-inflation per team governs Every Team to Score a Goal.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.competition_scope_and_win_definition",
+     "why": "Defines which matches and goals count (group stage, extra time, own goals).",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Rules wording needed for every series because none was sampled.",
+     "role": "primary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "soc.group_gap_composition",
+      "soc.goal_dist"
+     ],
+     "hypothesis": "A group stage with more lopsided fixtures raises both total goals and the chance of one match with very many goals, because mismatch fattens the right tail of scoring."
+    },
+    {
+     "inputs": [
+      "soc.tournament_common_shock_factor",
+      "soc.tournament_goal_environment"
+     ],
+     "hypothesis": "A shared tournament effect shifts every match together, so the variance of tournament goals is larger than the independent sum and tail strikes are underpriced if matches are treated as independent."
+    },
+    {
+     "inputs": [
+      "soc.extra_time_shootout_model",
+      "soc.shootout_length_distribution"
+     ],
+     "hypothesis": "The longest shootout is the maximum over a random number of shootouts, so the draw count and the sudden-death chance interact to set the extreme."
+    }
+   ]
+  },
+  "contract": {
+   "settlement_definition": "None of the nine series has sampled rules text (all NO_LISTING, titles only), so settlement is unverified. Titles imply counts or extremes over World Cup matches: 'World Cup Tournament Goals', 'World Cup Group Stage Goals', 'World Cup Team Goals', 'World Cup Highest Scoring Game', 'World Cup Matches to go to Penalties', 'World Cup Longest Penalty Shootout', 'World Cup Winner to Trail in a Match', 'World Cup Every Team to Score a Goal', 'World Cup Concede First'. Whether extra-time goals, shootout kicks and own goals count is not visible.",
+   "rules_verification": "NOT_VERIFIED_NO_RULES_TEXT",
+   "rules_evidence": [],
+   "variants_and_edge_cases": [
+    "Extra-time goals: a tournament goals count may include or exclude extra time; shootout kicks are normally not goals but a contract could say otherwise, and the sampled texts do not state it.",
+    "'World Cup Team Goals' may be a single-team tournament total or a single-match team total; the pack's reviewer notes the ambiguity and the title does not resolve it.",
+    "'Winner to Trail in a Match' could mean the tournament winner trails at any point in any of its matches, or any match winner that trailed; the two have very different probabilities.",
+    "'Concede First' is unclear on whether it is a count of teams, the identity of a team, or a match question about conceding first; no strike construction is visible.",
+    "'Longest Penalty Shootout' could be measured in rounds, kicks or total goals; ties between shootouts of equal length are not described."
+   ],
+   "settlement_data_source": "Not stated; likely FIFA official match reports and results as tracked by Kalshi's data provider, but the sampled rules are absent, so this is an assumption."
+  },
+  "mechanism": {
+   "summary": "Each market is a function of the same 104 matches but picks a different statistic: a sum (tournament and group goals), a maximum (highest score, longest shootout), a count of rare events (penalties, trailing winners), or an all-teams conjunction (every team scores). The sum is governed by the goal level of international football and the mismatch mix of the draw. The maximum depends on the tail of the single-match score distribution. Shootout counts depend on knockout structure and on how often ties are level after extra time. The conjunction depends on the weakest attacks' blank rates in few matches. A shared tournament factor correlates all matches, widening every distribution beyond what independent matches would give, and the contract definitions change which goals and matches enter the statistic.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Goal level of the tournament",
+     "description": "Goals per match average about 2.6 to 2.7 over recent World Cups, with group stage typically a bit higher than knockout where caution rises. The 2026 field has 48 teams so more weak-versus-strong fixtures; tournaments also differ by added-time and refereeing directives. The tournament mean is therefore estimated from team ratings and the draw, then shrunk toward historical values, producing the base rate for sums and for every match-level event.",
+     "distribution": "Match goals are overdispersed counts; the tournament mean is a latent level with between-tournament variance beyond Poisson.",
+     "categories": [
+      "distribution_variance",
+      "talent_strength"
+     ],
+     "input_ids": [
+      "soc.tournament_goal_environment",
+      "soc.goal_dist",
+      "soc.league_baseline_environment"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Mismatch mix and shared shocks",
+     "description": "The draw fixes who plays whom in the 72 group games, and the bracket then adds lopsided or balanced knockout games. Lopsided fixtures raise totals and the chance of a single high-scoring match; shared factors such as heat, travel distance across three host countries or an officiating directive move all matches together. This stage turns independent match rates into correlated tournament outcomes.",
+     "distribution": "Mixture over gap buckets plus a common random effect; heavy right tail of a single match score driven by mismatches.",
+     "categories": [
+      "opponent_matchup",
+      "environment",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "soc.group_gap_composition",
+      "soc.tournament_common_shock_factor",
+      "soc.total_goal_tail_dispersion",
+      "soc.penalty_rate",
+      "soc.var_intervention_rate",
+      "soc.added_time"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Knockout draws, extra time and shootouts",
+     "description": "From the round of 32 onward a level match goes to extra time and then penalties. The count of shootouts is a binomial-type count over about 32 knockout matches with a draw-after-extra-time probability near a few percent each, and each shootout length is a stopping time of kick conversions. The longest shootout is the maximum over a random number of such stopping times, so the count and the sudden-death chance both matter.",
+     "distribution": "Count of shootouts is small and discrete; shootout length is a right-skewed stopping time with a long tail; the maximum is an extreme-value quantity.",
+     "categories": [
+      "game_context_script",
+      "efficiency_conversion",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "soc.extra_time_shootout_model",
+      "soc.shootout_length_distribution",
+      "soc.penalty_shootout_skill",
+      "soc.knockout_cagey_factor"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "In-match event sequences",
+     "description": "Concede First, Winner to Trail and Every Team to Score depend on within-match order of goals and on blank rates. The eventual winner trails if it concedes first and then recovers, which depends on first-goal hazard and the response of the trailing team. A team failing to score through its group matches and any knockouts removes it from the every-team-scores set, with excess blank rates for weak attacks dominating.",
+     "distribution": "Bernoulli events per team-match with zero-inflation for weak attacks; conjunctions over many teams are dominated by a few low-probability members.",
+     "categories": [
+      "game_context_script",
+      "efficiency_conversion",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "soc.first_goal_hazard",
+      "soc.trailing_team_response_hazard",
+      "soc.team_fail_to_score_propensity",
+      "soc.group_stage_scenarios",
+      "soc.stakes_leverage"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Contract scope and counting rules",
+     "description": "The statistic depends on which matches and which goals count: group stage only or all, extra time goals, own goals, shootout kicks, and whether matches abandoned or replayed are counted. The sampled series have no rules text, so each variant is a distinct random variable and the model must carry the scope flag rather than assume one reading.",
+     "distribution": "Deterministic given the rules; differences between readings are shifts of a few goals in totals and a different extremal definition for the longest shootout.",
+     "categories": [
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "soc.competition_scope_and_win_definition",
+      "m.rules_text"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.tournament_goal_environment",
+      "soc.ratings"
+     ],
+     "note": "Team ratings enter through the goal level and draw composition."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.group_gap_composition"
+     ],
+     "note": "Mismatch mix of fixtures."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.team_fail_to_score_propensity"
+     ],
+     "note": "Dependence on a focal striker explains blank rates for weak attacks."
+    },
+    "availability_news": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Individual injuries shift a team's goal rate slightly and are absorbed into pre-tournament ratings; for tournament-wide counts the effect averages out over 48 teams and is second-order to the goal level and format."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.knockout_cagey_factor",
+      "soc.trailing_team_response_hazard"
+     ],
+     "note": "Cautious knockout play and chasing behaviour."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.tournament_common_shock_factor"
+     ],
+     "note": "Heat, altitude and travel across hosts act as shared shocks."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.first_goal_hazard",
+      "soc.extra_time_shootout_model"
+     ],
+     "note": "Score order and level ties drive events."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.tournament_goal_environment"
+     ],
+     "note": "Matches played and chances per match set the count."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.shootout_length_distribution",
+      "soc.team_fail_to_score_propensity"
+     ],
+     "note": "Kick conversion and blank rates."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.goal_dist",
+      "soc.total_goal_tail_dispersion",
+      "soc.tournament_common_shock_factor"
+     ],
+     "note": "Overdispersion, tails and correlation."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.group_stage_scenarios",
+      "soc.stakes_leverage"
+     ],
+     "note": "Dead rubbers and must-win third group matches."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.penalty_rate",
+      "soc.var_intervention_rate",
+      "soc.added_time"
+     ],
+     "note": "Penalty and added-time directives."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.competition_scope_and_win_definition",
+      "m.rules_text"
+     ],
+     "note": "Scope flags; no rules text sampled."
+    }
+   }
+  },
+  "new_inputs": {
+   "soc.tournament_goal_environment": {
+    "label": "Tournament goals-per-match environment from past World Cups and tournament-specific drivers",
+    "category": "distribution",
+    "mechanism": "Expected goals per match across a whole tournament, set by the mix of strong and weak teams, the group format and rule directives such as added time and VAR.",
+    "rationale": "Total goals is a sum of 104 correlated matches, so the level matters more than any one team. Past World Cups sit around 2.6 to 2.7 goals per match but a 48-team field adds more lopsided group games, and a longer-added-time directive raises totals. A model built from club league averages misses the tournament-specific level.",
+    "measurement": "For each World Cup since 1998: goals per 90 minutes split by group stage and knockout, by gap in team strength bucket, and by added-time directive era. Fit a Poisson-gamma mixture across matches; set the 2026 mean from team ratings of the actual field via the group draw, shrunk to the historical mean with k=3 tournaments. As-of = after the draw is fixed; update after each round.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "FIFA match reports and historical results datasets (free)",
+     "Wikipedia World Cup pages (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match-level goals by stage and tournament",
+     "pre-tournament team ratings"
+    ],
+    "why": "Settles Tournament Goals, Group Stage Goals and Team Goals strikes, which are functions of this level times the match count.",
+    "role": "primary"
+   },
+   "soc.tournament_common_shock_factor": {
+    "label": "Shared tournament-wide factor affecting all matches' scoring",
+    "category": "distribution",
+    "mechanism": "Common causes that move every match together: ball, climate, officiating directives, travel burden and a low-scoring or high-scoring tournament style.",
+    "rationale": "Match outcomes within a tournament are not independent: one referee directive on penalties or a heat wave across venues shifts the whole distribution. Ignoring this makes the variance of totals and counts too narrow, which matters most for tail strikes such as a record goals total.",
+    "measurement": "Estimate the between-tournament variance of per-match goals residual after team strength, using World Cups and continental finals since 2000 (random effect per tournament); report the intraclass correlation and its posterior. Use the implied standard deviation as the dispersion widening for tournament sums. As-of = pre-tournament; update only with documented directive changes.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Historical tournament results (free)",
+     "IFAB law-change announcements (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match goals by tournament",
+     "directive and law-change dates"
+    ],
+    "why": "Governs how wide the distribution of tournament totals and event counts is beyond independent-match noise.",
+    "role": "secondary"
+   },
+   "soc.shootout_length_distribution": {
+    "label": "Penalty shootout length and per-kick conversion distribution",
+    "category": "distribution",
+    "mechanism": "A shootout lasts five rounds each unless decided early, then sudden death; its length is a stopping-time of kick conversions.",
+    "rationale": "The longest shootout is an extreme of a small number of events, so it depends on how many shootouts occur and on the chance of each reaching sudden death. Conversion near three quarters per kick implies early finishes are common but a long run of equal outcomes occurs rarely.",
+    "measurement": "From all World Cup and continental shootouts since 1982 (about 40), compute per-kick conversion with beta shrinkage (prior mean 0.75, strength 20 kicks), P(shootout reaches kick 11), and P(length>=k) via the stopping rule; combine with the expected number of shootouts to give the distribution of the maximum. As-of = bracket known.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Wikipedia penalty shootout histories (free)",
+     "FIFA match reports (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "shootout kick-by-kick logs"
+    ],
+    "why": "Directly specifies the Longest Penalty Shootout contract and feeds the matches-to-penalties count.",
+    "role": "primary"
+   },
+   "soc.group_gap_composition": {
+    "label": "Distribution of strength gaps across scheduled group and knockout matches",
+    "category": "matchup",
+    "mechanism": "The tournament's schedule fixes a list of pairings whose strength gaps determine how many lopsided and how many balanced matches occur.",
+    "rationale": "Goal totals and trailing events depend on gap: lopsided matches produce more goals and fewer comebacks, balanced ones more draws and shootouts. A 48-team field has more lopsided group games than 32 teams, so past World Cup rates cannot be applied unadjusted.",
+    "measurement": "Using pre-tournament team ratings and the final draw, compute for each of the 72 group matches the rating gap and the implied goal expectations; bucket into quintiles and compare with past World Cups' bucket frequencies. As-of = after the draw.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "FIFA draw results (free)",
+     "National-team ratings (soc.ratings)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "group draw",
+     "team ratings"
+    ],
+    "why": "Moves group-stage goals and every-team-scores events by changing the mix of mismatch fixtures.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "soc.goal_dist": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The match goal distribution is the unit that is summed or maximised; must be taken from international matches, not club leagues, and from regulation time only if the rules say so."
+   },
+   "soc.total_goal_tail_dispersion": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Highest Scoring Game is an extreme of 104 match totals, so tail dispersion by mismatch bucket is the quantity that sets the strike."
+   },
+   "soc.extra_time_shootout_model": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Matches to go to Penalties and Longest Penalty Shootout depend on the chance each knockout tie reaches a shootout; needs a national-team calibration."
+   },
+   "soc.penalty_shootout_skill": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Skill differences are small relative to the noise of a shootout, so this only slightly shifts length and count; kept as context."
+   },
+   "soc.first_goal_hazard": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Concede First and Winner to Trail both turn on who scores first; timing matters less than identity, so secondary."
+   },
+   "soc.trailing_team_response_hazard": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Determines whether a team behind comes back, the mechanism behind Winner to Trail in a Match; mostly estimated from club data and needs national-team caution."
+   },
+   "soc.team_fail_to_score_propensity": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Every Team to Score a Goal is a conjunction across 48 teams, so a few teams with excess blank rates dominate the probability."
+   },
+   "soc.competition_scope_and_win_definition": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Scope flags decide whether extra-time goals, shootout kicks and own goals are counted, and every series here is unverified."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "None of the nine series has rules text sampled; the wording defines what is counted and must be obtained first."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "soc.group_gap_composition",
+     "soc.total_goal_tail_dispersion"
+    ],
+    "form": "convex",
+    "mechanism": "The chance of a 7-goal or higher match rises convexly with the strength gap, so a draw with several extreme mismatches lifts the Highest Scoring Game probability much more than the same average gap spread evenly.",
+    "how_to_test": "Compare simulated highest-score distributions from the real fixture gaps against fixtures with the same mean gap but equalised."
+   },
+   {
+    "inputs": [
+     "soc.tournament_common_shock_factor",
+     "soc.tournament_goal_environment"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A tournament-level random effect makes total goals a mixture, so the upper and lower tails of tournament totals are fatter than a sum of independent matches; strikes far from the mean are most affected.",
+    "how_to_test": "Estimate the tournament random-effect variance from past World Cups and compare tail probabilities with and without it."
+   },
+   {
+    "inputs": [
+     "soc.extra_time_shootout_model",
+     "soc.shootout_length_distribution"
+    ],
+    "form": "conditional",
+    "mechanism": "The longest shootout exists only if at least one tie reaches penalties, and longer ones need sudden death; conditional on few shootouts occurring the maximum is short with high probability, so count and length must be modelled jointly.",
+    "how_to_test": "Simulate the knockout bracket and shootout lengths jointly and compare the maximum with a model using an average count."
+   },
+   {
+    "inputs": [
+     "soc.first_goal_hazard",
+     "soc.trailing_team_response_hazard"
+    ],
+    "form": "conditional",
+    "mechanism": "A team can only 'trail' if the opponent scores first, and recovery depends on how the trailing team responds; the two hazards together set P(winner conceded first) which is far from the product of marginal rates for a favourite facing a low block.",
+    "how_to_test": "Split matches by favourite status and compare observed rate of winners who trailed with the product of marginal first-goal and recovery rates."
+   },
+   {
+    "inputs": [
+     "soc.team_fail_to_score_propensity",
+     "soc.stakes_leverage"
+    ],
+    "form": "threshold",
+    "mechanism": "A weak team that already needs a goal in its last group game raises attacking intent and its scoring chance; one already eliminated may not, so blank rates differ across the group-stage rounds and the 'every team scores' conjunction is sensitive to round-three incentives.",
+    "how_to_test": "Compare team blank rates in round-three group matches by stakes bucket against rounds one and two."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "soc.tournament_goal_environment",
+    "shape": "Linear mean effect on sums but convex effect on tail probabilities of a record total",
+    "why": "Totals respond linearly to the mean goal level, but the probability of exceeding a high strike changes much faster than the mean because the tail of an overdispersed count is steep."
+   },
+   {
+    "input_id": "soc.shootout_length_distribution",
+    "shape": "Geometric decay after round five in the sudden-death phase",
+    "why": "Each additional sudden-death round occurs with probability near one half squared plus the complement, so length decays geometrically; this makes the longest shootout a thin-tailed quantity compared with total goals."
+   },
+   {
+    "input_id": "soc.team_fail_to_score_propensity",
+    "shape": "Conjunction across 48 teams: one weak team's blank probability dominates",
+    "why": "The probability that every team scores is a product over many teams, so a few teams with low scoring probability and excess zero rates lower the product disproportionately."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "World Cup and continental tournament match results",
+    "grain": "one row per match",
+    "fields": [
+     "tournament",
+     "stage",
+     "date",
+     "teams",
+     "goals_90",
+     "goals_et",
+     "decided_by",
+     "first_scorer",
+     "min_goals",
+     "trailing_flag",
+     "kick_log"
+    ],
+    "timestamp_requirement": "Historical only; pre-tournament knowledge cut at the draw",
+    "history_needed": "World Cups since 1998 and continental finals since 2000",
+    "candidate_sources": [
+     {
+      "name": "Wikipedia World Cup pages",
+      "access": "free_scrape",
+      "note": "Results complete; first-scorer and kick logs inconsistent"
+     },
+     {
+      "name": "FIFA match reports",
+      "access": "free",
+      "note": "Official source; scraping format varies"
+     },
+     {
+      "name": "StatsBomb open data",
+      "access": "free_limited",
+      "note": "Covers selected World Cups; not verified for every one"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.tournament_goal_environment",
+     "soc.tournament_common_shock_factor",
+     "soc.goal_dist",
+     "soc.total_goal_tail_dispersion",
+     "soc.shootout_length_distribution",
+     "soc.first_goal_hazard",
+     "soc.trailing_team_response_hazard"
+    ]
+   },
+   {
+    "dataset": "Group draw and team ratings",
+    "grain": "one row per team and per group fixture",
+    "fields": [
+     "team",
+     "group",
+     "pre_tournament_rating",
+     "fixture_date",
+     "opponent"
+    ],
+    "timestamp_requirement": "As of the draw date, vintage preserved",
+    "history_needed": "Current tournament plus past draws for calibration",
+    "candidate_sources": [
+     {
+      "name": "FIFA draw publication",
+      "access": "free",
+      "note": "Public once drawn"
+     },
+     {
+      "name": "World Football Elo Ratings",
+      "access": "free",
+      "note": "Rating methodology fixed but history download scraped"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.group_gap_composition",
+     "soc.extra_time_shootout_model",
+     "soc.penalty_shootout_skill",
+     "soc.team_fail_to_score_propensity",
+     "soc.knockout_cagey_factor",
+     "soc.group_stage_scenarios",
+     "soc.stakes_leverage",
+     "soc.league_baseline_environment"
+    ]
+   },
+   {
+    "dataset": "Referee and law directives for the tournament",
+    "grain": "one row per directive",
+    "fields": [
+     "date",
+     "directive",
+     "affects"
+    ],
+    "timestamp_requirement": "Published before the tournament starts",
+    "history_needed": "IFAB and FIFA directives since 2018",
+    "candidate_sources": [
+     {
+      "name": "IFAB laws of the game",
+      "access": "free",
+      "note": "Law text only; referee briefings not public"
+     },
+     {
+      "name": "FIFA referee committee statements",
+      "access": "free_limited",
+      "note": "Informal and incomplete"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.penalty_rate",
+     "soc.var_intervention_rate",
+     "soc.added_time",
+     "soc.competition_scope_and_win_definition"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "contract_no_rules_any_series",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "None of the nine series has any sampled rules text and the pack records no listing; strike construction, scope of extra time and shootout kicks, and the meaning of Team Goals and Concede First are unknown.",
+    "what_would_resolve": "Obtain rules_primary for each ticker from a live or archived market and fix the statistic definition per series.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "cross_match_dependence_size",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "The size of the shared tournament effect on goals is estimated from few World Cups, so its variance is poorly pinned and tail strikes are sensitive to it.",
+    "what_would_resolve": "A hierarchical fit over many international tournaments to bound the tournament-level variance and its prior."
+   },
+   {
+    "id": "event_timing_vs_today_agg",
+    "type": "OTHER",
+    "description": "The 2026 World Cup may have completed before the as-of date, so these series may be historical; whether any are live is unknown from the pack.",
+    "what_would_resolve": "Check series status and close time on Kalshi."
+   }
+  ]
+ },
+ "unreg:tournament_bracket_composition": {
+  "reviewer": "soccer_new_author",
+  "review_date": "2026-11-07",
+  "catalog_entry": {
+   "label": "Tournament match composition and venue",
+   "blueprint": "season_outcome",
+   "contract_types": [
+    "World Cup Teams in Game",
+    "World Cup Game Location",
+    "World Cup Play in Game"
+   ],
+   "target": "Which teams, player or venue appear in a specified tournament match, set by bracket progression and the published schedule.",
+   "mechanism": "The occupants and venue of a numbered tournament match come from structure plus results: the schedule fixes the stadium and date of each match number, group finishing positions and the cross-group ranking of third-placed teams map to knockout slots through a fixed table, and each slot is filled by simulated results. A player appears only if his team reaches the match and he is available and selected. The mechanism is bracket plumbing, not the match result or the tournament winner.",
+   "inputs": [
+    {
+     "id": "soc.bracket_slot_graph",
+     "why": "Maps group position to match slot, date and venue; the structural core of every contract here.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.group_rank_joint_distribution",
+     "why": "Provides the probabilities of each team occupying each slot, including the third-place cross-group effect.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.suspension_accumulation_state",
+     "why": "Determines whether a named player is eligible for a given match.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.comp_sim",
+     "why": "Match simulation underlies group results and knockout advancement.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.seeded_bracket_path_given_finish",
+     "why": "Gives the opponent set and path conditional on finishing rank.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.bracket_path_difficulty",
+     "why": "Path difficulty indicates how likely a team is to survive to a stated round.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.tiebreaker_rules",
+     "why": "Group tie-breaks decide ranks and third-place ordering.",
+     "role": "primary"
+    },
+    {
+     "id": "soc.group_stage_scenarios",
+     "why": "Remaining group permutations determine who qualifies and in what slot.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.tie_advancement_state_tree",
+     "why": "Single-leg knockout advancement including extra time and penalties.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.injuries",
+     "why": "Injury status decides whether a named player can appear.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.player_minutes_expectation",
+     "why": "Minutes expectation separates starting players from squad players for appearance questions.",
+     "role": "secondary"
+    },
+    {
+     "id": "soc.abandonment_risk",
+     "why": "Postponement or relocation risk can change the game location.",
+     "role": "context"
+    },
+    {
+     "id": "soc.ratings",
+     "why": "Team strengths feed match results that fill the bracket.",
+     "role": "primary"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Wording defines whether location means stadium or city and what counts as playing.",
+     "role": "primary"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "soc.group_rank_joint_distribution",
+      "soc.bracket_slot_graph"
+     ],
+     "hypothesis": "Venue and opponent depend on which third-place groups qualify, so the slot assignment is a joint function across groups and cannot be obtained from marginal group probabilities."
+    },
+    {
+     "inputs": [
+      "soc.tiebreaker_rules",
+      "soc.group_rank_joint_distribution"
+     ],
+     "hypothesis": "Close group tables resolve on tie-break order, so the probability of a team taking a slot is sensitive to how goal difference and head-to-head are ordered."
+    },
+    {
+     "inputs": [
+      "soc.suspension_accumulation_state",
+      "soc.player_minutes_expectation"
+     ],
+     "hypothesis": "A player contract needs the team to arrive, eligibility, and selection; a card ban or rotation can remove a starter even if the team progresses."
+    }
+   ]
+  },
+  "contract": {
+   "settlement_definition": "No rules text sampled for KXWCTEAMSINGAME ('World Cup Teams in Game'), KXWCLOCATION ('World Cup Game Location') or KXWCPLAY ('World Cup Play in Game'); all NO_LISTING with titles only. They appear to settle on the teams, venue or a participant of a specific match, but the match referenced, the definition of location (stadium, city or country) and what counts as playing (in squad, in lineup, minutes) are not visible.",
+   "rules_verification": "NOT_VERIFIED_NO_RULES_TEXT",
+   "rules_evidence": [],
+   "variants_and_edge_cases": [
+    "Location could be stadium, city or host country; a venue switch for security, weather or scheduling would resolve differently under each.",
+    "'Play in Game' might mean appearing for any minutes, starting, or being in the matchday squad; a bench non-use would resolve differently.",
+    "'Teams in Game' could ask for an exact pairing in either order or for a team being one of the two; ordering and neutral-venue home labelling are unknown.",
+    "A match that is abandoned, replayed or relocated might void or settle on later facts; the sampled series give no text.",
+    "If the question is about a match whose slot depends on a third-place assignment table, the resolution depends on FIFA publishing the final bracket, with no stated fallback."
+   ],
+   "settlement_data_source": "Not stated; likely FIFA's official match schedule and match reports, but rules text is absent so this is assumed."
+  },
+  "mechanism": {
+   "summary": "A numbered tournament match has a fixed date and stadium; who plays there comes from the bracket. Group results sort teams into positions; the best third-placed teams are chosen by a cross-group ranking and then assigned to slots through a lookup table keyed to which groups they come from. Knockout winners advance to the next fixed slot, so the later venues follow from the path. A named player appears only if his team reaches the match and he is eligible and chosen. The probability for any contract is therefore the sum over group outcomes through the slot mapping, with the schedule and regulation text defining the mapping, not a model of the match result itself.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Fixed schedule and slot mapping",
+     "description": "The regulations pre-assign each match number a date, city and stadium and define which group positions feed which round-of-32 slot, and which slot each later winner enters. Host nations are typically placed so their group matches are at home and the bracket keeps them in home regions if they finish in certain positions, which makes venue depend on their group finish. This stage has no randomness but contains rule detail where errors are costly.",
+     "distribution": "Deterministic mapping from group position to match number; the only uncertainty is whether amendments to the schedule occur.",
+     "categories": [
+      "settlement_contract",
+      "environment"
+     ],
+     "input_ids": [
+      "soc.bracket_slot_graph",
+      "m.rules_text"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Group finishing and third-place ranking",
+     "description": "Each group's four teams play three matches and are sorted by tie-break order. The third-placed teams across all twelve groups are ranked on points, goal difference and goals scored, and the best eight advance. Which eight and from which groups sets their slots through the allocation table. Small points and goal-difference gaps decide the cut, making this stage highly sensitive to match results in the last round.",
+     "distribution": "Joint discrete distribution over group orderings; third-place cut driven by goal difference, with many ties at equal points broken by secondary criteria.",
+     "categories": [
+      "talent_strength",
+      "situational_schedule_motivation",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "soc.group_rank_joint_distribution",
+      "soc.tiebreaker_rules",
+      "soc.group_stage_scenarios",
+      "soc.comp_sim",
+      "soc.ratings"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Knockout advancement to the target match",
+     "description": "A team reaches a later numbered match only by winning each earlier tie, which may be settled in extra time or penalties. Teams whose path sends them through weak opponents have a higher chance to reach a specific slot; slot probability is a product over rounds conditioned on earlier results. Path difficulty and shootout resolution therefore enter.",
+     "distribution": "Product of Bernoulli advancement events with draw-resolution randomness; path correlation across teams because opponents are shared.",
+     "categories": [
+      "opponent_matchup",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "soc.seeded_bracket_path_given_finish",
+      "soc.bracket_path_difficulty",
+      "soc.tie_advancement_state_tree"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Player eligibility and selection",
+     "description": "For a named-player contract, the team must reach the match; the player must not be suspended through red cards or accumulated yellows, must not be injured, and must be selected and used. Rotation in dead rubbers and managers' choices determine who plays, and the card reset point in the regulations decides who carries suspension forward.",
+     "distribution": "Bernoulli with probability depending on a ban (known after the previous round), injury hazard and selection; mixture of near-certain starters and rotation players.",
+     "categories": [
+      "availability_news",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "soc.suspension_accumulation_state",
+      "soc.injuries",
+      "soc.player_minutes_expectation",
+      "soc.abandonment_risk"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.ratings",
+      "soc.comp_sim"
+     ],
+     "note": "Match probabilities fill group tables and knockout slots."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.seeded_bracket_path_given_finish",
+      "soc.bracket_path_difficulty"
+     ],
+     "note": "Who a team meets depends on its slot."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.player_minutes_expectation"
+     ],
+     "note": "Starter versus rotation status for player contracts."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.injuries",
+      "soc.suspension_accumulation_state"
+     ],
+     "note": "Injury and card bans determine player eligibility."
+    },
+    "coaching_scheme": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Tactics shape match results already represented by team strength, and bracket composition depends on results and fixed structure rather than on in-game scheme; only rotation matters, covered under player minutes."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.bracket_slot_graph"
+     ],
+     "note": "Venue and city are fixed per match number; location contracts are structural."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.tie_advancement_state_tree"
+     ],
+     "note": "Extra time and shootouts decide who advances."
+    },
+    "pace_volume": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "The outcome is which entity occupies a slot rather than a count of events or opportunities, so no pace or volume input applies to the composition and venue mechanism of these contracts."
+    },
+    "efficiency_conversion": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Conversion rates affect the results that fill slots only through match probabilities already captured by team ratings; there is no per-opportunity rate in the contract itself that needs separate treatment."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.group_rank_joint_distribution"
+     ],
+     "note": "Joint cross-group distribution of occupants."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.group_stage_scenarios"
+     ],
+     "note": "Final-round stakes and rotation in groups."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "soc.tiebreaker_rules"
+     ],
+     "note": "Tie-break order decides ranks and third-place cut."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "soc.bracket_slot_graph"
+     ],
+     "note": "Definitions of location and play; no rules text sampled."
+    }
+   }
+  },
+  "new_inputs": {
+   "soc.bracket_slot_graph": {
+    "label": "Official tournament match graph: slots, match numbers, venues and third-place allocation",
+    "category": "other",
+    "mechanism": "The published schedule fixes which slot plays which, in what stadium and on what date; entrants to each knockout slot come from group finishing positions through a fixed mapping.",
+    "rationale": "Teams in a game and the location are determined by structure plus results: a winner of group A plays the runner-up of group B in a named city, and the eight best third-place teams are assigned to slots by a lookup depending on which groups they come from. A single wrong cell in the lookup changes the venue. The allocation can differ from past World Cups, so it must be read from the regulations.",
+    "measurement": "Transcribe the regulation's match list into a directed graph: nodes are match numbers with date, city and stadium; edges map group position (1st, 2nd, best 3rd by combination) to slot. Encode the third-place table as a function of the set of qualifying third-place groups and validate that every combination yields a legal bracket. Test by checking against the official bracket for a hypothetical result. As-of = regulations publication; re-fetch if amended.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "FIFA competition regulations and match schedule (free)",
+     "Wikipedia tournament bracket pages (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match schedule with numbers and venues",
+     "third-place allocation annex"
+    ],
+    "why": "These markets resolve on which teams or which venue appear in a numbered match, which the graph maps exactly.",
+    "role": "primary"
+   },
+   "soc.group_rank_joint_distribution": {
+    "label": "Joint distribution of group finishing positions across all groups",
+    "category": "game_state",
+    "mechanism": "Simulated finishing order in each group, including the cross-group ranking of third-placed teams by points, goal difference and goals scored.",
+    "rationale": "Which team lands in a knockout slot depends on not just its own group but on the other groups through the best-thirds ranking. The cross-group coupling makes marginal group probabilities insufficient: the combination of third-place qualifiers decides slot assignment and so venue.",
+    "measurement": "Simulate all group games with the team goal model, apply the group tie-break order from the regulations (verify: points, then head-to-head, then goal difference, then goals scored, then fair play and rank), compute the third-place table across groups, and output the joint distribution of slot occupants for each knockout match as a team-by-match probability matrix. 20000 draws minimum. As-of = last completed match.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Own simulation from ratings (derived)",
+     "FIFA regulations for tie-breaks (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "match results",
+     "tie-break rules",
+     "team ratings"
+    ],
+    "why": "Directly yields P(team in match) and P(venue) given the bracket mapping.",
+    "role": "primary"
+   },
+   "soc.suspension_accumulation_state": {
+    "label": "Card accumulation and suspension state of named players",
+    "category": "availability",
+    "mechanism": "Players miss a match through red cards and accumulated yellow cards, with the count reset at a stated stage.",
+    "rationale": "A 'Play in Game' contract for a player requires the team to reach the match and the player to be eligible and selected. Yellow-card totals carry between rounds until a reset, so a player one card from a ban is at risk of missing a knockout tie. Suspensions are known only after the previous round.",
+    "measurement": "For each player: yellow count, red cards, and reset round from the regulations; probability of a ban = P(card in next match) given prior cards and referee card rate, with shrinkage k=20 matches; combine with selection probability from minutes history. As-of = disciplinary list published after each match.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "FIFA disciplinary notices (free)",
+     "Match reports (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "card events per player",
+     "disciplinary list"
+    ],
+    "why": "A player question is lost to a ban even if the team progresses; this is the only suspension-based pathway.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "soc.comp_sim": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Group and knockout simulation is the engine, but it must output slot occupancy and venue rather than just title or advancement probabilities."
+   },
+   "soc.seeded_bracket_path_given_finish": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Written for UEFA league-phase seeding; the concept transfers to this bracket but the mapping must be reimplemented from the World Cup regulations."
+   },
+   "soc.bracket_path_difficulty": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Helps estimate survival to later rounds, but the contract here is about presence in a slot, not winning the tournament."
+   },
+   "soc.tiebreaker_rules": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Order of group tie-breaks and the third-place ranking criteria decide slots; wrong order gives wrong venue."
+   },
+   "soc.group_stage_scenarios": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Useful during the group stage for enumerating outcomes; becomes irrelevant once groups are final."
+   },
+   "soc.tie_advancement_state_tree": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Single-leg knockouts only need regulation, extra time and shootout; the two-leg part of the tree is not applicable."
+   },
+   "soc.injuries": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Matters only for the player-appearance contract and for a team's advancement; low weight for team and venue contracts."
+   },
+   "soc.player_minutes_expectation": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Separates starters from rotation players when a contract asks if a named player plays."
+   },
+   "soc.abandonment_risk": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Relocation or abandonment is rare at a World Cup but would change location; context only."
+   },
+   "soc.ratings": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Provides the match probabilities that fill slots; uncertainty must propagate to bracket composition."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "No rules text is sampled; definitions of location, 'play' and 'teams in game' must be read."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "soc.group_rank_joint_distribution",
+     "soc.bracket_slot_graph"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A third-placed team's slot depends on which other groups also produce a qualifying third, so P(team plays in a given city) is a sum over joint third-place combinations rather than a function of its own group; marginal probabilities misassign venue.",
+    "how_to_test": "Compare venue probabilities from the joint simulation with those from independent group marginals pushed through the mapping."
+   },
+   {
+    "inputs": [
+     "soc.tiebreaker_rules",
+     "soc.group_rank_joint_distribution"
+    ],
+    "form": "threshold",
+    "mechanism": "When two teams level on points are separated by a lower-level tie-break, the group position flips at a hard threshold, so small changes in goal difference move a team from one slot to another; the probability is a step in goal difference at equal points.",
+    "how_to_test": "Re-simulate with the tie-break order permuted and count the slot assignments that change."
+   },
+   {
+    "inputs": [
+     "soc.suspension_accumulation_state",
+     "soc.player_minutes_expectation"
+    ],
+    "form": "conditional",
+    "mechanism": "Eligibility is a gate: a player one yellow from a ban has the same selection probability only if not suspended, so appearance probability is selection times the gate, and the gate is known after the preceding match.",
+    "how_to_test": "Compare appearance rates for players with versus without a suspension risk, controlling for starter status."
+   },
+   {
+    "inputs": [
+     "soc.bracket_path_difficulty",
+     "soc.tie_advancement_state_tree"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Reaching a late slot requires winning every earlier tie, so probability multiplies across rounds; small per-round differences from path difficulty compound for deep slots.",
+    "how_to_test": "Compute reach probability for later slots from the round-by-round product and compare with a single-step win estimate."
+   },
+   {
+    "inputs": [
+     "soc.abandonment_risk",
+     "soc.bracket_slot_graph"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Under normal conditions the venue is fixed by match number; a relocation regime triggered by security, weather or an administrative change replaces the mapping, so location contracts are mixtures of a near-certain base state and a small switch state.",
+    "how_to_test": "Review past tournaments for venue changes and fit the switch probability per host region."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "soc.group_rank_joint_distribution",
+    "shape": "Step change at the best-eight third-place cut",
+    "why": "Only eight of twelve third-placed teams advance, so qualification is a hard cut on a cross-group ranking; a small change in goal difference moves a team from certain exit to a full knockout slot."
+   },
+   {
+    "input_id": "soc.suspension_accumulation_state",
+    "shape": "Threshold at the card count that triggers a ban",
+    "why": "A ban applies discretely at the accumulation threshold, so the risk to a player jumps when he is on the card count just below it and falls to zero after the stated reset."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Official tournament schedule and bracket regulations",
+    "grain": "one row per match number",
+    "fields": [
+     "match_number",
+     "round",
+     "date",
+     "city",
+     "stadium",
+     "home_slot",
+     "away_slot",
+     "third_place_combination_table"
+    ],
+    "timestamp_requirement": "Version of the regulations at the as-of date; amendments logged",
+    "history_needed": "Current tournament regulations; previous formats for sanity checks",
+    "candidate_sources": [
+     {
+      "name": "FIFA competition regulations",
+      "access": "free",
+      "note": "Annex tables included; format not machine readable"
+     },
+     {
+      "name": "Wikipedia bracket page",
+      "access": "free",
+      "note": "Secondary transcription; verify against FIFA"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.bracket_slot_graph",
+     "soc.tiebreaker_rules",
+     "soc.abandonment_risk"
+    ]
+   },
+   {
+    "dataset": "Group-stage results and standings",
+    "grain": "one row per match with goals and cards",
+    "fields": [
+     "match",
+     "score",
+     "goal_difference",
+     "fair_play_points",
+     "yellow_cards",
+     "red_cards"
+    ],
+    "timestamp_requirement": "Final at full time; disciplinary list after each match",
+    "history_needed": "Current tournament only plus past World Cups for validation",
+    "candidate_sources": [
+     {
+      "name": "FIFA match reports",
+      "access": "free",
+      "note": "Official but not an API"
+     },
+     {
+      "name": "football-data and Wikipedia mirrors",
+      "access": "free_scrape",
+      "note": "Fair-play points may be absent"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.group_rank_joint_distribution",
+     "soc.group_stage_scenarios",
+     "soc.suspension_accumulation_state",
+     "soc.comp_sim",
+     "soc.ratings"
+    ]
+   },
+   {
+    "dataset": "Player availability and minutes",
+    "grain": "one row per player-match",
+    "fields": [
+     "player",
+     "team",
+     "minutes",
+     "started",
+     "injury_status",
+     "suspension_status"
+    ],
+    "timestamp_requirement": "Squad and injury news vintage at as-of time",
+    "history_needed": "Last two seasons of national team minutes",
+    "candidate_sources": [
+     {
+      "name": "Transfermarkt",
+      "access": "free_scrape",
+      "note": "Injury and suspension fields exist; coverage for national teams not verified"
+     },
+     {
+      "name": "FIFA lineups",
+      "access": "free",
+      "note": "Official after announcement about an hour before kickoff"
+     }
+    ],
+    "feeds_inputs": [
+     "soc.player_minutes_expectation",
+     "soc.injuries",
+     "soc.seeded_bracket_path_given_finish",
+     "soc.bracket_path_difficulty",
+     "soc.tie_advancement_state_tree"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "contract_no_rules_bracket",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "None of KXWCTEAMSINGAME, KXWCLOCATION or KXWCPLAY has sampled rules; the match referenced, the definition of location and of playing, and abandonment treatment are unknown.",
+    "what_would_resolve": "Fetch rules_primary for each ticker and note the match number, location granularity and playing definition.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "third_place_table_unverified",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The third-place allocation table and the host-nation seeding rules are recalled from regulations for a 48-team format and not verified against the final published annex.",
+    "what_would_resolve": "Transcribe the annex from the FIFA regulations and test all 495 combinations for legal brackets."
+   },
+   {
+    "id": "event_timing_vs_today_bracket",
+    "type": "OTHER",
+    "description": "The tournament may have concluded before the as-of date so the bracket may be fully known and markets historical; there is no listing evidence to show which matches are still live.",
+    "what_would_resolve": "Check series status and close time on Kalshi."
+   }
+  ]
+ }
+}

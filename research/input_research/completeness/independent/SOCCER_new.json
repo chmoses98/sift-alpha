@@ -1,0 +1,146 @@
+{
+ "unreg:fifa_ranking_outcome": {
+  "reviewer": "independent-SOCCER-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain written from the title alone before reading the record: I first assumed (like the author) a FIFA SUM-formula ranking question: snapshot points -> remaining A-internationals before the release cut-off with importance I (5..60) -> W/D/L incl. shootout 0.75/0.5 -> P_new=P_old+I(W-We), We=1/(10^(-dr/600)+1), no deduction for knockout losses at final tournaments -> sort at release; hazards: which release, ties, FIFA corrections, teams absent from the tournament frozen. I then pulled the actual settled markets from Kalshi's public historical endpoint (GET /trade-api/v2/historical/markets?event_ticker=KXWCFIFATOP10-26SF etc.). The series has three events: '26WIN', '26SF', '26KO'. Rules: 'If any country not ranked in the top 10 of the FIFA Men's World Ranking at the time of issuance reaches the semifinals in the 2026 Men's FIFA World Cup, then the market resolves to Yes.' and 'If every country ranked in the top 10 of the FIFA Men's World Ranking at the time of issuance reaches the knockout stage ...'; rules_secondary lists the fixed top 10 'at the time of issuance (Jun 3, 2026)': France, Spain, Argentina, England, Portugal, Brazil, Netherlands, Morocco, Belgium, Germany. Series metadata: 'The FIFA Men's World Ranking is based on the ranking at the time of issuance (Jun 2, 2026)'. Settled: 26KO=yes, 26SF=no, 26WIN=no. Re-derived chain for what actually settles: fixed 10-team set -> group-stage simulation for each of the 10 (incl. best-eight-of-twelve third-place route to the R32) -> conjunction P(all 10 reach R32) -> knockout simulation with ET/shootouts -> union events P(any of the other 38 reaches SF / wins) which depend on bracket placement of the 10 (draw separated top seeds into quarters) and on shared-opponent correlation. Required inputs: soc.ratings, soc.ratings_uncertainty, soc.comp_sim, soc.group_stage_scenarios, soc.tiebreaker_rules, soc.bracket_path_difficulty/bracket graph, soc.extra_time_shootout_model, soc.injuries/squad availability; the FIFA points formula, importance calendar and publication calendar are not needed at all (the ranking is a frozen label printed in the rules). What differed: the author's entire mechanism models a quantity the contract does not settle on.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "fifa_archetype_mismapped",
+    "severity": "BLOCKER",
+    "resolution": "OPEN",
+    "text": "Contract text exists and contradicts the record. KXWCFIFATOP10 events are '26WIN' ('Any Country Ranked Outside FIFA Top 10 to Win'), '26SF' (... 'to Reach Semifinals') and '26KO' ('Every Country Ranked in FIFA Top 10 to Reach Knockout Stage'); rules: 'If any country not ranked in the top 10 of the FIFA Men's World Ranking at the time of issuance wins the 2026 Men's FIFA World Cup, then the market resolves to Yes.' The ranking is a fixed list frozen at issuance (Jun 3, 2026) and printed in rules_secondary. The record's target ('rank or presence in the top 10 ... at a stated date') and catalog mechanism ('a deterministic table produced by FIFA's points formula') are wrong: these are tournament advancement/outright markets on a fixed team set. Archetype should be remapped to a tournament-outcome (season_outcome/advancement) archetype with set-union/conjunction semantics, not a governing-body ranking archetype."
+   },
+   {
+    "id": "fifa_inputs_irrelevant",
+    "severity": "BLOCKER",
+    "resolution": "OPEN",
+    "text": "The three new primary/secondary inputs soc.fifa_points_formula_state, soc.fifa_match_importance_calendar and soc.fifa_ranking_publication_calendar, and their required_data ('FIFA ranking table snapshots', fixture lists to the cut-off), are IRRELEVANT to settlement: no ranking release after issuance matters. soc.friendly_match_intensity and soc.international_break_effect are likewise irrelevant (no friendlies inside the tournament). Conversely soc.tiebreaker_rules (group order and best-third ranking decide '26KO') and soc.injuries are missing from the catalog entry, and soc.group_stage_scenarios / soc.bracket_path_difficulty should be primary, not secondary."
+   },
+   {
+    "id": "fifa_missing_set_correlation",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "No input or interaction covers the set semantics: '26KO' is a conjunction over 10 teams (product dominated by the weakest top-10 side's group exit risk, correlated where two top-10 teams share a group), and '26SF'/'26WIN' are unions over 38 teams whose probability depends on how the 10 are spread across bracket quarters (the draw separated top seeds) and on knockout meetings between top-10 teams (each such meeting guarantees one top-10 exit). Needs a joint bracket simulation output, not marginals; the record's interactions (importance x ratings, points x release calendar, shootout credit) are not real interactions for this contract."
+   },
+   {
+    "id": "fifa_rules_status_false",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "rules_verification 'NOT_VERIFIED_NO_RULES_TEXT' and the unresolved item 'contract_no_rules' rest on the pack's NO_LISTING flag, but settled markets with full rules_primary/rules_secondary are returned by Kalshi's public historical markets endpoint (/trade-api/v2/historical/markets?event_ticker=KXWCFIFATOP10-26KO). The author did not attempt retrieval; settlement_definition, variants_and_edge_cases (release timing, rounded-points ties, formula revisions) are all speculative and inapplicable. The record should quote the rules above and note the edge case the rules do create: which list (Jun 2 per series metadata vs Jun 3 per rules_secondary) defines membership."
+   },
+   {
+    "id": "fifa_formula_detail",
+    "severity": "MINOR",
+    "resolution": "OPEN",
+    "text": "Moot after remapping, but the s1 text 'embeds the rolling credit decay of the formula, so old results leaving the table matter if the rule uses a window' is wrong for the post-2018 SUM method (no decay/window), and the measurement formula omits the no-deduction rule for knockout-stage losses that s4 mentions only as 'any shielding'."
+   }
+  ]
+ },
+ "unreg:tournament_aggregate_event_props": {
+  "reviewer": "independent-SOCCER-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain before reading the record (from titles + sport knowledge): 104-match 2026 format (72 group, 32 KO). Tournament totals = sum of match goals from team attack/defence ratings vs actual opponents, goal environment (heat, altitude in Mexico City/Guadalajara, added-time directive), common shock, KO caution, ET goals if counted; highest game = max over matches, driven by mismatches; penalties count = KO draws after 120' (historically ~20-30% of WC KO ties: 2014 4/16, 2018 4/16, 2022 5/16); longest shootout = max of ABAB stopping times, ~70% WC conversion; winner-trail = champion identity x per-match trailing hazard over up to 8 matches; every-team-scores = conjunction of weakest attacks' 3-match blank probabilities; hazards: ET, own goals, shootout kicks, abandonment. Then read the actual settled rules from Kalshi's historical markets endpoint. They differ materially from the record's assumptions: KXWCTEAMGOALS = per-team GROUP-STAGE goals ladder ('If USA records at least 3 goals during the group stage (including regulation and stoppage time)'); KXWCTEAMTOTALGOALS = per-team FULL-TOURNAMENT goals incl. ET ('If Uzbekistan records at least 8 goals during the full tournament (including regulation, stoppage and any extra time periods)'); KXWCGAMEGOALS split into '26GS' (regulation+stoppage) and '26KO' ('including regulation, stoppage and any extra time periods', shootout goals excluded); KXWCKOPENALTIES is per ROUND (R32/R16/QF, 'exactly N' and 'N+'); KXWCLONGESTPEN counts rounds ('a \"round\" refers to when both teams have each taken one penalty kick'), no shootout => all No; KXWCWINNERTRAIL = 'World Cup Winner to Never Trail in a Match'; KXWCCONCEDE1ST = race among four named teams by ET timestamp with $1/N dead-heat; KXWCEVERYTEAMGOAL: own goals credit the benefitting country. KXWCGSGOALS returned no events. Re-derived required inputs: per-team attack rating vs drawn group opponents (primary for both team ladders), advancement depth from comp_sim (primary for full-tournament team goals and for champion identity), per-round KO draw probability (balanced pairings from bracket sim), shootout round distribution, kickoff schedule order (Concede First), champion-conditional trailing hazard.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "agg_team_goal_series_misread",
+    "severity": "BLOCKER",
+    "resolution": "OPEN",
+    "text": "The record treats 'World Cup Tournament Goals' and 'Team Goals' as tournament-wide totals driven by soc.tournament_goal_environment ('Settles Tournament Goals, Group Stage Goals and Team Goals strikes, which are functions of this level times the match count'). Rules show both are single-country ladders: KXWCTEAMGOALS 'If USA records at least 3 goals during the group stage (including regulation and stoppage time)' and KXWCTEAMTOTALGOALS 'If Uzbekistan records at least 8 goals during the full tournament (including regulation, stoppage and any extra time periods)'. Required inputs change: the named team's attack rating vs its three drawn opponents (soc.ratings, currently only in category_coverage and absent from catalog_entry.inputs), star-forward availability/minutes, third-round rotation, and for the full-tournament ladder the number of matches played (3-8) from soc.comp_sim, which is entirely absent from this archetype. The tournament-wide goal environment is at most context."
+   },
+   {
+    "id": "agg_rules_available",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "All nine series are recorded as 'NOT_VERIFIED_NO_RULES_TEXT' with speculative variants, but settled markets with rules are retrievable from Kalshi's /trade-api/v2/historical/markets?event_ticker=<event>. Several variants listed as unknown are resolved by the text: shootout goals excluded and own goals counted ('Own goals do count toward the total goals scored in a match'); ET included only for KO/full-tournament series and excluded for group-stage series; longest shootout measured in rounds; winner contract is 'never trail'; Concede First is a named-team race. settlement_definition and competition_scope flags must be rewritten per series."
+   },
+   {
+    "id": "agg_penalty_rate_wrong",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "Stage s3 claims 'a draw-after-extra-time probability near a few percent each' over 'about 32 knockout matches'. Historical WC KO shootout frequency is roughly 25% (2014: 4/16, 2018: 4/16, 2022: 5/16), an order of magnitude higher. Also the contract is per round ('If exactly 4 matches are decided by a penalty shootout in the Quarterfinals'; R32 '8+ matches'), so the needed quantity is the per-round count over 16/8/4 matches given that round's simulated pairings (balance of strength), not a tournament binomial. Requires per-round bracket simulation output as an input."
+   },
+   {
+    "id": "agg_concede_first_mechanism",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "KXWCCONCEDE1ST is 'the first of Mexico, Spain, Argentina, or Ghana to concede a goal ... determined by the official Eastern Time (ET) timestamp of the goal, regardless of the match minute, matchday', with a $1/N dead-heat if none concede. This is a cross-match race dominated by the kickoff calendar (Mexico played the opening match) and each team's per-minute concession hazard vs its specific opponents, then clean-sheet persistence. The record maps it to soc.first_goal_hazard ('Sets which side concedes first'), a within-match identity input; a kickoff-schedule/timestamp input and opponent-specific concession hazard are missing, and the dead-heat payout is undisclosed."
+   },
+   {
+    "id": "agg_winner_trail_needs_champion_sim",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "'If the 2026 Men's FIFA World Cup winner never trails in any match' is a property of the eventual champion's path. Probability = sum over teams P(team wins) x P(never trails | wins, path), and conditioning on winning sharply lowers trailing rates. The record's interaction (first_goal_hazard x trailing_team_response_hazard) omits champion identity; soc.comp_sim/soc.ratings must be primary inputs. Whether trailing in a shootout counts is unaddressed (rules count goals; shootout presumably excluded): CONTRACT_AMBIGUOUS not listed."
+   },
+   {
+    "id": "agg_unaudited_ids",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "Eight ids appear in stages/category_coverage but have no input_audit verdict and are missing from catalog_entry.inputs: soc.added_time, soc.penalty_rate, soc.var_intervention_rate, soc.knockout_cagey_factor, soc.league_baseline_environment, soc.group_stage_scenarios, soc.stakes_leverage, soc.ratings. soc.league_baseline_environment ('League/season baseline goal and draw environment', a club input) duplicates soc.tournament_goal_environment and should be IRRELEVANT/DUPLICATE; soc.knockout_cagey_factor is needed for KO highest-score and penalties counts and should be in the catalog entry."
+   },
+   {
+    "id": "agg_highest_game_split",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "Highest Scoring Game is two separate events with different periods: '26GS' '(including regulation and stoppage time)' over 72 group games and '26KO' '(including regulation, stoppage and any extra time periods)' over 32 KO games. The record models one maximum over '104 match totals' (input_audit soc.total_goal_tail_dispersion). The KO maximum needs ET-goal inflation conditional on a draw and the narrower mismatch mix of simulated KO pairings."
+   },
+   {
+    "id": "agg_shootout_numbers",
+    "severity": "MINOR",
+    "resolution": "OPEN",
+    "text": "Nonlinearity text 'Each additional sudden-death round occurs with probability near one half squared plus the complement' is garbled; with conversion p the continuation probability is p^2+(1-p)^2 (~0.58 at p=0.70). WC shootout conversion is nearer 0.70 than the 0.75 prior, and 'World Cup and continental shootouts since 1982 (about 40)' undercounts (WC alone has ~35 since 1982; continental adds many more). The round-count rule leaves an edge case (final round where the second team does not kick) unlisted."
+   },
+   {
+    "id": "agg_every_team_scope",
+    "severity": "MINOR",
+    "resolution": "OPEN",
+    "text": "Every-team-to-score rule: 'Own goals scored by opposing teams count as a goal for the benefitting country'; scope is the whole tournament but the binding teams play only three matches, so the conjunction is effectively a group-stage quantity; the record should state this and drop 'role_personnel' coverage via soc.team_fail_to_score_propensity ('Dependence on a focal striker') which is a relabel, not a personnel input."
+   }
+  ]
+ },
+ "unreg:tournament_bracket_composition": {
+  "reviewer": "independent-SOCCER-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain before reading the record: Teams in Game = probability two teams meet; same-group pairs are fixed by the draw, otherwise sum over KO rounds of P(both reach the converging slot), which needs the full joint group + best-third (Annex 495-combination) + KO simulation, tie-breaks (2026: head-to-head before overall GD per secondary sources; fair play, FIFA ranking last). Game Location = venue fixed per match number, so either a structural lookup or operational relocation risk. Play in Game = named player appears: team present (group fixtures fixed), injury, suspension (accumulated yellows, reset stage), rotation after qualification is secured, manager choice; hazards: definition of 'play', postponement. Then read settled rules via Kalshi's historical markets endpoint. KXWCTEAMSINGAME: 'If USA vs Mexico is confirmed to be the matchup in any match in the 2026 Men's FIFA World Cup' and 'Resolution occurs immediately upon qualification, not when the game is actually played.' KXWCLOCATION events are '2026 World Cup game played in Mexico' / 'in Massachusetts': 'If a 2026 FIFA World Cup game is played in Mexico before Jul 20, 2026' (both settled yes). KXWCPLAY: 'If Lionel Messi enters the game in the Jordan vs Argentina professional FIFA World Cup soccer game originally scheduled for Jun 27, 2026' with 'Being listed in the starting lineup, named as a substitute, or included on the matchday squad without entering the match does not constitute participation.' Events are group-stage fixtures. What differed: only Teams in Game is bracket composition; Location is host-city operational/relocation risk with no team dependence; Play in Game is a player-availability/rotation market on a fixed fixture where bracket inputs are irrelevant and minutes/rotation are primary.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "brk_location_mismapped",
+    "severity": "BLOCKER",
+    "resolution": "OPEN",
+    "text": "KXWCLOCATION rules: 'If a 2026 FIFA World Cup game is played in Mexico before Jul 20, 2026' / '... played in Massachusetts'. Outcome depends only on whether scheduled host-city matches actually take place there (security, political pressure to move games from certain US cities, stadium issues), not on bracket progression. The record's primary inputs (soc.bracket_slot_graph, soc.group_rank_joint_distribution, soc.comp_sim, soc.ratings) are irrelevant to it; soc.abandonment_risk (labelled context) is the only relevant one and must be primary, plus a missing input for host-venue relocation/political risk with news-as-of timestamps. The series belongs in an event-occurrence archetype or needs its own sub-mechanism."
+   },
+   {
+    "id": "brk_teams_in_game_any_match",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "The record assumes 'which teams ... appear in a specified tournament match' / 'a numbered match'. Rules: 'confirmed to be the matchup in any match in the 2026 Men's FIFA World Cup' and 'Resolution occurs immediately upon qualification'. The needed quantity is P(pair meets in any round, incl. the third-place match), a sum over rounds of joint slot-occupancy from the bracket simulation, with group-stage co-membership deterministic; settlement timing is at qualification, so the market resolves before kickoff. Venue/date fields of soc.bracket_slot_graph are irrelevant to this series; the pair-meeting output must be specified in measurement."
+   },
+   {
+    "id": "brk_play_roles",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "KXWCPLAY events are fixed group fixtures ('Norway vs France: Haaland to Play', 'Jordan vs Argentina: Messi to Play'); YES requires recorded playing time ('enter the game and record official playing time at any point during regulation time, stoppage time, or extra time'). soc.player_minutes_expectation and soc.injuries are labelled secondary but are the primary inputs; the decisive missing interaction is third-round rotation conditional on the team's qualification state before the match (soc.group_stage_scenarios x player minutes), plus a missing input for pre-match team news/lineup timing. Bracket inputs do not apply. 'originally scheduled for' implies a postponement rule not captured in variants."
+   },
+   {
+    "id": "brk_rules_available",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "rules_verification 'NOT_VERIFIED_NO_RULES_TEXT' and variants ('Location could be stadium, city or host country'; ''Play in Game' might mean appearing for any minutes, starting, or being in the matchday squad') are answered by retrievable rules (Kalshi /trade-api/v2/historical/markets?event_ticker=KXWCPLAY-26JUN27JORARGLMESSI etc.): location is country/state level, 'play' means entering the match. Settlement sources listed by Kalshi are FIFA, ESPN, Fox Sports and the New York Times (location), not only 'FIFA's official match schedule'."
+   },
+   {
+    "id": "brk_data_wiring",
+    "severity": "MAJOR",
+    "resolution": "OPEN",
+    "text": "soc.ratings and soc.comp_sim are fed only by 'Group-stage results and standings' with history_needed 'Current tournament only'; team strength needs years of international results (and an Elo history source) to price group and KO matches. Separately the 'Player availability and minutes' dataset is wired to soc.seeded_bracket_path_given_finish, soc.bracket_path_difficulty and soc.tie_advancement_state_tree, which it cannot feed."
+   },
+   {
+    "id": "brk_tiebreak_unverified",
+    "severity": "MINOR",
+    "resolution": "OPEN",
+    "text": "The measurement's tie-break order ('points, then head-to-head, then goal difference ...') matches secondary reporting for 2026 but is marked only 'verify'; best-third ranking is described as 'points, goal difference and goals scored' while reports add conduct/fair play and FIFA ranking (SOURCE_UNVERIFIED until Article 13 of the regulations is read). soc.seeded_bracket_path_given_finish (UEFA league-phase input) duplicates soc.bracket_slot_graph and should be DUPLICATE_OF, not KEEP_SECONDARY."
+   }
+  ]
+ }
+}

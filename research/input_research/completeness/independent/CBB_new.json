@@ -1,0 +1,140 @@
+{
+ "unreg:kenpom_rating_snapshot": {
+  "reviewer": "independent-CBB-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain before reading the record. Markets list in Nov 2026 and settle on the KenPom list at Mar 15 2027 12:00pm EST. That is a Monday: Selection Sunday 2027 is Mar 14 (NCAA.com) and the Opening Round starts Mar 16. The settled list is the final pre-tournament rating, after all conference tournaments. Rank = order statistic of AdjEM (AdjO-AdjD) over ~360 teams. For most of the contract's life the horizon is the whole season (~30 games), so variance comes from: preseason/early rating uncertainty (portal churn, freshmen, KenPom's decaying preseason prior), team true-strength drift and injuries over four months, schedule and conference strength (opponent feedback), the conference-tournament game count, the per-game update size (about 1/g, blowout de-emphasis), and gap density at the cutoff. Settlement hazards: EST vs EDT (DST starts Mar 14 2027), whether Sunday-night finals were processed by the overnight refresh, site downtime, rank ties, and the methodology version. Data: the KenPom front-page table (AdjEM/AdjO/AdjD/AdjT, rank) is free to view as far as I know; team pages and the subscriber ratings archive (historical dates) are paid. Torvik is a proxy. After comparing: the author models a late-season 0-4 game horizon and drops the season-long uncertainty inputs. The author also wrongly assumes games may be played on Mar 15 itself. The order-statistic, gap and update-sensitivity framing matches mine and is good.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "kp_1",
+    "severity": "BLOCKER",
+    "text": "The mechanism is written only for the last week. s2 says 'Number of games is a small integer random variable (0 to 4)', and s3 says 'Per-game rating change ... sd of a few tenths of AdjEM late in the season'. But the series is live now (rules sample KXNCAAMBKENPOMRANK-27MAR15R1-VAN, 'active', Nov 2026), so for months the horizon is about 25-30 games. Over that horizon, true-strength change and initial rating error dominate. The input list therefore omits what drives most of the contract's life: blueprint cbb.ratings/preseason prior, cbb.roster_minutes (returning minutes, transfer integration), cbb.player_impact, a season-long schedule/conference-strength projection (cbb.sos_remaining appears only in stage s2, not in catalog_entry.inputs), and a model of KenPom's preseason-prior decay.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "kp_2",
+    "severity": "MAJOR",
+    "text": "cbb.rating_uncertainty is audited WEAK because uncertainty is 'minor by March'. The pricing date is November. Rating uncertainty, plus how fast the KenPom preseason prior is phased out, is a primary driver of rank volatility from November through January. It should not be WEAK or context.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "kp_3",
+    "severity": "MAJOR",
+    "text": "Several statements contradict the calendar. 'games on Mar 15 itself that finish after the page state are not counted' (variants) and 'Selection Sunday conference finals may be unfinished at noon' (cbb.kenpom_snapshot_timing_rules rationale) are both wrong: Mar 15 2027 is the Monday after Selection Sunday (Mar 14), and the Opening Round starts Mar 16, so no D1 games are scheduled that day. The real timing hazard is whether Sunday's late finals were processed in the overnight refresh, plus EST/EDT and downtime. The interaction kenpom_snapshot_timing_rules x gap_density ('A team playing on the morning of the snapshot') describes a near-empty event set. Its measurement (captures 04:00-14:00 ET for games on the target date) needs redefining.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "kp_4",
+    "severity": "MAJOR",
+    "text": "Source claims look wrong. settlement_data_source says 'paywalled single-operator source with no public API', and cbb.kenpom_snapshot_timing_rules lists 'own_capture of the KenPom page (requires subscription)'. To my knowledge the main KenPom ratings table with rank, AdjEM, AdjO, AdjD and AdjT is free to view; subscriptions gate team pages and the historical ratings archive. required_data also omits that archive (subscriber feature showing past dates), which is the natural source for the '5 past seasons of daily snapshots' the record needs. The record lists only the Internet Archive and Torvik. Not web-verified here (SOURCE_UNVERIFIED), but it changes which data source and access tier are required.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "kp_5",
+    "severity": "MAJOR",
+    "text": "Catalog-entry inconsistency: stages reference cbb.sos_remaining, cbb.conference_standings_sim, cbb.lineup_adj_rating, cbb.neutral_site, cbb.venue and cbb.score_resid. None of these is in catalog_entry.inputs or input_audit. Category coverage also cites cbb.lineup_adj_rating (role_personnel) and cbb.venue/cbb.neutral_site (environment). As published, the catalog entry claims coverage through inputs it does not list.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "kp_6",
+    "severity": "MINOR",
+    "text": "The author did not check its algorithm claims ('weight of roughly one over the games played and some recency emphasis', 'diminishing returns' on blowouts) against KenPom's published methodology posts. kp_algo discloses this, but the 1/g form is then used as a hard nonlinearity ('hyperbolic decay in games played'). Note also that a team's rank moves on days it does not play, through opponent re-adjustment and neighbours' games. The mechanism mentions this, but the gap-density z formula only uses the team's own games_left.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "kp_7",
+    "severity": "MINOR",
+    "text": "Only R1 and T25 strikes are sampled, so other rank slots are unverified. The rules text gives no fallback if the page is unavailable. Both are disclosed (kp_exact_rank, kp_tz). The verbatim quotes match the rules text exactly.",
+    "resolution": "OPEN"
+   }
+  ]
+ },
+ "unreg:race_to_n_points": {
+  "reviewer": "independent-CBB-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain before reading the record. Yes iff the named team's cumulative score reaches N before the opponent's. N=10 is sampled; titles also list 25 and 50. Scoring is sequential, so a tie is impossible, and overshoot (9->12) counts as reaching 10. Stages: (1) the jump ball gives first possession; jumper height and historical tip-win rate move this off 0.5. (2) The starting fives' points per possession against each other; early-season AdjO/AdjD are prior-heavy, so rating uncertainty matters. (3) Possession alternation broken by offensive rebounds and turnovers. (4) Lumpiness from threes and and-ones. (5) N scales signal against noise: N=50 reaches about minute 27, uses the rotation and bench, and crosses halftime, where team fouls reset and the bonus starts at the 7th foul per half. (6) Settlement: postponement within 48h keeps the market open, otherwise fair price. Unstated: neither team reaching N (only plausible for N=50) and whether OT counts. If markets trade in-play, the live score and possession state become the dominant input. After comparing: the record matches my pregame chain closely and is well specified. Differences: no in-play state, rating uncertainty dropped early in the season, bench and rotation inputs missing for N=50, and some settlement 'ambiguities' are overstated.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "race_1",
+    "severity": "MAJOR",
+    "text": "The model is pregame only. No input captures in-game state: current score, time, possession, or whether the tip outcome is known (the record only says 'updated to 1 or 0 once the tip is known'). Kalshi game markets generally stay open into play. If KXNCAAMBRACE trades live, the current score gap to N and the possession are the primary inputs, and the record has no live play-by-play feed requirement or latency note. The record should either confirm the market closes at tip (from m.lifecycle close_time) or add a live-state input and feed.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "race_2",
+    "severity": "MAJOR",
+    "text": "cbb.adj_off and cbb.adj_def are KEEP_PRIMARY, but cbb.rating_uncertainty (blueprint primary) is dropped without an audit line. Markets are live in early November, when KenPom/Torvik efficiencies are mostly preseason prior and portal churn is maximal. For N=25/50, where the rating gap carries real weight (per cbb.race_n_threshold_scaling), the shrinkage and uncertainty of that gap is needed.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "race_3",
+    "severity": "MINOR",
+    "text": "For N=50 the race runs to about minute 27 (D1 teams average about 70-75 points per 40 minutes) and involves bench units, while the inputs centre on starters (s2: 'the relevant rate is the points per possession of that five'). A bench/rotation efficiency input (e.g. catalog cbb.bench_unit_efficiency) is missing for the 50 variant. The interaction text acknowledges the shift to the rotation but no input carries it.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "race_4",
+    "severity": "MINOR",
+    "text": "Overstated settlement ambiguities. race_overshoot asks whether 'a team that jumps from 9 to 12 has scored 10': it has, and the rules say 'the first to score 10 points'. s5 says close races 'depend on the ordering of simultaneous events ... for example free throws after a shooting foul'. Free throws are sequential and only one team scores at a time, so there are no simultaneous events and no ties. The real residual risk is a PBP or official-scorer correction to the score sequence.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "race_5",
+    "severity": "MINOR",
+    "text": "Tip edge is undersold: 'Tip-win probability is near 50 percent pregame with only a small centre-height effect.' Jumper height and wingspan mismatches, and per-player historical tip records (recoverable from 'Jump Ball won by' PBP lines on ESPN/NCAA), can move this well off 0.5. That edge is largest at N=10, where the record says the event is mostly variance. It belongs as an explicit field of cbb.race_early_scoring_profile.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "race_6",
+    "severity": "MINOR",
+    "text": "Mapping: KXNCAAMBFIRST10/25/50 are NO_LISTING with no rules text. Their merge into this team-level archetype rests only on sibling KXNCAAMBRACE, and they could be player-level 'first to N' markets. The record discloses this (race_title_only). The verbatim quotes match the rules text. The settlement-source line 'the rules cite the official final result' overreads the text: that phrase sits only in the postponement clause.",
+    "resolution": "OPEN"
+   }
+  ]
+ },
+ "unreg:season_stat_leader": {
+  "reviewer": "independent-CBB-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain before reading the record. Yes iff the named player has the highest per-game value of the category among NCAA-qualified players (nationally or within a conference) over all official 2026-27 games, including conference tournaments, NCAA, NIT, CBC, CBI and CIT. Stages: candidate pool and true per-game means (usage, minutes, team pace, opponent schedule strength, role changes, transfer/freshman cold starts). Game-to-game noise, where the average's standard error shrinks as 1/sqrt(g). Availability, which also feeds qualification: the NCAA minimum is usually 75% of team games, so the denominator grows with the team's postseason run, which depends on team strength and NIT/CBI/Crown selection. Systematic garbage-time minute losses for stars on dominant teams. Settlement: which table (NCAA stats, conference office, other) and whether it includes non-NCAA postseason events. The truncated clause on non-qualification and ties is not visible. After comparing: the record's argmax-of-noisy-averages, qualification cliff and inertia framing match mine and are good. Gaps: no team postseason-games projection input, the source-reconciliation input is missing from the catalog entry, the conference-table hazard is not called out, and 'VERIFIED' is overstated.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "sl_1",
+    "severity": "MAJOR",
+    "text": "Postseason games count (verbatim quote: 'NIT games and games in other official postseason competitions ... also count'), and qualification is a share of team games. So each candidate's team's expected postseason game count, and its distribution, is required: it drives both the qualification denominator and G_rem in cbb.leader_average_inertia. No input projects it. cbb.regular_season_game_inventory is regular season only, and blueprint cbb.bracket_sim, cbb.conference_standings_sim and auto-bid inputs were dropped without audit lines. The qualification tracker's measurement says 'projected team games including expected postseason' without naming where that comes from.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "sl_2",
+    "severity": "MAJOR",
+    "text": "cbb.stat_leader_source_reconciliation is defined in new_inputs and used in stage s5 and settlement_contract coverage, but it is absent from catalog_entry.inputs. Its absence matters most for KXNCAAMBCONFLEADER. Conference offices publish their own leaderboards, often with different minimums or conference-only splits. The rules ('the most points per game in the Southeastern Conference in the entire 2026-27 ... season') imply all games, but the source of truth sits in the truncated text. The catalog entry must carry the source-reconciliation input, with a conference-table vs NCAA-table check, as a settlement input.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "sl_3",
+    "severity": "MINOR",
+    "text": "rules_verification 'VERIFIED_FROM_RULES_TEXT' overstates what was seen. Both rules_secondary samples are truncated ('If Zoom Diallo does not', 'If William Kermoury doe'), so the non-qualification/DNP clause, tie handling and named source are unseen. The record itself says so in sl_truncated. PARTIALLY_VERIFIED is the accurate label. The quotes themselves match the rules text exactly.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "sl_4",
+    "severity": "MINOR",
+    "text": "game_context_script is NOT_APPLICABLE on the claim that script effects 'average out' over a season. Blowout minute loss is systematic by team quality, not mean-zero noise: stars on heavy favourites lose minutes all season, which is one reason national scoring leaders cluster on weaker or mid-major teams. This is partly carried by cbb.player_minutes ('blowout risk'), but a team-strength/margin-regime link (e.g. cbb.margin_regime_mixture) should be cited rather than declared not applicable.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "sl_5",
+    "severity": "MINOR",
+    "text": "Opponent strength is covered only by cbb.rebound_pool and cbb.assist_conversion_chain. Nonconference schedule softness, and conference strength for the national category, shift per-game averages systematically. A remaining-schedule opponent-defence term (e.g. cbb.sos_remaining with player-level opponent adjustment) is absent.",
+    "resolution": "OPEN"
+   },
+   {
+    "id": "sl_6",
+    "severity": "MINOR",
+    "text": "cbb.leader_average_inertia mechanism: 'A season average moves by at most (x - mean)/(g+1) per game' is the exact change for a game value x, not a bound. The rationale's '40-point game raises a 20 ppg average by under 0.8' at g=25 is correct (20/26=0.77). Also, cbb.star_injury_risk is defined for postseason availability, so season-long injury hazard rests on cbb.dnp_cause_taxonomy alone. That is acceptable but should be stated.",
+    "resolution": "OPEN"
+   }
+  ]
+ }
+}

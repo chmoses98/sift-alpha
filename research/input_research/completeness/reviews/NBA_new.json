@@ -1,0 +1,954 @@
+{
+ "unreg:all_star_weekend_events": {
+  "reviewer": "NBA_new author",
+  "review_date": "2026-11-07",
+  "contract": {
+   "settlement_definition": "Each series settles Yes if the named player (3-point and dunk contests) or team (All-Star Game) is officially declared winner of the event for the stated year; no rules text was sampled, so overtime, shoot-off, shared-title, withdrawal and format-specific tie treatment are not confirmed and the official league announcement is assumed as the source of truth.",
+   "rules_verification": "NOT_VERIFIED_NO_RULES_TEXT",
+   "rules_evidence": [],
+   "variants_and_edge_cases": [
+    "Contest winner after a shoot-off or dunk-off: whether the shoot-off counts as the win cannot be read from rules, so assume the official champion.",
+    "Entrant who withdraws or is replaced before the event: the named player never competes and the contract's treatment (settles No or voids) is unverified.",
+    "All-Star Game format changes (East-West, captains, multi-team tournament): winner of the whole tournament versus a single game is unverified for the listed series.",
+    "Celebrity Game is listed as a contract type but has no live series in the ledger so no settlement details are available."
+   ],
+   "settlement_data_source": "Official NBA announcement of the winner (NBA.com results); contract's named source not verified because no rules text exists."
+  },
+  "mechanism": {
+   "summary": "All three series settle on the winner of a one-off exhibition or skills event, so the outcome is generated in layers: the league and voters form the field and rosters, entrants then produce a performance (stationary rack shooting, judged dunks, or capped-minute low-defence scoring), a format converts performances into a winner through rounds, ties and shoot-offs, and finally the official announcement settles the contract. Skill matters less than in a regular game because the winner is a max over noisy scores or a single high-variance short game, so favourites are capped and field changes and format rules matter as much as ability. Regular-season minutes, usage and game script are mostly irrelevant; make rate under contest conditions, judging behaviour and effort are the core processes.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Field and roster formation",
+     "description": "The entrant list for each contest and the two Game rosters are produced by league invitation, fan, player and media votes, coach selection of reserves and injury replacement by the commissioner. Withdrawals, sponsor and team preferences, and players doubling up between events change the candidate set up to the day before the event. A winner market on a name that is not in the final field settles on that name's absence, so the field is the first state variable.",
+     "distribution": "Discrete set membership; withdrawal is a Bernoulli per entrant with correlated risk when an entrant also plays the Game.",
+     "categories": [
+      "role_personnel",
+      "availability_news"
+     ],
+     "input_ids": [
+      "nba.all_star_process",
+      "nba.allstar_reserve_coach_vote",
+      "nba.asw_field_withdrawal_hazard",
+      "nba.injuries_pit",
+      "nba.news",
+      "nba.calendar_announcements"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Contest skill: rack shooting and dunk repertoire",
+     "description": "In the 3-point contest each shooter takes balls from five fixed spots with no defender and with a short clock, so skill is a stationary make probability per ball modulated by rhythm and fatigue. In the dunk contest the analogue is the repertoire of difficulty tiers and the probability of converting within an attempt cap. These skills are weakly predicted by season box scores and need proxies like open-shot accuracy and prior contest record.",
+     "distribution": "Per-ball Bernoulli with positive within-round correlation (beta-binomial); dunk make is Bernoulli by tier with a miss penalty, so scores are a bimodal mixture.",
+     "categories": [
+      "talent_strength",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nba.contest_shooting_skill_transfer",
+      "nba.three_make_by_openness_prior",
+      "nba.three_volume",
+      "nba.ft_skill_posterior",
+      "nba.dunker_pedigree_profile",
+      "nba.dunk_difficulty_make_model"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Format aggregation: rounds, advancement and tiebreaks",
+     "description": "Round scores are converted to a winner by the format: first-round totals, the number of finalists, the final round and the shoot-off or dunk-off when tied. Shooting order affects information, and the maximum over several noisy scores means the best shooter wins well under half the time. Format changes (racks, ball values, finalists) change tie mass and upset rate even when skills are fixed.",
+     "distribution": "Discrete scores with ties; the winner is an extreme-value statistic over finalists, so upset probability is high and shoot-offs are not rare.",
+     "categories": [
+      "distribution_variance",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.threept_contest_score_pmf",
+      "nba.contest_format_rules_ledger",
+      "nba.within_game_make_dispersion",
+      "nba.venue"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Judging of dunks",
+     "description": "Judges score each dunk on a bounded scale, so a dunk's value is a function of difficulty, execution, creativity and crowd response, and scores compress near the top. The panel's composition (former players, celebrities), the sequence of contestants and the use of props all shift scores, and totals across rounds decide the winner with dunk-offs on ties.",
+     "distribution": "Ordinal bounded scores with heavy ceiling mass; ties common; panel effects shared across all contestants.",
+     "categories": [
+      "officiating_rules",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nba.dunk_judge_score_model",
+      "nba.dunk_difficulty_make_model",
+      "nba.contest_format_rules_ledger",
+      "nba.rule_change_pipeline"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Exhibition game production: roster, minutes and effort",
+     "description": "The Game outcome is points produced by capped-minute stars under low defensive effort, in a format that may be several short games. Roster strength is composed of offensive impact, shooting and creation of those who actually play; effort and pace rise near the end when a target score or title is at stake. Margin variance is large relative to talent differences.",
+     "distribution": "Approximately normal margin with a large SD per 12 minutes; late-game compression produces a more competitive closing stretch than the middle.",
+     "categories": [
+      "talent_strength",
+      "game_context_script",
+      "pace_volume",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nba.asg_roster_strength_composite",
+      "nba.asg_effort_scoring_baseline",
+      "nba.asg_minutes_rotation_plan",
+      "nba.player_impact",
+      "nba.three_volume"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Settlement",
+     "description": "Each series settles on the officially announced winner of the event; the Game uses the final result of the format used that year. Rules text for these series has not been sampled, so how a shoot-off, a shared title, a withdrawn winner or a format with a multi-team table is treated is not known from text.",
+     "distribution": "Deterministic given the official announcement; ambiguity risk is in the rare branches rather than in the common path.",
+     "categories": [
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "m.rules_text",
+      "m.settlement_truth",
+      "nba.contest_format_rules_ledger"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.dunker_pedigree_profile",
+      "nba.asg_roster_strength_composite",
+      "nba.player_impact"
+     ],
+     "note": "Dunk contest talent by pedigree, roster strength for the Game."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.threept_contest_score_pmf",
+      "nba.asg_roster_strength_composite"
+     ],
+     "note": "No head-to-head defence; the opponent is the rest of the field (max-of-scores) or the opposing roster composition."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.all_star_process",
+      "nba.asg_minutes_rotation_plan",
+      "nba.asw_field_withdrawal_hazard"
+     ],
+     "note": "Field membership and the minutes plan."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.injuries_pit",
+      "nba.news",
+      "nba.asw_field_withdrawal_hazard"
+     ],
+     "note": "Injuries and announcements before the weekend."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.asg_minutes_rotation_plan"
+     ],
+     "note": "Contests have no coaches; for the Game coaches only set the rotation within a shared-minutes norm."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.venue",
+      "nba.contest_shooting_skill_transfer"
+     ],
+     "note": "Neutral venue backdrop and rim effects on contest shooting."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.asg_effort_scoring_baseline",
+      "nba.threept_contest_score_pmf"
+     ],
+     "note": "End-of-game effort in the Game and shooting-order information in the contest."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.asg_effort_scoring_baseline",
+      "nba.three_volume"
+     ],
+     "note": "Exhibition pace and three-point volume."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.contest_shooting_skill_transfer",
+      "nba.dunk_difficulty_make_model",
+      "nba.three_make_by_openness_prior"
+     ],
+     "note": "Make rates under contest conditions."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.threept_contest_score_pmf",
+      "nba.within_game_make_dispersion",
+      "nba.dunk_judge_score_model"
+     ],
+     "note": "Round score distributions, ties and judge compression."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "Effort and motivation in the Game and contest (prizes, participation fatigue, players also playing other events) have no measurable pregame proxy defined here."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "nba.dunk_judge_score_model",
+      "nba.contest_format_rules_ledger",
+      "nba.rule_change_pipeline"
+     ],
+     "note": "Judges are the officiating analogue; format rules decide ties."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text",
+      "m.settlement_truth"
+     ],
+     "note": "No rules text sampled; official announcement as source."
+    }
+   }
+  },
+  "catalog_entry": {
+   "label": "NBA All-Star Weekend events",
+   "blueprint": "player_other",
+   "contract_types": [
+    "NBA 3-Point Contest Winner",
+    "NBA Slam Dunk Contest Winner",
+    "NBA All-Star Game Winner",
+    "Pro Basketball All-Star Celebrity Game"
+   ],
+   "target": "Winner of an All-Star Weekend contest or exhibition game",
+   "mechanism": "The winner of each All-Star Weekend event is produced by a one-off process: the field or roster is formed by votes, coach picks and withdrawals; entrants then generate scores through stationary rack shooting, judged dunks or low-defence capped-minute scoring; the format turns these into a winner through rounds, ties and shoot-offs. Variance from a max-of-noisy-scores or short game caps favourites, so field changes and format rules matter as much as skill.",
+   "inputs": [
+    {
+     "id": "nba.contest_format_rules_ledger",
+     "why": "Format parameters decide scoring scale, ties and the number of rounds, so they define what a win means in each series.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.threept_contest_score_pmf",
+     "why": "Simulated winner distribution over rounds, advancement and shoot-offs is the direct model of the 3-point contest.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.contest_shooting_skill_transfer",
+     "why": "Contest make rate is a catch-and-shoot skill without a defender; this input converts game stats to that setting.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.dunk_judge_score_model",
+     "why": "The dunk series settles on panel scores, so judge behaviour and ties are the mechanism.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.dunk_difficulty_make_model",
+     "why": "Dunk tier choice and make rate under attempt caps drive expected judged score.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.dunker_pedigree_profile",
+     "why": "Only pregame talent measure for contestants who rarely appear in season statistics.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.asg_roster_strength_composite",
+     "why": "Team strength of the actual All-Star rosters in an exhibition environment.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.asg_effort_scoring_baseline",
+     "why": "Exhibition margin variance and late effort set how much talent gap converts to a win.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.asg_minutes_rotation_plan",
+     "why": "Who plays and how many minutes in each game of the format changes the effective roster.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.asw_field_withdrawal_hazard",
+     "why": "Contest fields change before the event, shifting every entrant's winning probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.all_star_process",
+     "why": "Selection, captains and participation determine who is on each roster and which events they enter.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.allstar_reserve_coach_vote",
+     "why": "Reserve selection and injury replacement set roster membership that feeds roster strength.",
+     "role": "context"
+    },
+    {
+     "id": "nba.player_impact",
+     "why": "Player impact ratings feed the roster strength composite for the Game winner market.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.injuries_pit",
+     "why": "Injury reports before the weekend drive withdrawals and replacement players across all three events.",
+     "role": "primary"
+    },
+    {
+     "id": "nba.news",
+     "why": "Announcements on field, captains, format and participation arrive as news before official lists.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.three_volume",
+     "why": "Three-point volume and catch-and-shoot share identify the true shooters for both contest and Game environment.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.three_make_by_openness_prior",
+     "why": "Open-shot make probability by shot type is the best game-data proxy for rack shooting.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.within_game_make_dispersion",
+     "why": "Hot-hand dispersion of makes inside a minute-long round sets contest score variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "nba.ft_skill_posterior",
+     "why": "Free-throw skill is a low-noise proxy for shooting form in a defender-free setting.",
+     "role": "context"
+    },
+    {
+     "id": "nba.venue",
+     "why": "Arena sightlines, backdrop and rim feel shift contest conversion for all entrants.",
+     "role": "context"
+    },
+    {
+     "id": "nba.rule_change_pipeline",
+     "why": "Format changes announced by the league alter scoring rules for the Game and contests.",
+     "role": "context"
+    },
+    {
+     "id": "nba.calendar_announcements",
+     "why": "Announcement timing of rosters, fields and format sets the as-of date for every input.",
+     "role": "context"
+    },
+    {
+     "id": "m.rules_text",
+     "why": "Rules wording is unavailable for these series, so any settlement assumption must be tagged as unverified.",
+     "role": "primary"
+    },
+    {
+     "id": "m.settlement_truth",
+     "why": "Official winner announcements are the labels and need reconciling with the contract source.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "nba.contest_shooting_skill_transfer",
+      "nba.threept_contest_score_pmf"
+     ],
+     "hypothesis": "Small per-ball edges compound into only a modest winner probability because the max over about eight noisy round scores caps favourites."
+    },
+    {
+     "inputs": [
+      "nba.dunk_judge_score_model",
+      "nba.dunk_difficulty_make_model"
+     ],
+     "hypothesis": "Difficulty beats polish only when the panel's top-score compression is low; with lenient panels a clean easy dunk ties a hard one."
+    },
+    {
+     "inputs": [
+      "nba.asg_roster_strength_composite",
+      "nba.asg_effort_scoring_baseline"
+     ],
+     "hypothesis": "A real roster gap converts to wins less in a short high-variance game, so the same gap gives a lower win probability at 12-minute length than at 48."
+    },
+    {
+     "inputs": [
+      "nba.asw_field_withdrawal_hazard",
+      "nba.injuries_pit"
+     ],
+     "hypothesis": "Entrant injury status shifts both his own winning chance and the rest of the field through the replacement draw."
+    }
+   ]
+  },
+  "new_inputs": {
+   "nba.contest_format_rules_ledger": {
+    "label": "All-Star Weekend format and rules ledger by event and year",
+    "category": "other",
+    "mechanism": "Each event's winner is a deterministic function of the format: racks, balls, money-ball value, time limit, number of rounds, how many advance, tiebreak or shoot-off, dunk attempt caps and judging scale, All-Star Game length, target score and team structure.",
+    "rationale": "The formats are changed almost every few years (the Game has switched between East-West, captains' draft and a multi-team mini-tournament), so a historical result is only a label for the same process if the format parameters are matched. The subtle part is that a rule change moves variance and ties, not just level: a shorter game or a single-elimination final increases upset probability.",
+    "measurement": "Per event-year, record: participants count, rounds, advancement count, balls per rack, racks, points per ball type, seconds per round, tiebreak procedure, dunk count per round and attempts allowed, judge count and score range, ASG game length, target-score rule, number of teams and tiebreak between teams; as-of = the league's announcement date for that year's event, with a flag SOURCE_UNVERIFIED where only press coverage exists. Join to each historical result by year so every label carries its own format vector.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com and NBA Communications press releases",
+     "Wikipedia event pages per year",
+     "Basketball-Reference All-Star pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "event-year format parameter table",
+     "announcement dates",
+     "per-year result sheets"
+    ],
+    "why": "Format parameters set the tie, upset and score-scale behaviour of all three Kalshi series; without them past winners cannot be pooled.",
+    "role": "primary"
+   },
+   "nba.threept_contest_score_pmf": {
+    "label": "Three-Point Contest round-score distribution and winner simulation",
+    "category": "distribution",
+    "mechanism": "Each shooter's round score is a sum over racks of correlated Bernoulli makes with different point weights; the winner is the maximum over finalists after advancement, with ties broken by a shoot-off.",
+    "rationale": "The winner is a max-of-noisy-scores over a field of eight or so, so the favourite's chance is capped well below his skill edge: with per-ball probability near 0.55-0.65 the round-score standard deviation is several points, comparable to the whole skill gap between the best and median shooter. It is a tournament over rounds, not one score, so both advancement variance and shoot-off tie mass matter.",
+    "measurement": "For each entrant simulate rack by rack: P(make) from nba.contest_shooting_skill_transfer, rack-level hot-hand correlation rho estimated from past contest videos or box data (prior beta-binomial rho from nba.within_game_make_dispersion), points weights from nba.contest_format_rules_ledger; run 20000 simulations of round 1, advancement to the final and shoot-offs; output P(win), P(advance) per entrant. Update only when the field is announced and again at the shooting-order draw; as-of timestamp = last field change.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Own simulation from public shooting data",
+     "Basketball-Reference shooting splits",
+     "NBA Stats shooting tracking pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "entrant make probabilities",
+     "format parameters",
+     "historical round scores 2003-2026"
+    ],
+    "why": "Directly produces the winner distribution the contest series settles on, including tie mass and field-size effects.",
+    "role": "primary"
+   },
+   "nba.contest_shooting_skill_transfer": {
+    "label": "Transfer of shooter skill to the contest's rack conditions",
+    "category": "variance_luck",
+    "mechanism": "Contest make probability is stationary-catch-and-shoot skill from fixed rack spots, with no defender, no movement, rhythm over about a minute and fatigue; it is only partly predicted by game 3P%.",
+    "rationale": "Game 3P% mixes shot difficulty and defence, so contest make rate is better proxied by catch-and-shoot or open-shot 3P%, free-throw skill and past contest make rate, each shrunk because contest samples are 25 balls. Deep-range pull-up shooters can underperform because the contest rewards form repeatability, and a venue's backdrop and rims add a shared level shift.",
+    "measurement": "Per entrant: posterior make rate = precision-weighted mean of (a) career catch-and-shoot 3P% on open and wide-open attempts, last 3 seasons with half-life 1 season and shrinkage k=300 attempts to league 0.37, (b) FT% logit scaled by a fitted slope, (c) past contest make rate with k=75 balls; the contest-conditions offset is estimated as the mean residual of all entrants over past contests (venue-year effect); units = P(make) per ball; as-of = day before the contest.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA Stats shooting splits by closest defender",
+     "Basketball-Reference shooting tables",
+     "Past contest box scores on NBA.com"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "catch-and-shoot attempts and makes by defender distance",
+     "FT% history",
+     "past contest ball-by-ball results"
+    ],
+    "why": "Different from in-game 3P% because the contest strips out the defender and movement, so the right skill measure for the series is not the default player shooting input.",
+    "role": "primary"
+   },
+   "nba.dunk_judge_score_model": {
+    "label": "Dunk Contest judging panel score and tiebreak model",
+    "category": "officiating",
+    "mechanism": "The winner is selected by a panel's subjective scores per dunk, summed over rounds; panel composition, scoring scale and the compression of scores near the maximum decide who wins and whether a dunk-off is needed.",
+    "rationale": "Scores cluster at the top of the scale so many dunks tie, and a run of 10s from celebrity judges can erase a difficulty advantage. Judges anchor on crowd reaction and narrative as well as difficulty, creating a first-mover and last-mover effect, and repeat winners can be penalised or rewarded depending on the panel's era.",
+    "measurement": "From past contests extract every dunk's judge scores; fit an ordinal model of dunk score on (attempt number, make flag, prop use, dunker's reputation, round, panel mean leniency) with a partial-pooling judge effect; estimate per-panel mean and SD and the probability of a perfect score; store panel composition as announced (as-of = announcement); output expected round totals and P(tie) per pair. Use only rounds since the current scale was introduced.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA.com contest recaps with judge scores",
+     "Video archive of past contests",
+     "Wikipedia contest pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "dunk-level judge scores",
+     "panel lists",
+     "scoring-scale metadata"
+    ],
+    "why": "The series settles on judges' scores, so the process is scoring behaviour and not athletic ability alone.",
+    "role": "primary"
+   },
+   "nba.dunk_difficulty_make_model": {
+    "label": "Dunk difficulty tier and make probability under attempt caps",
+    "category": "player_role",
+    "mechanism": "A contestant's score depends on choosing a dunk of a given difficulty tier and converting it within the attempt allowance; misses burn time or attempts and zero or lower the score.",
+    "rationale": "Hard dunks have a high ceiling but a real miss rate, and the attempt cap makes the score a mixture between a clean mid-tier dunk and a failed high-tier one. Props, teammate assists and limited rehearsal affect conversion; contestants who tend to over-script get penalised for misses.",
+    "measurement": "Classify each past dunk by difficulty tier (360 or windmill, leap over a person, double-ball, two-step, prop-assisted) from video-coded tags; compute per-dunker attempt success by tier with Beta(2,2) shrinkage, and expected score per dunk = P(make before cap) times mean judged score of the tier plus (1 - P) times the miss score; as-of = last contest participated; units = points per dunk.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Public dunk contest video archives",
+     "Contest recaps on NBA.com",
+     "Own video coding"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "dunk-level tier tags",
+     "attempt counts",
+     "make or miss"
+    ],
+    "why": "Converts a dunker's repertoire into expected judged score under the series' own attempt rules.",
+    "role": "secondary"
+   },
+   "nba.dunker_pedigree_profile": {
+    "label": "Dunker athletic profile and prior contest record",
+    "category": "player_role",
+    "mechanism": "Contest strength comes from leaping ability, creativity and show experience, none of which appear in regular-season box scores.",
+    "rationale": "Contest entrants are often bench or G League players whose NBA stats say little, so talent is measured by prior contest finishes, highlight dunk rate, vertical measures from draft combine and age. The sample is tiny and selection is heavy, so pedigree must be shrunk toward a field mean and treated as a ranking, not a number.",
+    "measurement": "Per entrant: prior contest finishes (win=3, final=2, appeared=1) with decay 0.7 per year, combine max vertical z-score among entrants, in-game dunk count per 100 minutes over the last two seasons shrunk with k=200 minutes, and a flag for G League or non-NBA status; combine as a rank-based composite within the announced field; as-of = field announcement date.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA Draft Combine measurements",
+     "Basketball-Reference dunks via play-by-play",
+     "Contest history on Wikipedia"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "combine vertical",
+     "prior contest placements",
+     "in-game dunk counts"
+    ],
+    "why": "Gives the only pregame talent signal for a contest where season performance is nearly irrelevant.",
+    "role": "secondary"
+   },
+   "nba.asg_roster_strength_composite": {
+    "label": "All-Star Game team roster strength and composition",
+    "category": "team_strength",
+    "mechanism": "The Game winner is the team whose assigned players are collectively better at scoring in an open-court, low-defence environment, built from impact, shooting and creation of the players who actually appear.",
+    "rationale": "Because the same selected stars are split among teams, the gap between teams is small and dominated by composition: shooters and creators gain more than rim protectors in a no-defence game, and a team missing a key player to injury swaps in a replacement chosen by the commissioner. The roster after replacements matters, not the original ballot.",
+    "measurement": "For each team sum player ratings over the roster weighted by expected minute share: rating = 0.5 x scoring efficiency-adjusted offence rating (per-100 offensive impact, shrunk k=500 possessions) + 0.3 x three-point volume x accuracy + 0.2 x creation (assist rate); apply positional balance adjustment for number of bigs; team gap = difference of weighted sums in points per 12 minutes; as-of = final roster after the replacement window.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA.com All-Star roster releases",
+     "Basketball-Reference advanced stats",
+     "NBA Stats tracking pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "All-Star roster and team assignments",
+     "player offensive impact and three-point volume",
+     "replacement announcements"
+    ],
+    "why": "Defines which side is stronger under this exhibition's roster assignment, not a league-wide team rating.",
+    "role": "primary"
+   },
+   "nba.asg_effort_scoring_baseline": {
+    "label": "All-Star Game effort, pace and score variance baseline by format",
+    "category": "pace_volume",
+    "mechanism": "Exhibition scoring and margin come from defensive effort that rises in the final minutes, extreme three-point volume and random clustering of makes.",
+    "rationale": "Scores have often been above 150 per team in the old format and pace is not like a regular game, so margin variance is large relative to talent gaps, and a short game raises the chance the weaker roster wins. Effort jumps in the closing minutes when a target score is in play, which makes the end of the game closer than the middle.",
+    "measurement": "From all exhibition games under comparable formats collect points per team, three-point attempts, pace, margin by quarter and the minute at which the lead falls below 5; estimate margin SD per 12 minutes of game time and the late-game compression coefficient (change in margin SD for the last quarter or final 4 minutes); as-of = last season's data; units = points and probability of lead change.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference All-Star box scores",
+     "NBA.com play-by-play for All-Star games",
+     "Wikipedia All-Star Game pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "team points by period",
+     "three-point attempts",
+     "lead history"
+    ],
+    "why": "Sets how much randomness separates the stronger team from the weaker one in this exhibition.",
+    "role": "primary"
+   },
+   "nba.asg_minutes_rotation_plan": {
+    "label": "All-Star Game minutes plan, rest and multi-game fatigue",
+    "category": "player_role",
+    "mechanism": "All-Star players play capped minutes with fairly even distribution, and in a multi-game format starters and replacements are managed across games, which changes who is on court in the decisive game.",
+    "rationale": "Minutes are not set by merit: coaches are mostly told to share minutes, and players with injuries or heavy loads often log little. In a mini-tournament, a team that must play two games may rotate its stars, while the fresh final-game lineup matters more than the roster list.",
+    "measurement": "From past games compute minutes per player vs season minutes with an ordinal shrinkage; model P(player plays under 15 minutes) as a function of age, season minutes load and injury report flags; for multi-game formats estimate the drop in minutes for game 2 vs game 1; as-of = injury reports on game day and coach statements; units = minutes per game, probability of reduced role.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Basketball-Reference All-Star box scores",
+     "NBA injury report archive",
+     "Coach press conference reports"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "All-Star minutes by player",
+     "season minutes load",
+     "game-day status"
+    ],
+    "why": "Needed because the exhibition winner depends on who actually plays and for how long, which can differ sharply from the roster.",
+    "role": "secondary"
+   },
+   "nba.asw_field_withdrawal_hazard": {
+    "label": "Contest field changes: withdrawal and replacement hazard",
+    "category": "availability",
+    "mechanism": "The entrant list for the 3-point and dunk contests is announced weeks ahead and changes through injury, rest, ASG replacement and sponsor negotiation, which changes both the field strength and the winner's probability.",
+    "rationale": "A late replacement is usually weaker or different in type, and a withdrawal of the favourite lifts every remaining entrant; the market question requires a specific named player so this is also an eligibility risk.",
+    "measurement": "Per announced entrant: P(withdraw before event) = base rate from past years (about 10-15 percent by entrant, to be estimated) updated by current injury status from nba.injuries_pit and by whether he is also an All-Star Game participant; for each withdrawal, replacement distribution drawn from the pool of next-ranked shooters or dunkers by pedigree; as-of = each daily injury report and announcement.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA.com announcements",
+     "ESPN and The Athletic reporting archives",
+     "NBA official injury reports"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "announced field by date",
+     "withdrawal history",
+     "injury statuses"
+    ],
+    "why": "Winner probabilities depend on the final field, so field risk is its own input in these series.",
+    "role": "secondary"
+   }
+  },
+  "input_audit": {
+   "nba.all_star_process": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Captain, roster and event participation set who is eligible to win each series; it does not give shooting or judging ability, so it is a gate not a driver."
+   },
+   "nba.allstar_reserve_coach_vote": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Only matters to the Game market through who is on rosters, and the vote is mostly settled before pricing; use as roster provenance, not as a performance input."
+   },
+   "nba.player_impact": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Regular-season impact overstates defenders in a no-defence Game; keep only offensive components and for the Game series; irrelevant to contest skill."
+   },
+   "nba.injuries_pit": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Withdrawals, replacements and reduced minutes are the main pregame information events for all three series; official report vintages are required."
+   },
+   "nba.news": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Fields, formats and captain choices appear in reporting before official announcements; keep with reporter-reliability weighting rather than as a performance signal."
+   },
+   "nba.three_volume": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Three-point volume identifies spot-up shooters and is one input to contest skill and ASG roster offence, but it measures usage more than accuracy."
+   },
+   "nba.three_make_by_openness_prior": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Open and wide-open make rate is the nearest game proxy for contest rack shooting; it has to be rescaled via the contest transfer input."
+   },
+   "nba.within_game_make_dispersion": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Supplies the within-round make correlation that widens contest score variance; estimated from games so only a prior for a one-minute stationary round."
+   },
+   "nba.ft_skill_posterior": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Free-throw skill correlates with stationary shooting form but is weak across shot distance; a context feature for the contest and unused for dunks and the Game."
+   },
+   "nba.venue": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Home-court effects do not apply to neutral All-Star sites, but backdrop and rim feel matter for contest conversion; use as venue-year offset only."
+   },
+   "nba.rule_change_pipeline": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Provides early notice of format changes announced by the league; only context because the format ledger is the decisive record once the format is announced."
+   },
+   "nba.calendar_announcements": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Sets the as-of discipline: rosters, fields and formats are announced on known dates and features must not use later information."
+   },
+   "m.rules_text": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "No rules text exists for these series, so period, tie handling and replacement-player rules are unverified and every use needs a flag."
+   },
+   "m.settlement_truth": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "The official winner announcement is the label; useful for reconciling ties, shoot-offs and disputes about which entrant counts."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nba.contest_shooting_skill_transfer",
+     "nba.threept_contest_score_pmf"
+    ],
+    "form": "other-nonlinear",
+    "mechanism": "Win probability is a max-of-noisy-scores function of per-ball make rates, so a shooter's gain from a few points of make probability is bigger when the field is thin at the top and shrinks as more strong shooters enter.",
+    "how_to_test": "Simulate the field with and without the best entrant and compare the change in each remaining entrant's P(win); check against historical favourite hit rates by field strength spread."
+   },
+   {
+    "inputs": [
+     "nba.dunk_judge_score_model",
+     "nba.dunk_difficulty_make_model"
+    ],
+    "form": "saturating",
+    "mechanism": "Judged score saturates near the scale maximum, so extra difficulty adds little once a clean dunk already earns near-perfect marks, while a miss subtracts a lot; this reverses the naive hard-dunk advantage.",
+    "how_to_test": "Regress dunk score on difficulty tier and make flag with a ceiling-aware ordinal model and compare the marginal effect of tier among clean dunks versus the miss penalty."
+   },
+   {
+    "inputs": [
+     "nba.asg_roster_strength_composite",
+     "nba.asg_effort_scoring_baseline"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Win probability is the roster gap divided by margin SD, and the SD depends on format length and late effort, so the same gap gives a smaller edge in a shorter or more effort-compressed format.",
+    "how_to_test": "Compute z = gap / SD for each past exhibition and test the win rate by z bucket and format length."
+   },
+   {
+    "inputs": [
+     "nba.asw_field_withdrawal_hazard",
+     "nba.contest_format_rules_ledger"
+    ],
+    "form": "conditional",
+    "mechanism": "A withdrawal changes the winner probability differently depending on the number of finalists and rounds: with fewer rounds a replacement has a larger chance to win through variance.",
+    "how_to_test": "Compare historical outcomes for replacement entrants against the pre-event field ranking, split by number of rounds."
+   },
+   {
+    "inputs": [
+     "nba.asg_minutes_rotation_plan",
+     "nba.injuries_pit"
+    ],
+    "form": "threshold",
+    "mechanism": "A star with a minor injury often plays a sharply reduced role or none, so impact on team strength is a threshold at the status level, not a gradual one.",
+    "how_to_test": "Estimate minutes by injury status tier in past exhibitions and test the roster composite with a status-tier discount versus a linear one."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nba.contest_shooting_skill_transfer",
+    "shape": "Convex in P(win) near the top of the field, flat for low skill",
+    "why": "The winner is the maximum of several noisy scores, so top shooters gain disproportionally from higher make rates while low-skill entrants have almost no chance regardless of small skill changes."
+   },
+   {
+    "input_id": "nba.dunk_judge_score_model",
+    "shape": "Ceiling at the maximum score with heavy tie mass",
+    "why": "Scores are bounded and compressed at the top, so differences in dunk quality translate into almost no score difference above a threshold and the winner is then decided by ties and dunk-offs."
+   },
+   {
+    "input_id": "nba.asg_effort_scoring_baseline",
+    "shape": "Late-game variance compression",
+    "why": "Defensive effort rises when a target score is near, so final-minute margin variance is lower than in the middle, making the trailing team's chance fall faster than a linear time decay would imply."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Contest results and round scores 2003-2026",
+    "grain": "entrant-round-event-year",
+    "fields": [
+     "entrant",
+     "year",
+     "round",
+     "rack scores",
+     "total",
+     "finalist flag",
+     "shoot-off result",
+     "dunk scores by judge",
+     "attempts"
+    ],
+    "timestamp_requirement": "Post-event; rows dated after the event, never used for the same year's prediction.",
+    "history_needed": "All available years; formats restricted to the ones comparable with the current rules",
+    "candidate_sources": [
+     {
+      "name": "Basketball-Reference All-Star Weekend pages",
+      "access": "free_scrape",
+      "note": "Round totals available; per-rack and judge scores not confirmed for all years"
+     },
+     {
+      "name": "NBA.com contest recaps and video",
+      "access": "free",
+      "note": "Per-dunk judge scores exist in recaps; per-ball data would need video coding"
+     },
+     {
+      "name": "Own video coding",
+      "access": "own_capture",
+      "note": "Required for ball-by-ball and dunk-tier tags"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.threept_contest_score_pmf",
+     "nba.dunk_judge_score_model",
+     "nba.dunk_difficulty_make_model",
+     "nba.dunker_pedigree_profile",
+     "nba.contest_format_rules_ledger",
+     "nba.contest_shooting_skill_transfer"
+    ]
+   },
+   {
+    "dataset": "Shooting splits by defender distance and shot type",
+    "grain": "player-season",
+    "fields": [
+     "catch-and-shoot attempts",
+     "makes",
+     "open and wide-open attempts",
+     "FT attempts",
+     "makes"
+    ],
+    "timestamp_requirement": "Season to date at announcement of the field.",
+    "history_needed": "Last 3 seasons plus career FT%",
+    "candidate_sources": [
+     {
+      "name": "NBA Stats tracking shooting endpoints",
+      "access": "free_limited",
+      "note": "Defender-distance splits available through stats.nba.com; rate limiting"
+     },
+     {
+      "name": "Basketball-Reference",
+      "access": "free_scrape",
+      "note": "Career 3P and FT figures"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.contest_shooting_skill_transfer",
+     "nba.three_volume",
+     "nba.three_make_by_openness_prior",
+     "nba.ft_skill_posterior",
+     "nba.within_game_make_dispersion"
+    ]
+   },
+   {
+    "dataset": "All-Star rosters, replacements and exhibition box scores",
+    "grain": "player-game and team-year",
+    "fields": [
+     "roster",
+     "team assignment",
+     "replacements",
+     "minutes",
+     "points",
+     "3PA",
+     "lead by period",
+     "format"
+    ],
+    "timestamp_requirement": "Roster as of the final replacement announcement; box scores post-game.",
+    "history_needed": "2010-2026 with format flag",
+    "candidate_sources": [
+     {
+      "name": "NBA.com All-Star pages",
+      "access": "free",
+      "note": "Rosters and results"
+     },
+     {
+      "name": "Basketball-Reference All-Star game logs",
+      "access": "free_scrape",
+      "note": "Box scores per game"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.asg_roster_strength_composite",
+     "nba.asg_effort_scoring_baseline",
+     "nba.asg_minutes_rotation_plan",
+     "nba.player_impact",
+     "nba.all_star_process",
+     "nba.allstar_reserve_coach_vote"
+    ]
+   },
+   {
+    "dataset": "Official injury reports and event announcements with timestamps",
+    "grain": "player-day and announcement",
+    "fields": [
+     "status",
+     "announcement time",
+     "entrant list",
+     "withdrawal flag",
+     "replacement",
+     "format releases"
+    ],
+    "timestamp_requirement": "Vintage of each report; stored on capture.",
+    "history_needed": "2018-2026 weekends",
+    "candidate_sources": [
+     {
+      "name": "NBA official injury report",
+      "access": "own_capture",
+      "note": "Historical vintages need own archive"
+     },
+     {
+      "name": "NBA Communications press releases",
+      "access": "free",
+      "note": "Announcements and format changes"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.injuries_pit",
+     "nba.news",
+     "nba.asw_field_withdrawal_hazard",
+     "nba.calendar_announcements",
+     "nba.rule_change_pipeline"
+    ]
+   },
+   {
+    "dataset": "Venue and event setup",
+    "grain": "event-year",
+    "fields": [
+     "arena",
+     "court setup",
+     "backdrop",
+     "rim"
+    ],
+    "timestamp_requirement": "Announced setup before the event.",
+    "history_needed": "Past 10 events",
+    "candidate_sources": [
+     {
+      "name": "Event coverage and photos",
+      "access": "free_scrape",
+      "note": "Not structured; manual extraction"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.venue"
+    ]
+   },
+   {
+    "dataset": "Kalshi series rules and settlement",
+    "grain": "series",
+    "fields": [
+     "rules_primary",
+     "rules_secondary",
+     "settlement value",
+     "settle time"
+    ],
+    "timestamp_requirement": "As of market open and settlement.",
+    "history_needed": "All listed series",
+    "candidate_sources": [
+     {
+      "name": "Kalshi public market API",
+      "access": "free",
+      "note": "Rules text not sampled for these series"
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text",
+     "m.settlement_truth"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "No rules text was sampled for KXNBA3PTCONTEST, KXNBAALLSTARGAME or KXNBASLAMDUNK, so tie, shoot-off, withdrawn-winner, replacement and multi-team format handling are unknown.",
+    "what_would_resolve": "Sample rules_primary and rules_secondary for the three series and any All-Star Celebrity Game series.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The current All-Star Game format (multi-team mini-tournament length, target score, tiebreak between teams) is from memory and has not been checked against league announcements for the contract's year.",
+    "what_would_resolve": "Read the league's official format announcement for the event year and record the parameters in the format ledger."
+   },
+   {
+    "id": "u3",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Ball-by-ball contest data and per-dunk judge scores are not provided in a structured public table, so the round-score correlation and judge model would rely on hand coding of video.",
+    "what_would_resolve": "Locate a structured source or hand-code recent contests to sizes sufficient to estimate rho and judge effects."
+   },
+   {
+    "id": "u4",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "The effect of effort, prize incentives and fatigue on exhibition play is not measurable with any pregame variable defined here and the sample of games under the current format is very small.",
+    "what_would_resolve": "Collect more seasons under the current format and test candidate effort proxies such as late-game defence rate.",
+    "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "u5",
+    "type": "OTHER",
+    "description": "The pack lists a Celebrity Game contract type but no live series; this record covers it only in the contract-type list and not with inputs.",
+    "what_would_resolve": "Confirm whether a Kalshi series for the Celebrity Game exists and, if so, assign it to an archetype."
+   }
+  ]
+ }
+}

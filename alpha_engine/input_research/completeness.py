@@ -470,6 +470,7 @@ def compute_gate() -> dict:
     rules = rd(RULES)
     rows, per_sport, contract_universe = [], {}, {}
     all_rows = rd(LEDGER)["rows"]
+    assign_rows = rd(IN / "market_universe/series_assignment.json")["rows"]
     for s in SPORTS:
         c = load_catalog(s); reviews = load_reviews(s); ind = load_independent(s); rvf = load_reverification(s)
         flags = similarity_flags(s, reviews)
@@ -496,8 +497,12 @@ def compute_gate() -> dict:
                 row["status"] = ("STRUCTURE_INCOMPLETE" if errs else "AUTHORED_NOT_INDEPENDENTLY_REVIEWED" if ist == "NONE" else "INDEPENDENT_REVIEW_OPEN_FINDINGS" if ist == "OPEN_FINDINGS" else "REVERIFICATION_PENDING" if rvs not in ("CLEAR", "NOT_NEEDED") else "READY_FOR_USER_APPROVAL")
             cnt[row["status"]] += 1; rows.append(row)
         per_sport[s] = {"archetypes": len(arch_keys(c)), **{k: cnt.get(k, 0) for k in STATUSES}, "inputs": len(c["inputs"])}
-        sr = [r for r in all_rows if r["sport"] == s]
-        contract_universe[s] = {"series": len(sr), **dict(collections.Counter(r["status"] for r in sr)), "evidence": dict(collections.Counter(r["evidence"] for r in sr if r["status"] != "NO_LISTED_MARKETS"))}
+        sr = [r for r in assign_rows if r["sport"] == s]
+        ins = [r for r in sr if r["scope"] == "IN_SCOPE"]
+        contract_universe[s] = {"series": len(sr), "in_scope": len(ins), "out_of_scope": sum(1 for r in sr if r["scope"] == "OUT_OF_SCOPE"), "no_listed_market": sum(1 for r in sr if r["scope"] == "NO_LISTED_MARKETS"), "excluded": sum(1 for r in sr if r["scope"] == "EXCLUDED"),
+                                "in_scope_rules_text_read": sum(1 for r in ins if r["basis"] == "RULES_TEXT"), "in_scope_title_only": sum(1 for r in ins if r["basis"] == "TITLE_ONLY"), "in_scope_no_listing": sum(1 for r in ins if r["basis"] == "NO_LISTING"),
+                                "reviewed_against_rules_or_title": sum(1 for r in sr if str(r.get("origin", "")).startswith("reviewed")), "refiled_by_review": sum(1 for r in sr if r.get("origin") == "reviewed"),
+                                "in_new_archetypes": sum(1 for r in ins if str(r["final"]).startswith("unreg:") and r.get("origin") == "reviewed")}
     approval = rd(CD / "approval.json") if (CD / "approval.json").exists() else {"approved": False, "approved_by": None, "date": None, "note": "no human approval recorded; code never writes this"}
     tot = collections.Counter(r["status"] for r in rows)
     gate = {"schema_version": "completeness-gate-1.0", "status": "RESEARCH_ONLY", "phase": "CATALOG_COMPLETENESS (predictive experimentation PAUSED)",

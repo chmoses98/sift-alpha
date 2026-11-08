@@ -206,6 +206,12 @@ def apply_archetype_patches() -> dict:
                     raise ValueError(f"{s}:{k}: bad attach {x}")
                 if x["id"] not in have:
                     a["inputs"].append({"id": x["id"], "why": x["why"], "role": x["role"]}); have.add(x["id"]); n["attached"] += 1
+        used = ({i["id"] for b in c["blueprints"].values() for i in b["inputs"]} | {i["id"] for x in list(c["archetypes"].values()) + list((c.get("unregistered_archetypes") or {}).values()) for i in x["inputs"]})
+        for iid, r in c["inputs"].items():
+            if iid not in used and not r.get("retired"):
+                r["retired"] = {"reason": "detached from every archetype by an audited archetype patch (duplicate, irrelevant or superseded); kept for traceability"}; n["retired"] += 1
+            elif iid in used and r.get("retired"):
+                del r["retired"]
         (cat.CATALOG_DIR / f"{s}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False) + "\n")
         stats[s] = dict(n)
     return stats

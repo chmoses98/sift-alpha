@@ -96,7 +96,7 @@ def validate(doc: dict, sport: str, *, require_blueprint_coverage: bool = True) 
     used = ({i.get("id") for rec in bps.values() for i in rec.get("inputs", [])} | {i.get("id") for rec in (doc.get("archetypes") or {}).values() for i in rec.get("inputs", [])}
             | {i.get("id") for rec in (doc.get("unregistered_archetypes") or {}).values() for i in rec.get("inputs", [])})
     for iid in inputs:
-        if iid not in used:
+        if iid not in used and not inputs[iid].get("retired"):   # `retired` = detached from every archetype by an audited correction (kept for traceability, never deleted)
             errs.append(f"input {iid}: defined but not attached to any blueprint or archetype input list (it would be invisible on the dashboard)")
     fam_by_bp = registry_blueprints(sport)
     all_fams = {f for fs in fam_by_bp.values() for f in fs}

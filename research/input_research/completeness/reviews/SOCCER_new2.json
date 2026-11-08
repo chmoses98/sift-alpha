@@ -143,8 +143,8 @@
    ]
   },
   "contract": {
-   "settlement_definition": "Binary markets per phase on one knockout final. MOF (KXUCLMOF, KXWCMOF) settles YES for the phase in which either team wins the trophy/advances; MOV (KXUELMOV, KXWCMOV) settles YES only if the named team wins in that phase. Regular/Regulation Time includes the 90 minutes plus all stoppage time and excludes extra time and the shootout; Extra Time is a win after extra time but before any shootout; Penalty Shootout is a win via shootout after regulation and extra time. Cancellation or rescheduling more than two weeks away resolves to a fair price. The source of truth is not named in the sampled text.",
-   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "settlement_definition": "41 series: four with rules text (KXUCLMOF, KXWCMOF either-team; KXUELMOV, KXWCMOV named-team) and 37 Method of Victory/Finish series with no listed market (basis NO_LISTING, re-filed here from first_to_score_event). In the read template, MOF settles YES for the phase in which either team wins the trophy/advances and MOV only if the named team wins in that phase; Regular/Regulation Time is 90 minutes plus all stoppage, excluding extra time and the shootout; Extra Time is a win after extra time before any shootout; Penalty Shootout is a win via shootout after regulation and extra time. Cancellation or rescheduling beyond two weeks resolves to a fair price; no source of truth is named. The 37 unlisted series are assumed, not verified, to use the same template.",
+   "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
      "ticker": "KXUCLMOF",
@@ -182,13 +182,16 @@
     "UCL/UEL wording uses 'wins the trophy'; World Cup wording uses 'advances'. For a final these coincide, but if the World Cup series is listed for earlier knockout rounds the 'advances' wording applies to a match with no trophy.",
     "Stoppage time at the end of 90 minutes counts as Regular Time; a goal at 90+8 is regulation, while a goal at 91' of extra time is Extra Time.",
     "An abandoned final replayed within two weeks presumably settles on the replay; beyond two weeks a fair price applies, and the fair-price method is truncated in the sampled text.",
-    "Two-legged ties are not represented in the sampled series (all are single-match finals); the same contract on a two-leg tie would need aggregate and away-goal logic."
+    "Two-legged ties are not represented in the sampled series (all are single-match finals); the same contract on a two-leg tie would need aggregate and away-goal logic.",
+    "NO_LISTING scope: domestic cups (FA Cup, EFL Cup, Copa del Rey, DFB-Pokal, Coppa Italia, Coupe de France, US Open Cup), super cups (Spain, Italy, France, UEFA), UEFA Europa Conference League and Nations League, AFC competitions, Club World Cup and Finalissima carry MOV/MOF titles but no market has been listed; settlement is inferred from the four read siblings only.",
+    "Some of those competitions skip extra time (EFL Cup before the final and several super cups go straight to penalties under recent rules, to be confirmed per edition), so an Extra Time leg would be structurally zero there and the level-at-90 mass goes entirely to the shootout.",
+    "Six unlisted MOV series are league competitions (La Liga, Serie A, Bundesliga, Ligue 1, Brasileiro, Liga MX); league fixtures cannot reach extra time, so their outcome set is unknown unless they cover play-off or liguilla ties."
    ],
    "settlement_data_source": "Not named in the sampled rules; presumably the official UEFA/FIFA match report as used by Kalshi's data provider.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "The outcome is the phase that breaks the tie in a single match. First, the two finalists' attack and defence strengths, adjusted for opponent quality and neutral venue, give regulation goal rates; finals run below league rates and draw more often, so the regulation-level probability is typically around 25-35% when the sides are close. Second, low-score dependence and late conservatism at level scores fatten the 0-0/1-1 cells. Third, conditional on level at 90, extra time runs at a reduced, fatigue- and substitute-dependent rate, so roughly half or more of level matches stay level to 120. Fourth, the shootout is close to a coin flip with small skill and goalkeeper effects. MOV multiplies each phase probability by the team's share of that phase. Input hierarchy to avoid double counting draw mass: soc.knockout_cagey_factor plus Dixon-Coles are the structural draw model, soc.late_level_risk_appetite is only a residual, soc.extra_time_phase_scoring_rate and soc.extra_time_shootout_model combine the ET and shootout phases, and soc.method_path_tree_calibration is a calibration check on the result. Settlement wording decides stoppage-time allocation and the fair-price rule for cancellations.",
+   "summary": "The outcome is the phase that breaks the tie in a single match. First, the two finalists' attack and defence strengths, adjusted for opponent quality and neutral venue, give regulation goal rates; finals run below league rates and draw more often, so the regulation-level probability is typically around 25-35% when the sides are close. Second, low-score dependence and late conservatism at level scores fatten the 0-0/1-1 cells. Third, conditional on level at 90, extra time runs at a reduced, fatigue- and substitute-dependent rate, so roughly half or more of level matches stay level to 120. Fourth, the shootout is close to a coin flip with small skill and goalkeeper effects. MOV multiplies each phase probability by the team's share of that phase. Input hierarchy to avoid double counting draw mass: soc.knockout_cagey_factor plus Dixon-Coles are the structural draw model, soc.late_level_risk_appetite is only a residual, soc.extra_time_phase_scoring_rate and soc.extra_time_shootout_model combine the ET and shootout phases, and soc.method_path_tree_calibration is a calibration check on the result. Settlement wording decides stoppage-time allocation and the fair-price rule for cancellations. Scope now includes 37 unlisted Method series from domestic cups, super cups, continental competitions and six leagues. For non-final cup ties the same three-phase tree applies with the competition's own rule (extra time or straight to penalties, single leg or two legs with aggregate), handled in stage s6; the league MOV titles have no verified outcome set and stage s7 is a conditional placeholder until a market lists.",
    "stages": [
     {
      "id": "s1",
@@ -278,6 +281,39 @@
       "soc.competition_scope_and_win_definition",
       "m.rules_text",
       "soc.added_time"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Non-final, two-leg and straight-to-penalties knockout ties (unlisted cup series)",
+     "description": "For the unlisted domestic-cup, super-cup and continental Method series the tie may be a home match in an early round, the second leg of a two-leg tie or a one-off super cup. Home advantage applies at club grounds; in second legs the aggregate state replaces the match score as the quantity that must be level for extra time, and the tie tree comes from soc.tie_advancement_state_tree; where the competition skips extra time, P(Extra Time leg)=0 and the full level mass goes to penalties.",
+     "distribution": "Competition-specific three-branch tree; ET branch structurally zero where rules skip it; second legs condition on the first-leg aggregate.",
+     "categories": [
+      "game_context_script",
+      "situational_schedule_motivation",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "soc.tie_advancement_state_tree",
+      "soc.second_leg_aggregate_state",
+      "soc.home_advantage",
+      "soc.knockout_cagey_factor",
+      "soc.extra_time_shootout_model"
+     ]
+    },
+    {
+     "id": "s7",
+     "name": "League Method-of-Victory titles: conditional outcome reading",
+     "description": "Six unlisted MOV series carry league names (La Liga, Serie A, Bundesliga, Ligue 1, Brasileiro, Liga MX). A league fixture cannot go to extra time, so either these would cover Liga MX liguilla or other play-off ties (then stage s6 applies) or settle on a regulation margin partition read from the goal-difference distribution. This stage is a placeholder conditional on rules text that does not exist yet.",
+     "distribution": "Signed regulation goal difference concentrated on -1, 0, +1, or the s6 tree if the series covers play-off ties.",
+     "categories": [
+      "distribution_variance",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "soc.winning_margin_distribution",
+      "soc.xg_adjusted_ratings",
+      "soc.dixon_coles_low_score"
      ]
     }
    ],
@@ -583,6 +619,15 @@
     "form": "conditional",
     "mechanism": "A side whose starters carry heavy recent minutes depends more on bench quality in extra time; unequal load plus unequal depth tilts who scores in the 91-120 window, not only whether anyone does.",
     "how_to_test": "In historical extra-time matches, compare ET goal share against the difference in starter minutes load across the sides, split by bench-value gap."
+   },
+   {
+    "inputs": [
+     "soc.tie_advancement_state_tree",
+     "soc.second_leg_aggregate_state"
+    ],
+    "form": "conditional",
+    "mechanism": "In a two-leg tie the Method phase is decided by the aggregate, not the second-leg score: a first-leg winner by one needs only a second-leg draw to win in regulation, so P(Regular Time) rises with the first-leg margin and P(Extra Time) is concentrated on second legs that finish exactly reversing the first-leg margin.",
+    "how_to_test": "Tabulate historical two-leg ties by first-leg margin and compare regulation, extra-time and shootout shares with the state-tree prediction."
    }
   ],
   "nonlinearities": [
@@ -798,6 +843,36 @@
      "soc.rest_travel",
      "soc.congestion_load"
     ]
+   },
+   {
+    "dataset": "Domestic-cup and super-cup tie results with competition rules",
+    "grain": "one row per tie (and per leg)",
+    "fields": [
+     "competition, round, edition",
+     "legs and first-leg score",
+     "venue",
+     "extra time played (rule) and outcome phase",
+     "final goal difference (for league MOV placeholder)"
+    ],
+    "timestamp_requirement": "Rules as in force for the edition; results only before the as-of time.",
+    "history_needed": "10 seasons per competition for phase shares by round and leg.",
+    "candidate_sources": [
+     {
+      "name": "Wikipedia/RSSSF cup results",
+      "access": "free_scrape",
+      "note": "Phase (ET/penalties) usually recorded; rule changes per edition must be checked."
+     },
+     {
+      "name": "football-data.co.uk",
+      "access": "free_limited",
+      "note": "League results only; no ET detail."
+     }
+    ],
+    "feeds_inputs": [
+     "soc.tie_advancement_state_tree",
+     "soc.second_leg_aggregate_state",
+     "soc.winning_margin_distribution"
+    ]
    }
   ],
   "unresolved": [
@@ -818,8 +893,8 @@
    {
     "id": "u3",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXWCMOF/KXWCMOV use 'advances' wording; if the series is also listed for World Cup round-of-32 to semi-final ties, the same three-phase model applies but match contexts (rest, rotation) differ and were not sampled.",
-    "what_would_resolve": "List of all events in the World Cup MOF/MOV series with their rules text.",
+    "description": "Settlement is read for four final series only. The 37 Method series re-filed here have no listed market (NO_LISTING): their outcome labels, whether two-leg ties and straight-to-penalties competitions use the same three legs, and the outcome set of the six league MOV titles are unknown; KXWCMOF/KXWCMOV 'advances' wording for earlier rounds is also unsampled.",
+    "what_would_resolve": "Rules text for any listed cup, super-cup or league MOV/MOF market, and the full list of events per series.",
     "category": "settlement_contract"
    },
    {

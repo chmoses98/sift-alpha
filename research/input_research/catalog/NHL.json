@@ -662,16 +662,23 @@
    "category": "availability",
    "mechanism": "Before confirmation the market must price a mixture of goalies; the probabilities determine expected team strength and the chance a saves prop's goalie plays.",
    "rationale": "Markets list before starters are confirmed; a model with a good start probability can capture mispricing on both goalie-specific props and team lines. Subtle: reporters post 'expected' starters hours early with variable reliability, and goalie first-off-the-ice at morning skate is a strong tell but only a few teams follow the ritual.",
-   "measurement": "Regular season: per-team classification of starter rotation rules (b2b second game backup, 3-in-4 rule), logit model of P(starter) using rest, schedule and recency, plus reporter-source reliability weights. Playoff branch (no back-to-backs; rotation rules do not apply): hazard of starter change before game g+1 = logistic(a + b1*(game g save pct - incumbent season save pct) + b2*1[pulled in game g] + b3*goals allowed in game g + b4*(backup minus incumbent season GSAx/60) + b5*elimination-game flag + b6*incumbent injury flag), fitted on 2005-06 onward playoff goalie game logs (NHL API game type 3; Hockey-Reference playoff logs) with games started as the outcome; coefficients ridge-shrunk; a change resets the hazard for the new starter. Output: P(each goalie starts) per remaining game, mixed into team strength as a goalie-quality mixture.",
+   "measurement": "Regular season: per-team classification of starter rotation rules (b2b second game backup, 3-in-4 rule), logit model of P(starter) using rest, schedule and recency, plus reporter-source reliability weights. Playoff branch (no back-to-backs; rotation rules do not apply): hazard of starter change before game g+1 = logistic(a + b1*(game g save pct - incumbent season save pct) + b2*1[pulled in game g] + b3*goals allowed in game g + b4*(backup minus incumbent season GSAx/60) + b5*elimination-game flag + b6*incumbent injury flag), fitted on 2005-06 onward playoff goalie game logs (NHL API /v1/player/{id}/game-log/{season}/3, game type 3 = playoffs; Hockey-Reference playoff logs) with games started as the outcome; coefficients ridge-shrunk; a change resets the hazard for the new starter. Output: P(each goalie starts) per remaining game, mixed into team strength as a goalie-quality mixture.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Daily Faceoff (dailyfaceoff.com line combinations, projected/confirmed starting goalies) (expected starters)",
-    "NHL web API api-web.nhle.com (/v1/gamecenter/{gameId}/play-by-play, /boxscore, /v1/schedule/{date}, /v1/club-stats/{team}/now) /v1/player/{id}/game-log/now",
+    "NHL web API api-web.nhle.com (/v1/gamecenter/{gameId}/play-by-play, /boxscore, /v1/schedule/{date}, /v1/club-stats/{team}/now) /v1/player/{id}/game-log/now (current) and /v1/player/{id}/game-log/{season}/3 (past playoff logs)",
+    "Hockey-Reference playoff goalie game logs",
     "Team beat-writer posts via team pages on NHL.com"
    ],
    "registry_ids": [
     "nhl.goalie_start",
     "nhl.goalie_workload"
+   ],
+   "raw_data": [
+    "goalie game logs by season and game type (2 regular, 3 playoffs): starts, shots, saves, TOI, decision",
+    "play-by-play goalie-change events (pulled mid-game)",
+    "goalie injury reports",
+    "morning-skate and reporter starter reports with timestamps"
    ]
   },
   "nhl.morning_skate_signal": {
@@ -760,8 +767,8 @@
    "label": "Standings stakes and motivation (clinched, eliminated, seeding)",
    "category": "motivation",
    "mechanism": "Teams with clinched or eliminated status may rest players or change deployment, altering strength in late-season games.",
-   "rationale": "Late-season games have heterogeneous effort and rest. Clinched teams rest stars (last 2-5 games); eliminated bottom teams sell veterans at the deadline, play call-ups and backup goalies, which lowers their points rate below the pre-deadline rating; the lottery incentive is weak since the worst team only has 18.5% first-draw odds and the 10-spot cap guarantees it a top-3 pick, so the effect must be estimated and shrunk, not assumed.",
-   "measurement": "Clinch/elimination status per team and date from 10,000 standings simulations (status fixed when P(playoffs) is 0 or 1 to the simulation's resolution). Tanking adjustment for points rates after the trade deadline: for team-games 2005-06 onward after the deadline, residual = actual standings points minus expected points from the team rating frozen at the deadline (home, rest, opponent adjusted); regress residual on eliminated flag, bottom-5 rank flag, net deadline man-games value traded away (TOI-weighted RAPM per 82 games of departed minus arrived players) and marginal lottery value of one extra loss = change in P(top-2 pick) per rank place from nhl.draft_lottery_odds_by_standing under the format in force that season (3 draws 2016-2020; 2 draws with 10-spot move-up cap from 2021, worst team 18.5% first-draw odds). Coefficients shrunk toward 0 with a normal prior sd 0.05 points/game. Clinched-team rest effect: star participation rate in final 5 games versus season rate.",
+   "rationale": "Late-season games have heterogeneous effort and rest. Clinched teams rest stars (last 2-5 games); eliminated bottom teams sell veterans at the deadline, play call-ups and backup goalies, which lowers their points rate below the pre-deadline rating; the lottery incentive is weak since the worst team has only 18.5% first-draw odds (16.6% in 2021) and the 10-spot cap guarantees it a top-3 pick, so the effect must be estimated and shrunk, not assumed.",
+   "measurement": "Clinch/elimination status per team and date from 10,000 standings simulations (status fixed when P(playoffs) is 0 or 1 to the simulation's resolution). Tanking adjustment for points rates after the trade deadline, fitted on lottery seasons 2015-16 onward only (2016 draft onward, the seasons whose lottery format is defined below; earlier formats are excluded, not imputed): for each post-deadline team-game, residual = actual standings points minus expected points from the team rating frozen at the deadline (home, rest, opponent adjusted); regress residual on eliminated flag, bottom-5 rank flag, net deadline value traded away (TOI-weighted RAPM per 82 games of departed minus arrived players) and marginal lottery value of one extra loss = change in expected draft slot per one-place drop in standings rank, computed by enumerating that season's draws from nhl.draft_lottery_odds_by_standing with that season's official odds table (3 draws 2016-2020; 2 draws with 10-spot move-up cap from 2021; worst-team first-draw odds 16.6% in 2021 because of the Seattle expansion slot, 18.5% from 2022). Coefficients shrunk toward 0 with a normal prior sd 0.05 points/game; 2019-20 and 2020-21 kept with a season fixed effect. Clinched-team rest effect: star participation rate in final 5 games versus season rate.",
    "pregame_knowable": "partial",
    "free_sources": [
     "NHL web API api-web.nhle.com (/v1/gamecenter/{gameId}/play-by-play, /boxscore, /v1/schedule/{date}, /v1/club-stats/{team}/now) /v1/standings/now",
@@ -770,6 +777,13 @@
    "registry_ids": [
     "nhl.ratings",
     "nhl.injuries_pit"
+   ],
+   "raw_data": [
+    "daily standings and clinch/elimination status",
+    "trade deadline date and deadline trades with player TOI/RAPM",
+    "post-deadline team-game results (RW/OTW/OTL/L)",
+    "team rating snapshot at the deadline",
+    "star participation in final 5 games"
    ]
   },
   "nhl.playoff_context": {
@@ -983,7 +997,7 @@
   "nhl.award_voting_rules": {
    "label": "Award voting structure, electorate, ballot timing and criteria",
    "category": "market_structure",
-   "mechanism": "Each NHL award has a different voter pool and criteria (PHWA writers for Hart/Norris, GM vote for Vezina, etc.), which determines what features predict the winner.",
+   "mechanism": "Static map of each award's electorate, ballot and timing: PHWA writers vote the Hart, Norris and Calder, general managers the Vezina, NHLPA players the Ted Lindsay, and the NHL Broadcasters' Association the Jack Adams (5-3-1 three-name ballot, individual ballots unpublished); ballots are cast after the regular season. The fitted vote model itself is nhl.award_vote_share_model.",
    "rationale": "Awards depend on narrative, team success, and time of voting (many ballots are cast before the regular season ends, before late injuries). Subtle: finalists are announced before winners, giving a strong information event, and vote splits among near-equal candidates make winner probabilities fragile.",
    "measurement": "Collect historic winners and finalists with stats, team rank and positional context; fit rank-ordered choice model; update after finalists and ballot deadlines announced.",
    "pregame_knowable": "yes",
@@ -2942,9 +2956,9 @@
    }
   },
   "nhl.coach_expectation_delta": {
-   "label": "Coach expectation delta (results versus preseason projection, year-over-year change)",
+   "label": "Coach expectation delta (results versus in-house preseason expectation, year-over-year change)",
    "category": "motivation",
-   "mechanism": "Difference between realised points percentage and the preseason-projected value, plus year-over-year change and coaching tenure flags.",
+   "mechanism": "Difference between realised points percentage and an in-house preseason expectation (weighted prior points pct plus roster-change term), plus year-over-year change and coaching tenure flags.",
    "rationale": "The Jack Adams Award is voted on who coached best relative to expectations, so what matters is the surprise, not the level; a team that finished first as expected earns less credit than one that jumped from the bottom. The expectation must be formed before the season to avoid hindsight bias.",
    "measurement": "P_exp = 0.6*points pct (season-1) + 0.4*points pct (season-2), plus nhl.prior_to_current_blend roster-change term (minutes-weighted 3-season RAPM of arrivals minus departures, per 82 games, converted at 0.015 pts pct per goal/60-game); computed in-house so no archived preseason projection is required. Delta_t = points pct to date (games before as-of date t) minus P_exp; SE = sqrt(p(1-p)/n_games_played). Final delta per simulation = (banked points + simulated rest-of-season points from nhl.team_season_points_distribution)/(2*82) minus P_exp. Jack Adams choice model (coach branch of nhl.award_vote_share_model): candidate set = every head coach who ran >=41 regular-season games of one team (about 32); U_c = b1*Delta_final + b2*(Delta_final - Delta_prev_season) + b3*first_year_with_team; P(win) = exp(U_c)/sum_j exp(U_j), averaged over simulations (a coach fired before the threshold drops out of that draw). Fit as a conditional logit on winners 2005-06 onward, augmented with a rank-ordered (exploded) logit on the NHLBA top-3 finish order from published 5-3-1 point totals; ridge penalty chosen by leave-one-season-out log loss; at most 3 covariates. Use only games before t.",
    "pregame_knowable": "yes",
@@ -2987,14 +3001,20 @@
    "category": "game_state",
    "mechanism": "Probability each team wins the top pick from the simulated final standings and the league lottery format.",
    "rationale": "The first pick is not simply given to the worst team: the lottery format gives the worst team a limited chance and caps how far a team can move, so the distribution is flat over the bottom teams and depends on exact standings and on the number of draws.",
-   "measurement": "Simulate final standings from the ratings posterior (with points ties resolved by league rules), identify the 16 non-playoff teams, map rank to lottery combinations using the current published format (SOURCE_UNVERIFIED for 2027) with ranges for odds of first pick and for the maximum movement allowed; combine with pick ownership to get P(team T holds the first pick) = sum over teams of P(team wins lottery) x ownership; output with the standings uncertainty.",
+   "measurement": "For a target season: simulate final standings from the ratings posterior (points ties resolved by league rules), rank the non-playoff teams, and enumerate the lottery draws with the official odds table for that season's format (from 2022: 2 draws, worst team 18.5% first-draw odds, 10-spot move-up cap, no team may win more than twice in five years; 2021: 2 draws, Buffalo 16.6% with Seattle slotted third; 2016-2020: 3 draws; the 2027 table is taken from the NHL announcement when published). Outputs per team: P(pick k) for each k, expected draft slot E[slot|rank] and marginal value E[slot|rank r] - E[slot|rank r-1]; combined with pick ownership, P(team T holds the first pick) = sum over teams of P(team wins draw 1) x ownership. Historical seasons use their own table for the tanking regression in nhl.standings_stakes.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NHL lottery rules (NHL.com)",
     "Tankathon-style odds (free)",
     "MoneyPuck simulation (free)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "official lottery odds per seed by season (2016 draft onward)",
+    "number of draws, move-up cap, win-frequency limit by season",
+    "simulated final standings",
+    "pick ownership and protections"
+   ]
   },
   "nhl.pick_ownership_and_protection": {
    "label": "First-round pick ownership and protection conditions",
@@ -9589,6 +9609,21 @@
      "id": "nhl.short_tournament_format_sim",
      "why": "Maps national-roster strength into the KXNHL4NATIONS outright; without the format the probabilities of finalists and champion are miscalibrated.",
      "role": "secondary"
+    },
+    {
+     "id": "nhl.standings_stakes",
+     "why": "Elimination/clinch status and post-deadline sell-off adjust bottom-table and clinched teams' points rates; decisive for KXNHLRECORDWORST.",
+     "role": "secondary"
+    },
+    {
+     "id": "nhl.draft_lottery_odds_by_standing",
+     "why": "Marginal lottery value of a loss conditions the tanking adjustment of bottom-table points rates for KXNHLRECORDWORST.",
+     "role": "context"
+    },
+    {
+     "id": "nhl.goalie_start_forecast",
+     "why": "Playoff starter-change hazard sets per-game goalie identity in the series recursion for KXNHLSERIES/EAST/WEST/NHL.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -10021,7 +10056,8 @@
       "nhl.series_context",
       "nhl.playoff_context",
       "nhl.goalie_quality",
-      "nhl.bracket_path_difficulty"
+      "nhl.bracket_path_difficulty",
+      "nhl.goalie_start_forecast"
      ]
     },
     {
@@ -10135,6 +10171,52 @@
       "nhl.national_team_roster_strength",
       "nhl.short_tournament_format_sim",
       "nhl.goalie_quality"
+     ]
+    },
+    {
+     "dataset": "Draft lottery format/odds history and post-deadline team-game residuals",
+     "grain": "season x lottery seed (odds table); team-game after the trade deadline (residuals); team-date (clinch/elimination status)",
+     "fields": [
+      "season",
+      "lottery seed",
+      "official first-draw odds per seed",
+      "number of draws",
+      "maximum move-up",
+      "win-frequency limit",
+      "trade deadline date",
+      "deadline trades with player TOI and RAPM",
+      "team rating frozen at deadline",
+      "game result (RW/OTW/OTL/L) and standings points",
+      "daily clinch/elimination status",
+      "pick ownership"
+     ],
+     "timestamp_requirement": "Odds table as published for that season's lottery; team rating frozen at the trade-deadline date; elimination status as of each game date (no later information).",
+     "history_needed": "Lottery seasons 2015-16 onward (2016 draft onward: 3 draws 2016-2020, 2 draws with 10-spot cap from 2021); about 10 seasons x ~20 post-deadline games x 32 teams.",
+     "candidate_sources": [
+      {
+       "name": "NHL.com draft lottery announcements and NHL lottery guide (records.nhl.com)",
+       "access": "free",
+       "note": "official odds per seed by season; 2021 worst-team 16.6% (Seattle-adjusted), 18.5% from 2022"
+      },
+      {
+       "name": "NHL web API standings and schedule (api-web.nhle.com)",
+       "access": "free",
+       "note": "daily standings, results"
+      },
+      {
+       "name": "Hockey-Reference transactions and standings",
+       "access": "free_scrape",
+       "note": "deadline trades, historical standings"
+      },
+      {
+       "name": "CapFriendly-style trade/cap archives (PuckPedia)",
+       "access": "free_limited",
+       "note": "trade details with retained salary; coverage unverified"
+      }
+     ],
+     "feeds_inputs": [
+      "nhl.standings_stakes",
+      "nhl.draft_lottery_odds_by_standing"
      ]
     }
    ],
@@ -10403,7 +10485,7 @@
      {
       "id": "s2",
       "name": "Performance relative to expectation (coaching award)",
-      "description": "The award rewards over-performance: realised points percentage minus what a preseason projection predicted, the year-over-year change, and whether the team did it despite injuries or roster loss. Team strength estimates and their uncertainty determine the expected result; the outcome distribution of final points is wide (sd of 7-9 points), so a leader in November is only mildly informative about the final ranking of coaches.",
+      "description": "The award rewards over-performance: realised points percentage minus an in-house preseason expectation (weighted prior two seasons' points pct plus a roster-change term, fixed before opening night), the year-over-year change, and whether the team did it despite injuries or roster loss. Team strength estimates and their uncertainty determine the expected result; the outcome distribution of final points is wide (sd of 7-9 points), so a leader in November is only mildly informative about the final ranking of coaches.",
       "distribution": "Final points of each team ~ Gaussian around the projection with sd 7-9; the coach ranking is the ranking of expectation gaps, so the maximum of many noisy gaps.",
       "categories": [
        "talent_strength",
@@ -10625,18 +10707,18 @@
    },
    "required_data": [
     {
-     "dataset": "Team standings, points percentage and preseason projections",
+     "dataset": "Team standings, points percentage and preseason expectation inputs",
      "grain": "team-date",
      "fields": [
       "points",
       "games played",
       "points pct",
-      "preseason projection",
+      "prior two seasons' points pct and roster arrivals/departures with TOI (P_exp inputs)",
       "prior-season points",
       "coach",
       "coach start date"
      ],
-     "timestamp_requirement": "Daily snapshots; preseason projection frozen before the season.",
+     "timestamp_requirement": "Daily snapshots; P_exp computed from data available before opening night and frozen.",
      "history_needed": "20 seasons for award history.",
      "candidate_sources": [
       {
@@ -10652,12 +10734,12 @@
       {
        "name": "MoneyPuck preseason projections",
        "access": "free",
-       "note": "model projections"
+       "note": "optional cross-check of P_exp only; not required; multi-season archive unverified"
       },
       {
        "name": "Evolving-Hockey projections",
        "access": "paid",
-       "note": "projections"
+       "note": "optional cross-check of P_exp only; not required; multi-season archive unverified"
       }
      ],
      "feeds_inputs": [

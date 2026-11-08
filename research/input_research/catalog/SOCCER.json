@@ -1843,6 +1843,9 @@
    "audit_flag": {
     "verdict": "DUPLICATE",
     "duplicate_of": "soc.goal_dist"
+   },
+   "retired": {
+    "reason": "detached from every archetype by an audited archetype patch (duplicate, irrelevant or superseded); kept for traceability"
    }
   },
   "soc.cross_tier_strength_link": {
@@ -10672,7 +10675,7 @@
    "families": [
     "SOCCER/first_to_score"
    ],
-   "target": "Which team scores first (or none) in the match.",
+   "target": "Which team records the first goal over the entire game including any extra time (or no goal); First Team to Score series only.",
    "mechanism": "First-to-score is a race between two inhomogeneous Poisson processes with a null outcome for 0-0. The team with higher early hazard (press intensity, set-piece threat, penalty probability) is favoured beyond share of lambda, and the null outcome mass depends on low-score dependence. Rules for own goals and abandoned matches determine settlement.",
    "inputs": [
     {
@@ -10741,18 +10744,8 @@
      "role": "primary"
     },
     {
-     "id": "soc.method_path_tree_calibration",
-     "why": "Calibrates every node of the Method path tree against history rather than an assumed 50%.",
-     "role": "secondary"
-    },
-    {
      "id": "soc.first_goal_route_mix",
      "why": "Turns a lump first-goal hazard into route-specific intensities that respond to referee and set-piece news.",
-     "role": "secondary"
-    },
-    {
-     "id": "soc.winning_margin_distribution",
-     "why": "Provides the actual drivers for league MOV series, whose outcome set cannot be the knockout path tree; shared in definition with handicap_and_exact_score margin inputs.",
      "role": "secondary"
     }
    ],
@@ -10827,6 +10820,26 @@
      "form": "conditional",
      "how_to_test": "Estimate node probabilities with an interaction for lineup strength.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "soc.extra_time_phase_scoring_rate",
+      "soc.dixon_coles_low_score"
+     ],
+     "hypothesis": "Only in competitions that play extra time: the no-goal leg needs 0-0 at 90 and no extra-time goal, so its price is the product of the 0-0 cell and the tired-play survival over 30 minutes; in leagues and straight-to-penalties cups the extra-time factor is exactly one.",
+     "form": "conditional",
+     "how_to_test": "Compare goalless-after-120 frequencies in cup ties with ET against the 0-0-at-90 cell times modelled ET survival.",
+     "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "soc.penalty_rate",
+      "soc.first_goal_route_mix"
+     ],
+     "hypothesis": "A referee with a high penalty-award rate raises the penalty share of first goals for the side that wins more box entries, so the route mix and the referee propensity multiply; the effect is largest when open-play xG is close and a single penalty decides the race.",
+     "form": "multiplicative",
+     "how_to_test": "Fit first-scorer probability with a referee penalty-rate x box-entry-share term on held-out matches.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -10836,24 +10849,19 @@
      "why": "The probability a goal arrives by minute t is 1-exp(-integral hazard), so equal differences in hazard matter more early."
     },
     {
-     "input_id": "soc.penalty_shootout_skill",
-     "shape": "Compressed around 0.5",
-     "why": "Shootout skill shifts P(pens win) by a few points only; the response is bounded by the binomial noise of five kicks."
-    },
-    {
      "input_id": "soc.knockout_cagey_factor",
      "shape": "Piecewise by stage and leg",
-     "why": "Cagey adjustments differ sharply between first leg, second leg and single-leg final; a linear multiplier misprices the tails."
+     "why": "The goal-rate multiplier differs sharply between first legs, second legs and single-leg finals, and P(no goal) responds exponentially to it, so a linear multiplier misprices the goalless leg in cup ties."
     }
    ],
    "mechanism_review": {
-    "summary": "Two distinct mechanisms live under this key. A Method of Victory/Finish contract is a path tree over regulation, extra time and penalties: the regulation result gates everything, knockout-specific cautiousness inflates the draw gate, extra time is a low-scoring tired period of 30 minutes, and a shootout is close to a coin flip with small first-kicker and goalkeeper edges. A First-Team-To-Score contract is a competing-risk race between two time-varying scoring intensities with a no-goal outcome, where early goals have a distinctive set-piece and penalty mix. Both settle from official match records, the FTTS settlement (entire-game window, own-goal credit, a listed No Goal outcome) is verified from 23 texts, while none of the 37 Method series has rules text. The Method path tree (s2) is a consolidated copy of unreg:knockout_method_of_victory, whose rules-verified MOV/MOF template covers the knockout series; it applies only to knockout series with a possible extra time; the six domestic-league MOV series are handled by the conditional margin stage s7 until their rules are read.",
+    "summary": "A First-Team-To-Score contract is a competing-risk race between two time-varying scoring intensities with a no-goal outcome. The relative intensity (opponent-adjusted attack versus defence, home or neutral venue, confirmed XI) sets who is favoured; the early-minute hazard shape and the route mix (set pieces and penalties are over-represented among early goals) move the race beyond the simple lambda share; and the window length decides the no-goal mass: 90 minutes plus stoppage in league fixtures and in cups that go straight to penalties, up to 120 minutes in cup ties that play extra time, where knockout caution lowers both hazards. Settlement (entire-game window, own-goal credit, listed No Goal outcome) is verified from 23 texts; abandonment and postponement handling is unstated.",
     "stages": [
      {
       "id": "s1",
-      "name": "Ninety-minute result distribution",
-      "description": "Method of victory starts with the regulation outcome: home win, draw, away win, from the goal model with team strength, home advantage and lineups. Only matches level after 90 minutes proceed to the extra paths, so P(draw at 90) is the gate that determines the entire non-regulation mass.",
-      "distribution": "Three-outcome distribution with draw probability about 25-30% in league play and 28-35% in cup knockouts.",
+      "name": "Relative scoring intensities of the two sides",
+      "description": "Each side's goal intensity for the match comes from opponent-adjusted xG attack and defence ratings, the venue (full home multiplier at a club ground, near zero at neutral finals such as the World Cup final or super cups abroad) and the confirmed XI. The ratio lambda_A/(lambda_A+lambda_B) is the first-order probability of scoring first given at least one goal, and the sum sets how fast the race ends.",
+      "distribution": "Two positive rates per match; their ratio drives the race share and their sum the no-goal mass via exp(-total x exposure).",
       "categories": [
        "talent_strength",
        "opponent_matchup",
@@ -10869,28 +10877,7 @@
      },
      {
       "id": "s2",
-      "name": "Knockout Method-of-Victory/Finish path tree (consolidated onto unreg:knockout_method_of_victory)",
-      "description": "The Method series still filed here (title-only, no markets listed) share Kalshi's MOV/MOF template verified on KXUCLMOF, KXUELMOV, KXWCMOF and KXWCMOV, which the reconciliation filed to unreg:knockout_method_of_victory: Regular Time (90 plus stoppage), Extra Time, Penalty Shootout. They are priced with that record's path tree and the same inputs, not a separate copy: knockout draw inflation and leg state, the extra-time phase rate and late risk appetite, then the shootout. This duplicates the knockout record on purpose; the two must not diverge.",
-      "distribution": "Three-branch path tree: P(regulation decisive), P(ET decisive)=P(level at 90)xP(ET goal decides), P(shootout); shootout near 0.5 per side.",
-      "categories": [
-       "game_context_script",
-       "coaching_scheme",
-       "efficiency_conversion",
-       "settlement_contract"
-      ],
-      "input_ids": [
-       "soc.knockout_cagey_factor",
-       "soc.second_leg_aggregate_state",
-       "soc.extra_time_phase_scoring_rate",
-       "soc.late_level_risk_appetite",
-       "soc.extra_time_shootout_model",
-       "soc.penalty_shootout_skill",
-       "soc.method_path_tree_calibration"
-      ]
-     },
-     {
-      "id": "s5",
-      "name": "First-goal timing and route (for first-team-to-score variants)",
+      "name": "First-goal timing hazard and route",
       "description": "For first-to-score the relevant process is the competing-risk race between the two sides' scoring intensities in minutes, with a P(no goal) at P(0-0). Early goals come disproportionately from set pieces and penalties; the stronger attacker wins the race with probability lambda_a/(lambda_a+lambda_b) at first-order, adjusted by timing hazards and the opening-period cautiousness of each side. In knockout ties of competitions that play extra time the FTTS texts count the entire game, so the race window can extend to 120 minutes and P(no goal) must be computed over that window; extra-time hazard uses the lower tired-play intensity from the extra-time stage. Verified window (FTTS rules text): the race runs over the entire game including any extra time, the shootout excluded; P(team A first) = lambda_A/(lambda_A+lambda_B) x (1 - exp(-(lambda_A+lambda_B) x T)) with T the expected exposure (90+stoppage, plus extra time with P(level at 90) in knockouts), and both teams resolve No on 0-0.",
       "distribution": "Competing exponential hazards with time-varying intensity; first-goal minute is right-skewed with median about minute 25-30; P(no goal) about 7-9% in leagues, higher in cup ties.",
       "categories": [
@@ -10902,36 +10889,37 @@
        "soc.first_goal_hazard",
        "soc.first_goal_route_mix",
        "soc.set_pieces",
-       "soc.penalty_rate"
+       "soc.penalty_rate",
+       "soc.dixon_coles_low_score"
       ]
      },
      {
-      "id": "s6",
+      "id": "s3",
+      "name": "Race window: regulation only or with extra time",
+      "description": "The FTTS window is the entire game, so its length depends on the competition: league fixtures (EPL, La Liga, MLS, Liga MX regular season) and cups that go straight to penalties after 90 minutes (EFL Cup before the final, Leagues Cup, Community Shield, DFL-Supercup, UEFA Super Cup under current rules) stop at 90 plus stoppage, while Copa del Rey, DFB-Pokal, Coppa Italia, FA Cup proper rounds and UEFA/World Cup knockouts add 30 minutes when level. P(no goal) = P(0-0 at 90) x P(no ET goal | ET played); the ET hazard is the reduced tired-play rate, and in second legs the aggregate state changes how both sides attack from the first minute.",
+      "distribution": "Mixture over exposure 90 or 120 minutes weighted by P(level at 90) and the competition rule; knockout caution scales both hazards down.",
+      "categories": [
+       "game_context_script",
+       "situational_schedule_motivation",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "soc.knockout_cagey_factor",
+       "soc.extra_time_phase_scoring_rate",
+       "soc.second_leg_aggregate_state"
+      ]
+     },
+     {
+      "id": "s4",
       "name": "Settlement mapping",
-      "description": "The method contract maps the observed path (regulation, extra time, penalties) into one of its outcomes, and the first-scorer contract maps the goal log; competition-specific rules (golden goal absent today, away goals abolished in UEFA competitions, aggregate rules) determine whether an ET occurs at all.",
-      "distribution": "Deterministic mapping from official match record; competition rules vary and change over time.",
+      "description": "The contract maps the official goal log to one outcome: the team credited with the first goal (an own goal is credited to the team awarded it, so the opponent's defensive errors are part of each side's hazard), or the listed No Goal outcome if nothing is scored before the shootout. A VAR-disallowed goal does not count; a goal scored in extra time counts only where extra time is played. Abandonment after a first goal is not covered by any sampled FTTS text.",
+      "distribution": "Deterministic mapping from the official match record; outcome set of three exclusive legs.",
       "categories": [
        "settlement_contract"
       ],
       "input_ids": [
        "m.rules_text",
-       "soc.method_path_tree_calibration"
-      ]
-     },
-     {
-      "id": "s7",
-      "name": "League Method-of-Victory series: margin-of-victory reading (conditional)",
-      "description": "If the six domestic-league KX*MOV series (La Liga, Serie A, Bundesliga, Ligue 1, Brasileiro, Liga MX) settle on a goal-margin bucket rather than regulation/extra-time/penalties, the outcome is the regulation goal difference, generated by the same two team intensities as the 90-minute result but read through a margin partition; no extra-time or shootout stage applies and the knockout cagey factor is irrelevant. This stage is conditional on the rules text, which is not sampled.",
-      "distribution": "Discrete signed goal difference with mass concentrated on -1, 0 and +1, slightly over-dispersed relative to Skellam through score-state effects.",
-      "categories": [
-       "talent_strength",
-       "distribution_variance",
-       "settlement_contract"
-      ],
-      "input_ids": [
-       "soc.winning_margin_distribution",
-       "soc.xg_adjusted_ratings",
-       "soc.dixon_coles_low_score"
+       "soc.first_goal_route_mix"
       ]
      }
     ],
@@ -10974,7 +10962,7 @@
        "soc.knockout_cagey_factor",
        "soc.second_leg_aggregate_state"
       ],
-      "note": "Cup-specific managerial risk posture and aggregate-aware tactics."
+      "note": "Cup-knockout risk posture and aggregate-aware tactics lower or raise both early hazards."
      },
      "environment": {
       "status": "NOT_APPLICABLE",
@@ -10985,9 +10973,9 @@
       "status": "COVERED",
       "input_ids": [
        "soc.first_goal_hazard",
-       "soc.extra_time_shootout_model"
+       "soc.extra_time_phase_scoring_rate"
       ],
-      "note": "Match flow into extra time and early-goal timing."
+      "note": "Early-goal timing and the extra-time extension of the race window in cup ties."
      },
      "pace_volume": {
       "status": "NOT_APPLICABLE",
@@ -10997,18 +10985,18 @@
      "efficiency_conversion": {
       "status": "COVERED",
       "input_ids": [
-       "soc.penalty_shootout_skill",
-       "soc.penalty_rate"
+       "soc.penalty_rate",
+       "soc.first_goal_route_mix"
       ],
-      "note": "Penalty conversion and shootout skill; penalty awards as a first-goal route."
+      "note": "Penalty awards and set-piece conversion as early first-goal routes."
      },
      "distribution_variance": {
       "status": "COVERED",
       "input_ids": [
        "soc.dixon_coles_low_score",
-       "soc.method_path_tree_calibration"
+       "soc.first_goal_hazard"
       ],
-      "note": "Low-score cells and the path-tree conditional probabilities."
+      "note": "Low-score dependence for the no-goal leg and the right-skewed first-goal minute."
      },
      "situational_schedule_motivation": {
       "status": "COVERED",
@@ -11025,15 +11013,17 @@
       "note": "Referee and VAR penalty propensity changes the early-goal route."
      },
      "settlement_contract": {
-      "status": "GAP",
-      "input_ids": [],
-      "note": "The settlement text for Method of Victory/Finish contracts is not in the sample at all, and whether league fixtures, two-leg aggregates or penalty shootouts map to the outcomes is unknown; first-scorer settlement is now verified from 17 FTTS texts in this key, so the gap is the Method series only."
+      "status": "COVERED",
+      "input_ids": [
+       "m.rules_text"
+      ],
+      "note": "Entire-game window, own-goal credit and the listed No Goal leg verified from 23 FTTS texts; abandonment unstated."
      }
     }
    },
    "required_data": [
     {
-     "dataset": "Knockout match records with ET and shootout outcomes",
+     "dataset": "Cup knockout matches with goal minutes through extra time",
      "grain": "one row per knockout match",
      "fields": [
       "match_id",
@@ -11044,7 +11034,9 @@
       "score_et",
       "pens_h",
       "pens_a",
-      "aggregate_before"
+      "aggregate_before",
+      "goal minutes in extra time",
+      "competition rule: extra time played or straight to penalties"
      ],
      "timestamp_requirement": "Past matches only",
      "history_needed": "15 seasons across cups and continental knockouts",
@@ -11072,12 +11064,8 @@
      ],
      "feeds_inputs": [
       "soc.knockout_cagey_factor",
-      "soc.method_path_tree_calibration",
-      "soc.extra_time_shootout_model",
-      "soc.penalty_shootout_skill",
       "soc.second_leg_aggregate_state",
-      "soc.extra_time_phase_scoring_rate",
-      "soc.late_level_risk_appetite"
+      "soc.extra_time_phase_scoring_rate"
      ]
     },
     {
@@ -11157,52 +11145,22 @@
       "soc.pace_press",
       "soc.shots"
      ]
-    },
-    {
-     "dataset": "League results with goal margins",
-     "grain": "one row per league match with home/away goals and venue",
-     "fields": [
-      "match_id",
-      "date",
-      "home",
-      "away",
-      "goals_h",
-      "goals_a",
-      "league"
-     ],
-     "timestamp_requirement": "Final after the match; use only completed prior matches",
-     "history_needed": "5 seasons per league",
-     "candidate_sources": [
-      {
-       "name": "football-data.co.uk",
-       "access": "free",
-       "note": "FT and HT scores for the leagues it covers"
-      },
-      {
-       "name": "Official league sites",
-       "access": "free_scrape",
-       "note": "Results for leagues not covered"
-      }
-     ],
-     "feeds_inputs": [
-      "soc.winning_margin_distribution"
-     ]
     }
    ],
    "contract_review": {
-    "settlement_definition": "Three contract families share this key. First Team to Score (32 KX*FTTS series, 23 with rules text): one binary per team, YES when that team 'records the first goal during the entire game (regulation, stoppage and any extra time periods)'; an own goal counts for the team awarded it; a shootout is outside the window. A separate 'No Goal' outcome is listed ('If no team records the first goal during the entire game', KXWCFTTS, KXGERSCFTTS, KXENGCSFTTS), so the three outcomes partition the match. Method of Victory (23 KX*MOV) and Method of Finish (14 KX*MOF) series are all TITLE_ONLY: outcome labels, league-fixture treatment and aggregate-tie handling are unknown (CONTRACT_AMBIGUOUS). No FTTS text has a postponement or abandonment clause.",
+    "settlement_definition": "First Team to Score only (32 KX*FTTS/KXWCTTSF series, 23 with rules text): one binary per team, YES when that team 'records the first goal during the entire game (regulation, stoppage and any extra time periods)'; an own goal counts for the team awarded it; the penalty shootout is outside the window. A separate 'No Goal' outcome is listed ('If no team records the first goal during the entire game', KXWCFTTS, KXGERSCFTTS, KXENGCSFTTS), so team A, team B and no goal partition the match. No FTTS text has a postponement or abandonment clause. The Method of Victory/Finish series formerly filed here now sit in unreg:knockout_method_of_victory.",
     "rules_verification": "PARTIALLY_VERIFIED",
-    "settlement_data_source": "Official match report goal events with scorer team and minute (own goals credited to the team awarded), including extra-time periods, for FTTS; not verified for the Method series (presumably official result including extra time and shootout).",
+    "settlement_data_source": "Official match report goal events with scorer team and minute (own goals credited to the team awarded), including extra-time periods where the competition plays them.",
     "variants_and_edge_cases": [
      "First Team to Score (23 of 32 series with rules text, identical wording across leagues, UEFA competitions, cups, super cups and the World Cup): window is the entire game including any extra time; own goals count for the team awarded; a goalless game resolves the listed 'No Goal' outcome YES and both team markets No.",
      "League FTTS fixtures cannot reach extra time, so their window is 90 minutes plus stoppage. Extra time exists only where the competition plays it: Coppa Italia, DFB Pokal, Copa del Rey, FA Cup proper rounds, World Cup and UCL/UEL/UECL knockout second legs; under current rules the EFL Cup (before the final), Leagues Cup, Community Shield, DFL-Supercup and UEFA Super Cup go straight to penalties after a 90-minute draw, so the 'any extra time periods' clause is inert there. Where extra time exists it lowers P(no goal) relative to a regulation-only window.",
      "No FTTS text contains a postponement or abandonment clause (the 48-hour fair-price rule appears only in sibling game/half texts), so settlement of a match abandoned after the first goal, or postponed, is not visible.",
-     "Method of Victory/Finish contracts (KX*MOV, KX*MOF) are TITLE_ONLY; the outcomes are plausibly win in regulation / in extra time / on penalties for knockouts, but six MOV series are league fixtures (KXLALIGAMOV, KXSERIEAMOV, KXBUNDESLIGAMOV, KXLIGUE1MOV, KXBRASILEIROMOV, KXLIGAMXMOV) where extra time cannot occur and the outcome set is unknown (stage s7 is a conditional placeholder).",
-     "Draw at 90 minutes in two-leg ties may end the tie without extra time (aggregate leader advances) so the MOV/MOF path tree is competition-specific; no sampled text says how single-leg vs two-leg is treated.",
-     "KXWCFTTS has rules text with the entire-game window and the no-goal leg; KXWCTTSF (World Cup Team To Score First) has none and is assumed identical.",
-     "The Kalshi MOV/MOF template is verified on KXUCLMOF, KXUELMOV, KXWCMOF and KXWCMOV (now filed to unreg:knockout_method_of_victory): 'Regular Time' includes stoppage and excludes extra time and the shootout; MOF settles on either team, MOV on the named team; cancellation or rescheduling beyond two weeks resolves to a fair price. The 37 Method series left here have no listed markets and are assumed to follow it."
+     "KXWCFTTS has rules text with the entire-game window and the no-goal leg; KXWCTTSF (World Cup Team To Score First) has none and is assumed identical."
     ]
-   }
+   },
+   "contract_types": [
+    "first_team_to_score"
+   ]
   },
   "team_points_and_margin": {
    "blueprint": "season_stat",
@@ -16642,7 +16600,7 @@
     "method_of_finish",
     "method_of_victory"
    ],
-   "target": "Whether a knockout tie (or a named team's win) is decided in regulation, extra time, or a penalty shootout.",
+   "target": "Whether a knockout tie (or a named team's win) is decided in regulation, extra time, or a penalty shootout; covers finals with rules text plus 37 unlisted cup, super-cup, continental and league Method series.",
    "mechanism": "A single-match knockout final is decided in one of three ordered phases. Regulation (90 minutes plus stoppage) ends the tie when the score is unequal; otherwise 30 minutes of extra time are played, and a level score after 120 minutes goes to a penalty shootout. Method of Finish asks which phase ends the tie; Method of Victory asks which phase a named team wins in. The probability mass is generated by the regulation-draw probability (driven by the strength gap, the low total goal rate typical of finals and late risk aversion), the extra-time scoring rate under fatigue and extra substitutions, and a near-coin-flip shootout.",
    "inputs": [
     {
@@ -16832,6 +16790,16 @@
      "form": "conditional",
      "how_to_test": "In historical extra-time matches, compare ET goal share against the difference in starter minutes load across the sides, split by bench-value gap.",
      "source": "completeness-review"
+    },
+    {
+     "inputs": [
+      "soc.tie_advancement_state_tree",
+      "soc.second_leg_aggregate_state"
+     ],
+     "hypothesis": "In a two-leg tie the Method phase is decided by the aggregate, not the second-leg score: a first-leg winner by one needs only a second-leg draw to win in regulation, so P(Regular Time) rises with the first-leg margin and P(Extra Time) is concentrated on second legs that finish exactly reversing the first-leg margin.",
+     "form": "conditional",
+     "how_to_test": "Tabulate historical two-leg ties by first-leg margin and compare regulation, extra-time and shootout shares with the state-tree prediction.",
+     "source": "completeness-review"
     }
    ],
    "nonlinearities": [
@@ -16852,7 +16820,7 @@
     }
    ],
    "mechanism_review": {
-    "summary": "The outcome is the phase that breaks the tie in a single match. First, the two finalists' attack and defence strengths, adjusted for opponent quality and neutral venue, give regulation goal rates; finals run below league rates and draw more often, so the regulation-level probability is typically around 25-35% when the sides are close. Second, low-score dependence and late conservatism at level scores fatten the 0-0/1-1 cells. Third, conditional on level at 90, extra time runs at a reduced, fatigue- and substitute-dependent rate, so roughly half or more of level matches stay level to 120. Fourth, the shootout is close to a coin flip with small skill and goalkeeper effects. MOV multiplies each phase probability by the team's share of that phase. Input hierarchy to avoid double counting draw mass: soc.knockout_cagey_factor plus Dixon-Coles are the structural draw model, soc.late_level_risk_appetite is only a residual, soc.extra_time_phase_scoring_rate and soc.extra_time_shootout_model combine the ET and shootout phases, and soc.method_path_tree_calibration is a calibration check on the result. Settlement wording decides stoppage-time allocation and the fair-price rule for cancellations.",
+    "summary": "The outcome is the phase that breaks the tie in a single match. First, the two finalists' attack and defence strengths, adjusted for opponent quality and neutral venue, give regulation goal rates; finals run below league rates and draw more often, so the regulation-level probability is typically around 25-35% when the sides are close. Second, low-score dependence and late conservatism at level scores fatten the 0-0/1-1 cells. Third, conditional on level at 90, extra time runs at a reduced, fatigue- and substitute-dependent rate, so roughly half or more of level matches stay level to 120. Fourth, the shootout is close to a coin flip with small skill and goalkeeper effects. MOV multiplies each phase probability by the team's share of that phase. Input hierarchy to avoid double counting draw mass: soc.knockout_cagey_factor plus Dixon-Coles are the structural draw model, soc.late_level_risk_appetite is only a residual, soc.extra_time_phase_scoring_rate and soc.extra_time_shootout_model combine the ET and shootout phases, and soc.method_path_tree_calibration is a calibration check on the result. Settlement wording decides stoppage-time allocation and the fair-price rule for cancellations. Scope now includes 37 unlisted Method series from domestic cups, super cups, continental competitions and six leagues. For non-final cup ties the same three-phase tree applies with the competition's own rule (extra time or straight to penalties, single leg or two legs with aggregate), handled in stage s6; the league MOV titles have no verified outcome set and stage s7 is a conditional placeholder until a market lists.",
     "stages": [
      {
       "id": "s1",
@@ -16942,6 +16910,39 @@
        "soc.competition_scope_and_win_definition",
        "m.rules_text",
        "soc.added_time"
+      ]
+     },
+     {
+      "id": "s6",
+      "name": "Non-final, two-leg and straight-to-penalties knockout ties (unlisted cup series)",
+      "description": "For the unlisted domestic-cup, super-cup and continental Method series the tie may be a home match in an early round, the second leg of a two-leg tie or a one-off super cup. Home advantage applies at club grounds; in second legs the aggregate state replaces the match score as the quantity that must be level for extra time, and the tie tree comes from soc.tie_advancement_state_tree; where the competition skips extra time, P(Extra Time leg)=0 and the full level mass goes to penalties.",
+      "distribution": "Competition-specific three-branch tree; ET branch structurally zero where rules skip it; second legs condition on the first-leg aggregate.",
+      "categories": [
+       "game_context_script",
+       "situational_schedule_motivation",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "soc.tie_advancement_state_tree",
+       "soc.second_leg_aggregate_state",
+       "soc.home_advantage",
+       "soc.knockout_cagey_factor",
+       "soc.extra_time_shootout_model"
+      ]
+     },
+     {
+      "id": "s7",
+      "name": "League Method-of-Victory titles: conditional outcome reading",
+      "description": "Six unlisted MOV series carry league names (La Liga, Serie A, Bundesliga, Ligue 1, Brasileiro, Liga MX). A league fixture cannot go to extra time, so either these would cover Liga MX liguilla or other play-off ties (then stage s6 applies) or settle on a regulation margin partition read from the goal-difference distribution. This stage is a placeholder conditional on rules text that does not exist yet.",
+      "distribution": "Signed regulation goal difference concentrated on -1, 0, +1, or the s6 tree if the series covers play-off ties.",
+      "categories": [
+       "distribution_variance",
+       "settlement_contract"
+      ],
+      "input_ids": [
+       "soc.winning_margin_distribution",
+       "soc.xg_adjusted_ratings",
+       "soc.dixon_coles_low_score"
       ]
      }
     ],
@@ -17247,18 +17248,51 @@
       "soc.rest_travel",
       "soc.congestion_load"
      ]
+    },
+    {
+     "dataset": "Domestic-cup and super-cup tie results with competition rules",
+     "grain": "one row per tie (and per leg)",
+     "fields": [
+      "competition, round, edition",
+      "legs and first-leg score",
+      "venue",
+      "extra time played (rule) and outcome phase",
+      "final goal difference (for league MOV placeholder)"
+     ],
+     "timestamp_requirement": "Rules as in force for the edition; results only before the as-of time.",
+     "history_needed": "10 seasons per competition for phase shares by round and leg.",
+     "candidate_sources": [
+      {
+       "name": "Wikipedia/RSSSF cup results",
+       "access": "free_scrape",
+       "note": "Phase (ET/penalties) usually recorded; rule changes per edition must be checked."
+      },
+      {
+       "name": "football-data.co.uk",
+       "access": "free_limited",
+       "note": "League results only; no ET detail."
+      }
+     ],
+     "feeds_inputs": [
+      "soc.tie_advancement_state_tree",
+      "soc.second_leg_aggregate_state",
+      "soc.winning_margin_distribution"
+     ]
     }
    ],
    "contract_review": {
-    "settlement_definition": "Binary markets per phase on one knockout final. MOF (KXUCLMOF, KXWCMOF) settles YES for the phase in which either team wins the trophy/advances; MOV (KXUELMOV, KXWCMOV) settles YES only if the named team wins in that phase. Regular/Regulation Time includes the 90 minutes plus all stoppage time and excludes extra time and the shootout; Extra Time is a win after extra time but before any shootout; Penalty Shootout is a win via shootout after regulation and extra time. Cancellation or rescheduling more than two weeks away resolves to a fair price. The source of truth is not named in the sampled text.",
-    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+    "settlement_definition": "41 series: four with rules text (KXUCLMOF, KXWCMOF either-team; KXUELMOV, KXWCMOV named-team) and 37 Method of Victory/Finish series with no listed market (basis NO_LISTING, re-filed here from first_to_score_event). In the read template, MOF settles YES for the phase in which either team wins the trophy/advances and MOV only if the named team wins in that phase; Regular/Regulation Time is 90 minutes plus all stoppage, excluding extra time and the shootout; Extra Time is a win after extra time before any shootout; Penalty Shootout is a win via shootout after regulation and extra time. Cancellation or rescheduling beyond two weeks resolves to a fair price; no source of truth is named. The 37 unlisted series are assumed, not verified, to use the same template.",
+    "rules_verification": "PARTIALLY_VERIFIED",
     "settlement_data_source": "Not named in the sampled rules; presumably the official UEFA/FIFA match report as used by Kalshi's data provider.",
     "variants_and_edge_cases": [
      "MOF (either team) vs MOV (named team): MOF Regular Time YES = P(regulation decisive); MOV splits each phase between the two teams, so six MOV legs sum to one and three MOF legs sum to one.",
      "UCL/UEL wording uses 'wins the trophy'; World Cup wording uses 'advances'. For a final these coincide, but if the World Cup series is listed for earlier knockout rounds the 'advances' wording applies to a match with no trophy.",
      "Stoppage time at the end of 90 minutes counts as Regular Time; a goal at 90+8 is regulation, while a goal at 91' of extra time is Extra Time.",
      "An abandoned final replayed within two weeks presumably settles on the replay; beyond two weeks a fair price applies, and the fair-price method is truncated in the sampled text.",
-     "Two-legged ties are not represented in the sampled series (all are single-match finals); the same contract on a two-leg tie would need aggregate and away-goal logic."
+     "Two-legged ties are not represented in the sampled series (all are single-match finals); the same contract on a two-leg tie would need aggregate and away-goal logic.",
+     "NO_LISTING scope: domestic cups (FA Cup, EFL Cup, Copa del Rey, DFB-Pokal, Coppa Italia, Coupe de France, US Open Cup), super cups (Spain, Italy, France, UEFA), UEFA Europa Conference League and Nations League, AFC competitions, Club World Cup and Finalissima carry MOV/MOF titles but no market has been listed; settlement is inferred from the four read siblings only.",
+     "Some of those competitions skip extra time (EFL Cup before the final and several super cups go straight to penalties under recent rules, to be confirmed per edition), so an Extra Time leg would be structurally zero there and the level-at-90 mass goes entirely to the shootout.",
+     "Six unlisted MOV series are league competitions (La Liga, Serie A, Bundesliga, Ligue 1, Brasileiro, Liga MX); league fixtures cannot reach extra time, so their outcome set is unknown unless they cover play-off or liguilla ties."
     ]
    }
   },

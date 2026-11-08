@@ -276,7 +276,7 @@ class PublishedArtifacts(unittest.TestCase):
             cat = C.load(s)
             fam += len(d["families"])
             # every input the catalog defines is reachable through some blueprint or archetype shown by the dashboard
-            self.assertEqual(sorted(d["inputs"]), sorted(cat["inputs"]), s)
+            self.assertEqual(sorted(d["inputs"]), sorted(k for k, v in cat["inputs"].items() if not v.get("retired")), s)   # retired inputs are kept in the catalog for traceability, never shown
             inp += len(d["inputs"])
             ix += sum(len(a["interactions"]) for a in d["archetypes"].values()) + sum(len(b["interactions"]) for b in d["blueprints"].values())
             reg_bps = C.registry_blueprints(s)
@@ -286,7 +286,7 @@ class PublishedArtifacts(unittest.TestCase):
             for a, rec in d["archetypes"].items():
                 for f in rec["families"]:
                     self.assertIn(a, d["families"][f]["archetypes"], f)
-        self.assertEqual((fam, inp, ix), (275, 1611, 1339))     # documented totals (672 inputs at #53; +12 gap adjudication, +5 unregistered contract types = 691; +920 from the catalog-completeness review via completeness.integrate; interactions 679 -> 1339 after merging the reviews' interactions); a catalog change must update these consciously
+        self.assertEqual((fam, inp, ix), (275, 1630, 1364))     # documented totals (672 inputs at #53; +12 gap adjudication, +5 unregistered contract types = 691; +939 from the catalog-completeness review via completeness.integrate; interactions 679 -> 1364 after merging the reviews' interactions); a catalog change must update these consciously
 
     def test_every_path_states_its_claim_boundary_and_never_implies_a_kalshi_edge(self):
         for d in self.docs.values():

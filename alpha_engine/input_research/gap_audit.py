@@ -75,7 +75,9 @@ AD = comp.CD / "gap_resolution_audit"
 def load_resolution_audit(sport: str) -> dict:
     out = {}
     for f in sorted(AD.glob(f"{sport}*.json")) if AD.exists() else []:
-        out.update(json.loads(f.read_text()).get("gaps") or {})
+        d = json.loads(f.read_text())
+        for k, v in (d.get("gaps") or {}).items():   # a file-level auditor attribution applies to entries without their own
+            out[k] = {**v, "auditor": v.get("auditor") or d.get("auditor")}
     return out
 
 

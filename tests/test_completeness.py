@@ -217,11 +217,15 @@ class CatalogIntegration(unittest.TestCase):
             c = cat.load(s)
             for k, rec in C.load_reviews(s).items():
                 a = C.arch_entry(c, k)
+                det = set((C.archetype_patches(s).get(k) or {}).get("detach") or [])
                 for iid in rec.get("new_inputs") or {}:
                     self.assertIn(iid, c["inputs"], (s, k, iid))
-                    self.assertIn(iid, {i["id"] for i in a["inputs"]}, (s, k, iid))
+                    if iid not in det and not c["inputs"][iid].get("retired"):
+                        self.assertIn(iid, {i["id"] for i in a["inputs"]}, (s, k, iid))
                 have = {(tuple(sorted(x["inputs"])), x.get("form")) for x in a["interactions"]}
                 for x in rec.get("interactions") or []:
+                    if det & set(x["inputs"]):
+                        continue
                     self.assertIn((tuple(sorted(x["inputs"])), x["form"]), have, (s, k))
                 self.assertTrue(a.get("mechanism_review"), (s, k))
             self.assertEqual(cat.validate(c, s), [], s)

@@ -179,7 +179,7 @@ test.describe("catalog completeness gate", () => {
 
   test("shows a row per archetype with status, and a sport x status table", async ({ page }) => {
     const cc = page.getByTestId("catalog-completeness");
-    await expect(cc.locator("table").nth(1).locator("tbody tr")).toHaveCount(gate.rows.length);
+    await expect(cc.locator("table", { has: page.locator("th", { hasText: "Market archetype" }) }).first().locator("tbody tr")).toHaveCount(gate.rows.length);
     await expect(cc.locator("table").first().locator("tbody tr")).toHaveCount(8);
   });
 

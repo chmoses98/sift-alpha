@@ -120,7 +120,11 @@ class CatalogCorrections(unittest.TestCase):
         for x in adj["adjudications"]:
             cat = C.load(x["sport"])
             have = {i["id"] for i in cat["archetypes"][x["archetype"]]["inputs"]}
+            from alpha_engine.input_research import completeness as CP
+            det = set((CP.archetype_patches(x["sport"]).get(x["archetype"]) or {}).get("detach") or [])
             for att in x["attach"]:
+                if att["id"] in det:   # deliberately detached later by a reviewed archetype patch (component of another input)
+                    continue
                 self.assertIn(att["id"], have, x)
 
     def test_unregistered_archetypes_are_published_and_marked_as_unregistered(self):

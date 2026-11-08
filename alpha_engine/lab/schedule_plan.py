@@ -28,9 +28,9 @@ def needed_firings(games: pd.DataFrame, now, season: int = 2026, fire_min: int =
 
 
 def weekly_pattern(needed: list[pd.Timestamp], min_weeks: int = 3) -> tuple[dict, list[pd.Timestamp]]:
-    cnt = collections.Counter((t.dayofweek, t.hour) for t in needed)
+    cnt = collections.Counter((t.day_of_week, t.hour) for t in needed)
     pat = {k: v for k, v in cnt.items() if v >= min_weeks}
-    exc = [t for t in needed if (t.dayofweek, t.hour) not in pat]
+    exc = [t for t in needed if (t.day_of_week, t.hour) not in pat]
     return pat, exc
 
 
@@ -77,7 +77,7 @@ def expand_cron_hours(lines: list[str], start, end) -> set:
         mons = None if mon == "*" else {int(x) for x in mon.split(",")}
         dows = None if dow == "*" else {int(x) for x in dow.split(",")}
         for t in pd.date_range(pd.Timestamp(start).floor("h"), pd.Timestamp(end), freq="h"):
-            cron_dow = (t.dayofweek + 1) % 7
+            cron_dow = (t.day_of_week + 1) % 7
             if t.hour in hours and (doms is None or t.day in doms) and (mons is None or t.month in mons) and (dows is None or cron_dow in dows):
                 out.add(t)
     return out

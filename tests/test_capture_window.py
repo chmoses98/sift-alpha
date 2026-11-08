@@ -56,7 +56,7 @@ def test_window_capture_ticks_only_inside_windows_and_records_series_failures(tm
         return _book(s)
     r = CW.run_window_capture(G, tmp_path, clock=clk, fetch=fetch, sleep=clk.sleep, interval_s=300, span_min=58)
     assert r["ticks"] >= 5 and r["series_failures"] == r["ticks"] and not r["no_window"]
-    sh = CW.read_shard(next(tmp_path.rglob("*.json.gz")))
+    sh = CW.read_shard(sorted((tmp_path / "captures").rglob("*.json.gz"))[0])
     assert "KXNFLREC" in sh["failures"] and "KXNFLTOTAL" in sh["books"] and "KXNFLREC" not in sh["books"]      # a failed series is recorded as failed, never as a partial book
     assert max(pd.Timestamp(x) for x in [sh["captured_utc"]]) <= pd.Timestamp("2026-11-08 08:58", tz="UTC")
 

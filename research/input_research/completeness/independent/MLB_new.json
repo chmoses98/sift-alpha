@@ -9,43 +9,50 @@
     "id": "PLY-1",
     "severity": "MAJOR",
     "text": "Model outputs are listed as primary inputs: 'mlb.series_length_distribution' (audit: 'Exactly the total-games contract'), 'mlb.series_exact_score_distribution', 'mlb.playoff_hosting_count_path_model' and 'mlb.bracket_path_enumeration' are the target distributions, computed from per-game win probabilities. They are not information inputs. Keeping them as KEEP_PRIMARY inputs is circular and makes the input list look larger than it is. They belong in the model or settlement layer; the real inputs are per-game win probabilities, format/home pattern, and seed probabilities.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: audit changed: series_length_distribution DUPLICATE_OF exact_score, exact_score and bracket_path_enumeration KEEP_CONTEXT (output layer), catalog roles set to context and removed from stages s1/s5 and coverage; new market-free input mlb.series_per_game_win_prob_vector (exact logit calculation) and mlb.series_game_dependence carry the information; playoff_hosting_count_path_model redefined as the deterministic home-game allocation table, not a path output.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "PLY-2",
     "severity": "MINOR",
     "text": "Interaction 1 of 5 pairs 'mlb.series_length_distribution' with 'mlb.series_exact_score_distribution' ('joint-distribution'). The length distribution is a marginal of the exact-score distribution, so this is the same quantity twice, not an interaction. The pair is also a duplicate in the input list (DUPLICATE_OF should apply).",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: interaction 2 (length x exact-score) replaced in record and catalog_entry by series_per_game_win_prob_vector x series_game_dependence (joint-distribution); length audited DUPLICATE_OF:mlb.series_exact_score_distribution; nonlinearity moved to the per-game vector.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "PLY-3",
     "severity": "MAJOR",
     "text": "KXMLBPLAYOFFHOST (sample 'Chicago C hosts at least 8 playoff games in the 2026 Pro Baseball season') is a season-long market that is priced before seeds exist. Seed probability from final standings is then the dominant driver: a bye or seed 3-4 versus seed 5-6 changes the reachable hosting range from 0 to 13. Even so, 'mlb.season_sim' is KEEP_CONTEXT ('irrelevant once the pairing is known') and 'mlb.tiebreaker_state_and_seed_path' is context. For pre-bracket hosting markets both should be primary. required_data also has no regular-season standings or remaining-schedule dataset; season_sim is fed from the 'Roster, injury and ratings data' row.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: season_sim and tiebreaker_state_and_seed_path audited KEEP_PRIMARY and set primary in catalog_entry, s1 rewritten around seed probability for pre-bracket hosting markets, new required_data 'Regular-season standings, remaining schedule and tiebreak rules' feeds them, interaction 4 now hosting table x season_sim.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "PLY-4",
     "severity": "MAJOR",
     "text": "Hosting settlement hazard not disclosed: 'hosts' is undefined when a club's designated home games are played away from its home park. Live examples: the Athletics play in Sacramento in 2025-27, the Rays played 2025 at Steinbrenner Field, and weather or neutral-site relocation is possible. The variants and unresolved entries cover only suspended or unfinished series. This should be a CONTRACT_AMBIGUOUS entry, and the designated home team should be recorded per game, not the venue.",
-    "resolution": "OPEN"
+    "resolution": "DEFERRED_TO_UNRESOLVED:ply_host_definition",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "PLY-5",
     "severity": "MINOR",
     "text": "Hosting measurement h_r lists only DS games 1, 2, 5, LCS games 1, 2, 6, 7 and the WS. It leaves out the best-of-3 Wild Card Series, where the higher seed (seeds 3-4) hosts all games. The '0-11 for a bye team' support is right, but seeds 3-4 can reach 13, which matters for 8+ strikes.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: hosting allocation table now includes the best-of-3 Wild Card Series hosted entirely by seeds 3-4; support stated as 0-11 (seeds 1-2), 0-13 (seeds 3-4), 0-10 (seeds 5-6) in s6, variants and the input measurement.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "PLY-6",
     "severity": "MINOR",
     "text": "Missing mechanisms in stages s3 and s4: rainouts and postponements move off days and so the rotation (starter assignment). Postseason extra innings use no automatic runner, which gives long games and multi-game bullpen depletion. Both feed 'mlb.series_starter_assignment_by_game' and 'mlb.series_bullpen_cumulative_workload' but neither is named. Weather is waved off as 'secondary'.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: s3 now names rainouts/postponements shifting rest and starter assignment, s4 names postseason extra innings without automatic runner depleting bullpens; starter-assignment and bullpen-workload measurements updated to recompute rest after postponements and log extra-inning length.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "PLY-7",
     "severity": "MINOR",
     "text": "'m.settlement_truth' (index market_derived_hint=true, pregame_knowable=no) appears in catalog_entry.inputs as a context input. It is the outcome label, so listing it as an input invites leakage; keep it as a settlement/backtest artifact only. 'mlb.umpire' is fed from the 'Roster, injury and ratings data' dataset, which does not contain umpire assignments.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: m.settlement_truth removed from catalog_entry, input_audit, stage s6 and settlement coverage; mlb.umpire now fed from the Postseason series history dataset (added plate umpire field; MLB Stats API game feed lists officials) instead of the roster dataset.",
+    "resolved_by": "resolver-MLB"
    }
   ]
  },
@@ -59,37 +66,43 @@
     "id": "ASW-1",
     "severity": "BLOCKER",
     "text": "The primary Derby input 'mlb.hr_derby_bracket_throughput_model' is built on a timed format: 'HR count equals swings taken times P(HR per swing), with bonus time earned by long homers extending the clock'; 'swings ~ clock / seconds-per-swing (pitcher-specific)'; 'how much a 3-minute round tires him'. The interaction 'Bonus time is only triggered by homers beyond a distance threshold ... gain extra seconds' and the 'saturating ... clock limit' nonlinearity rest on the same premise. Per web search (SI, Dodger Blue, PrizePicks, HITC, MLB.com headline 'Changes coming to 2026 Home Run Derby'), the 2026 Derby dropped the timer for a swing-capped format: about 20 swings in R1 and 15 later per reports, with swing-off tiebreaks. Under that format pitcher pace, timeouts and bonus seconds are irrelevant. Swing count is fixed by round, and the take/swing decision and pitch quality become the levers. Required inputs and data change (swing-level results, not time stamps or bonus seconds). Details differ between outlets (the official mlb.com page could not be fetched: host blocked), so the target-year rulebook must be checked, but the clock premise cannot be relied on.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: reviewer correct (AP June 2026 'MLB eliminating clock'; 20 swings R1 pool, 15 in semifinal/final, last-swing extension, swing-off ties). hr_derby_bracket_throughput_model redefined as swing-capped binomial plus extension; bonus-time interaction replaced by BP-pitcher x throughput; saturating clock nonlinearity replaced by convex extension; swing log fields now swing number/takes/BP pitcher; s5 rewritten; rulebook details kept in asw_derby_rulebook.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "ASW-2",
     "severity": "MAJOR",
     "text": "Missing input: the hitter's chosen batting-practice pitcher (often a coach or relative). Location consistency and velocity drive HR per swing in the Derby. The coverage note mentions 'Derby pitcher pairing' under opponent_matchup, but no input, measurement or data field captures pitcher identity or history.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: new input mlb.hr_derby_bp_pitcher_pairing (identity, speed/location consistency, random-effect calculation) added to new_inputs, catalog_entry, stage s5, opponent_matchup coverage, a multiplicative interaction and the Derby swing-log dataset.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "ASW-3",
     "severity": "MAJOR",
     "text": "Derby extremes ('mlb.hr_derby_distance_ev_extreme') take swing counts 'from the throughput model' (ASW-1). With a fixed-swing format, the number of draws for longest, 500+ ft and max EV is set by rounds reached (bracket advancement), not by clock and bonus time. The tie rule (R1 ties broken by longest HR, per one report) also links totals and longest-HR markets. The extreme model needs re-specification on the current format.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: hr_derby_distance_ev_extreme measurement now sets draws by rounds reached (20 + 15 semifinal + 15 final + extensions), simulates jointly with throughput because of the longest-HR Round 1 tiebreak; new joint-distribution interaction added; s6 rewritten.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "ASW-4",
     "severity": "MINOR",
     "text": "Settlement inference from title only. The variants say 'Player-prop series (KXMLBASGHIT, KXMLBASGHR, KXMLBASGKS) may require appearance', but the titles ('All Star Game Hits', 'All Star Game Strikesouts') are equally consistent with game totals. Whether these are per-player or game-total markets changes how central the per-player participation plan is, and it is not listed in unresolved.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: archived rules text now settles it: per-player props ('If William Contreras has at least 1 Hit'; 'does not enter the game, their markets will resolve to No'); quoted in rules_evidence, variants and settlement_definition updated; ambiguity left only for the combined total (asw_total_hr_swingoff).",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "ASW-5",
     "severity": "MINOR",
     "text": "KXMLBASGMVP is in live_series but not in catalog_entry.contract_types. The variants call MVP 'awarded by a selection panel'; the ASG MVP has historically combined a media panel with a fan vote, which matters for star-name bias. The nonlinearity is attached to 'mlb.expected_pa', which the author audits as WEAK and 'replaced by the ASG participation plan'. It should sit on 'mlb.asg_roster_participation_plan'.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: KXMLBASGMVP added to catalog contract_types; new input mlb.asg_mvp_vote_model (panel plus fan ballot) with stage s7 and an interaction; weights logged as asw_mvp_vote_weights; nonlinearity moved from mlb.expected_pa to mlb.asg_roster_participation_plan.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "ASW-6",
     "severity": "MINOR",
     "text": "'m.settlement_truth' (market_derived_hint=true, not pregame-knowable) is listed as a context input; it is the outcome label. 'mlb.max_velocity_extreme_distribution' is a pitch-speed input that the author already audits WEAK because only the method transfers. It is irrelevant as an input and should be dropped, not kept as context.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: m.settlement_truth and mlb.max_velocity_extreme_distribution removed from catalog_entry, input_audit, stage s6 and required_data feeds; settlement coverage now rests on m.rules_text with the quoted rules.",
+    "resolved_by": "resolver-MLB"
    }
   ]
  },
@@ -103,31 +116,36 @@
     "id": "LAB-1",
     "severity": "MAJOR",
     "text": "'mlb.games_per_calendar_day_makeup_map' is primary, and the interaction and nonlinearity ('doubleheader capacity = 0.25 x open dates', 'compression limit') model games played as schedule arithmetic. At the 600 strike (about 46 league days of play), make-up capacity is irrelevant. NO needs a start after about mid-August or no season, so the deciding mechanism is whether the league and union agree to stage a minimum truncated season (2020 precedent: 900 games for postseason and TV revenue) versus cancelling (1994-95). That go/no-go decision and its drivers (postseason media revenue, minimum viable season length, service-time and pay pro-rating) are missing as inputs.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: new primary input mlb.truncated_season_go_no_go (exact logistic on days remaining, media-revenue and pro-rating flags, 2020 vs 1994-95 anchors); makeup map demoted to secondary; s4 rewritten as go/no-go with trimodal distribution; piecewise interaction and compression nonlinearity replaced by threshold forms on the go/no-go input; catalog_entry mechanism and interaction updated.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "LAB-2",
     "severity": "MAJOR",
     "text": "Missing route: owners declare bargaining impasse, implement terms or field replacement players (1995 spring training), with an NLRB complaint or federal injunction as a resolution path (the 1995 strike ended through an injunction). Replacement-player games would plausibly count as 'MLB regular season games' under both rules texts. No input covers legal and impasse state; 'Federal labour-board filings' appears only as a source of the positions input. This is CONTRACT_AMBIGUOUS as well as a mechanism gap.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: new input mlb.impasse_replacement_legal_state (ordinal impasse/replacement/ULP/10(j)/injunction state, 1995 anchor) with new stage s6, required_data 'Labour-law filings and impasse events', regime-switch interaction; replacement-game counting recorded as CONTRACT_AMBIGUOUS lab_replacement_games and in variants.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "LAB-3",
     "severity": "MINOR",
     "text": "The count unit is not flagged: 'number of MLB regular season games played is above 600' is read as league games (of 2,430), but team-games (4,860) is not ruled out by the text. The author's 'lab_games_count_definition' covers suspended or tie games only. The edge cases cite 'tiebreaker (Game 163)', which was abolished from 2022 and is only relevant if a new CBA reinstates it.",
-    "resolution": "OPEN"
+    "resolution": "DEFERRED_TO_UNRESOLVED:lab_count_unit",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "LAB-4",
     "severity": "MINOR",
     "text": "rules_verification is 'VERIFIED_FROM_RULES_TEXT' while the settlement definition says the rules 'do not define whether suspended, shortened or tiebreak games count ... nor name a data source'. PARTIALLY_VERIFIED is more accurate. International opening series (a possible March 2027 game abroad) are the 'first game' for KXMLBOPENINGDAY and are not mentioned; this matters only if a deal lands near the scheduled opener.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: rules_verification set to PARTIALLY_VERIFIED with settlement_definition listing what the text leaves undefined; international opening-series edge case added to variants_and_edge_cases.",
+    "resolved_by": "resolver-MLB"
    },
    {
     "id": "LAB-5",
     "severity": "MINOR",
     "text": "'mlb.offfield_base_rate' and 'mlb.calendar_hazard_by_event_type' are kept although the author says the precedent table 'replaces' the first and the second's 'estimates do not' transfer. These are duplicates or irrelevant and should be dropped rather than kept as context or WEAK. 'mlb.owner_union_leverage_state' rests on Forbes/Sportico estimates (free_limited) whose revenue splits are estimates, not disclosures: SOURCE_UNVERIFIED for the 'cost per week' ratio.",
-    "resolution": "OPEN"
+    "resolution": "RESOLVED: mlb.offfield_base_rate and mlb.calendar_hazard_by_event_type removed from catalog_entry, input_audit and required_data feeds (superseded by the precedent table / not transferable); leverage-ratio estimates flagged SOURCE_UNVERIFIED as lab_leverage_estimates.",
+    "resolved_by": "resolver-MLB"
    }
   ]
  }

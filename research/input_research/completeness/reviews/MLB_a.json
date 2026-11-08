@@ -2726,7 +2726,7 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Two live series, both with sampled rules. KXMLBHR (single game, 1+/2+ rungs): Yes if the named batter, who must be in the official starting lineup and record at least one plate appearance, hits at least N home runs in the listed game; a scratch, a bench start, a zero-PA starter or a later-entering substitute settles at the undefined fair market price and pinch-hit at-bats do not count. KXMLBSERIESHR: Yes if the named player records at least N officially recorded home runs across one playoff series, 'including extra innings and inside-the-park home runs', excluding other rounds and the regular season; it has no start gate and no stated treatment of a player who misses games. Source of truth is not named.",
+   "settlement_definition": "One live series, KXMLBHR (single game, 1+/2+ rungs), with sampled rules: Yes if the named batter, who must be in the official starting lineup and record at least one plate appearance, records at least N home runs in the game 'originally scheduled for' the listed date; a scratch or a bench start, a starter with no plate appearance, and a player who enters later all settle at the undefined fair market price, and pinch-hit at-bats do not count. The text is silent on whether extra-inning home runs count (presumed yes, as the official box score includes them), on postponement or suspension of the originally scheduled game, and on a rain-shortened game; no source of truth is named. The playoff-series home-run ladder (KXMLBSERIESHR) moved to the counting-specials archetype.",
    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
@@ -2735,23 +2735,23 @@
      "establishes": "Single-game HR ladder excludes substitutes and settles them at the fair market price; population is starters with a PA."
     },
     {
-     "ticker": "KXMLBSERIESHR",
-     "quote": "This market counts the named player's total officially recorded home runs across the entire series, including extra innings and inside-the-park home runs.",
-     "establishes": "Series HR total counts all HRs in the series (including extras and inside-the-park) with no start gate, a different object from the single game."
+     "ticker": "KXMLBHR",
+     "quote": "If Sal Frelick starts the game but does not record a plate appearance, the market will resolve to the fair market price.",
+     "establishes": "A starter removed before batting (injury in the top of the first, early ejection) does not settle No; the priced event is conditional on at least one PA."
     },
     {
-     "ticker": "KXMLBSERIESHR",
-     "quote": "Home runs from other postseason rounds or the regular season do not count.",
-     "establishes": "The series market is scoped to one playoff series, so exposure is that series' games only."
+     "ticker": "KXMLBHR",
+     "quote": "If Sal Frelick records 1+ home runs in Milwaukee vs Tampa Bay professional baseball game originally scheduled for Oct 28, 2026",
+     "establishes": "The ladder counts home runs in one game tied to its original schedule date, with 'N+' rungs (floor_strike 0.5 for 1+)."
     }
    ],
    "variants_and_edge_cases": [
-    "Strike construction differs inside the archetype: 1+ and 2+ per game (nested rungs of one count) and a 2+ rung over a whole playoff series (compound over a random number of games).",
-    "Inside-the-park and extra-inning home runs count for the series total; for the single-game market the sampled text does not say, but the official scorer count includes them.",
-    "Single-game population is conditional on start and at least one PA (rule text). For KXMLBSERIESHR the sampled text has no start gate but also does not say how an injured or non-playing series player settles (No versus the fair market price); 'a hitter who misses a game simply has fewer PAs' is an inference, not rules text (CONTRACT_AMBIGUOUS, see hr_series_missed_games).",
-    "A walk-off home run counts as a home run for both series; the playoff walk-off count (KXMLBWALKOFFS) and the playoff home-run total (KXMLBPLAYOFFHRS) are now filed in the counting-specials archetype and share exposure with KXMLBSERIESHR but are not modelled here."
+    "Strike construction: 1+ and 2+ rungs on one game are nested events of the same count, so P(2+) <= P(1+) and both come from one per-game HR distribution.",
+    "Extra innings, inside-the-park home runs and postponement are not addressed in the KXMLBHR text; the official scorer's count presumably includes extra-inning and inside-the-park home runs (CONTRACT_AMBIGUOUS, hr_extras_postponement).",
+    "Population is conditional on start and at least one PA (rule text), so the priced distribution excludes zero-PA games; the fair-market-price branch replaces what would otherwise be a No for late scratches.",
+    "Series totals, playoff league totals, walk-off counts and window markets (KXMLBSERIESHR, KXMLBPLAYOFFHRS, KXMLBWALKOFFS, KXMLBNEXTHR) are filed in the counting-specials archetype and are not modelled here."
    ],
-   "settlement_data_source": "Official MLB box-score home runs for the player (presumed MLB Stats API); the sampled texts name no source.",
+   "settlement_data_source": "Official MLB box-score home runs for the player (presumed MLB Stats API); the sampled text names no source.",
    "series_mapping_issues": []
   },
   "mechanism": {
@@ -2819,16 +2819,16 @@
     },
     {
      "id": "s5",
-     "name": "Aggregation, series exposure and counting variants",
-     "description": "Single-game P(1+) and P(2+) come from the Poisson-binomial over the hitter's PAs, with the game-shared environment (wind, ball, opposing pitcher's day) adding positive correlation across his PAs and across hitters; series totals integrate over how many games the series lasts and whether the hitter starts each one. The series market has no start gate, so a hitter benched or injured mid-series simply accumulates fewer PAs (an inference; see hr_series_missed_games).",
-     "distribution": "Poisson-binomial with overdispersion from shared game environment; series totals are a compound sum over a random number of games (4-7 in a best-of-7).",
+     "name": "Single-game aggregation and within-game dependence",
+     "description": "Single-game P(1+) and P(2+) come from the Poisson-binomial over the hitter's plate appearances against the starter and then relievers, with the game-shared environment (wind, ball carry, the opposing pitcher's day) adding positive correlation across his PAs. The 2+ rung is far more sensitive to that shared component than the 1+ rung because it needs two events on the same day, and to the chance of a fifth PA in a high-scoring or extra-inning game.",
+     "distribution": "Poisson-binomial over 3-6 PAs with overdispersion from a game-level random effect; P(2+) roughly proportional to the square of the per-PA rate times a dispersion inflation.",
      "categories": [
       "distribution_variance",
       "game_context_script"
      ],
      "input_ids": [
-      "mlb.series_hr_exposure",
-      "mlb.game_shared_hr_dispersion"
+      "mlb.game_shared_hr_dispersion",
+      "mlb.expected_pa"
      ]
     }
    ],
@@ -2879,10 +2879,10 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.series_hr_exposure",
-      "mlb.expected_pa"
+      "mlb.expected_pa",
+      "mlb.game_shared_hr_dispersion"
      ],
-     "note": "Game and series exposure."
+     "note": "Game length and score state set the number of PAs (a fifth PA in high-scoring or extra-inning games) and the shared game environment."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -2902,17 +2902,16 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.game_shared_hr_dispersion",
-      "mlb.playoff_walkoff_event_rate"
+      "mlb.game_shared_hr_dispersion"
      ],
-     "note": "Within-game HR dependence (dispersion) for the 2+ rung and the Poisson-binomial mixture for the playoff walk-off count; pa_sim and contact_dist are methods/targets and not claimed."
+     "note": "Within-game HR dependence (dispersion) that inflates the 2+ rung relative to an independent Poisson-binomial."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
       "m.rules_text"
      ],
-     "note": "Start/PA gate and series totals."
+     "note": "Start and one-PA gate, fair-market-price branch, pinch-hit exclusion and nested N+ rungs."
     },
     "coaching_scheme": {
      "status": "NOT_APPLICABLE",
@@ -2986,7 +2985,7 @@
     "raw_data": [
      "series state, probable starters, games remaining; lineup status per game"
     ],
-    "why": "Series HR contracts are priced on exposure, not just per-game HR rate.",
+    "why": "Defined here while KXMLBSERIESHR was filed in this archetype; after the reconciliation the series ladder is in the counting-specials archetype, which stages this input; it is not staged here.",
     "role": "secondary"
    },
    "mlb.game_shared_hr_dispersion": {
@@ -3142,13 +3141,13 @@
    },
    {
     "inputs": [
-     "mlb.series_hr_exposure",
-     "mlb.lineup_pit",
-     "mlb.hitter_hr_profile"
+     "mlb.expected_pa",
+     "mlb.hitter_hr_profile",
+     "mlb.late_replacement_risk"
     ],
-    "form": "other-nonlinear",
-    "mechanism": "The series 2+ HR rung depends on games played (4 to 7) and start probability per game; because the HR count is convex in exposure (two events needed) the rung probability rises faster than linearly with expected games, and platoon exposure differs by opposing starter handedness.",
-    "how_to_test": "Simulate series count with different N_games distributions; check sensitivity of P(2+) to series length and platoon start probability."
+    "form": "convex",
+    "mechanism": "The 2+ rung needs two home runs, so it is convex in the number of plate appearances: a leadoff hitter in a high-total game who stays in for a fifth PA has a disproportionately higher P(2+) than a bottom-order hitter at risk of being pinch-hit for late, while P(1+) moves almost linearly. Power hitters are rarely pinch-hit for, so the truncation risk concentrates in platoon and defensive players.",
+    "how_to_test": "Compare realised 2+ rates against a linear-in-PA model across lineup slots and game totals, split by pinch-hit-for frequency."
    }
   ],
   "nonlinearities": [
@@ -3279,8 +3278,7 @@
     "feeds_inputs": [
      "mlb.lineup_pit",
      "mlb.expected_pa",
-     "mlb.bullpen_talent",
-     "mlb.series_hr_exposure"
+     "mlb.bullpen_talent"
     ]
    },
    {
@@ -3311,7 +3309,7 @@
    {
     "id": "hr_derby_rules",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "After the reconciliation all Home Run Derby and All-Star home-run series moved to the all_star_week_events archetype; what remains unknown here is whether KXMLBHR exists for regular-season games with the same gate wording, since both sampled HR texts are October 2026 postseason contracts.",
+    "description": "The only sampled KXMLBHR text is an October 2026 postseason contract; whether regular-season KXMLBHR markets use the same participation gate wording (start plus one plate appearance, fair market price otherwise) is unseen, and Derby and All-Star home-run series now sit in the all-star-week archetype.",
     "what_would_resolve": "Sample KXMLBHR rules for a regular-season game and compare the participation clauses."
    },
    {
@@ -3328,24 +3326,18 @@
     "category": "environment"
    },
    {
-    "id": "hr_series_exposure",
-    "type": "DATA_UNAVAILABLE",
-    "description": "Series start probabilities per game depend on managers' lineup plans which are only announced shortly before each game; historical lineup vintage is not archived.",
-    "what_would_resolve": "Own capture of lineups across a postseason or licensed historical lineup timestamps."
-   },
-   {
-    "id": "hr_series_missed_games",
-    "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXMLBSERIESHR text counts a named player's recorded home runs across the series but is silent on a player who is injured, benched or removed from the roster; whether the market resolves No on the count or at a fair market price is not stated, so exposure modelling of series starts rests on an inference.",
-    "what_would_resolve": "Full Kalshi rules for KXMLBSERIESHR or a settled example where the named player missed series games.",
-    "category": "settlement_contract"
-   },
-   {
     "id": "hr_opp_starter_change",
     "type": "INPUT_DEFINITION_UNCERTAIN",
     "description": "The single-game HR ladder is conditional only on the hitter, so a scratch of the opposing starter does not trigger the fair-price branch, yet the only availability input is lineup_pit; the probable-pitcher change risk input defined in first5_markets is not available here and pitcher_hr_vulnerability is evaluated for the announced starter only.",
     "what_would_resolve": "Define a shared probable-pitcher-change input and evaluate pitcher_hr_vulnerability as a mixture over the announced and replacement starters.",
     "category": "availability_news"
+   },
+   {
+    "id": "hr_extras_postponement",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "KXMLBHR text counts home runs 'in' the game originally scheduled for a date but does not say whether extra-inning home runs count, how a postponed or suspended game settles, or what happens in a rain-shortened official game where the hitter loses PAs.",
+    "what_would_resolve": "Full KXMLBHR rule document and settled examples of an extra-inning home run and a postponed game."
    }
   ]
  },
@@ -7467,96 +7459,114 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "After the reconciliation the only live series is KXMLBTEAMSALE: Yes 'If the Los Angeles D Pro Baseball team is sold before Jan 1, 2027' (title: sold after Issuance and before the date), and 'The deal must be finalized and approved by the Governing League to be encompassed by the Payout Criterion', so a signed agreement, a reported deal or a pending owners' vote does not settle Yes; closing and league approval must both occur before the deadline. The text does not define a minority-stake or control-interest sale, partial transfers, or the timestamp used for 'finalized'. The award, delay, esports and hiring series formerly filed here were moved (delay to extras_and_delay, awards to season_leaders_and_awards, next manager to transactions, the Mobile Legends market out of scope). Source of truth is not named.",
+   "settlement_definition": "After the reconciliation the only live series is KXMLBFODTEAMS (rules sampled): one market per club, Yes 'If Washington is confirmed to be in the Pro Baseball 2027 Field of Dreams Game'; the market 'resolves immediately on team selection for the game', and 'If no Pro Baseball 2027 Field of Dreams Game is announced to have participants or occurs, all markets resolve to No'. Two clubs are selected, so Yes probabilities across clubs sum to about two when a game is staged. The text gives no deadline for the announcement, does not say what happens if announced teams are later replaced or the game is cancelled after selection, and names no source beyond confirmation. The franchise-sale market formerly filed here (KXMLBTEAMSALE) was classified out of scope (franchise business); awards, delay and hiring series moved earlier.",
    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
-     "ticker": "KXMLBTEAMSALE",
-     "quote": "The deal must be finalized and approved by the Governing League to be encompassed by the Payout Criterion.",
-     "establishes": "Settlement needs both closing and league approval before the deadline; an announced agreement alone resolves nothing."
+     "ticker": "KXMLBFODTEAMS",
+     "quote": "If Washington is confirmed to be in the Pro Baseball 2027 Field of Dreams Game, then the market resolves to Yes.",
+     "establishes": "Each club market settles on confirmation that the club is a participant in the 2027 Field of Dreams game, not on the game being played."
     },
     {
-     "ticker": "KXMLBTEAMSALE",
-     "quote": "Will the Los Angeles D Pro Baseball team be sold after Issuance and before Jan 1, 2027?",
-     "establishes": "The window runs from issuance to a fixed date, so only a sale completed inside it counts."
+     "ticker": "KXMLBFODTEAMS",
+     "quote": "This market resolves immediately on team selection for the game.",
+     "establishes": "Resolution is triggered by the selection announcement (typically with the schedule release), so later cancellation of the game appears not to reverse a Yes."
+    },
+    {
+     "ticker": "KXMLBFODTEAMS",
+     "quote": "If no Pro Baseball 2027 Field of Dreams Game is announced to have participants or occurs, all markets resolve to No.",
+     "establishes": "If the event is not staged in 2027 every club resolves No, so P(game staged) multiplies every club probability."
     }
    ],
    "variants_and_edge_cases": [
-    "Process milestones are distinct: exclusive negotiation, signed definitive agreement, league ownership-committee review, owners' approval vote and closing; only 'finalized and approved' before the date counts, so a deal approved but closing after Jan 1 2027 resolves No.",
-    "Scope of 'sold' is undefined: a minority stake, a transfer of a control interest within an ownership group, or a sale of a holding company may or may not count (CONTRACT_AMBIGUOUS, see off_sale_scope).",
-    "Other off-field families (awards, weather delay, hiring, a non-baseball esports match) carried the same prefix before the reconciliation; prefix routing is unsafe, so the family must still be identified from the rules text."
+    "Two participants per game: club markets are a structured set whose Yes probabilities sum to two times P(game staged), so club probabilities must be modelled jointly as a pair choice rather than independently.",
+    "Selection precedes play: 'resolves immediately on team selection' means a club announced and later replaced (in 2020 the game was announced, re-planned and then cancelled before being played in 2021) would already have resolved Yes; the text does not address re-selection (CONTRACT_AMBIGUOUS, off_reselection).",
+    "No deadline is stated for 'announced to have participants or occurs'; with the CBA expiring Dec 1 2026, a delayed 2027 schedule release postpones selection, and the market's close date governs whether a late announcement counts (CONTRACT_AMBIGUOUS, off_no_deadline).",
+    "The event has been intermittent (played 2021 and 2022, not staged 2023-2025), so whether a 2027 game exists at all is the largest single factor, ahead of which clubs play."
    ],
-   "settlement_data_source": "Official MLB and club announcements of league approval and closing (presumed); the sampled text names only 'the Governing League'.",
+   "settlement_data_source": "Official MLB schedule release and club announcements of the Field of Dreams participants (presumed); the text says only 'confirmed'.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "A franchise-sale market is an institutional pipeline, not a sporting outcome. A sale moves from rumoured interest through an exclusive negotiation and a signed definitive agreement to review by the league's ownership committee, an approval vote of the owners and closing; each stage has a characteristic duration and failure rate, and the contract settles only on a finalized and league-approved sale before a fixed date. The probability is therefore a stage-conditional hazard truncated by the deadline, with the league's meeting calendar creating discrete windows in which approval can happen, and with information arriving as reports of uneven credibility well before the official event. Team or player performance plays no role. Other off-field families that once shared the prefix (awards, delays, esports, hiring) have unrelated mechanisms and now sit in other archetypes.",
+   "summary": "The Field of Dreams team market is a scheduling decision, not a sporting outcome. First the league must decide to stage a game at the Dyersville, Iowa site in 2027, which depends on venue readiness and its owners' development plans, the broadcast partner's appetite, the schedule-making calendar and, this cycle, a collective bargaining agreement that expires on Dec 1 2026 and could delay the 2027 schedule. Given a game, two clubs are chosen: the league and broadcaster favour Midwestern clubs within driving distance of Iowa, high-profile or nationally marketable matchups, clubs not used recently (2021 White Sox-Yankees, 2022 Cubs-Reds), and a designated home club willing to give up a home date at a stadium of roughly 8,000 seats; the pairing must fit the schedule matrix, usually as part of an existing series. The announcement normally arrives with the schedule release or in a dedicated press event, preceded by leaks of uneven credibility. Team quality and player performance play no role.",
    "stages": [
     {
      "id": "s1",
-     "name": "Contract identification and scope",
-     "description": "Before any modelling the family must be read from the rules text rather than the ticker prefix, because the prefix has carried awards, delays, an esports match and hiring markets; for the sale market the text also fixes what counts (finalized and league-approved before the date) and leaves open whether a minority or intra-group transfer is a sale. The market's close time relative to scheduled league meetings determines which approval windows fall inside it.",
-     "distribution": "Categorical family label (deterministic once read); scope ambiguity is a small discrete probability that a non-control transaction is counted.",
+     "name": "Contract scope and resolution trigger",
      "categories": [
       "settlement_contract"
      ],
      "input_ids": [
       "m.rules_text",
       "m.lifecycle"
-     ]
+     ],
+     "description": "The family must be identified from the rules text rather than the prefix, which has carried award, delay, esports, hiring and sale markets. For KXMLBFODTEAMS the text fixes a resolution trigger at team selection, an all-No branch if no 2027 game is announced with participants or played, and no explicit announcement deadline; the market close time relative to the expected schedule release decides how much labour-delay risk the contract carries.",
+     "distribution": "Deterministic routing; a small discrete probability that re-selection or a late announcement is treated differently from the plain reading."
     },
     {
      "id": "s2",
-     "name": "League approval calendar",
+     "name": "Whether a 2027 game is staged",
      "categories": [
+      "situational_schedule_motivation",
       "officiating_rules",
-      "situational_schedule_motivation"
+      "environment"
      ],
      "input_ids": [
-      "mlb.league_ownership_approval_calendar",
-      "mlb.sale_process_stage_hazard"
+      "mlb.special_event_game_staging",
+      "mlb.labor_stoppage_regime"
      ],
-     "description": "League approval is not continuous: the ownership committee vets the buyer and its financing, and the full owners' vote (a supermajority, commonly reported as three quarters) is usually taken at a scheduled owners' meeting or by a special vote. With a Jan 1 2027 deadline only the meetings left before that date can deliver approval, so a deal that signs too late to be vetted before the last meeting is effectively a No regardless of its quality.",
-     "distribution": "Step function in time: approval probability jumps at meeting dates and is near zero between them unless a special vote is called; closing follows approval with a short lag."
+     "description": "The league staged the game in 2021 and 2022 and skipped it from 2023 through 2025 while the Dyersville site was redeveloped, so staging is an annual decision driven by venue status, broadcast and sponsorship commitments, the league's portfolio of special-event games (Little League Classic, Rickwood, international series) and the schedule calendar. A lockout after the CBA expiry would delay the 2027 schedule and could remove the event entirely, which sends every club market to No.",
+     "distribution": "Bernoulli with a probability that moves in jumps on venue, broadcaster and labour news; heavy dependence on a single league decision, so no averaging across clubs."
     },
     {
      "id": "s3",
-     "name": "Sale process stage hazard",
-     "description": "A sale proceeds from a process (bids, exclusivity, definitive agreement) through league committee review and an owners' vote to closing. The probability of closing before a date depends on the current stage, the typical duration of each remaining stage and the chance the process collapses (financing, a competing bid, a seller changing course); rumour-stage deals complete much less often than signed deals awaiting a league vote.",
-     "distribution": "Stage-dependent hazard with long, right-skewed durations; absorbing completion; many processes fail before signing.",
+     "name": "Choice of the two participating clubs",
      "categories": [
+      "opponent_matchup",
       "situational_schedule_motivation",
-      "availability_news"
+      "role_personnel"
      ],
      "input_ids": [
-      "mlb.sale_process_stage_hazard",
-      "mlb.news"
-     ]
+      "mlb.special_event_team_selection_affinity",
+      "mlb.offfield_base_rate"
+     ],
+     "description": "Given a game, the pair is chosen to maximise attendance draw, television value and regional fit: clubs within a few hundred miles of eastern Iowa (Cubs, White Sox, Cardinals, Twins, Royals, Brewers, Reds) carry most of the mass, a national draw can be paired with a regional club, recently used clubs are less likely, and the designated home club gives up a home date and gate revenue. The pairing must also exist in the 2027 schedule matrix (a division, rivalry or interleague series in mid-season).",
+     "distribution": "Categorical over about 435 unordered club pairs, concentrated on a few dozen Midwestern pairings; club-level marginals sum to two given staging, with strong negative dependence between clubs in the same slot."
     },
     {
      "id": "s4",
-     "name": "Report credibility before official events",
+     "name": "Schedule release and report flow",
      "categories": [
       "availability_news"
      ],
      "input_ids": [
       "mlb.news",
-      "mlb.news_source_reliability_score"
+      "mlb.news_source_reliability_score",
+      "mlb.labor_stoppage_regime"
      ],
-     "description": "Reports of exclusivity, a signed agreement or a scheduled vote precede official announcements by weeks; their information value depends on the outlet's track record and on the wording ('in talks', 'agreement in principle', 'definitive agreement'). The stage state used by the hazard is therefore a posterior over stages given timestamped reports, not the latest headline.",
-     "distribution": "Discrete jumps in the stage posterior at report times; source-specific likelihood ratios with a long tail of unreliable rumours."
+     "description": "Participants are usually confirmed with the schedule release or a dedicated announcement, and local reports, permit filings and broadcaster leaks precede it. Before the release the state is a posterior over staging and pairings given these reports weighted by source reliability; a CBA negotiation that delays the schedule shifts the announcement date and can push it past the market's close.",
+     "distribution": "Discrete jumps at report times; an announcement-date distribution that is right-skewed under labour uncertainty."
     }
    ],
    "category_coverage": {
     "talent_strength": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "A franchise sale has no on-field talent component; the buyer's financial strength enters only as a stage-failure risk inside the sale process hazard, not as team strength."
+     "note": "Club quality does not decide Field of Dreams participation; selection rests on geography, marketability and scheduling, so no team-strength input changes the club probabilities."
     },
     "opponent_matchup": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "There is no opponent in a franchise sale; competing bidders affect timing and failure risk and are carried by the stage hazard and the report stream, not by a matchup input."
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.special_event_team_selection_affinity"
+     ],
+     "note": "Which pairings are attractive (regional rivalry, national draw paired with a Midwestern club) and fit the schedule matrix."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.special_event_team_selection_affinity"
+     ],
+     "note": "The designated home club's willingness to give up a home date is the only club-role element; no player role matters."
     },
     "availability_news": {
      "status": "COVERED",
@@ -7564,33 +7574,58 @@
       "mlb.news",
       "mlb.news_source_reliability_score"
      ],
-     "note": "Timestamped sale reports scored by source reliability."
+     "note": "Timestamped leaks and announcements about staging and participants, scored by source reliability."
     },
-    "environment": {
+    "coaching_scheme": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "Venue, weather and park conditions have no bearing on whether an ownership transfer is finalized and approved before the contract deadline."
+     "note": "Managers and tactics have no influence on whether a club is chosen for a special-event game; the decision sits with the league office, the broadcaster and the clubs' business side."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.special_event_game_staging"
+     ],
+     "note": "Venue readiness and status of the Dyersville site enter through the staging probability."
     },
     "game_context_script": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "No game is played and there is no in-game state; the only time structure is the approval calendar and process stages covered elsewhere in this record."
+     "note": "The contract resolves on selection, before any game is played, so no in-game state, score or leverage can affect it."
     },
-    "situational_schedule_motivation": {
-     "status": "COVERED",
-     "input_ids": [
-      "mlb.sale_process_stage_hazard",
-      "mlb.league_ownership_approval_calendar"
-     ],
-     "note": "Stage durations and the approval calendar before the deadline."
+    "pace_volume": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "There are no opportunity counts; the only count is two participants per staged game, which is a structural constraint inside the pair-choice input."
+    },
+    "efficiency_conversion": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "No per-opportunity conversion exists; the event is a single league scheduling decision followed by a pair choice, with no repeated trials to convert."
     },
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.sale_process_stage_hazard",
-      "m.strike_hit_rates"
+      "mlb.special_event_team_selection_affinity",
+      "mlb.special_event_game_staging"
      ],
-     "note": "Right-skewed stage durations and a small-sample historical settlement base rate."
+     "note": "All club outcomes share one staging Bernoulli and a pair constraint, so outcomes are strongly dependent; few historical events make the base rate wide."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.special_event_game_staging",
+      "mlb.labor_stoppage_regime",
+      "mlb.special_event_team_selection_affinity"
+     ],
+     "note": "Event calendar, CBA expiry and schedule-matrix fit."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.labor_stoppage_regime"
+     ],
+     "note": "The labour agreement governs whether and when the 2027 schedule is made; no on-field officiating applies."
     },
     "settlement_contract": {
      "status": "COVERED",
@@ -7598,34 +7633,7 @@
       "m.rules_text",
       "m.lifecycle"
      ],
-     "note": "Finalization and league-approval condition and the sale deadline."
-    },
-    "role_personnel": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "No player or staff role decides a sale; the relevant actors (seller, buyer, league committee) are represented through process stage and approval calendar inputs."
-    },
-    "coaching_scheme": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Scheme and strategy do not enter any of these contracts except implicitly through managerial performance in awards, which is represented as wins over expectation; no tactical information changes the resolution of a sale, delay or esports match market in this archetype."
-    },
-    "pace_volume": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Opportunity counts (plate appearances, serve points) do not exist for these resolution events; the volume-like quantities are voting weights and match length, which are encoded in family-specific inputs."
-    },
-    "efficiency_conversion": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "No per-opportunity conversion rate exists for sales, awards or delays; the nearest object is stage-conversion probability, treated as the hazard in the sale input."
-    },
-    "officiating_rules": {
-     "status": "COVERED",
-     "input_ids": [
-      "mlb.league_ownership_approval_calendar"
-     ],
-     "note": "League approval process and vote threshold are the governing rules of the event."
+     "note": "Selection trigger, all-No branch, missing deadline and market close relative to the schedule release."
     }
    }
   },
@@ -7646,7 +7654,7 @@
     "raw_data": [
      "season-level: team wins, projected wins (preseason), prior-year wins, division rank, award votes"
     ],
-    "why": "Defined when the Manager/Executive of the Year series were filed here; after the reconciliation they sit in season_leaders_and_awards, which stages this input. The 'consensus' preseason projection in its measurement must be a projection-system average (ZiPS/Steamer/PECOTA), never sportsbook win totals, which are market-derived benchmarks.",
+    "why": "Defined when the Manager/Executive of the Year series were filed here; after the reconciliation they sit in season_leaders_and_awards, which stages this input. The 'consensus' preseason projection in its measurement must be a projection-system average (ZiPS/Steamer/PECOTA), never sportsbook win totals, which are market-derived benchmarks. Not staged here: the series it served left this archetype.",
     "role": "context"
    },
    "mlb.sale_process_stage_hazard": {
@@ -7665,7 +7673,7 @@
     "raw_data": [
      "deal-level: stage timestamps, announced approvals, closing date"
     ],
-    "why": "KXMLBTEAMSALE settles only on finalization and approval, so stage and duration drive the probability.",
+    "why": "Defined here for KXMLBTEAMSALE, which the reconciliation classified out of scope (franchise business); no live series of this archetype uses it and it is not staged.",
     "role": "primary"
    },
    "mlb.mlbb_team_rating_series_format": {
@@ -7705,45 +7713,66 @@
      "timestamped candidate reports",
      "candidate and executive career histories"
     ],
-    "why": "Defined when KXMLBCOACH was filed here; after the reconciliation the next-manager series sits in transactions, which stages this input.",
+    "why": "Defined when KXMLBCOACH was filed here; after the reconciliation the next-manager series sits in transactions, which stages this input. Not staged here: the series it served left this archetype.",
     "role": "context"
    },
-   "mlb.league_ownership_approval_calendar": {
-    "label": "League ownership-approval calendar: owners' meeting dates, committee review lag and vote threshold before a sale deadline",
+   "mlb.special_event_game_staging": {
+    "label": "Special-event game staging probability (Field of Dreams and similar one-off venue games) for a season",
     "category": "schedule_context",
-    "mechanism": "A sale can be approved only by an owners' vote after committee vetting, which happens at scheduled meetings or special votes, so approval opportunities before a deadline are discrete.",
-    "rationale": "The sampled contract needs league approval before Jan 1 2027; the number and dates of approval opportunities left in the window, and the typical committee-vetting lag after a signed agreement, decide whether even a certain deal can settle Yes in time. This is a calendar fact separate from the stage hazard, and the vote threshold (a supermajority, commonly reported as three quarters) is from reporting, not a verified rule text.",
-    "measurement": "For each date t and deadline T: list scheduled owners' meetings in (t, T] from league announcements and press reports, plus a special-vote rate estimated from past sales (share of approvals outside meetings, shrunk to 0.3 with k = 5 sales). Committee-vetting lag from signed agreement to approval vote: empirical distribution from MLB control sales 2005-2025 (median and quantiles, log-normal fit). P(approval by T | signed at s) = P(lag <= time to the last approval opportunity before T). Units: probability and count of opportunities. As-of: timestamp of the latest meeting-schedule report.",
+    "mechanism": "A one-off venue game exists only if the league schedules it, which depends on venue readiness, broadcaster commitment and the schedule calendar.",
+    "rationale": "Every club market resolves No if no 2027 game is staged, so this single probability scales all club probabilities; it is driven by site redevelopment status in Dyersville, the national broadcaster's special-event slate, the league's other special events that compete for the same mid-season window, and labour risk around the Dec 1 2026 CBA expiry.",
+    "measurement": "P(staged in season Y) = logistic(b0 + b1*venue_ready_flag + b2*broadcaster_slot_confirmed + b3*prior_season_staged + b4*announced_by_date_flag) times (1 - P(labour stoppage cancels or delays the event past the market close)); fit b on special-event venue games 2016-2026 (Fort Bragg, Williamsport Little League Classic, Field of Dreams, Rickwood, international series) with a weakly informative prior (sd 1 on each coefficient) because N is under 30; labour factor from mlb.labor_stoppage_regime. As-of: latest dated venue, broadcaster or league report; units: probability.",
     "pregame_knowable": "partial",
     "free_sources": [
-     "MLB press releases on owners' meetings and approved sales",
-     "Trade press reports of meeting schedules (Sportico, The Athletic; SOURCE_UNVERIFIED for archived dates)"
+     "MLB press releases and schedule announcements (free_scrape)",
+     "Local Iowa press on the Dyersville site (free_scrape)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "owners' meeting dates by year",
-     "sale timeline: agreement signed, committee referral, approval vote, closing dates"
+     "special-event games by season with announcement date, venue, participants and whether played",
+     "dated venue-status and broadcaster reports"
     ],
-    "why": "KXMLBTEAMSALE settles only on league approval before a fixed date, so the remaining approval windows cap the probability.",
+    "why": "KXMLBFODTEAMS resolves all clubs No if no 2027 game is announced with participants or played, so staging is the first multiplier.",
+    "role": "primary"
+   },
+   "mlb.special_event_team_selection_affinity": {
+    "label": "Special-event participant selection affinity by club pair (distance, marketability, recency, home-date cost, schedule fit)",
+    "category": "schedule_context",
+    "mechanism": "The league and broadcaster pick the pair that maximises regional attendance and national audience subject to the schedule matrix and a home club willing to move a home date.",
+    "rationale": "Club probabilities are a pair choice, not independent events: Midwestern clubs dominate, national draws are paired with regional clubs, recent participants are less likely, and the designated home club loses gate revenue at a small temporary stadium; the pairing must already exist as a mid-season series in the 2027 matrix.",
+    "measurement": "Conditional logit over unordered club pairs: utility = a1*log(min road distance of the two clubs to Dyersville, miles) + a2*(TV market size rank sum) + a3*(either club used in the last 3 stagings) + a4*(pair is a division or traditional rival) + a5*(pair has a mid-season series in the released or projected matrix); fit on special-event venue selections 2016-2026 with coefficients shrunk to a distance-only model (shrinkage weight k = 10 events). Club marginal = sum of pair probabilities containing the club (sums to 2). As-of: matrix and report date; units: probability.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "MLB schedule archives (Baseball-Reference, MLB.com)",
+     "Club market-size and stadium distance data (public geography)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "club home-city coordinates and distance to Dyersville, Iowa",
+     "special-event participant pairs by year",
+     "season schedule matrix by series",
+     "TV market size by club"
+    ],
+    "why": "Gives each KXMLBFODTEAMS club market a probability that respects the two-participant constraint and regional selection pattern.",
     "role": "primary"
    }
   },
   "input_audit": {
    "mlb.offfield_base_rate": {
     "verdict": "WEAK",
-    "reason": "One reference class for heterogeneous off-field families is meaningless; for the sale market the relevant base rate is stage-specific completion inside the sale hazard. Not staged."
+    "reason": "A single off-field reference class is too coarse; for KXMLBFODTEAMS only the special-event staging and selection history is a relevant base rate, and it is better carried by the two special-event inputs. Context only."
    },
    "mlb.news": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Timestamped reports are the main pre-announcement information for a sale (exclusivity, signed agreement, vote scheduling); credibility must be scored per source via news_source_reliability_score."
+    "reason": "Leaks from local Iowa press, broadcasters and clubs precede the official participant announcement; reports must be timestamped and weighted by news_source_reliability_score."
    },
    "mlb.roster_moves": {
     "verdict": "IRRELEVANT",
-    "reason": "Player transactions have no bearing on a franchise sale, the only live series after the reconciliation; it was relevant only to the hiring market now in transactions."
+    "reason": "Player transactions have no bearing on which clubs are chosen for the Field of Dreams game, the only live series after the reconciliation."
    },
    "m.rules_text": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Fixes the 'finalized and approved by the Governing League' condition and the deadline, and routes families that share the prefix; wording must be versioned."
+    "reason": "Fixes the selection trigger, the all-No branch when no game is staged and the absence of an announcement deadline; wording must be versioned per market."
    },
    "m.quote_history": {
     "verdict": "BENCHMARK_ONLY",
@@ -7755,103 +7784,165 @@
    },
    "m.lifecycle": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Close time and halts determine which news is tradable; not an input to the event itself."
+    "reason": "The market close time relative to the expected 2027 schedule release decides whether a labour-delayed announcement still counts; it is not an input to the selection itself."
    },
    "m.external_lines": {
     "verdict": "BENCHMARK_ONLY",
-    "reason": "External prices, where they exist for off-field events, are a benchmark for fair probability, not an input; none are used for the sale market."
+    "reason": "External prices for special-event participants rarely exist; where they do they are a benchmark for fair probability, never an input."
    },
    "m.strike_hit_rates": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Historical settlement frequency by family is a base-rate check; sample sizes in these families are tiny."
+    "reason": "Historical settlement frequency for special-event club markets is a base-rate check only; there are very few settled markets."
    }
   },
   "interactions": [
    {
     "inputs": [
-     "mlb.sale_process_stage_hazard",
-     "mlb.news",
+     "mlb.special_event_game_staging",
+     "mlb.special_event_team_selection_affinity"
+    ],
+    "form": "multiplicative",
+    "mechanism": "A club's Yes probability is P(game staged) times its marginal in the pair choice; news that strengthens one club's selection does nothing if the event itself is doubtful, and a staging confirmation lifts every plausible club at once while leaving their ratios unchanged.",
+    "how_to_test": "Decompose historical special-event club probabilities into staging and selection parts and check that staging news moves club prices proportionally."
+   },
+   {
+    "inputs": [
+     "mlb.labor_stoppage_regime",
+     "mlb.special_event_game_staging",
      "m.lifecycle"
     ],
-    "form": "threshold",
-    "mechanism": "Completion before the deadline is nearly impossible before a signed agreement and highly probable after the owners' vote is scheduled; the relationship between time remaining and probability is a threshold that depends on stage, so the same news at different stages has different value.",
-    "how_to_test": "Estimate stage-specific completion probability and duration; test time-remaining x stage interaction."
+    "form": "regime-switch",
+    "mechanism": "Under a lockout after Dec 1 2026 the 2027 schedule is not finalised, so selection cannot be announced and the event may be dropped; if the market closes before a delayed release the all-No branch applies, so labour risk matters more the earlier the close date.",
+    "how_to_test": "Compare schedule-release dates in labour-dispute years (1994-95, 2021-22) with normal years and map them against the market close time."
    },
    {
     "inputs": [
+     "mlb.special_event_team_selection_affinity",
      "mlb.news",
-     "m.rules_text"
+     "mlb.news_source_reliability_score"
     ],
     "form": "conditional",
-    "mechanism": "Reports precede official announcements, but the rules count only the official event (for sale: finalization and league approval), so the value of a report depends on its source credibility and on how far the process still has to run; price reaction is evaluated against what the rules will count.",
-    "how_to_test": "Score each reported event as official or not under the rules wording and check how often reports precede the settled event by market family."
+    "mechanism": "A report naming a pairing moves club probabilities in proportion to the outlet's reliability for schedule leaks; local reports about hotel blocks or permits for specific dates are informative only if the clubs scheduled that week match the leaked pairing.",
+    "how_to_test": "Score past schedule-leak reports by outlet against released schedules and fit outlet-level likelihood ratios."
    },
    {
     "inputs": [
-     "mlb.sale_process_stage_hazard",
-     "mlb.league_ownership_approval_calendar"
+     "mlb.special_event_team_selection_affinity",
+     "mlb.offfield_base_rate"
     ],
     "form": "threshold",
-    "mechanism": "A signed agreement converts into a Yes only if committee vetting finishes before the last approval opportunity inside the window; the same stage therefore implies a high probability when signed months before a scheduled meeting and almost none when signed weeks before the deadline with no meeting left. The stage hazard and the calendar combine through a cut-off, not additively.",
-    "how_to_test": "For past MLB control sales, compare approval-before-date outcomes against signing-to-next-meeting gaps; the success rate should drop sharply when the gap is shorter than the typical vetting lag."
-   },
-   {
-    "inputs": [
-     "mlb.news",
-     "mlb.news_source_reliability_score",
-     "mlb.sale_process_stage_hazard"
-    ],
-    "form": "conditional",
-    "mechanism": "A report moves the stage posterior only in proportion to the outlet's reliability for that wording; an 'agreement in principle' from a low-reliability source should barely change the hazard, while a definitive-agreement report from a reliable outlet moves the process to the signed stage and multiplies the completion probability.",
-    "how_to_test": "Score historical sale reports by outlet and wording and compare subsequent completion rates and lags by reliability tier."
+    "mechanism": "Clubs beyond a few hundred miles of eastern Iowa have near-zero selection probability unless they are a national draw, so the distance effect is a threshold rather than a smooth decline, and the generic off-field base rate overstates distant clubs.",
+    "how_to_test": "Plot selection frequency against distance for regional special events and test a threshold against a log-linear distance term."
    }
   ],
   "nonlinearities": [
    {
-    "input_id": "mlb.sale_process_stage_hazard",
-    "shape": "Step-like by stage with right-skewed durations",
-    "why": "Probability of closing before a date jumps at signing and again at the owners' vote, with long and uncertain delays between."
+    "input_id": "mlb.special_event_game_staging",
+    "shape": "step function in time at announcement dates",
+    "why": "Staging probability jumps to near one at the participant announcement and to near zero if the schedule is released without the event; between announcements it drifts only with venue and labour news."
    },
    {
-    "input_id": "mlb.league_ownership_approval_calendar",
-    "shape": "Step function of time to deadline with jumps at owners' meeting dates",
-    "why": "Approval can only arrive at discrete opportunities, so the probability of a sale settling Yes falls in steps as each meeting before the deadline passes without a vote, not smoothly with days remaining."
+    "input_id": "mlb.special_event_team_selection_affinity",
+    "shape": "threshold in distance with a national-draw exception",
+    "why": "Selection mass falls sharply beyond driving distance of the site, except for a few national-draw clubs paired with a regional club, so a linear distance effect misprices both groups."
    }
   ],
   "required_data": [
    {
-    "dataset": "Franchise sale process timeline",
-    "grain": "one row per sale event",
-    "fields": "stage dates, announcement dates, approval and closing, buyer, price",
-    "timestamp_requirement": "Event timestamps from press.",
-    "history_needed": "All MLB sales since 2000 plus other leagues.",
+    "dataset": "Special-event venue games and participants",
+    "grain": "one row per special-event game",
+    "fields": [
+     "season",
+     "venue",
+     "announcement date",
+     "participating clubs",
+     "designated home club",
+     "played or cancelled",
+     "broadcaster"
+    ],
+    "timestamp_requirement": "Announcement date as first published; later changes recorded with their own dates.",
+    "history_needed": "Special-event venue games 2016-2026",
     "candidate_sources": [
      {
-      "name": "MLB and team press releases",
+      "name": "MLB press releases",
       "access": "free_scrape",
-      "note": "Official announcements"
+      "note": "Official announcements of events and participants"
      },
      {
-      "name": "Trade press archives",
+      "name": "Baseball-Reference schedules",
       "access": "free_scrape",
-      "note": "Reports"
-     },
-     {
-      "name": "Cross-league databases",
-      "access": "paid",
-      "note": "Deal databases"
+      "note": "Played games and venues"
      }
     ],
     "feeds_inputs": [
-     "mlb.sale_process_stage_hazard",
+     "mlb.special_event_game_staging",
+     "mlb.special_event_team_selection_affinity"
+    ]
+   },
+   {
+    "dataset": "Club geography, market size and schedule matrix",
+    "grain": "one row per club; one row per scheduled series",
+    "fields": [
+     "home-city coordinates",
+     "distance to Dyersville",
+     "TV market rank",
+     "series dates and opponents"
+    ],
+    "timestamp_requirement": "Schedule matrix as released (or projected) at the as-of date.",
+    "history_needed": "Current season plus matrices for the stagings used in fitting",
+    "candidate_sources": [
+     {
+      "name": "MLB schedule release",
+      "access": "free",
+      "note": "Released schedules"
+     },
+     {
+      "name": "Public geography and Nielsen market rankings",
+      "access": "free_limited",
+      "note": "Distances and market size"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.special_event_team_selection_affinity"
+    ]
+   },
+   {
+    "dataset": "Labour negotiation timeline and report archive",
+    "grain": "one row per dated report",
+    "fields": [
+     "date",
+     "outlet",
+     "claim (staging, pairing, schedule date, CBA status)",
+     "later outcome"
+    ],
+    "timestamp_requirement": "Publication timestamp; stored at capture.",
+    "history_needed": "2020-2027",
+    "candidate_sources": [
+     {
+      "name": "Local and national press archives",
+      "access": "free_scrape",
+      "note": "Leaks and CBA coverage"
+     },
+     {
+      "name": "Own timestamped capture",
+      "access": "own_capture",
+      "note": "Keeps the vintage"
+     }
+    ],
+    "feeds_inputs": [
      "mlb.news",
-     "mlb.news_source_reliability_score"
+     "mlb.news_source_reliability_score",
+     "mlb.labor_stoppage_regime"
     ]
    },
    {
     "dataset": "Kalshi off-field market rules and lifecycle",
     "grain": "one row per market",
-    "fields": "rules text, close time, status, price history (for evaluation)",
+    "fields": [
+     "rules text",
+     "close time",
+     "status"
+    ],
     "timestamp_requirement": "Rules versioned at issuance.",
     "history_needed": "Since launch.",
     "candidate_sources": [
@@ -7871,102 +7962,49 @@
      "m.lifecycle",
      "m.strike_hit_rates"
     ]
-   },
-   {
-    "dataset": "League owners' meeting calendar and approval history",
-    "grain": "one row per owners' meeting or special vote; one row per control sale with milestone dates",
-    "fields": [
-     "meeting date",
-     "sales on the agenda",
-     "approval vote outcome",
-     "agreement signed date",
-     "committee referral date",
-     "approval date",
-     "closing date"
-    ],
-    "timestamp_requirement": "Meeting dates as announced at each as-of date (announced schedule vintage), not the realised calendar",
-    "history_needed": "Control sales and meetings 2005-2025",
-    "candidate_sources": [
-     {
-      "name": "MLB press releases",
-      "access": "free_scrape",
-      "note": "Approval announcements; meeting dates not always published in advance"
-     },
-     {
-      "name": "Trade press (Sportico, Forbes, The Athletic)",
-      "access": "free_limited",
-      "note": "Meeting schedules and deal milestones; paywalled in part"
-     },
-     {
-      "name": "Own timestamped capture",
-      "access": "own_capture",
-      "note": "Needed to keep the schedule vintage"
-     }
-    ],
-    "feeds_inputs": [
-     "mlb.league_ownership_approval_calendar"
-    ]
    }
   ],
   "unresolved": [
    {
-    "id": "off_family_routing",
+    "id": "off_no_deadline",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Only KXMLBTEAMSALE remains after the reconciliation; the sampled text does not say whether a minority stake, an intra-group control transfer or a holding-company sale counts as 'sold', nor which timestamp makes a deal 'finalized'.",
-    "what_would_resolve": "Obtain full KXMLBTEAMSALE rules or a settled example and Kalshi's definition of a sale."
+    "category": "settlement_contract",
+    "description": "KXMLBFODTEAMS resolves all No 'If no Pro Baseball 2027 Field of Dreams Game is announced to have participants or occurs' but states no deadline for the announcement, so a labour-delayed schedule release after the market close has no defined treatment.",
+    "what_would_resolve": "Kalshi clarification of the announcement deadline or the market close rule for this series."
    },
    {
-    "id": "off_sale_small_n",
+    "id": "off_reselection",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "The market 'resolves immediately on team selection'; the text does not say what happens if an announced club is replaced (as in the 2020 re-plan) or the game is cancelled after selection, nor whether a relocated game still counts as the Field of Dreams Game.",
+    "what_would_resolve": "Full rule document or a settled example where participants changed after announcement."
+   },
+   {
+    "id": "off_small_n",
     "type": "DATA_UNAVAILABLE",
-    "description": "MLB franchise sales are rare (a handful per decade), so stage-hazard estimates rest on very few events and cross-league borrowing may not match league-specific approval rules.",
-    "what_would_resolve": "Compile a cross-league sale timeline dataset and test stage-duration homogeneity."
+    "category": "distribution_variance",
+    "description": "Only two Field of Dreams games have been played and fewer than thirty special-event venue games exist, so staging and selection coefficients rest on very few events and borrowing from other special events may not match this venue's regional logic.",
+    "what_would_resolve": "Compile all special-event venue games and test whether distance and marketability effects are homogeneous across events."
    },
    {
-    "id": "off_esports_data",
+    "id": "off_venue_status",
     "type": "SOURCE_UNVERIFIED",
-    "description": "Whether match, map and draft data for MPL Indonesia are available in structured form (versus scraped pages) is unverified; paid esports data providers' coverage of this region is unknown.",
-    "what_would_resolve": "Check coverage of Liquipedia and GRID for MPL Indonesia matches in 2026."
+    "category": "environment",
+    "description": "The status of the Dyersville site for 2027 (ownership development plans, field availability, temporary stadium) is known only from press reporting; no official dated record of venue readiness is available to backtest the staging input point-in-time.",
+    "what_would_resolve": "Dated league or site-owner statements on 2027 availability, captured with timestamps."
    },
    {
-    "id": "off_voter_model",
-    "type": "MECHANISM_UNCERTAIN",
-    "description": "The manager and executive award voter model defined here now serves season_leaders_and_awards; its weights on wins over expectation, division titles and narrative rest on few finalists per year and may drift with the electorate.",
-    "what_would_resolve": "Fit and cross-validate the voting model across 15+ seasons and check weight stability."
+    "id": "off_unstaged_inputs",
+    "type": "OTHER",
+    "description": "New inputs defined for series that left this archetype (sale stage hazard, manager award score, esports rating, manager candidate signal) remain defined in this record for catalog consistency but are not staged; integration will still attach them to this archetype unless removed.",
+    "what_would_resolve": "Detach those inputs from offfield_markets at integration or move them to the archetypes that now hold their series."
    },
    {
     "id": "off_eoty_electorate",
     "type": "SOURCE_UNVERIFIED",
-    "description": "KXMLBEOTY moved to season_leaders_and_awards; its electorate is still unverified (the text names only 'the Governing League', and the widely cited MLB award is, to my knowledge, voted by club executives rather than writers). Carried there as lea_eoty_electorate.",
-    "what_would_resolve": "Confirm the electorate and ballot of the award named in KXMLBEOTY.",
-    "category": "situational_schedule_motivation"
-   },
-   {
-    "id": "off_esports_format",
-    "type": "CONTRACT_AMBIGUOUS",
-    "description": "The Mobile Legends match (KXMLBBGAME) was ruled out of scope by the reconciliation; its best-of format and the rating constants defined for it remain unverified and no MLB archetype uses them.",
-    "what_would_resolve": "Drop the esports input from MLB integration or verify its format against MPL rules if the series is ever re-scoped.",
-    "category": "opponent_matchup"
-   },
-   {
-    "id": "off_delay_postponement",
-    "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXMLBDELAY moved to extras_and_delay, where postponement before first pitch is tracked as ext_delay_scope; nothing in this archetype depends on it now.",
-    "what_would_resolve": "Resolve under ext_delay_scope with a settled example of a postponed game.",
-    "category": "environment"
-   },
-   {
-    "id": "off_meeting_calendar",
-    "type": "SOURCE_UNVERIFIED",
     "category": "situational_schedule_motivation",
-    "description": "The owners' meeting schedule, the vote threshold (commonly reported as three quarters) and the share of sales approved by special vote are taken from press reporting; no archived official calendar of meeting dates as announced at each date has been located, so the approval-window input cannot yet be backtested point-in-time.",
-    "what_would_resolve": "Locate MLB announcements or dated press reports of owners' meetings 2005-2026 and the governing vote rule."
-   },
-   {
-    "id": "off_sale_scope",
-    "type": "CONTRACT_AMBIGUOUS",
-    "category": "settlement_contract",
-    "description": "KXMLBTEAMSALE says the team 'is sold' and the deal must be 'finalized and approved'; it does not say whether a sale of a minority or non-control stake, a transfer within the existing ownership group, or a sale of a parent company counts, which matters for clubs with layered ownership.",
-    "what_would_resolve": "Kalshi clarification or a settled precedent on partial or intra-group ownership transfers."
+    "description": "Retained because an independent finding was deferred here: KXMLBEOTY left this archetype for season_leaders_and_awards, where the unverified electorate of the executive award is tracked as lea_eoty_electorate; nothing in the Field of Dreams market depends on it.",
+    "what_would_resolve": "Resolve under lea_eoty_electorate by confirming the electorate and ballot of the award named in KXMLBEOTY."
    }
   ]
  },
@@ -7974,7 +8012,7 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Four live series after the reconciliation. KXMLBSTART (rules sampled) pays Yes if the named player is in the official starting batting order (including as designated hitter) when the game begins; announcement in an earlier lineup then replacement before the game begins resolves No, and entering later as a pinch hitter or substitute does not qualify. KXMLBPITCH (rules sampled) pays Yes if the named player records at least one pitch in a regular-season game inside a date window (example after Jul 28 and before Sep 28, 2026). KXMLBSTARTER (starting pitcher) and KXMLBSTARTINGLINEUP are title-only. CAUTION: the sampled KXMLBSTART rules_secondary is truncated at 'An actual plate appearance is ', so a clause that may require a plate appearance is unseen (pp_start_rules_truncated). Late insertion: a bench player placed into the posted card before the game begins because a teammate is scratched is in the official starting order when the game begins and resolves Yes; the No path applies only to the replaced player. Next-team and debut markets moved to transactions.",
+   "settlement_definition": "Five live series after the reconciliation. KXMLBSTART (rules sampled) pays Yes if the named player is in the official starting batting order (including as designated hitter) when the game begins; announcement in an earlier lineup then replacement before the game begins resolves No, and entering later as a pinch hitter or substitute does not qualify. KXMLBPITCH (rules sampled) pays Yes if the named player records at least one pitch in a regular-season game inside a date window (example after Jul 28 and before Sep 28, 2026). KXMLBRETURN (rules sampled) pays Yes if the named player 'must enter a game for the Tigers' (his named club) after one date and before another; it does not restrict the window to the regular season and is silent on a trade to another club. KXMLBSTARTER (starting pitcher) and KXMLBSTARTINGLINEUP are title-only. CAUTION: the sampled KXMLBSTART rules_secondary is truncated at 'An actual plate appearance is ', so a clause that may require a plate appearance is unseen (pp_start_rules_truncated). Late insertion: a bench player placed into the posted card before the game begins because a teammate is scratched is in the official starting order when the game begins and resolves Yes; the No path applies only to the replaced player. Next-team and debut markets moved to transactions.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -7996,20 +8034,26 @@
      "ticker": "KXMLBSTART",
      "quote": "If Shohei Ohtani is announced in an earlier lineup but is replaced before the game begins, the market resolves to No.",
      "establishes": "An announced starter who is scratched before first pitch resolves No, so the late-scratch hazard after the card posts is priced."
+    },
+    {
+     "ticker": "KXMLBRETURN",
+     "quote": "In order for the market to resolve to Yes, Tarik Skubal must enter a game for the Tigers after May 8, 2026 and before June 8, 2026.",
+     "establishes": "The return market counts any game entry for the named club inside the window (a relief or pinch appearance counts), so it is a return-from-injury hazard tied to one club."
     }
    ],
    "variants_and_edge_cases": [
-    "Population differs: single-game starting-lineup markets (KXMLBSTART, KXMLBSTARTINGLINEUP), a starting-pitcher market (KXMLBSTARTER) and a window-long 'will he pitch' market (KXMLBPITCH) have different hazards (manager's lineup decision, rotation slot, injury/rehab progression).",
+    "Population differs: single-game starting-lineup markets (KXMLBSTART, KXMLBSTARTINGLINEUP), a starting-pitcher market (KXMLBSTARTER), a window-long 'will he pitch' market (KXMLBPITCH) and a window-long return market for an injured player with his named club (KXMLBRETURN) have different hazards (manager's lineup decision, rotation slot, injury/rehab progression).",
     "Start market: an announced lineup that changes before first pitch resolves No (late scratch), so lineup posting time and warm-up scratch hazard matter; a player who starts as pitcher qualifies only if he is in the batting order.",
     "Pitch window: regular season only (postseason pitches do not count in the sampled text), 'after' and 'before' dates are exclusive, and rehab appearances in the minors presumably do not count; exact handling of injury list is not stated.",
     "KXMLBSTARTER is title-only: whether it settles on the announced probable or on the pitcher who throws the first pitch, and how an opener day is treated, is unseen; the hitter-card rule (announced then replaced resolves No) may not carry over.",
-    "Late card insertion: the player who replaces a scratched starter before first pitch settles Yes under 'official starting batting order ... when the game begins', so late_scratch_hazard for the replaced player and a late-insertion probability for bench players are two different quantities."
+    "Late card insertion: the player who replaces a scratched starter before first pitch settles Yes under 'official starting batting order ... when the game begins', so late_scratch_hazard for the replaced player and a late-insertion probability for bench players are two different quantities.",
+    "Return window (KXMLBRETURN): any entry into a game for the named club counts, including a pinch-running or relief appearance; the text names the club, so a trade before the return presumably resolves No, and unlike KXMLBPITCH it does not say 'regular season' (CONTRACT_AMBIGUOUS, pp_return_scope)."
    ],
    "settlement_data_source": "Official starting batting order recorded by the league (MLB Stats API game feed) for start markets; league game logs for pitch counts; transaction records for next team.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Participation contracts depend on a manager's decision conditional on a player's availability. For a single game the chain is: roster status (active, injured list, minors), the manager's rest and platoon policy for that day (day game after night game, catcher rest, opposing starter handedness, DH rotation), posting of the lineup card a few hours before first pitch, and the residual chance of a late scratch between posting and the first pitch. Before the card posts the probability is a mixture over the manager's patterns, after it is near one unless the player is hurt in warm-up. For windows (will he pitch between two dates) availability is a hazard process: a returning player must progress through a rehab sequence, the team must have a role and a reason (race, rest of rotation), and injury risk can end it. For next-team markets the object is a free-agency or trade transaction. The edge lies in knowing the timing of information (lineup posting relative to price) and in the specific manager and player, not in team strength.",
+   "summary": "Participation contracts depend on a manager's decision conditional on a player's availability. For a single game the chain is: roster status (active, injured list, minors), the manager's rest and platoon policy for that day (day game after night game, catcher rest, opposing starter handedness, DH rotation), posting of the lineup card a few hours before first pitch, and the residual chance of a late scratch between posting and the first pitch. Before the card posts the probability is a mixture over the manager's patterns, after it is near one unless the player is hurt in warm-up. For windows (will he pitch between two dates) availability is a hazard process: a returning player must progress through a rehab sequence, the team must have a role and a reason (race, rest of rotation), and injury risk can end it. For return windows (will an injured player appear for his club between two dates) the same rehab hazard applies, with the minor-league rehab assignment as the last observable stage and activation from the injured list as the trigger. The edge lies in knowing the timing of information (lineup posting relative to price) and in the specific manager and player, not in team strength.",
    "stages": [
     {
      "id": "s1",
@@ -8075,6 +8119,24 @@
       "mlb.rehab_progression_stage",
       "mlb.injuries_pit"
      ]
+    },
+    {
+     "id": "s5",
+     "name": "Return-from-injury window",
+     "categories": [
+      "availability_news",
+      "role_personnel",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "mlb.rehab_progression_stage",
+      "mlb.injuries_pit",
+      "mlb.window_exposure_schedule",
+      "mlb.news",
+      "mlb.depth_injury_war"
+     ],
+     "description": "KXMLBRETURN asks whether an injured player enters any game for his named club inside a window. The chain is injury type and date, minimum injured-list duration, the rehab sequence (throwing or hitting progression, minor-league rehab assignment with its day limits), the club's activation decision given roster need and the race, and then the first game entry, which for a position player is almost immediate after activation and for a starting pitcher waits for a rotation turn. Setbacks reset the sequence, and a trade to another club would end exposure for the named club.",
+     "distribution": "Time-to-return with a long right tail by injury class (lognormal-like), discrete steps at rehab milestones, and a setback probability that creates a second mode well after the window."
     },
     {
      "id": "s6",
@@ -8381,6 +8443,16 @@
     "form": "piecewise",
     "mechanism": "Role changes (call-up, trade, injury replacement) announced by news shift start probability at a discrete date, so the window model must restart its per-game probabilities at the change; the number of games after the change drives the window probability.",
     "how_to_test": "Segment games by role-change date and compare window predictions with piecewise versus constant role probabilities."
+   },
+   {
+    "inputs": [
+     "mlb.rehab_progression_stage",
+     "mlb.window_exposure_schedule",
+     "mlb.pitcher_rotation_slot_and_rest"
+    ],
+    "form": "threshold",
+    "mechanism": "For a returning starting pitcher the window market is Yes only if activation comes early enough for a rotation turn inside the window: activation two days before the window ends may produce no appearance if his slot falls after it, whereas a position player activated the same day usually enters at once, so the same rehab stage implies different window probabilities by role.",
+    "how_to_test": "Compare days from activation to first appearance for starters versus position players and relievers in injured-list returns since 2015."
    }
   ],
   "nonlinearities": [
@@ -8472,7 +8544,8 @@
      "mlb.rehab_progression_stage",
      "mlb.clinched_rest_policy",
      "mlb.rest_travel",
-     "mlb.window_exposure_schedule"
+     "mlb.window_exposure_schedule",
+     "mlb.depth_injury_war"
     ]
    },
    {
@@ -8606,6 +8679,13 @@
     "description": "Platoon-driven start decisions depend on the opposing probable starter's identity and hand and when it was announced, but no input carries them; platoon (a duplicate in other archetypes) only stands in for the hand.",
     "what_would_resolve": "Define an opposing-probable-starter input with announcement timestamp and use it in the manager-decision stage.",
     "category": "opponent_matchup"
+   },
+   {
+    "id": "pp_return_scope",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "KXMLBRETURN requires entering a game 'for the Tigers' inside the window but does not say whether postseason games count, how a trade to another club before the return settles, or whether a suspended game resumed inside the window counts.",
+    "what_would_resolve": "Full KXMLBRETURN rule document or settled examples of a traded or postseason return."
    }
   ]
  },
@@ -8613,7 +8693,7 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Four live series after the reconciliation. KXMLBNEXTTEAM (rules sampled): one market per team plus 'Retires / No Team'; a player who remains on his issuance team on the date resolves for that team, a free agent who 'signs a contract with any team, including their previous team' resolves for that team, an extension or re-signing while under contract does not trigger early resolution, and retirement or no team on the date resolves Retires/No Team (text truncated after that). KXMLBDEBUT (rules sampled): Yes if the named prospect 'plays for any MLB team in a regular season or playoff game' before the date (Nov 1, 2028 in the sample); what counts as playing (pinch-running, defensive replacement) is not defined. KXMLBCOACH (next manager) and KXMLBDRAFTPICK are title-only. Whether settlement waits for an official announcement, and how a failed physical is treated, is not stated (see tr_settlement_assumed).",
+   "settlement_definition": "Four live series after the reconciliation. KXMLBTRADE (rules sampled): Yes if the named player is traded before the date; 'The trade must be officially processed and approved by MLB' before the date, and a trade later rescinded or voided by a failed physical after official processing still resolves Yes. KXMLBNEXTTEAM (rules sampled): one market per team plus 'Retires / No Team'; a player who remains on his issuance team on the date resolves for that team, a free agent who 'signs a contract with any team, including their previous team' resolves for that team, an extension or re-signing while under contract does not trigger early resolution, and retirement or no team on the date resolves Retires/No Team (text truncated after that). KXMLBDEBUT (rules sampled): Yes if the named prospect 'plays for any MLB team in a regular season or playoff game' before the date (Nov 1, 2028 in the sample); what counts as playing (pinch-running, defensive replacement) is not defined. KXMLBCOACH (next manager) is title-only. The draft-pick market moved to the amateur-draft archetype. Whether NEXTTEAM waits for an official announcement, and how a failed physical affects a signing, is not stated (see tr_settlement_assumed).",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -8630,21 +8710,31 @@
      "ticker": "KXMLBDEBUT",
      "quote": "plays for any MLB team in a regular season or playoff game before Nov 1, 2028",
      "establishes": "Debut counts regular-season and playoff appearances for any club, over a multi-season window."
+    },
+    {
+     "ticker": "KXMLBTRADE",
+     "quote": "The trade must be officially processed and approved by MLB before Aug 5, 2026 for market to resolve to Yes.",
+     "establishes": "Trade markets settle on official league processing before the deadline, so a reported agreement that is processed after the date resolves No."
+    },
+    {
+     "ticker": "KXMLBTRADE",
+     "quote": "If Paul Skenes later fails their physical and/or the trade is rescinded for any reason after being officially processed, the market nonetheless resolves to Yes.",
+     "establishes": "Post-processing failures do not reverse a Yes, so the failure-mode stage applies before official processing only."
     }
    ],
    "variants_and_edge_cases": [
     "Next-team: a player who stays with his team resolves Yes for that team at the date, a free agent who signs elsewhere resolves for the new team; extensions while under contract do not resolve early.",
-    "ASSUMPTION (not in sampled text): contracts typically require the official transaction, so a reported agreement subject to a physical would not resolve until official and a failed physical could void it. The sampled NEXTTEAM text says only 'signs a contract with any team' and is silent on announcement, physicals or voiding (see tr_settlement_assumed).",
+    "Announcement and physicals: for trades the text requires official MLB processing before the date and keeps a Yes even if the trade is later rescinded or a physical is failed; for NEXTTEAM the text says only 'signs a contract with any team' and is silent on announcement, physicals or voiding, so the trade rule cannot be assumed to carry over (see tr_settlement_assumed).",
     "Manager markets: the next manager of a team requires a hire announcement, and interim managers are an edge case not covered in the sample.",
     "Deadline structure: trade-deadline, non-tender, qualifying offer and Rule 5 dates create calendar clusters where the market window includes or excludes them.",
     "Debut: the window spans more than two seasons and any club counts, so a trade does not reset the clock; whether a pinch-running or defensive-only appearance counts as 'plays' is undefined.",
-    "Draft pick (KXMLBDRAFTPICK, title-only): the object may be a player's draft slot or a club's lottery pick; the two require different inputs (prospect ranking and signability versus lottery odds by record)."
+    "Trade window (KXMLBTRADE): the sampled date (Aug 5, 2026) sits after the trade deadline, so nearly all mass is in deadline week; no-trade clauses, 10-and-5 rights and club control years shape feasibility, and processing lag on deadline day decides borderline cases."
    ],
    "settlement_data_source": "Official team or league transaction announcements (MLB transactions log); not named in the sampled rules.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Transactions follow institutional calendars and incentives, so the event is a time-to-event process with hazards that change by date and context. For trades, a seller with a short-contract player is likely to deal near the deadline and the buyer-seller status of the team is driven by playoff probability and payroll; for free-agent signings, contract expiry, qualifying-offer decisions, positional market and team payroll space drive timing, with most signings clustered in the first weeks of free agency and again at the winter meetings; for manager changes, tenure, team underperformance relative to expectations, owner statements and contract status matter. Beat-writer reports precede most official moves, with source credibility varying; the contract resolves on the official announcement, so lead times and process failures (physicals, vetoes) matter. There is little statistical structure in team performance beyond its effect on incentives, so the best-supported approach is reference-class hazard modelling updated by timestamped reports. After the reconciliation the archetype also holds the prospect-debut market, a hazard over the call-up pipeline, and a draft-pick market, which depends on the draft lottery for the top slots and on club boards, bonus pools and signability for which player goes where.",
+   "summary": "Transactions follow institutional calendars and incentives, so the event is a time-to-event process with hazards that change by date and context. For trades, a seller with a short-contract player is likely to deal near the deadline and the buyer-seller status of the team is driven by playoff probability and payroll; for free-agent signings, contract expiry, qualifying-offer decisions, positional market and team payroll space drive timing, with most signings clustered in the first weeks of free agency and again at the winter meetings; for manager changes, tenure, team underperformance relative to expectations, owner statements and contract status matter. Beat-writer reports precede most official moves, with source credibility varying; the contract resolves on the official announcement, so lead times and process failures (physicals, vetoes) matter. There is little statistical structure in team performance beyond its effect on incentives, so the best-supported approach is reference-class hazard modelling updated by timestamped reports. The trade market (KXMLBTRADE) settles on official MLB processing before the date and ignores later rescissions, so the relevant process ends at league approval, not at a physical. After the reconciliation the archetype also holds the prospect-debut market, a hazard over the call-up pipeline, and a next-manager market; the draft-pick market moved to its own archetype.",
    "stages": [
     {
      "id": "s1",
@@ -8678,7 +8768,7 @@
     {
      "id": "s3",
      "name": "Calendar and process timing",
-     "description": "Transaction hazards are not constant: trade deadline day, the end-of-season window, the non-tender and qualifying-offer deadlines, the winter meetings, the Rule 5 draft and the start of spring training concentrate events on known dates. Process steps (negotiation, physical, league review) add lags between agreement and official announcement.",
+     "description": "Transaction hazards are not constant: trade deadline day, the end-of-season window, the non-tender and qualifying-offer deadlines, the winter meetings, the Rule 5 draft and the start of spring training concentrate events on known dates. Process steps (negotiation, medical review, league processing) add lags between agreement and official processing; for the trade market only processing before the date counts, so deadline-day agreements processed late are the boundary cases.",
      "distribution": "Piecewise-constant hazard with spikes at calendar anchors; lag distribution from agreement to official.",
      "categories": [
       "situational_schedule_motivation"
@@ -8705,8 +8795,8 @@
     {
      "id": "s5",
      "name": "Resolution wording and failure modes",
-     "description": "Contracts resolve on an official announcement meeting specified conditions; failures include a physical that voids a deal, a veto, a change of mind or a rule specifying a different team (sign-and-trade). The market window may also close before an announced deal becomes official.",
-     "distribution": "Absorbing event with small failure mass after report; wording determines edge cases.",
+     "description": "Contracts resolve on events meeting specified conditions, and the wording differs by series: a trade counts once officially processed and approved by MLB before the date and stays Yes even if later rescinded or voided by a failed physical, whereas the next-team text is silent on announcement, physicals and voiding. Remaining failure modes before official processing include a collapsed negotiation, a player using no-trade rights, a sign-and-trade, or processing that lands after the market date.",
+     "distribution": "Absorbing event with a small pre-processing failure mass after a report; zero post-processing failure mass for trades by rule; wording determines edge cases.",
      "categories": [
       "settlement_contract"
      ],
@@ -8730,20 +8820,19 @@
     },
     {
      "id": "s7",
-     "name": "Debut and draft events",
+     "name": "Debut and next-manager events",
      "categories": [
       "role_personnel",
       "situational_schedule_motivation",
-      "officiating_rules"
+      "coaching_scheme"
      ],
      "input_ids": [
       "mlb.callup_eligibility_pipeline",
-      "mlb.draft_lottery_odds_by_record",
-      "mlb.draft_prospect_selection_signal",
-      "mlb.manager_candidate_selection_signal"
+      "mlb.manager_candidate_selection_signal",
+      "mlb.manager_firing_hazard"
      ],
-     "description": "A debut before a multi-year deadline is a hazard over the call-up pipeline (40-man status, options, minor-league performance, positional need and service-time incentives), not a lineup decision. A draft-pick market is decided first by the lottery for the top non-playoff slots and then by each club's choice among prospects, driven by consensus rankings, bonus-pool and signability constraints and reported links. The next-manager market is a selection among named candidates once a vacancy exists.",
-     "distribution": "Debut: right-skewed time-to-event with spikes at September and injury call-ups and near-certain mass for top prospects; draft: lottery categorical then a concentrated choice among a few top prospects; manager: categorical with a front-runner."
+     "description": "A debut before a multi-year deadline is a hazard over the call-up pipeline (40-man status, options, minor-league performance, positional need and service-time incentives), not a lineup decision; any club counts, so a trade does not reset it. The next-manager market first needs a vacancy, which depends on the incumbent's firing hazard (tenure, underperformance versus expectation, contract status), and then is a selection among named candidates driven by interview reports and front-office ties.",
+     "distribution": "Debut: right-skewed time-to-event with spikes at September and injury call-ups and near-certain mass for top prospects; manager: vacancy hazard followed by a categorical choice with a front-runner."
     }
    ],
    "category_coverage": {
@@ -8769,10 +8858,9 @@
       "mlb.contract_status_and_service_clock",
       "mlb.service_time_rules",
       "mlb.callup_eligibility_pipeline",
-      "mlb.draft_prospect_selection_signal",
       "mlb.manager_candidate_selection_signal"
      ],
-     "note": "Contract and eligibility, call-up pipeline, draft and manager candidate selection."
+     "note": "Contract and eligibility, call-up pipeline and manager candidate selection."
     },
     "coaching_scheme": {
      "status": "COVERED",
@@ -8812,7 +8900,7 @@
      "input_ids": [
       "m.rules_text"
      ],
-     "note": "Official announcement, physical, extension handling."
+     "note": "Official processing before the date for trades (rescission after processing still Yes), status-quo and re-signing clauses for next team, any-club debut definition."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -9003,7 +9091,7 @@
      "draft results by slot 2012-2025",
      "timestamped mock drafts and reported links"
     ],
-    "why": "Gives KXMLBDRAFTPICK an identity-level selection input; the lottery odds input covers only which club holds a slot.",
+    "why": "Defined here while KXMLBDRAFTPICK was filed in this archetype; after the reconciliation that series is in the amateur-draft archetype, which has no review yet; kept so the definition is not lost, not staged here.",
     "role": "primary"
    }
   },
@@ -9108,12 +9196,13 @@
    },
    {
     "inputs": [
-     "mlb.draft_lottery_odds_by_record",
-     "mlb.draft_prospect_selection_signal"
+     "mlb.calendar_hazard_by_event_type",
+     "mlb.news_source_reliability_score",
+     "mlb.contract_status_and_service_clock"
     ],
-    "form": "conditional",
-    "mechanism": "A player's probability of going first is the sum over clubs of P(club wins the top slot in the lottery) times P(that club takes him); clubs differ in bonus-pool strategy and positional preference, so the same consensus number-one prospect is near-certain under one lottery winner and a coin flip under another.",
-    "how_to_test": "Compare historical top picks against consensus rank by drafting club and check whether club-specific preferences explain deviations beyond board rank."
+    "form": "threshold",
+    "mechanism": "On deadline day many agreements are reported in the final hour, and the trade market counts only those officially processed before the date; a credible report of an agreed deal minutes before the deadline converts to Yes only if processing lands in time, and players with no-trade or 10-and-5 rights add a consent step that can push completion past the cutoff.",
+    "how_to_test": "For deadline-day trades since 2015, compare report timestamps with official processing times and estimate the share of late-reported deals that miss the cutoff, split by no-trade status."
    }
   ],
   "nonlinearities": [
@@ -9249,38 +9338,37 @@
     ]
    },
    {
-    "dataset": "Draft boards, lottery results and prospect call-up history",
-    "grain": "one row per prospect per board date; one row per draft slot; one row per promotion",
+    "dataset": "Prospect call-up history and manager candidate records",
+    "grain": "one row per prospect promotion; one row per managerial vacancy and candidate",
     "fields": [
-     "board rank by outlet and date",
-     "draft slot and club",
-     "lottery odds and outcome",
+     "prospect rank by outlet and date",
      "40-man status",
      "MiLB level and stats",
-     "promotion date"
+     "promotion date",
+     "managerial vacancy date",
+     "reported candidates and interview dates",
+     "hire date"
     ],
-    "timestamp_requirement": "Boards and reports as published at each as-of date; lottery odds as of final standings",
-    "history_needed": "Drafts 2012-2025; promotions 2015-2025",
+    "timestamp_requirement": "Prospect ranks and candidate reports as published at each as-of date; promotions and hires dated by official transaction.",
+    "history_needed": "Promotions 2015-2025; managerial vacancies 2005-2025",
     "candidate_sources": [
      {
-      "name": "MLB Pipeline and FanGraphs boards",
+      "name": "MLB Pipeline and FanGraphs prospect lists",
       "access": "free_scrape",
-      "note": "Current boards; archived vintages patchy"
-     },
-     {
-      "name": "Baseball-Reference draft and MiLB pages",
-      "access": "free_scrape",
-      "note": "Results and minor-league stats"
+      "note": "Current lists; archived vintages patchy"
      },
      {
       "name": "MLB Stats API transactions",
       "access": "free",
       "note": "Promotions and 40-man moves"
+     },
+     {
+      "name": "Press archives of managerial searches",
+      "access": "free_scrape",
+      "note": "Candidate reports and hires"
      }
     ],
     "feeds_inputs": [
-     "mlb.draft_prospect_selection_signal",
-     "mlb.draft_lottery_odds_by_record",
      "mlb.callup_eligibility_pipeline",
      "mlb.manager_candidate_selection_signal"
     ]
@@ -9290,8 +9378,8 @@
    {
     "id": "tr_filing",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXMLBCOACH and KXMLBDRAFTPICK are title-only, so whether the next-manager market counts interim managers and whether the draft-pick market is a player-slot or a club-lottery object is unknown; the NEXTTEAM text is truncated after the extension clause.",
-    "what_would_resolve": "Sample KXMLBCOACH and KXMLBDRAFTPICK rules and the full KXMLBNEXTTEAM text."
+    "description": "KXMLBCOACH is title-only, so whether the next-manager market counts interim managers, and its resolution date, is unknown; the NEXTTEAM text is truncated after the extension clause.",
+    "what_would_resolve": "Sample KXMLBCOACH rules and the full KXMLBNEXTTEAM text."
    },
    {
     "id": "tr_report_data",
@@ -9309,7 +9397,7 @@
    {
     "id": "tr_settlement_assumed",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "The record's announcement-versus-report and physical-exam voiding stages rest on assumptions: the KXMLBNEXTTEAM text (now quoted here) says 'signs a contract with any team' and is truncated, the KXMLBDEBUT text says only 'plays for any MLB team', and nothing sampled mentions official announcement, physicals or voiding; KXMLBCOACH and KXMLBDRAFTPICK are TITLE_ONLY.",
+    "description": "KXMLBTRADE now states its settlement (official MLB processing before the date; later rescission or failed physical still Yes), but the KXMLBNEXTTEAM text says only 'signs a contract with any team' and is truncated, the KXMLBDEBUT text says only 'plays for any MLB team', and neither mentions official announcement, physicals or voiding; KXMLBCOACH is title-only.",
     "what_would_resolve": "Full Kalshi rule text for NEXTTEAM, DEBUT and COACH and settled examples of a reported-but-unofficial signing.",
     "category": "settlement_contract"
    },
@@ -9319,6 +9407,13 @@
     "description": "The labour_stoppage_regime input depends on forecasting a lockout beginning after Dec 1 2026 and its length from three historical stoppages and negotiation reports; the probability and duration are highly uncertain and no public data series codes negotiation state.",
     "what_would_resolve": "A coded negotiation timeline from own capture and an out-of-sample check on the 2021-22 episode.",
     "category": "officiating_rules"
+   },
+   {
+    "id": "tr_trade_processing_time",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "KXMLBTRADE requires the trade to be 'officially processed and approved by MLB before' the date but does not say which timestamp is used (league transaction log time, club announcement) or whether 'before Aug 5' includes deals agreed on Aug 4 and processed overnight; borderline deadline deals hinge on this.",
+    "what_would_resolve": "Kalshi clarification of the processing timestamp source or a settled example of a deal processed after the deadline hour."
    }
   ]
  },
@@ -9326,7 +9421,7 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Forty-nine live series of season-long team outcomes after the reconciliation. Team win-total ladders (KXMLBWINS-<TEAM>) pay Yes if the team has at least N wins in the 2026 regular season ('Ties do not count as wins'); division winners (KXMLBALEAST/ALCENT/ALWEST/NLEAST/NLCENT/NLWEST) pay Yes if the team is the 2026 division winner; pennant, World Series and champion-division futures pay on the title; qualifier markets (NLCSQUAL, ALCSQUAL, PLAYOFFS) pay Yes if the team reaches that stage; KXMLBSEEDWIN pays if a team holding the named seed at the start of the postseason wins the championship; KXMLBMATCHUP resolves 'immediately upon qualification' of the named pairing; KXMLBWSTREAK pays Yes if the team has the longest winning streak of the 2026 regular season, with a shared longest streak paying $1/N rounded down. Award, MVP and playoff-leader series moved to season_leaders_and_awards and games-hosted to the playoff-series archetype. KXMLBWSOUTCOME pays on the exact winner and runner-up, resolving No once either named team is eliminated from its role. KXMLB includes a 2027 championship future, which depends on whether a 2027 season and postseason are played after the CBA expires on Dec 1 2026. Only KXMLBWS, KXMLBPLAYOFFS and KXMLBWINS-PIT lack sampled rules; sources are not named and no text addresses a cancelled or shortened season.",
+   "settlement_definition": "Fifty-five live series of season-long team outcomes after the reconciliation; all but KXMLBWS (title-only) have sampled rules. Team win-total ladders (KXMLBWINS-<TEAM>, all thirty teams) pay Yes if the team has at least N wins in the 2026 regular season ('Ties do not count as wins'); division winners pay on the 2026 division title; pennant (KXMLBAL, KXMLBNL), World Series and champion-division/league futures pay on the title, with division or league affiliation fixed 'when that championship begins'; qualifier markets (NLCSQUAL, ALCSQUAL, PLAYOFFS) pay if the team reaches that stage; KXMLBSEEDWIN pays if a team holding the named seed at the start of the postseason wins the championship; KXMLBMATCHUP resolves 'immediately upon qualification' of the named pairing; KXMLBWSOUTCOME pays on the exact winner and runner-up. Season extremes: best and worst record by winning percentage ($1/N rounded down to the cent on ties, no tiebreakers), longest winning and losing streaks ($1/N on shared streaks), and 100+ losses (no tie branch). KXMLBWORLD pays on the World Baseball Classic winner (2026 tournament). KXMLB includes a 2027 championship future that depends on a 2027 season being played after the CBA expires on Dec 1 2026. No text names a source or addresses a cancelled or shortened season.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -9373,19 +9468,51 @@
      "ticker": "KXMLBWSOUTCOME",
      "quote": "If either team is eliminated from contention for its specified role, the market resolves to No.",
      "establishes": "Exact-outcome markets need both teams' bracket paths jointly, not each team's title probability."
+    },
+    {
+     "ticker": "KXMLBBESTRECORD",
+     "quote": "Any postseason qualification, seeding, or home-field advantage tiebreakers will not be used.",
+     "establishes": "Best and worst record markets settle on raw winning percentage with ties split $1/N, an order statistic over thirty teams rather than a standings outcome."
+    },
+    {
+     "ticker": "KXMLBLSTREAK",
+     "quote": "If two or more teams share the longest losing streak",
+     "establishes": "The losing-streak extreme uses the same shared-maximum $1/N split as the winning-streak market."
+    },
+    {
+     "ticker": "KXMLB100LOSS",
+     "quote": "records at least 100 losses in the 2026 Pro Baseball regular season",
+     "establishes": "The 100-loss market is a lower-tail threshold on one team's regular-season record with no tie branch."
+    },
+    {
+     "ticker": "KXMLBCHAMPDIVISION",
+     "quote": "A team's division affiliation is its official Pro Baseball affiliation when that championship begins.",
+     "establishes": "Division and league championship futures are unions over the member teams' title events with affiliation frozen at the start of the postseason."
+    },
+    {
+     "ticker": "KXMLBWORLD",
+     "quote": "If Chinese Taipei wins the World Baseball Classic, then the market resolves to Yes.",
+     "establishes": "A national-team tournament winner market is filed here; it needs national rosters and a short-tournament model, not club inputs."
+    },
+    {
+     "ticker": "KXMLBPLAYOFFS",
+     "quote": "If Washington is one of the 2026 Pro Baseball Playoff Qualifiers, then the market resolves to Yes.",
+     "establishes": "Playoff qualification settles on the final qualifier list (division winners and wild cards), so seeding tiebreakers matter at the boundary."
     }
    ],
    "variants_and_edge_cases": [
-    "Same archetype mixes regular-season win ladders (binomial-like with talent uncertainty), division titles and playoff qualification (standings and tiebreakers), title futures (bracket dynamic program), seed outcomes (union across leagues), bracket pairings and a season-long longest-winning-streak extreme; each needs a different generator.",
-    "Seed futures fix seed at the start of the postseason; tiebreakers (head-to-head, divisional record) decide seeds without a game-163 under the current format, so tiebreaker data are required for close races.",
+    "Same archetype mixes regular-season win ladders (binomial-like with talent uncertainty), division titles and playoff qualification (standings and tiebreakers), title futures (bracket dynamic program), seed and division/league unions, bracket pairings, season extremes (best/worst record, longest winning and losing streaks, 100 losses) and a national-team tournament; each needs a different generator.",
+    "Seed futures fix seed at the start of the postseason; tiebreakers (head-to-head, divisional record) decide seeds without a game-163 under the current format, so tiebreaker data are required for close races, while record-extreme markets explicitly ignore tiebreakers and split ties $1/N.",
     "Postseason qualifiers resolve at the moment the series is reached; some markets (NLCSQUAL) are determined by winning the division series, so the probability is conditional on the bracket path.",
-    "Title-only series are now only KXMLBWS, KXMLBPLAYOFFS and KXMLBWINS-PIT; no sampled text addresses a cancelled postseason or a shortened season, which matters for the 2027 championship future (KXMLB) given the CBA expiry on Dec 1 2026 (in 1994 the World Series was cancelled)."
+    "KXMLBWS is the only series without sampled rules; no sampled text addresses a cancelled postseason or a shortened season, which matters for the 2027 championship future (KXMLB) given the CBA expiry on Dec 1 2026 (in 1994 the World Series was cancelled), and for any record, streak or 100-loss market whose season is shortened.",
+    "KXMLBWORLD (World Baseball Classic) is a separate competition with national rosters, pool play followed by single elimination, pitch-count limits and mercy rules (to my knowledge); its one-line text is silent on cancellation, tied pool standings and rain-shortened games.",
+    "KXMLBDIVWINNER (2025 sample) and KXMLBCHAMPDIVISION (2026) are the same object, the division of the champion; the 2025 text has no affiliation clause, the 2026 text fixes affiliation when the championship begins."
    ],
-   "settlement_data_source": "Official MLB standings and postseason results; official award announcements; not named in the sampled rules.",
+   "settlement_data_source": "Official MLB standings and postseason results; World Baseball Classic official results for KXMLBWORLD; not named in the sampled rules.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Futures integrate three layers. First, a team's true talent is uncertain: a preseason projection prior is updated by run differential (not record) with a posterior standard deviation that shrinks through the season and jumps with roster changes and injuries. Second, the remaining schedule converts talent into a distribution of wins, with binomial game noise of about six wins over a full season on top of talent uncertainty, which gives the wide win-total distributions the ladders price. Third, standings are turned into postseason fates by rules: division winners, wild cards, byes for the top division winners, tiebreakers decided by head-to-head and divisional records, and a bracket in which each series is a dynamic program over announced starters, rest, bullpen leverage and home-field pattern. Short series compress the talent gap, so championship probabilities for even good teams are low and depend on rotation depth and bullpen top-end in October, not on regular-season records. The longest-winning-streak market is an extreme over thirty teams' game sequences, and the matchup markets are bracket-path events; award and leader series now sit in season_leaders_and_awards.",
+   "summary": "Futures integrate three layers. First, a team's true talent is uncertain: a preseason projection prior is updated by run differential (not record) with a posterior standard deviation that shrinks through the season and jumps with roster changes and injuries. Second, the remaining schedule converts talent into a distribution of wins, with binomial game noise of about six wins over a full season on top of talent uncertainty, which gives the wide win-total distributions the ladders price. Third, standings are turned into postseason fates by rules: division winners, wild cards, byes for the top division winners, tiebreakers decided by head-to-head and divisional records, and a bracket in which each series is a dynamic program over announced starters, rest, bullpen leverage and home-field pattern. Short series compress the talent gap, so championship probabilities for even good teams are low and depend on rotation depth and bullpen top-end in October, not on regular-season records. Season extremes (best and worst record, 100 losses, longest winning and losing streaks) are order statistics or run lengths over thirty teams' game sequences, with $1/N tie splits and no tiebreakers; matchup, seed and division-of-champion markets are bracket-path events or unions of team title events. The World Baseball Classic market is a national-team short tournament with its own rosters, pitch limits and single-elimination rounds. Award and leader series sit in season_leaders_and_awards.",
    "stages": [
     {
      "id": "s1",
@@ -9461,17 +9588,35 @@
     {
      "id": "s5",
      "name": "Season extremes and bracket pairings",
-     "description": "Two series here are not functions of one team's win total. The longest-winning-streak market is the maximum run of consecutive wins over a 162-game sequence for all thirty teams, so it depends on each team's per-game win probabilities, its current streak and the league's longest streak to date, with ties paying $1/N. Matchup markets resolve on which two teams qualify for a given series, which is a path through the division and wild-card rounds of a fixed bracket.",
-     "distribution": "Streak: extreme-value distribution with a heavy upper tail (typical league maximum about 9-12 games) and frequent ties near the maximum; matchup: categorical over bracket paths with probabilities that move in steps as series end.",
+     "description": "Several series are not functions of one team's win total. Best and worst record and 100+ losses are tails of the joint distribution of thirty teams' records, correlated through shared schedules, with $1/N splits on tied winning percentage and no tiebreakers. The longest winning and losing streak markets are maximum run lengths over 162-game sequences for all teams, depending on per-game win probabilities, current streaks and the league maximum to date. Matchup markets resolve on which two teams qualify for a series through a fixed bracket, and division- or league-of-champion markets are unions over member teams' title paths.",
+     "distribution": "Record extremes: order statistics with mass concentrated on two to four teams and frequent ties at the extreme; streaks: extreme-value with a heavy upper tail (league maximum typically 9-12 games); matchup and union markets: categorical over bracket paths, moving in steps as series end.",
      "categories": [
       "distribution_variance",
       "settlement_contract"
      ],
      "input_ids": [
+      "mlb.team_season_extreme_engine",
       "mlb.longest_streak_extreme_value",
       "mlb.league_team_talent_posteriors_with_vintage",
       "mlb.bracket_path_enumeration"
      ]
+    },
+    {
+     "id": "s6",
+     "name": "World Baseball Classic national-team tournament",
+     "categories": [
+      "talent_strength",
+      "role_personnel",
+      "officiating_rules",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "mlb.wbc_national_team_strength",
+      "mlb.postseason_adjusted_team_rating",
+      "mlb.news"
+     ],
+     "description": "The World Baseball Classic winner depends on which major-league players each federation actually rosters (participation decisions, club and insurance restrictions on pitchers), how that talent maps into a few games under pitch-count limits that cap starters at short outings, pool play with run-based tiebreakers and then single-elimination knockout rounds where one game decides advancement. Depth of relief pitching matters more than in MLB because starters are limited, and the tournament is played in March before players are at full workload.",
+     "distribution": "Strongly favourite-compressed: single-elimination games at roughly 55-70% for the better side give even the strongest roster a title probability well below one half; pool-stage tiebreakers add discrete jumps."
     }
    ],
    "category_coverage": {
@@ -9480,9 +9625,10 @@
      "input_ids": [
       "mlb.preseason_projections",
       "mlb.pythag_luck",
-      "mlb.team_talent_posterior_uncertainty"
+      "mlb.team_talent_posterior_uncertainty",
+      "mlb.wbc_national_team_strength"
      ],
-     "note": "Prior, update and uncertainty."
+     "note": "Club prior, update and uncertainty; national-team roster strength for the World Baseball Classic."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -9536,9 +9682,10 @@
      "status": "COVERED",
      "input_ids": [
       "mlb.team_talent_posterior_uncertainty",
-      "mlb.longest_streak_extreme_value"
+      "mlb.longest_streak_extreme_value",
+      "mlb.team_season_extreme_engine"
      ],
-     "note": "Mixture of binomials with shared strength uncertainty, and the extreme-value distribution of the longest streak."
+     "note": "Mixture of binomials with shared strength uncertainty, order statistics of thirty teams' records, and extreme-value distributions of the longest winning and losing streaks."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
@@ -9570,9 +9717,11 @@
      "note": "There is no per-opportunity conversion rate at the futures level; team run-prevention and run-scoring efficiency enter through talent estimates (projections and pythag) rather than a separate conversion variable."
     },
     "officiating_rules": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Officials play no role in a season outcome; the relevant rules (tiebreakers, bracket format, 12-team format) are covered under seeding rules and settlement."
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.wbc_national_team_strength"
+     ],
+     "note": "Officials play no role in club season outcomes; the World Baseball Classic pitch-count limits and mercy rule change how talent converts to wins and are encoded in the national-team strength input."
     }
    }
   },
@@ -9706,7 +9855,7 @@
      "MVP outcomes by series",
      "pre-series player WAR"
     ],
-    "why": "Defined here while award and playoff-leader series were filed in this archetype; after the reconciliation they are in season_leaders_and_awards, which stages this input.",
+    "why": "Defined here while award and playoff-leader series were filed in this archetype; after the reconciliation they are in season_leaders_and_awards, which stages this input. Not staged here: the MVP and playoff-leader series are in season_leaders_and_awards, which stages it.",
     "role": "context"
    },
    "mlb.playoff_games_pa_distribution": {
@@ -9726,8 +9875,29 @@
      "lineup slot history",
      "player projections"
     ],
-    "why": "Defined here while award and playoff-leader series were filed in this archetype; after the reconciliation they are in season_leaders_and_awards, which stages this input.",
+    "why": "Defined here while award and playoff-leader series were filed in this archetype; after the reconciliation they are in season_leaders_and_awards, which stages this input. Not staged here: the MVP and playoff-leader series are in season_leaders_and_awards, which stages it.",
     "role": "context"
+   },
+   "mlb.wbc_national_team_strength": {
+    "label": "World Baseball Classic national-team strength from confirmed rosters (projected WAR by role, pitch-limit-adjusted pitching depth)",
+    "category": "team_strength",
+    "mechanism": "National-team win probability depends on rostered player talent, with pitching value reweighted for tournament pitch limits that shorten starts and shift innings to relievers.",
+    "rationale": "KXMLBWORLD resolves on a short tournament between federations whose strength changes with each MLB player's decision to participate and with club or insurance limits on pitchers; club-based ratings do not apply, and pitch limits make relief depth worth more than in MLB.",
+    "measurement": "For each federation, sum projected rest-of-season WAR per 600 PA (hitters) and per 150 IP (pitchers) from the most recent projection system for rostered players; pitchers weighted by expected tournament innings under the round pitch limits (about 65/80/95 pitches by round, to be verified) and relievers by available appearances; non-MLB players mapped via league-equivalence factors (NPB, KBO, CPBL, minors) shrunk to replacement with k = 200 PA. Convert rating differences to single-game win probability with a log5 model fitted on 2006-2026 tournament games; simulate pools and bracket. As-of: final roster announcement date; units: probability.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "World Baseball Classic official rosters and results (free_scrape)",
+     "FanGraphs projections and NPB/KBO statistics (free_scrape)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "confirmed national-team rosters with announcement dates",
+     "player projections and league-equivalence factors",
+     "tournament game results 2006-2026",
+     "pool and bracket format with tiebreaker rules"
+    ],
+    "why": "Gives KXMLBWORLD a national-team strength input; no club-level input in this archetype measures it.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -9858,6 +10028,16 @@
     "form": "regime-switch",
     "mechanism": "For 2027 futures the model is a mixture over labour regimes: no stoppage (a normal 162-game season), a shortened season (fewer games, so more variance in standings and more upsets of strong teams) and a cancelled postseason (settlement unknown). Strong favourites lose value under shortened seasons because season-long talent edges matter less, so the regime weights interact with team strength rather than scaling all teams equally.",
     "how_to_test": "Compare championship probabilities of top-, middle- and bottom-tier teams under 60-, 120- and 162-game simulated seasons, using 2020 as a reference for a shortened season."
+   },
+   {
+    "inputs": [
+     "mlb.team_season_extreme_engine",
+     "mlb.league_team_talent_posteriors_with_vintage",
+     "mlb.wins_to_date_and_games_remaining"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Best-record, worst-record and 100-loss outcomes are linked: teams share opponents, so one team's extra wins are another's losses, and the worst-record race is usually decided among two or three teams whose posteriors overlap. Ties at the extreme pay $1/N, so the joint probability of equal winning percentages near the end of the season changes expected payouts even when the leader is clear.",
+    "how_to_test": "Simulate the full league season jointly versus independently per team and compare predicted extreme and tie probabilities against settled seasons since 2000."
    }
   ],
   "nonlinearities": [
@@ -9880,6 +10060,11 @@
     "input_id": "mlb.tiebreaker_state_and_seed_path",
     "shape": "Cliff at the seeding boundary",
     "why": "One extra win can change a bye, opponent and home field, giving a step in title probability at the boundary."
+   },
+   {
+    "input_id": "mlb.team_season_extreme_engine",
+    "shape": "order-statistic concentration",
+    "why": "The probability of holding the best or worst record rises steeply with a team's mean relative to its nearest rival, so small posterior shifts late in the season move the extreme markets far more than win-total ladders."
    }
   ],
   "required_data": [
@@ -9918,7 +10103,8 @@
      "mlb.bracket_path_enumeration",
      "mlb.longest_streak_extreme_value",
      "mlb.league_team_talent_posteriors_with_vintage",
-     "mlb.lockout_games_lost_scenario"
+     "mlb.lockout_games_lost_scenario",
+     "mlb.team_season_extreme_engine"
     ]
    },
    {
@@ -10000,14 +10186,44 @@
     "feeds_inputs": [
      "m.external_lines"
     ]
+   },
+   {
+    "dataset": "World Baseball Classic rosters and results",
+    "grain": "one row per player-federation-tournament; one row per tournament game",
+    "fields": [
+     "federation",
+     "player",
+     "announcement date",
+     "projected WAR",
+     "pitch-limit role",
+     "game result",
+     "round"
+    ],
+    "timestamp_requirement": "Rosters as announced at each as-of date; withdrawals dated.",
+    "history_needed": "Tournaments 2006-2026",
+    "candidate_sources": [
+     {
+      "name": "World Baseball Classic official site",
+      "access": "free_scrape",
+      "note": "Rosters, format and results"
+     },
+     {
+      "name": "FanGraphs and Baseball-Reference",
+      "access": "free_scrape",
+      "note": "Projections and statistics; NPB and KBO data less complete"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.wbc_national_team_strength"
+    ]
    }
   ],
   "unresolved": [
    {
     "id": "sf_mixed_families",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "The 49 series include win ladders, divisions, pennants, qualifiers, seeds, exact World Series outcomes, matchups, a 2027 championship future and a longest-winning-streak market; KXMLBWS, KXMLBPLAYOFFS and KXMLBWINS-PIT lack rules, no sampled text covers a cancelled or shortened season, and the streak text is silent on postponed or suspended games inside a streak.",
-    "what_would_resolve": "Sample rules for the title-only families and the streak treatment of postponed or suspended games."
+    "description": "The 55 series include win ladders, divisions, pennants, qualifiers, seeds, division and league unions, exact World Series outcomes, matchups, season extremes, a World Baseball Classic market and a 2027 championship future; only KXMLBWS lacks rules, no sampled text covers a cancelled or shortened season, and the streak texts are silent on postponed or suspended games inside a streak.",
+    "what_would_resolve": "Sample KXMLBWS rules and the streak treatment of postponed or suspended games."
    },
    {
     "id": "sf_projection_vintage",
@@ -10033,8 +10249,8 @@
    {
     "id": "sf_tiebreaker_source",
     "type": "SOURCE_UNVERIFIED",
-    "description": "The seed tiebreaker order (head-to-head, intradivision, intraleague, last-half record) is an author paraphrase with no cited source, and whether the 12-team bracket is fixed without reseeding (needed for KXMLBMATCHUP) is not stated; the series without rules (KXMLBWS, KXMLBPLAYOFFS, KXMLBWINS-PIT) and all sampled futures texts are silent on tie and cancellation treatment.",
-    "what_would_resolve": "MLB's official tiebreaker and postseason-format documentation and the full Kalshi rules for the title-only series.",
+    "description": "The seed tiebreaker order (head-to-head, intradivision, intraleague, last-half record) is an author paraphrase with no cited source, and whether the 12-team bracket is fixed without reseeding (needed for KXMLBMATCHUP) is not stated in any sampled text; the qualifier and seed texts are silent on cancellation.",
+    "what_would_resolve": "MLB's official tiebreaker and postseason-format documentation and the KXMLBWS rules.",
     "category": "settlement_contract"
    },
    {
@@ -10043,6 +10259,20 @@
     "category": "situational_schedule_motivation",
     "description": "KXMLB lists a 2027 championship future while the CBA expires on Dec 1 2026; the sampled text does not say how the market settles if the 2027 season is shortened or the postseason cancelled (as in 1994), and the lockout-scenario input rests on three historical stoppages.",
     "what_would_resolve": "Kalshi wording on cancelled or shortened seasons for championship futures, plus a dated record of 2026-27 negotiation milestones."
+   },
+   {
+    "id": "sf_extremes_short_season",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "Best and worst record use winning percentage and split ties $1/N, but the 100-loss and streak texts do not say how a shortened season, a cancelled game or a suspended game inside a streak is handled; 100 losses is unreachable in a materially shortened season.",
+    "what_would_resolve": "Kalshi wording on shortened seasons and suspended games for the 100-loss and streak markets."
+   },
+   {
+    "id": "sf_wbc_rules",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "officiating_rules",
+    "description": "KXMLBWORLD's sampled text is one sentence: it does not address tournament cancellation, a final shortened by weather or the mercy rule, and the tournament's pitch limits and tiebreakers are stated from memory rather than an official 2026 rulebook.",
+    "what_would_resolve": "Full KXMLBWORLD rule document and the official World Baseball Classic tournament regulations."
    }
   ]
  },
@@ -10050,8 +10280,8 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Thirty live series of voted awards, selections and statistical races after the reconciliation. Award winners (MVP, Cy Young, Rookie, Reliever, Manager and Executive of the Year, Hank Aaron, Comeback, ALCS/NLCS/World Series MVP) pay on the official winner; the series-MVP texts pay $1/N to each official co-winner. KXMLBAWARDFIN pays if the player is named a finalist 'as reported by one of the Source Agencies', and all markets resolve No if finalists are not announced before the winner. KXMLBLEADERPLAYOFF counts only playoff statistics, resolves No for a participant who plays no games and pays tied leaders proportionally. KXMLBSEASONHR (50+ HR) and KXMLBSTATCOUNT (50 HR and 40 SB) count regular-season games only. KXMLBTRIPLECROWN requires leading the league in batting average, home runs and RBIs over the regular season. Silver Slugger (sampled: NL team award) and Gold Glove (sampled: NL pitcher) name specific awards. Only All-Stars, monthly and weekly awards and AL Comeback Player lack rules, and most award texts have no co-winner clause. All-Star Game, Derby and draft series moved to other archetypes.",
-   "rules_verification": "PARTIALLY_VERIFIED",
+   "settlement_definition": "Thirty-one live series of voted awards, selections and statistical races after the reconciliation, all with sampled rules. Award winners (MVP, Cy Young, Rookie, Reliever, Manager and Executive of the Year, Hank Aaron, Comeback, ALCS/NLCS/World Series MVP) pay on the official winner; the series-MVP texts pay $1/N to each official co-winner, and AL Comeback Player lists a separate 'Tie/Co-Winners' outcome, while the other award texts have no co-winner clause. KXMLBAWARDFIN pays if the player is named a finalist 'as reported by one of the Source Agencies', resolving all No if finalists are not announced before the winner. Monthly and weekly awards (Player and Pitcher of the Month, Player of the Week) pay $1/N rounded down when several candidates share the award. KXMLBALLSTAR pays Yes if the player is selected to his league's All-Star team, even if he does not participate. KXMLBLEADERPLAYOFF counts playoff statistics only, resolves No for a non-playing participant and pays tied leaders proportionally. KXMLBSEASONHR (50+ HR) and KXMLBSTATCOUNT (50 HR and 40 SB) count regular-season games only; KXMLBTRIPLECROWN requires leading the league in batting average, home runs and RBIs over the regular season; KXMLBTEAMSTAT (sampled: most strikeouts thrown by a team's staff) pays $1/N on ties. Silver Slugger (sampled: NL team award) and Gold Glove (sampled: NL pitcher) name specific awards. No text names a source of truth other than the finalist 'Source Agencies'. All-Star Game, Derby and draft series are in other archetypes.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
      "ticker": "KXMLBAWARDFIN",
@@ -10092,22 +10322,44 @@
      "ticker": "KXMLBSS",
      "quote": "If Washington wins the NL Silver Slugger for Team in the 2026 Pro Baseball season",
      "establishes": "The Silver Slugger series includes the team award, a different object from the positional player awards."
+    },
+    {
+     "ticker": "KXMLBALLSTAR",
+     "quote": "If Dillon Dingler is selected but does not participate, then the market resolves to Yes.",
+     "establishes": "All-Star markets settle on selection, so injury replacements and declined invitations do not reverse a Yes; the object is the selection process, not the game."
+    },
+    {
+     "ticker": "KXMLBPLAYEROTM",
+     "quote": "If multiple candidates are given Player of the Month on the Pro Baseball American League Player of the Month for July, then their Contracts will resolve to $1/(the number of candidates awarded), rounded down.",
+     "establishes": "Monthly awards split the payout among co-recipients, so the probability of a shared award enters expected payout."
+    },
+    {
+     "ticker": "KXMLBALCPOTY",
+     "quote": "If Tie/Co-Winners wins the Pro Baseball American League Comeback Player of the Year in the 2026 season",
+     "establishes": "The comeback award lists a co-winner outcome as its own market, so a shared award is a priced state rather than a payout split."
+    },
+    {
+     "ticker": "KXMLBTEAMSTAT",
+     "quote": "If Washington records the most strikeouts thrown in the 2026 Pro Baseball regular season",
+     "establishes": "The team-stat market is an order statistic of pitching-staff strikeouts over the regular season, with $1/N on ties."
     }
    ],
    "variants_and_edge_cases": [
     "Finalist versus winner: the finalist market has a fixed field (three finalists per league per award) selected from ballot ranks, so probability is rank-based (top three) rather than winner-based; the announcement condition adds a No branch.",
-    "Voter populations differ and are not all BBWAA: BBWAA ballots decide MVP, Cy Young, Rookie of the Year and Manager of the Year; the Rivera and Hoffman Reliever of the Year awards are, to my knowledge, voted by a panel of retired relievers; Hank Aaron, Comeback Player and Executive awards have other electorates (SOURCE_UNVERIFIED, see lea_electorates); managers and coaches vote Gold Glove and Silver Slugger; fans, players and the league choose All-Stars; the draft lottery decides draft picks. Each needs its own model.",
+    "Voter populations differ and are not all BBWAA: BBWAA ballots decide MVP, Cy Young, Rookie of the Year and Manager of the Year; the Rivera and Hoffman Reliever of the Year awards are, to my knowledge, voted by a panel of retired relievers; Hank Aaron, Comeback Player and Executive awards have other electorates (SOURCE_UNVERIFIED, see lea_electorates); managers and coaches vote Gold Glove and Silver Slugger; fans, players and the league choose All-Stars Each needs its own model.",
     "Statistical races (Triple Crown) are joint order statistics of three correlated categories with rate-stat qualification rules and tie handling; counting windows (regular season only) matter.",
-    "Eligibility rules (rookie status limits on at-bats, innings and days on the active roster) can make candidate sets differ from the obvious field; title-only series hide tie and co-winner treatment.",
+    "Eligibility rules (rookie status limits on at-bats, innings and days on the active roster) can make candidate sets differ from the obvious field; most award texts are silent on co-winners, which only the series-MVP texts, the monthly and weekly awards and the AL Comeback 'Tie/Co-Winners' outcome address.",
     "Postseason awards and leaders: series MVPs are named from the winning team in nearly all cases and pay $1/N on co-winners; the playoff runs leader depends on how many games a player's team plays, so it is a joint bracket-and-production event; a non-playing participant resolves No rather than voiding.",
     "Manager and Executive of the Year (moved here): Manager of the Year is a BBWAA award voted before the postseason; the executive award's electorate is unverified (see lea_eoty_electorate).",
-    "Silver Slugger and Gold Glove series name specific awards: the sampled KXMLBSS market is the NL Silver Slugger for Team (a team-offence award) and KXMLBGG is the NL Gold Glove for Pitcher, so each series needs the award's own electorate and candidate pool (team offence for SS Team; pitcher fielding, where the SABR Defensive Index is thin, for GG); a tie for a Triple Crown category lead is not addressed."
+    "Silver Slugger and Gold Glove series name specific awards: the sampled KXMLBSS market is the NL Silver Slugger for Team (a team-offence award) and KXMLBGG is the NL Gold Glove for Pitcher, so each series needs the award's own electorate and candidate pool (team offence for SS Team; pitcher fielding, where the SABR Defensive Index is thin, for GG); a tie for a Triple Crown category lead is not addressed.",
+    "Selection versus participation: KXMLBALLSTAR resolves Yes on selection even without participation, so injury replacements named later count as separate selections; monthly and weekly awards split the payout among co-recipients.",
+    "Team counting race (KXMLBTEAMSTAT, sampled: most strikeouts thrown) is a thirty-team order statistic of staff strikeouts over the regular season with $1/N on ties; other stat variants of the series are unseen."
    ],
    "settlement_data_source": "Official awards announcements and ballots (BBWAA/MLB), official league statistics for leader markets; the finalist market names 'Source Agencies' without listing them in the sample.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Awards and leaders are of two types. Statistical outcomes (season leaders, Triple Crown, season thresholds) equal current totals plus rest-of-season rate times opportunities times availability, so the probability that a player finishes first is the probability his final total exceeds every rival's, with correlations through teams and parks and with rate-stat qualification rules deciding who is eligible. Voted outcomes (MVP, Cy Young, Rookie of the Year, finalists, Gold Glove, Silver Slugger, All-Star) are produced by a ballot of a specific electorate that ranks candidates on a mixture of production (WAR variants, counting stats), team success and narrative, with ballots cast at a fixed date and finalists announced before winners. The finalist market is a rank-three event, which is easier to predict than the winner, with a timing condition. A first-principles model uses a production model for statistical races and a rank-ordered voter model (Plackett-Luce) for awards, with candidate sets restricted by eligibility. Early-season leaders are mostly luck so regression of rates is critical; late-season markets are dominated by remaining games and injuries. After the reconciliation the archetype also holds postseason MVP and playoff-leader markets (team advancement times player credit), Manager and Executive of the Year (team surprise versus projection), and single-hitter season counting thresholds (50 HR, 50 HR plus 40 SB).",
+   "summary": "Awards and leaders are of two types. Statistical outcomes (season leaders, Triple Crown, season thresholds) equal current totals plus rest-of-season rate times opportunities times availability, so the probability that a player finishes first is the probability his final total exceeds every rival's, with correlations through teams and parks and with rate-stat qualification rules deciding who is eligible. Voted outcomes (MVP, Cy Young, Rookie of the Year, finalists, Gold Glove, Silver Slugger, All-Star) are produced by a ballot of a specific electorate that ranks candidates on a mixture of production (WAR variants, counting stats), team success and narrative, with ballots cast at a fixed date and finalists announced before winners. The finalist market is a rank-three event, which is easier to predict than the winner, with a timing condition. A first-principles model uses a production model for statistical races and a rank-ordered voter model (Plackett-Luce) for awards, with candidate sets restricted by eligibility. Early-season leaders are mostly luck so regression of rates is critical; late-season markets are dominated by remaining games and injuries. After the reconciliation the archetype also holds postseason MVP and playoff-leader markets (team advancement times player credit), Manager and Executive of the Year (team surprise versus projection), and single-hitter season counting thresholds (50 HR, 50 HR plus 40 SB). The team-strikeout leader market (KXMLBTEAMSTAT) is a thirty-team order statistic of batters faced times staff strikeout rate.",
    "stages": [
     {
      "id": "s1",
@@ -10216,6 +10468,22 @@
      ],
      "description": "Manager of the Year votes reward wins over preseason expectation, a division title or a turnaround, with ballots cast before the postseason, so the input is the team's surprise relative to projection rather than its record. The 50 home run and 50 HR plus 40 SB markets are threshold events of one hitter's regular-season counts, driven by current totals, remaining plate appearances and the correlation of power and speed through playing time.",
      "distribution": "Manager award: concentrated rank distribution over two or three surprise teams; counting thresholds: rare joint tail that collapses once the pace falls behind."
+    },
+    {
+     "id": "s8",
+     "name": "Team pitching-staff strikeout leader",
+     "categories": [
+      "talent_strength",
+      "pace_volume",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "mlb.team_season_extreme_engine",
+      "mlb.k_rates",
+      "mlb.wins_to_date_and_games_remaining"
+     ],
+     "description": "The team leading in strikeouts thrown is the maximum over thirty staffs of strikeouts to date plus remaining batters faced times the staff's strikeout rate, where the rate is a weighted mix of rotation and bullpen pitchers' projected K% and changes with injuries and deadline trades; extra-inning games and doubleheaders add batters faced. Ties at the top pay $1/N, which matters only when two staffs are within a few strikeouts in the final week.",
+     "distribution": "Order statistic of near-normal staff totals (season sd roughly 40-60 strikeouts from rate uncertainty and volume); probability concentrated on two or three high-strikeout staffs, with tie mass negligible except at the very end."
     }
    ],
    "category_coverage": {
@@ -10259,7 +10527,8 @@
      "input_ids": [
       "mlb.expected_pa",
       "mlb.rest_of_season_projection",
-      "mlb.playoff_games_pa_distribution"
+      "mlb.playoff_games_pa_distribution",
+      "mlb.wins_to_date_and_games_remaining"
      ],
      "note": "Regular-season PA/IP opportunity and playoff games-played exposure."
     },
@@ -10275,7 +10544,8 @@
       "mlb.triple_crown_joint_probability",
       "mlb.award_vote_rank_model",
       "mlb.award_combo_joint_distribution",
-      "mlb.joint_season_hr_sb_distribution"
+      "mlb.joint_season_hr_sb_distribution",
+      "mlb.team_season_extreme_engine"
      ],
      "note": "Order statistics, rank distributions and joint threshold tails."
     },
@@ -10468,7 +10738,7 @@
      "final standings",
      "published lottery odds table and restrictions"
     ],
-    "why": "Defined here while KXMLBDRAFTPICK was filed in this archetype; after the reconciliation the draft market is in transactions, which stages this input.",
+    "why": "Defined here while KXMLBDRAFTPICK was filed in this archetype; after the reconciliation the draft market is in the amateur-draft archetype; not staged here or in transactions.",
     "role": "context"
    },
    "mlb.award_combo_joint_distribution": {
@@ -10607,6 +10877,16 @@
     "form": "multiplicative",
     "mechanism": "A series-MVP or playoff-leader probability is the product of team advancement (games played) and the player's share of production or credit given those games; the same hitter is a long shot if his team is likely to be swept and a favourite if a seven-game series is likely, so team and player components cannot be added.",
     "how_to_test": "Fit series-MVP outcomes 2000-2025 with P(team wins series) x credit share versus additive and share-only baselines and compare log loss."
+   },
+   {
+    "inputs": [
+     "mlb.team_season_extreme_engine",
+     "mlb.k_rates",
+     "mlb.deadline_roster_strength_shift"
+    ],
+    "form": "conditional",
+    "mechanism": "A staff's strikeout lead depends on who pitches the remaining innings: a deadline acquisition of a high-strikeout starter or the loss of an ace to injury shifts the staff K% for the rest of the season, and the effect on the leader market is large only when the race is close, since a staff ahead by a hundred strikeouts in August is rarely caught.",
+    "how_to_test": "Compare rest-of-season staff K% before and after deadline moves and test whether leader probabilities updated on roster changes beat a static staff projection."
    }
   ],
   "nonlinearities": [
@@ -10774,14 +11054,43 @@
      "mlb.manager_wins_over_expectation",
      "mlb.joint_season_hr_sb_distribution"
     ]
+   },
+   {
+    "dataset": "Team pitching-staff strikeouts and batters faced",
+    "grain": "one row per team-game",
+    "fields": [
+     "strikeouts thrown",
+     "batters faced",
+     "pitcher-level K%",
+     "innings by pitcher"
+    ],
+    "timestamp_requirement": "Daily as-of after the previous day's games.",
+    "history_needed": "10 seasons for rate and volume variance.",
+    "candidate_sources": [
+     {
+      "name": "MLB Stats API team game logs",
+      "access": "free",
+      "note": "Team pitching lines"
+     },
+     {
+      "name": "FanGraphs team pitching",
+      "access": "free_scrape",
+      "note": "Projected staff K%"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.team_season_extreme_engine",
+     "mlb.k_rates",
+     "mlb.wins_to_date_and_games_remaining"
+    ]
    }
   ],
   "unresolved": [
    {
-    "id": "lea_title_only",
+    "id": "lea_silent_clauses",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Five of thirty series (All-Stars, Pitcher and Player of the Month, Player of the Week, AL Comeback Player) have no sampled rules, so voters, windows and tie handling are unseen; the 'Source Agencies' in the finalist rule are not named; most sampled award texts have no co-winner clause; and the Triple Crown text does not say whether a tie for a category lead counts.",
-    "what_would_resolve": "Obtain full rules text for each series and the list of Source Agencies."
+    "description": "All thirty-one series now have sampled rules, but most award texts (MVP, Cy Young, Rookie, Reliever, Manager, Executive, Hank Aaron, Gold Glove, Silver Slugger) have no co-winner or tie clause; the 'Source Agencies' in the finalist rule are not named; the Triple Crown text does not say whether a tie for a category lead counts; and KXMLBTEAMSTAT variants other than most strikeouts thrown are unseen.",
+    "what_would_resolve": "Full rule documents for each award series, the list of Source Agencies and settled examples of a shared award."
    },
    {
     "id": "lea_voter_data",
@@ -10822,6 +11131,13 @@
     "category": "situational_schedule_motivation",
     "description": "KXMLBEOTY (moved here from offfield_markets) names only 'the Governing League'; the electorate of the executive award (club executives versus writers or a media outlet) is unverified, so whether the BBWAA-style rank model, public ballots and the manager-centric wins-over-expectation input apply is unknown (carried from off_eoty_electorate).",
     "what_would_resolve": "Identify the award Kalshi settles on and its electorate and ballot format."
+   },
+   {
+    "id": "lea_cowinner_payout",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "AL Comeback Player lists a 'Tie/Co-Winners' outcome, which suggests individual player markets resolve No when the award is shared, but no award text says so; for awards without that outcome the payout to a co-winner (Yes, $1/N or No) is unstated.",
+    "what_would_resolve": "Kalshi clarification of co-winner settlement for each award series or a settled shared-award example."
    }
   ]
  },
@@ -10829,24 +11145,9 @@
   "reviewer": "MLB_a author (claude-sonnet-5-5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Ten live series after the reconciliation, all with sampled rules. Season team extremes: best record and worst record (by winning percentage, ties pay $1/N rounded down, no tiebreakers used), longest losing streak and most team strikeouts thrown (ties pay $1/N), and 100+ losses (KXMLB100LOSS), all over the 2026 regular season. Postseason counts: KXMLBWALKOFFS (at least N walk-offs in the 2026 playoffs; 'A walk-off occurs when a game ends with the home team scoring the winning run in the bottom half of the 9th inning or any extra inning', however the run scores) and KXMLBPLAYOFFHRS (at least N home runs by all players in the 2026 playoffs, inside-the-park counted if officially recorded). KXMLBSERIESSCORE settles on a series' exact result (e.g. 4-3). Velocity: KXMLBFASTPITCH (named pitcher) and KXMLBSTAT (any pitcher) settle on a 107+ mph pitch in any 2026 game including the playoffs. The single-game pitcher and steal ladders, the 50/40 season threshold and the labour-schedule markets moved to other archetypes. No source of truth is named.",
+   "settlement_definition": "Five live series after the reconciliation, all with sampled rules. Postseason league counts: KXMLBWALKOFFS (at least N walk-offs in the 2026 playoffs; 'A walk-off occurs when a game ends with the home team scoring the winning run in the bottom half of the 9th inning or any extra inning', however the run scores) and KXMLBPLAYOFFHRS (at least N home runs by all players in the 2026 playoffs, inside-the-park counted if officially recorded). Player home runs: KXMLBSERIESHR (named player's officially recorded home runs across one playoff series, extra innings and inside-the-park included, other rounds excluded; no start gate) and KXMLBNEXTHR (Yes if the named player 'hits a home run in an MLB game' after one date and before another, No otherwise). Pitcher streak: KXMLBSISTREAK (Yes if the named pitcher reaches N consecutive scoreless innings from the stated streak start until the streak ends or the regular season concludes; partial innings count 1/3 per scoreless out; a broken streak resolves unreached rungs No). No text names a source, and none defines what breaks a streak (earned versus unearned runs, inherited runners) or how a player who misses games settles. Season team extremes, velocity and series exact-score markets moved to season_futures, season_leaders_and_awards, the velocity archetype and the playoff-series archetype.",
    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
-    {
-     "ticker": "KXMLBBESTRECORD",
-     "quote": "Any postseason qualification, seeding, or home-field advantage tiebreakers will not be used.",
-     "establishes": "Best and worst record markets settle on winning percentage with ties split $1/N and no tiebreakers, an order statistic of 30 teams."
-    },
-    {
-     "ticker": "KXMLBFASTPITCH",
-     "quote": "records a 107.0+ MPH pitch in any game during the 2026 Pro Baseball season (regular season and playoffs)",
-     "establishes": "Fastest-pitch market counts any game including postseason; it is an extreme-value event of pitch speeds."
-    },
-    {
-     "ticker": "KXMLB100LOSS",
-     "quote": "records at least 100 losses in the 2026 Pro Baseball regular season",
-     "establishes": "Losses threshold is a regular-season team win-total tail event."
-    },
     {
      "ticker": "KXMLBWALKOFFS",
      "quote": "A walk-off occurs when a game ends with the home team scoring the winning run in the bottom half of the 9th inning or any extra inning. The run that gives the home team the lead ends the game immediately. The way the run scores does not matter.",
@@ -10858,40 +11159,55 @@
      "establishes": "The playoff HR count follows the official scoring of home runs across all playoff games."
     },
     {
-     "ticker": "KXMLBLSTREAK",
-     "quote": "the markets for each of those tied teams will resolve to $1/(the number of tied teams), rounded down",
-     "establishes": "Streak extremes split the payout among tied teams."
+     "ticker": "KXMLBSERIESHR",
+     "quote": "This market counts the named player's total officially recorded home runs across the entire series, including extra innings and inside-the-park home runs.",
+     "establishes": "Series HR total counts every HR in one playoff series with no start or plate-appearance gate, unlike the single-game ladder."
     },
     {
-     "ticker": "KXMLBTEAMSTAT",
-     "quote": "If Washington records the most strikeouts thrown in the 2026 Pro Baseball regular season",
-     "establishes": "The team-stat market is an order statistic of pitching-staff strikeouts over the regular season."
+     "ticker": "KXMLBSERIESHR",
+     "quote": "Home runs from other postseason rounds or the regular season do not count.",
+     "establishes": "Exposure is the games of one series, a random number between the minimum and maximum series length."
+    },
+    {
+     "ticker": "KXMLBNEXTHR",
+     "quote": "If Fernando Tatis Jr. hits a home run in an MLB game after May 26, 2026 and before Aug 1, 2026, then the market resolves to Yes.",
+     "establishes": "A window market: any MLB game in the window counts, with no team restriction, so a trade does not end exposure but an injury absorbs it."
+    },
+    {
+     "ticker": "KXMLBSISTREAK",
+     "quote": "each scoreless out counts as 1/3 of an inning toward the total streak",
+     "establishes": "Streak length is measured in outs (thirds of an inning), so the rung is a count of consecutive outs without a run."
+    },
+    {
+     "ticker": "KXMLBSISTREAK",
+     "quote": "If Cristopher Sanchez's consecutive scoreless innings streak is broken, then all markets that have not been achieved yet will resolve to No.",
+     "establishes": "Rungs are nested: reaching N settles Yes immediately and a run before N settles every higher rung No."
     }
    ],
    "variants_and_edge_cases": [
-    "Tie handling for team extremes is $1/N rounded down (best/worst record, longest losing streak, team strikeouts), so both P(outright) and P(shared) enter the expected payout; 100+ losses has no tie branch.",
-    "Exposure sets differ: record, streak, strikeout and 100-loss markets count the regular season only; walk-off and playoff-HR counts count all playoff games; the velocity markets count regular season and playoffs.",
-    "KXMLBWALKOFFS is titled 'Walk-Off Home Runs' but its rule counts any walk-off ('The way the run scores does not matter'); the rule text governs, so walk-off singles, walks and errors count (see unr_walkoff_title).",
-    "A lockout-shortened future season (the CBA expires Dec 1 2026) would change games played for every team, making 100-loss and record extremes functions of the schedule length; the 2026 markets sampled are unaffected."
+    "Exposure differs by series: walk-offs and playoff home runs count all playoff games; KXMLBSERIESHR counts one series; KXMLBNEXTHR counts every MLB game in a date window (the sampled text does not restrict it to the regular season or one team); KXMLBSISTREAK runs until the streak breaks or the regular season ends.",
+    "KXMLBWALKOFFS is titled 'Walk-Off Home Runs' but its rule counts any walk-off ('The way the run scores does not matter'); the rule text governs (see unr_walkoff_title).",
+    "KXMLBSISTREAK counts partial innings at 1/3 per scoreless out but does not say whether an unearned run or an inherited runner who scores after the pitcher leaves breaks the streak, nor whether postseason innings count after the regular season (CONTRACT_AMBIGUOUS, unr_streak_break_definition).",
+    "KXMLBSERIESHR has no start gate and no clause for a player who misses series games through injury or benching; KXMLBNEXTHR has no clause for injury, so a player on the injured list simply accrues no exposure and the market resolves No at the window end (CONTRACT_AMBIGUOUS, unr_serieshr_missed_games)."
    ],
-   "settlement_data_source": "Official MLB standings, game logs and box scores (Stats API) for records, streaks, strikeouts, walk-offs and home runs; Statcast release speed presumed for velocity. The sampled rules name only 'the Governing League'.",
+   "settlement_data_source": "Official MLB box scores and game logs (Stats API) for walk-offs, home runs and pitcher outs and runs; the sampled rules name only 'the Governing League'.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "This unregistered bucket is four mechanisms sharing a label. Season team extremes (best and worst record, 100+ losses, longest losing streak, most strikeouts thrown) are order statistics of thirty teams' season outcomes: each team's wins are a mixture of binomials around a talent posterior, streaks are run lengths of a game sequence, and team strikeouts are batters faced times staff strikeout rate, with $1/N tie splits. Postseason counts (walk-offs and total home runs in the playoffs) are sums over a random number of playoff games: the number of games comes from the bracket and series lengths, and each game contributes a walk-off with a probability set by close-late game states and the home team's last at-bat, or a number of home runs set by park, weather and the two lineups. The series exact score is a series-length and win-sequence distribution. The 107 mph pitch markets are extremes of pitch-speed distributions over a few hard throwers' high-effort pitches. No single model covers these.",
+   "summary": "After the reconciliation this unregistered bucket holds three mechanisms. Postseason league counts (walk-offs, total home runs) are sums over a random number of playoff games: the number of games comes from the bracket and series lengths, each game contributes a walk-off with a probability set by close-late game states and the home team's last at-bat, and home runs per game come from the two lineups, parks and October weather. Player home-run exposure markets (series total, home run inside a date window) are the hitter's per-plate-appearance home-run rate times his plate appearances, where plate appearances depend on how many games the series lasts or how many games fall in the window and whether he plays them; injury acts as an absorbing state and the count is convex in exposure for 2+ rungs. The pitcher scoreless-innings streak is a survival process over outs: each out recorded without a run charged extends the streak by a third of an inning, and the streak ends at the first run charged, so the probability of reaching N innings is a product of per-out survival over the outs still needed, limited by the starts remaining before the season ends.",
    "stages": [
     {
      "id": "s1",
      "name": "Contract family classification and gate",
-     "description": "Ten series span season team extremes, postseason event counts, a series exact score and pitch-velocity extremes. Routing from the rules text is the first step because the exposure window (regular season only versus playoffs versus both), the tie rule ($1/N or none) and the counted event (any walk-off despite a home-run title) differ by series and change what is priced.",
-     "distribution": "Categorical routing; tie and window rules change the payout function, not the underlying event.",
      "categories": [
       "settlement_contract"
      ],
      "input_ids": [
       "m.rules_text",
-      "mlb.league_team_talent_posteriors_with_vintage"
-     ]
+      "mlb.bracket_path_enumeration"
+     ],
+     "description": "Five series span postseason league counts, player home-run exposure markets and a pitcher scoreless streak. Routing from the rules text comes first because the exposure window (all playoff games, one series, a date window, or until the streak breaks or the season ends), the counted event (any walk-off despite a home-run title; scoreless outs at one third of an inning) and the nested-rung settlement differ by series and change what is priced.",
+     "distribution": "Categorical routing; window and event definitions change the payout function, not the underlying process."
     },
     {
      "id": "s2",
@@ -10912,90 +11228,106 @@
     },
     {
      "id": "s3",
-     "name": "Team season order statistics",
-     "description": "Best and worst record, 100+ losses and the longest losing streak are tails of the distribution of thirty teams' outcomes: each team's win total is a mixture of binomials around its talent posterior, the league extreme is the maximum or minimum, with correlation from shared schedules. A streak is the longest run in a team's sequence of games; team strikeouts are batters faced times staff strikeout rate. For a future season the number of games is itself uncertain under a lockout scenario, which caps 100-loss and record extremes.",
-     "distribution": "Extreme-value distributions; ties produce $1/N payouts; very small probabilities for long-shot teams but heavy tails for mid-range teams.",
+     "name": "Player home runs across one playoff series",
      "categories": [
-      "distribution_variance",
-      "talent_strength"
+      "pace_volume",
+      "talent_strength",
+      "opponent_matchup"
      ],
      "input_ids": [
-      "mlb.team_season_extreme_engine",
-      "mlb.league_team_talent_posteriors_with_vintage",
-      "mlb.longest_streak_extreme_value",
-      "mlb.lockout_games_lost_scenario"
-     ]
+      "mlb.series_hr_exposure",
+      "mlb.series_length_distribution",
+      "mlb.playoff_games_pa_distribution",
+      "mlb.hitter_hr_profile",
+      "mlb.pitcher_hr_vulnerability",
+      "mlb.hr_environment"
+     ],
+     "description": "A named hitter's series home-run total is the sum over the series' games of his home runs, so it depends on how many games the series lasts (four to seven in a best-of-seven), whether he starts each one, his plate appearances per game and his per-PA home-run rate against the specific rotation he will face, adjusted for the two parks and October weather. There is no start gate, so a benched or injured hitter accrues fewer chances rather than voiding.",
+     "distribution": "Compound sum over a random number of games of per-game Poisson-binomial counts; P(2+) is convex in total plate appearances and sensitive to series length."
     },
     {
      "id": "s4",
-     "name": "Pitch-velocity extremes",
-     "description": "A 107 mph pitch has rarely if ever been recorded, so these markets ask whether one of a handful of elite hard throwers produces an upper-tail fastball; the probability depends on each pitcher's top-end velocity distribution, how many max-effort pitches he throws (relievers in high leverage more than starters), injuries to those few arms, and whether playoff appearances add exposure. The named-pitcher market depends on one arm; the any-pitcher market is a union over the field.",
-     "distribution": "Extreme-value tail for per-pitch speed; union over a small set of pitchers; very small probabilities that are highly sensitive to the assumed tail shape.",
+     "name": "Player home run inside a date window",
      "categories": [
-      "distribution_variance",
+      "availability_news",
+      "pace_volume",
       "talent_strength"
      ],
      "input_ids": [
-      "mlb.max_velocity_extreme_distribution",
-      "mlb.bullpen"
-     ]
+      "mlb.window_exposure_schedule",
+      "mlb.injuries_pit",
+      "mlb.rehab_progression_stage",
+      "mlb.playing_time_role",
+      "mlb.hitter_hr_profile",
+      "mlb.expected_pa"
+     ],
+     "description": "KXMLBNEXTHR pays if the hitter homers in any MLB game inside the window, so the probability is one minus the product over scheduled games of the per-game no-home-run probability, where each game's chance depends on whether he plays, his plate appearances and his per-PA rate. Injury is an absorbing state that ends exposure until his return, so the injured-list status and rehab timeline at the as-of date dominate for a hurt player; a trade keeps exposure because any MLB game counts.",
+     "distribution": "Survival in games with per-game hazard around 0.10-0.25 for regular power hitters; mixture over an injury state with long absences; right-censored at the window end."
     },
     {
      "id": "s5",
-     "name": "Series exact score",
-     "description": "The exact-score market (e.g. 'Tampa Bay wins 4-3') is a series-length and win-sequence distribution from game-level win probabilities with rotation, home-field pattern and shared strength uncertainty; a 4-3 outcome needs the series to go the distance, so dependence between games widens the tails relative to independent games.",
-     "distribution": "Discrete distribution over eight outcomes; tails (sweeps and seven-game series) sensitive to between-game dependence.",
+     "name": "Scoreless-innings streak survival",
      "categories": [
-      "situational_schedule_motivation",
+      "efficiency_conversion",
+      "pace_volume",
       "distribution_variance"
      ],
      "input_ids": [
-      "mlb.series_exact_score_distribution",
-      "mlb.bracket_path_enumeration"
-     ]
+      "mlb.scoreless_streak_survival",
+      "mlb.pitcher_rotation_slot_and_rest",
+      "mlb.sp_workload",
+      "mlb.inherited_runner_charge_risk",
+      "mlb.baserunner_to_run_conversion"
+     ],
+     "description": "From the current streak length, reaching N innings requires 3*(N - current) further consecutive outs with no run charged to the pitcher. Per-out survival comes from his run-prevention profile (strikeouts, walks, home runs and sequencing), the opponents and parks of his next starts, and the chance that runners he leaves on base score after he exits. The number of starts left before the regular season ends caps the outs available, and an injured-list stint pauses exposure.",
+     "distribution": "Approximately geometric in innings (per-inning scoreless probability around 0.70-0.85 for elite starters), so P(reach N) decays exponentially in outs needed; truncated by remaining starts."
     }
    ],
    "category_coverage": {
     "talent_strength": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.league_team_talent_posteriors_with_vintage",
-      "mlb.max_velocity_extreme_distribution"
+      "mlb.hitter_hr_profile",
+      "mlb.scoreless_streak_survival"
      ],
-     "note": "Team talent posteriors for extremes; pitcher top-end velocity for speed markets."
+     "note": "Hitter power profile for series and window home runs; pitcher run prevention for the streak."
     },
     "opponent_matchup": {
      "status": "COVERED",
      "input_ids": [
+      "mlb.pitcher_hr_vulnerability",
       "mlb.bullpen",
       "mlb.postseason_league_hr_count"
      ],
-     "note": "Visiting closer in walk-off states; lineup-versus-pitcher HR rates per playoff game."
+     "note": "Opposing rotation HR vulnerability in a series, the visiting closer in walk-off states, lineup-versus-pitcher HR rates per playoff game."
     },
     "role_personnel": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.max_velocity_extreme_distribution",
-      "mlb.bullpen"
+      "mlb.playing_time_role",
+      "mlb.pitcher_rotation_slot_and_rest"
      ],
-     "note": "Which hard throwers pitch and in what role (high-leverage reliever versus starter)."
+     "note": "Whether the hitter starts the games in his window or series; the pitcher's rotation slot and remaining starts."
     },
     "availability_news": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.league_team_talent_posteriors_with_vintage"
+      "mlb.injuries_pit",
+      "mlb.rehab_progression_stage"
      ],
-     "note": "Injuries and roster changes update team posteriors with a stored vintage."
+     "note": "Injury absorbs exposure in the window and series markets and pauses a streak."
     },
     "coaching_scheme": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "Manager tactics matter only through bullpen deployment in close late games and reliever usage, both carried by bullpen and the walk-off rate; no separate scheme input changes season extremes or playoff counts."
+     "note": "Manager tactics matter only through bullpen deployment in close late games, the hook decision for a streaking starter and lineup choices, all carried by bullpen, inherited-runner and playing-time inputs."
     },
     "environment": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Park and weather act inside the per-game HR expectation of the playoff HR count and do not drive season extremes; no stand-alone environment input is needed at the aggregation level of these markets."
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.hr_environment"
+     ],
+     "note": "Parks and weather of the series games scale per-PA home-run rates."
     },
     "game_context_script": {
      "status": "COVERED",
@@ -11009,44 +11341,48 @@
      "status": "COVERED",
      "input_ids": [
       "mlb.bracket_path_enumeration",
-      "mlb.playoff_walkoff_event_rate"
+      "mlb.series_length_distribution",
+      "mlb.window_exposure_schedule",
+      "mlb.sp_workload"
      ],
-     "note": "Number of playoff games remaining by bracket path."
+     "note": "Playoff games remaining, series length, games in the window and outs per start."
     },
     "efficiency_conversion": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "No per-opportunity conversion rate is priced on its own: walk-off conversion and home runs per game sit inside the count inputs, and season extremes are functions of win probabilities."
+     "status": "COVERED",
+     "input_ids": [
+      "mlb.scoreless_streak_survival",
+      "mlb.baserunner_to_run_conversion"
+     ],
+     "note": "Per-out probability of avoiding a charged run and conversion of baserunners to runs."
     },
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.team_season_extreme_engine",
-      "mlb.longest_streak_extreme_value",
-      "mlb.series_exact_score_distribution",
-      "mlb.postseason_league_hr_count"
+      "mlb.postseason_league_hr_count",
+      "mlb.series_hr_exposure",
+      "mlb.scoreless_streak_survival"
      ],
-     "note": "Order statistics, run lengths, series score and compound playoff counts."
+     "note": "Compound playoff counts, convex series totals and geometric streak survival."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
-      "mlb.lockout_games_lost_scenario",
-      "mlb.series_exact_score_distribution"
+      "mlb.window_exposure_schedule",
+      "mlb.pitcher_rotation_slot_and_rest"
      ],
-     "note": "Season length under a labour stoppage for future seasons; series structure."
+     "note": "Off days and doubleheaders in the window; starts remaining before season end for the streak."
     },
     "officiating_rules": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "Umpires and officials do not move season extremes or playoff counts; the only rule effects (inside-the-park HR scoring, the walk-off definition) are contract wording covered under settlement."
+     "note": "Umpires do not move these counts at first order; official scoring of inside-the-park home runs and of earned runs is a settlement-definition issue handled under settlement_contract."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
       "m.rules_text"
      ],
-     "note": "Tie splits, exposure windows and the walk-off definition."
+     "note": "Exposure windows, walk-off definition, one-third-inning streak credit and nested rungs."
     }
    }
   },
@@ -11067,7 +11403,7 @@
     "raw_data": [
      "team game logs; remaining schedule; team projections; team K% and batters faced"
     ],
-    "why": "Provides a calculation for the whole family of season-extreme markets that existing inputs do not cover.",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in season_futures (record extremes, 100 losses, losing streak) and season_leaders_and_awards (team strikeouts); not staged here.",
     "role": "primary"
    },
    "mlb.joint_season_hr_sb_distribution": {
@@ -11086,7 +11422,7 @@
     "raw_data": [
      "player daily stats; ROS projections; sprint speed; injury status"
     ],
-    "why": "The sampled contract is exactly this joint threshold, with regular-season counting only.",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in season_leaders_and_awards; not staged here.",
     "role": "secondary"
    },
    "mlb.max_velocity_extreme_distribution": {
@@ -11104,7 +11440,7 @@
     "raw_data": [
      "pitch-level release_speed for fastballs by pitcher; usage counts"
     ],
-    "why": "Gives the extreme-value measurement for the velocity markets.",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in the pitch-velocity archetype; not staged here.",
     "role": "secondary"
    },
    "mlb.series_exact_score_distribution": {
@@ -11122,7 +11458,7 @@
     "raw_data": [
      "series-level: games, scores, starters, home pattern; game probabilities"
     ],
-    "why": "KXMLBSERIESSCORE settles on exact score and needs the full distribution.",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in the playoff-series archetype; not staged here.",
     "role": "secondary"
    },
    "mlb.longest_streak_extreme_value": {
@@ -11140,7 +11476,7 @@
     "raw_data": [
      "team game log: date, win/loss, opponent, home flag; remaining schedule; current streaks and league maxima"
     ],
-    "why": "Prices the streak contracts using the right object (extremes) instead of inning mechanics.",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in season_futures; not staged here.",
     "role": "secondary"
    },
    "mlb.lockout_games_lost_scenario": {
@@ -11162,7 +11498,7 @@
      "2027 schedule and games per date",
      "1990, 1994-95, 2021-22 stoppage records"
     ],
-    "why": "Replaces the 'wording error' diagnosis for SEASONGAMES and OPENINGDAY with an explicit stoppage scenario model.",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in season_futures and the labour-stoppage archetype; not staged here.",
     "role": "primary"
    },
    "mlb.league_team_talent_posteriors_with_vintage": {
@@ -11182,7 +11518,7 @@
      "30-team schedule",
      "archived projection vintages (own capture)"
     ],
-    "why": "Defines the actual required inputs for team extremes (previously only an engine and an unresolved gap).",
+    "why": "Defined here while its series were filed in this archetype; after the reconciliation those series are in season_futures; not staged here.",
     "role": "primary"
    },
    "mlb.postseason_league_hr_count": {
@@ -11205,16 +11541,36 @@
     ],
     "why": "Gives KXMLBPLAYOFFHRS a defined input; without it the series had no mechanism after moving into this archetype.",
     "role": "primary"
+   },
+   "mlb.scoreless_streak_survival": {
+    "label": "Scoreless-streak survival: per-out probability a pitcher records an out with no run charged, and P(reach N innings) from the current streak",
+    "category": "distribution",
+    "mechanism": "A scoreless streak extends by one third of an inning per out recorded without a run charged to the pitcher and ends at the first charged run, so reaching N is a survival product over the outs still needed.",
+    "rationale": "KXMLBSISTREAK settles on consecutive scoreless innings counted in thirds; elite starters post per-inning scoreless rates near 0.80, so a ten-inning gap has probability around 0.1 and is extremely sensitive to the per-inning rate, opponents, parks and whether runners he leaves on base later score. The contract does not say whether unearned runs break the streak, so both definitions must be computed.",
+    "measurement": "Per-inning scoreless probability q_j for start j = P(0 runs in a half-inning) from a base-out Markov chain using the pitcher's projected K%, BB%, HR/PA and BABIP (shrunk to league with k = 300 batters faced) against the opponent lineup and park of start j, plus P(an inherited runner he leaves scores) from the bullpen's strand rate. Expected outs per start from sp_workload. P(reach N) = P(product over the 3*(N-current) needed outs of per-out survival, accumulated across remaining starts before season end, with no charged run); computed both with all runs and earned runs only. Units: probability; as-of: after each start.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Baseball Savant and MLB Stats API play-by-play (free)",
+     "Retrosheet event files (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play with base-out state and run charged to pitcher",
+     "pitcher game logs with outs recorded",
+     "remaining schedule and probable starters"
+    ],
+    "why": "Gives KXMLBSISTREAK its outcome-generating process: per-out survival over the outs still needed within the starts left.",
+    "role": "primary"
    }
   },
   "input_audit": {
    "mlb.expected_pa": {
-    "verdict": "IRRELEVANT",
-    "reason": "Plate appearances per game drove the single-game steal ladder, which moved to hitter_rbis_runs_sb; no remaining series here depends on one hitter's PA count."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Plate appearances per game set a hitter's per-game home-run chance in the date-window and series markets (KXMLBNEXTHR, KXMLBSERIESHR), which multiply it over games."
    },
    "mlb.plate_discipline": {
     "verdict": "IRRELEVANT",
-    "reason": "Walk propensity served the walks-allowed ladder, which moved to pitcher_earned_runs_hits_walks; no remaining series counts walks."
+    "reason": "Walk propensity of opposing lineups enters the streak's per-inning scoreless probability only through the pitcher's projected BB%, which the streak input already carries; no remaining series counts walks."
    },
    "mlb.sb_context": {
     "verdict": "IRRELEVANT",
@@ -11225,32 +11581,32 @@
     "reason": "Runner attempt and success served the steal ladder (moved) and the 50/40 threshold (moved to season_leaders_and_awards); irrelevant to the remaining series."
    },
    "mlb.sp_workload": {
-    "verdict": "WEAK",
-    "reason": "Starter workload mattered for the pitcher ladders (moved); here it only shapes how many max-effort pitches starters throw in the velocity markets, which max_velocity_extreme_distribution already models by role."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Outs per start determine how fast a scoreless streak can accumulate outs before the season ends; it is the exposure term in the streak survival product."
    },
    "mlb.leash": {
     "verdict": "WEAK",
-    "reason": "Hook tendency has no estimand as defined and served the moved pitcher ladders; no remaining series needs it."
+    "reason": "Hook tendency affects how long a streaking starter stays in and whether he leaves runners for the bullpen, but sp_workload and inherited_runner_charge_risk carry those effects with defined estimands."
    },
    "mlb.run_dist": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Supplies the frequency of tied or one-run games entering the bottom of the ninth for the walk-off count and per-game run environment; not the right object for streaks or extremes."
+    "reason": "Supplies the frequency of tied or one-run games entering the bottom of the ninth for the walk-off count and per-game run environment; not the right object for the player or streak markets."
    },
    "mlb.bullpen": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "The visiting closer's availability and quality decide walk-off conversion, and high-leverage relievers supply most 105+ mph pitches."
+    "reason": "The visiting closer's availability and quality decide walk-off conversion, and the relievers who inherit a streaking starter's runners decide whether those runs are charged to him."
    },
    "mlb.lineup_pit": {
-    "verdict": "IRRELEVANT",
-    "reason": "The lineup gate served the single-game ladders now in other archetypes; season extremes and playoff counts do not depend on one lineup card."
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Daily lineup cards confirm whether a window or series hitter plays a given game; useful as an as-of update, but exposure over many games is driven by role and injury."
    },
    "mlb.playing_time_role": {
-    "verdict": "WEAK",
-    "reason": "Role set exposure for the individual-season threshold that moved to season_leaders_and_awards; for velocity, reliever versus starter role is inside max_velocity_extreme_distribution."
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Whether the named hitter starts each game in his window or series sets exposure for KXMLBNEXTHR and KXMLBSERIESHR, neither of which has a start gate."
    },
    "mlb.umpire": {
     "verdict": "IRRELEVANT",
-    "reason": "Zone effects on walks mattered only for the walks ladder (moved); season extremes and playoff counts have no first-order umpire dependence."
+    "reason": "Zone effects shift walk and strikeout rates and so a streaking pitcher's per-inning scoreless probability slightly, but the per-start opponent and park effects dominate and no remaining series has first-order umpire dependence."
    },
    "mlb.pa_sim": {
     "verdict": "KEEP_CONTEXT",
@@ -11258,36 +11614,6 @@
    }
   },
   "interactions": [
-   {
-    "inputs": [
-     "mlb.team_season_extreme_engine",
-     "mlb.league_team_talent_posteriors_with_vintage",
-     "mlb.run_dist"
-    ],
-    "form": "joint-distribution",
-    "mechanism": "Best and worst record probabilities depend on the joint distribution of all thirty teams' wins, with positive dependence through shared schedules and strength uncertainty; a team's chance to be best depends on how many rivals have similar means, not just its own distribution.",
-    "how_to_test": "Simulate league with correlated draws versus independent draws and compare the probability of unique best."
-   },
-   {
-    "inputs": [
-     "mlb.max_velocity_extreme_distribution",
-     "mlb.bullpen",
-     "mlb.sp_workload"
-    ],
-    "form": "threshold",
-    "mechanism": "A 107 mph pitch happens only if a specific few pitchers throw enough high-effort pitches; relievers throwing max effort in short appearances have higher per-pitch tail probabilities than starters conserving velocity, so exposure and role interact with the speed distribution.",
-    "how_to_test": "Fit speed tails by role (starter versus reliever) and by game state; test whether max-effort pitch counts predict the extreme."
-   },
-   {
-    "inputs": [
-     "mlb.lockout_games_lost_scenario",
-     "mlb.league_team_talent_posteriors_with_vintage",
-     "mlb.team_season_extreme_engine"
-    ],
-    "form": "regime-switch",
-    "mechanism": "A shortened or cancelled season changes games remaining for every team, so extreme-record and 100-loss markets depend on the lockout scenario: fewer games compress win-total spreads and lower the chance of 100 losses or a record-best mark, and a cancelled season voids the premise.",
-    "how_to_test": "Simulate the 30-team extremes under 162-, 130- and 100-game seasons and compare P(100+ losses) and P(unique best record) across scenarios."
-   },
    {
     "inputs": [
      "mlb.playoff_walkoff_event_rate",
@@ -11307,56 +11633,91 @@
     "form": "joint-distribution",
     "mechanism": "The playoff HR total is a compound sum: its variance is the variance of the number of games times the squared per-game mean plus the per-game dispersion times the expected games. Early in October the games-remaining term dominates and the threshold probability moves in steps with each series result; late, per-game park and weather matter more.",
     "how_to_test": "Decompose the variance of simulated playoff HR totals into games-count and per-game parts by date and compare with realised totals 2015-2025."
+   },
+   {
+    "inputs": [
+     "mlb.series_hr_exposure",
+     "mlb.series_length_distribution",
+     "mlb.hitter_hr_profile"
+    ],
+    "form": "convex",
+    "mechanism": "A 2+ series home-run rung needs two events, so its probability rises faster than linearly in total plate appearances: a series that goes seven games instead of four nearly doubles a hitter's chances for 1+ but more than triples them for 2+, and the effect is larger for high per-PA power rates.",
+    "how_to_test": "Compare realised series home-run rungs against a linear-in-games model, split by series length and hitter power tier."
+   },
+   {
+    "inputs": [
+     "mlb.window_exposure_schedule",
+     "mlb.injuries_pit",
+     "mlb.hitter_hr_profile"
+    ],
+    "form": "conditional",
+    "mechanism": "In the date-window market a healthy power hitter's probability saturates quickly (he usually homers within a few weeks), so almost all uncertainty is the injury state: a hitter on the injured list with an uncertain return has a probability governed by return timing, not power.",
+    "how_to_test": "Split historical windows by injured-list status at the as-of date and compare realised hit rates with the power-only model."
+   },
+   {
+    "inputs": [
+     "mlb.scoreless_streak_survival",
+     "mlb.pitcher_rotation_slot_and_rest",
+     "mlb.sp_workload"
+    ],
+    "form": "threshold",
+    "mechanism": "A streak can only reach N if enough starts remain to record the needed outs: late in the season the rung becomes impossible once remaining starts times outs per start falls below the gap, regardless of how dominant the pitcher is.",
+    "how_to_test": "Compute the maximum attainable streak from remaining starts and check that market rungs beyond it settle No."
+   },
+   {
+    "inputs": [
+     "mlb.scoreless_streak_survival",
+     "mlb.inherited_runner_charge_risk",
+     "mlb.bullpen"
+    ],
+    "form": "conditional",
+    "mechanism": "Runners a streaking pitcher leaves on base and who later score are charged to him and, if the streak counts all charged runs, break it; managers protecting a streak pull him with bases empty, so the bullpen and exit-state policy change survival late in starts.",
+    "how_to_test": "In historical long streaks, compare the share of streak-ending runs scored by inherited runners with the share expected from typical exit states."
    }
   ],
   "nonlinearities": [
-   {
-    "input_id": "mlb.team_season_extreme_engine",
-    "shape": "Extreme value: P(unique best record) is highly convex in a team's mean win%, with ties splitting payouts",
-    "why": "Order statistics concentrate probability at the top, so small differences in mean produce large differences in extreme probability."
-   },
-   {
-    "input_id": "mlb.max_velocity_extreme_distribution",
-    "shape": "Exponential tail at the upper end of pitch speed",
-    "why": "Speeds beyond the 99th percentile decay quickly, so a small shift in a pitcher's max velocity changes the probability of reaching 107 by a large factor."
-   },
    {
     "input_id": "mlb.playoff_walkoff_event_rate",
     "shape": "Step function in time as series end; convex in games remaining for a 5+ threshold",
     "why": "A threshold of several walk-offs needs many close games; each finished series removes potential games in a step, and the probability of reaching N rises faster than linearly with remaining games because several rare events must coincide."
    },
    {
-    "input_id": "mlb.longest_streak_extreme_value",
-    "shape": "Geometric decay in streak length (about p^L) with a long upper tail",
-    "why": "The probability of an L-game streak falls roughly geometrically, so small differences in per-game win probability change the chance of holding the league's longest streak by large factors."
+    "input_id": "mlb.scoreless_streak_survival",
+    "shape": "exponential decay in outs needed",
+    "why": "Each inning survives with probability q, so P(reach N) is about q to the power of the innings needed; a change in q from 0.78 to 0.82 nearly doubles the chance of a ten-inning gap."
+   },
+   {
+    "input_id": "mlb.series_hr_exposure",
+    "shape": "convex in plate appearances for 2+ rungs",
+    "why": "Two home runs are needed, so the rung grows roughly with the square of exposure at low rates; series length and benching change it more than proportionally."
    }
   ],
   "required_data": [
    {
-    "dataset": "Pitch-level velocity and playoff game logs",
-    "grain": "one row per player-game; one per pitch",
-    "fields": "PA, SB, CS, outs, ER, BB, batters faced, release speed, pitch type, team, role",
-    "timestamp_requirement": "As-of previous game; gate flags (start, batter faced).",
-    "history_needed": "5 seasons for rates; 2 for velocity tails.",
+    "dataset": "Playoff game logs and walk-off events",
+    "grain": "one row per playoff game",
+    "fields": [
+     "home and away score by inning",
+     "walk-off flag",
+     "home runs by player",
+     "park",
+     "weather"
+    ],
+    "timestamp_requirement": "Updated after each game; as-of before the next game.",
+    "history_needed": "Playoffs 2012-present for per-game rates.",
     "candidate_sources": [
      {
       "name": "MLB Stats API",
       "access": "free",
-      "note": "Game logs"
-     },
-     {
-      "name": "Baseball Savant Statcast",
-      "access": "free",
-      "note": "Pitch speeds and baserunning"
+      "note": "Linescores and box scores"
      },
      {
       "name": "Retrosheet",
       "access": "free",
-      "note": "Game events"
+      "note": "Historical events"
      }
     ],
     "feeds_inputs": [
-     "mlb.max_velocity_extreme_distribution",
      "mlb.run_dist",
      "mlb.bullpen",
      "mlb.playoff_walkoff_event_rate",
@@ -11364,66 +11725,119 @@
     ]
    },
    {
-    "dataset": "Team standings, schedule and projections",
-    "grain": "one row per team-game and per team-vintage",
-    "fields": "results, remaining schedule, projected win%, team strikeouts, batters faced, streaks",
-    "timestamp_requirement": "Daily.",
-    "history_needed": "10 seasons.",
-    "candidate_sources": [
-     {
-      "name": "MLB Stats API schedule and standings",
-      "access": "free",
-      "note": "Results and schedule"
-     },
-     {
-      "name": "FanGraphs projections",
-      "access": "free_scrape",
-      "note": "Team projections"
-     }
-    ],
-    "feeds_inputs": [
-     "mlb.team_season_extreme_engine",
-     "mlb.league_team_talent_posteriors_with_vintage",
-     "mlb.longest_streak_extreme_value",
-     "mlb.lockout_games_lost_scenario"
-    ]
-   },
-   {
     "dataset": "Postseason bracket, series results and batted-ball environment",
-    "grain": "one row per player-day",
-    "fields": "HR, SB, PA, sprint speed, projections, injury status",
+    "grain": "one row per series and per player-series",
+    "fields": [
+     "bracket",
+     "series length",
+     "starters by game",
+     "player PA and HR by game",
+     "park HR factor"
+    ],
     "timestamp_requirement": "Daily as-of.",
-    "history_needed": "10 seasons for covariance.",
+    "history_needed": "10 seasons for series-length and exposure distributions.",
     "candidate_sources": [
-     {
-      "name": "FanGraphs ROS projections",
-      "access": "free_scrape",
-      "note": "Projections"
-     },
      {
       "name": "MLB Stats API",
       "access": "free",
-      "note": "Daily stats"
+      "note": "Series and box scores"
+     },
+     {
+      "name": "Baseball Savant",
+      "access": "free",
+      "note": "Batted-ball power metrics"
      }
     ],
     "feeds_inputs": [
      "mlb.bracket_path_enumeration",
      "mlb.postseason_league_hr_count",
-     "mlb.game_shared_hr_dispersion"
+     "mlb.game_shared_hr_dispersion",
+     "mlb.series_hr_exposure",
+     "mlb.series_length_distribution",
+     "mlb.playoff_games_pa_distribution",
+     "mlb.hitter_hr_profile",
+     "mlb.pitcher_hr_vulnerability",
+     "mlb.hr_environment"
     ]
    },
    {
-    "dataset": "Postseason series results and Kalshi rules",
-    "grain": "one row per series; per market",
-    "fields": "scores, starters, home pattern; rules text",
-    "timestamp_requirement": "Updated after each game.",
-    "history_needed": "2012-present.",
+    "dataset": "Player daily status, schedule and injury timelines",
+    "grain": "one row per player-day",
+    "fields": [
+     "active or injured-list status",
+     "rehab assignment",
+     "games scheduled",
+     "started flag",
+     "PA",
+     "HR"
+    ],
+    "timestamp_requirement": "Status as published at the as-of time (point-in-time vintage).",
+    "history_needed": "5 seasons.",
     "candidate_sources": [
      {
-      "name": "MLB Stats API",
+      "name": "MLB Stats API transactions and game logs",
       "access": "free",
-      "note": "Series results"
+      "note": "IL moves and daily stats"
      },
+     {
+      "name": "Beat-report capture",
+      "access": "own_capture",
+      "note": "Return timelines"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.window_exposure_schedule",
+     "mlb.injuries_pit",
+     "mlb.rehab_progression_stage",
+     "mlb.playing_time_role",
+     "mlb.expected_pa"
+    ]
+   },
+   {
+    "dataset": "Pitcher play-by-play for streak survival",
+    "grain": "one row per plate appearance with base-out state",
+    "fields": [
+     "pitcher",
+     "outs recorded",
+     "runs charged (earned and unearned)",
+     "inherited runners left and scored",
+     "opponent",
+     "park",
+     "date"
+    ],
+    "timestamp_requirement": "As-of after each start.",
+    "history_needed": "5 seasons for per-inning scoreless rates; all long streaks since 1990 for validation.",
+    "candidate_sources": [
+     {
+      "name": "Baseball Savant / MLB Stats API play-by-play",
+      "access": "free",
+      "note": "Event-level data"
+     },
+     {
+      "name": "Retrosheet",
+      "access": "free",
+      "note": "Historical streak validation"
+     }
+    ],
+    "feeds_inputs": [
+     "mlb.scoreless_streak_survival",
+     "mlb.pitcher_rotation_slot_and_rest",
+     "mlb.sp_workload",
+     "mlb.inherited_runner_charge_risk",
+     "mlb.baserunner_to_run_conversion"
+    ]
+   },
+   {
+    "dataset": "Kalshi rules for counting specials",
+    "grain": "one row per market",
+    "fields": [
+     "rules text",
+     "window dates",
+     "rung"
+    ],
+    "timestamp_requirement": "Versioned at issuance.",
+    "history_needed": "Since launch.",
+    "candidate_sources": [
      {
       "name": "Kalshi API",
       "access": "free_limited",
@@ -11431,7 +11845,6 @@
      }
     ],
     "feeds_inputs": [
-     "mlb.series_exact_score_distribution",
      "m.rules_text"
     ]
    }
@@ -11440,33 +11853,14 @@
    {
     "id": "unr_mixed",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Ten series with four mechanisms are filed in one unregistered archetype (season extremes, postseason counts, series exact score, velocity extremes); one mechanism or one input list would be wrong for at least three of them.",
-    "what_would_resolve": "Split the bucket into season-extreme, postseason-count and velocity families with their own catalog entries."
-   },
-   {
-    "id": "unr_games_strike",
-    "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXMLBSEASONGAMES and KXMLBOPENINGDAY moved to the labour-stoppage archetype; what remains here is that any future-season record, streak or 100-loss market depends on the number of games played, and the contract texts do not say how a shortened or cancelled season settles.",
-    "what_would_resolve": "Obtain Kalshi wording on season-length changes for record and 100-loss markets."
-   },
-   {
-    "id": "unr_velocity_tracking",
-    "type": "SOURCE_UNVERIFIED",
-    "description": "Whether the market resolves on Statcast release speed or another tracking source (and handling of measurement corrections or park radar differences) is not stated, and public pitch-speed data may differ from the resolver's. Statcast release speed and broadcast radar differ, and a 107 mph threshold is beyond the observed record.",
-    "what_would_resolve": "Determine the resolution source and compare it with Statcast for historical maxima."
-   },
-   {
-    "id": "unr_no_inputs_for_extremes",
-    "type": "DATA_UNAVAILABLE",
-    "description": "The 30-team talent posterior input is now defined (league_team_talent_posteriors_with_vintage), but historical projection vintages are not archived for free, so backtests of the extreme engine need own capture or a paid dataset.",
-    "what_would_resolve": "Build the posterior with archived projections or paid datasets.",
-    "category": "distribution_variance"
+    "description": "Five series with three mechanisms remain in one unregistered archetype (postseason league counts, player home-run exposure markets, a pitcher scoreless streak); one input list serves none of them fully, and the streak market has no other natural home.",
+    "what_would_resolve": "Split the bucket into postseason-count, player-exposure and streak families with their own catalog entries."
    },
    {
     "id": "unr_generic_stat_variants",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXMLBTEAMSTAT and KXMLBSTAT are generic families; only most-team-strikeouts and any 107+ mph pitch were sampled, so other stat variants (other stat, threshold or period) are unseen; KXMLBLSTREAK text is silent on postponed or suspended games.",
-    "what_would_resolve": "Sample the other KXMLBTEAMSTAT and KXMLBSTAT variants and a streak market's treatment of suspended games."
+    "description": "Retained for a deferred finding: the generic families it covered left this archetype (KXMLBTEAMSTAT to season_leaders_and_awards, KXMLBSTAT to the velocity archetype, KXMLBLSTREAK to season_futures). For the remaining series only one rung or one player per family was sampled, so other KXMLBSISTREAK, KXMLBNEXTHR and KXMLBPLAYOFFHRS variants are unseen.",
+    "what_would_resolve": "Sample further strikes and players for the remaining families and compare wording."
    },
    {
     "id": "unr_walkoff_title",
@@ -11474,6 +11868,27 @@
     "category": "settlement_contract",
     "description": "KXMLBWALKOFFS is titled 'Pro Baseball Walk-Off Home Runs' while its rule counts any walk-off ('The way the run scores does not matter'); if some strikes or later versions count only walk-off home runs, the per-game rate falls to roughly a third, so the wording per market must be read before pricing.",
     "what_would_resolve": "Read the rules for every live KXMLBWALKOFFS strike and confirm the counted event."
+   },
+   {
+    "id": "unr_streak_break_definition",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "KXMLBSISTREAK counts scoreless outs at one third of an inning but does not say whether an unearned run or an inherited runner scoring after the pitcher exits breaks the streak, or whether postseason innings extend it; the probability differs materially between definitions.",
+    "what_would_resolve": "Full KXMLBSISTREAK rule document or a settled example where an unearned or inherited run occurred during a streak."
+   },
+   {
+    "id": "unr_serieshr_missed_games",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "KXMLBSERIESHR counts a named player's home runs across the series and KXMLBNEXTHR any MLB game in a window, but neither text says how a player who is injured, benched or removed from the roster settles (No on the count versus a fair price), nor whether KXMLBNEXTHR includes postseason games if the window extends into October.",
+    "what_would_resolve": "Full rule documents for KXMLBSERIESHR and KXMLBNEXTHR or settled examples where the player missed games."
+   },
+   {
+    "id": "unr_streak_inputs",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "category": "efficiency_conversion",
+    "description": "The per-inning scoreless probability for an elite starter is estimated from a Markov chain on shrunk rates, but long streaks are selected on luck (low BABIP, strand rate), so the survival input may overstate persistence unless the as-of rates are regressed harder for pitchers already on a streak.",
+    "what_would_resolve": "Backtest streak continuation probabilities on all 30+ inning streaks since 1990 against the survival model."
    }
   ]
  }

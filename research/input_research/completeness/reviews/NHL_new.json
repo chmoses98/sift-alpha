@@ -9,8 +9,8 @@
     "Pro Hockey Top Pick",
     "Pro Hockey Draft Pick"
    ],
-   "target": "Which player or team is selected at a given draft position, determined by the league's lottery and team decisions.",
-   "mechanism": "Draft slots come from the standings-weighted lottery and pick ownership; each holding club then chooses from a prospect board whose consensus is tight at the top and loose in the middle of round one, with club needs, general-manager habits, medical flags and late trades deciding between close names. Nothing about on-ice performance enters beyond final standings.",
+   "target": "Whether a named prospect is selected at an exact overall slot, or within the top N overall slots, of the NHL Draft; determined by lottery and playoff-based draft order, pick ownership and sequential club choices.",
+   "mechanism": "Draft order comes from two institutional pieces: slots 1-16 from the standings-weighted lottery among non-playoff clubs, slots 17-32 from playoff results, then pick ownership maps each slot to a club. Clubs choose sequentially from a shrinking board, so whether a named prospect lands at slot k depends on who was taken at slots 1..k-1; consensus is tight at the top and loose mid-round, where club need, general-manager habit, medical flags and late trades decide. Kalshi settles on the player and the overall slot, not on the club.",
    "inputs": [
     {
      "id": "nhl.draft_lottery_odds_by_standing",
@@ -25,12 +25,12 @@
     {
      "id": "nhl.prospect_consensus_ranking",
      "role": "primary",
-     "why": "Independent scouting-service rankings are the prior over which prospect goes at each slot and how reliably consensus is followed."
+     "why": "Rank-averaged public board plus its historical slot-agreement calibration is the prior over which prospect goes at each slot."
     },
     {
      "id": "nhl.draft_board_dispersion",
      "role": "primary",
-     "why": "The tightness of the board around a slot converts a rank gap into a calibrated selection probability."
+     "why": "Cross-service disagreement about a prospect widens the distribution of the slot at which he is taken, beyond what the consensus gap alone implies."
     },
     {
      "id": "nhl.draft_team_need_profile",
@@ -45,7 +45,7 @@
     {
      "id": "nhl.draft_pick_trade_hazard",
      "role": "secondary",
-     "why": "Late changes of pick holder change which club selects and sometimes who moves up the order."
+     "why": "A traded pick changes which club's preferences apply at a slot, and so which prospect is taken there, even though settlement is on the player."
     },
     {
      "id": "nhl.prospect_eligibility_medical_flags",
@@ -63,11 +63,6 @@
      "why": "Draft-week reports of a club's intentions are the main late signal on the top picks, and their reliability varies by source."
     },
     {
-     "id": "nhl.reference_class_hazard",
-     "role": "context",
-     "why": "Class-specific base rate that the consensus first-ranked prospect goes first overall, by era, guards against overconfidence."
-    },
-    {
      "id": "nhl.announcement_calendar",
      "role": "context",
      "why": "Lottery date, combine and draft day set when each information source arrives and when the contract can resolve."
@@ -78,14 +73,19 @@
      "why": "Roster, coaching and front-office news changes club needs and may signal trades of picks before draft day."
     },
     {
-     "id": "nhl.career_trajectory",
-     "role": "context",
-     "why": "Age-curve evidence on prospects' development paths informs how clubs weigh upside against readiness."
+     "id": "nhl.draft_order_playoff_elimination",
+     "role": "secondary",
+     "why": "Playoff clubs hold slots 17-32, ordered by playoff results, so slot contracts above 16 or top-N ladders with N>16 need the playoff-elimination order."
     },
     {
-     "id": "nhl.offfield_base_rate",
-     "role": "context",
-     "why": "Reference class for league-office process markets: how often the officially scheduled event happens as planned."
+     "id": "nhl.draft_remaining_board_state",
+     "role": "primary",
+     "why": "The set of prospects still available at slot k after slots 1..k-1 is the conditioning state that every exact-slot and top-N probability depends on."
+    },
+    {
+     "id": "nhl.prospect_production_profile",
+     "role": "secondary",
+     "why": "League-adjusted scoring and combine testing explain where clubs deviate from the public consensus in the middle of round one."
     }
    ],
    "interactions": [
@@ -94,7 +94,7 @@
       "nhl.prospect_consensus_ranking",
       "nhl.draft_board_dispersion"
      ],
-     "hypothesis": "A rank gap only means a confident pick when dispersion is small; when the top two prospects are separated by little compared with service disagreement, the same gap yields a near coin-flip, while a large gap with tight dispersion gives near certainty."
+     "hypothesis": "A gap in mean consensus rank translates into a confident slot only when the services agree on each prospect; the same mean gap with high cross-service disagreement gives a much flatter slot distribution."
     },
     {
      "inputs": [
@@ -116,41 +116,63 @@
       "nhl.insider_report_credibility"
      ],
      "hypothesis": "A reach-prone general manager makes insider reports of an off-board choice more credible, and a consensus-following manager makes them less credible; credibility of the report and the club's historical reaching multiply rather than add."
+    },
+    {
+     "inputs": [
+      "nhl.draft_remaining_board_state",
+      "nhl.draft_team_need_profile"
+     ],
+     "hypothesis": "Need acts only on the prospects left on the board: an early off-consensus pick removes a name and moves every later club's need-weighted choice, so need effects propagate down the order."
     }
    ]
   },
   "contract": {
-   "settlement_definition": "No rules text was sampled for KXNHLDRAFTTOP (Pro Hockey Top Pick) or KXNHLDRAFTPICK (Pro Hockey Draft Pick). From the titles, the contracts presumably settle on who or which club is announced at first overall or at a named slot by the league; the player-versus-club basis, treatment of traded picks, and the source of truth are unverified.",
-   "rules_verification": "NOT_VERIFIED_NO_RULES_TEXT",
-   "rules_evidence": [],
-   "variants_and_edge_cases": [
-    "Top Pick versus Draft Pick: the first is probably slot 1, the second a configurable slot or ladder; the strike structure is not visible.",
-    "If a pick is traded before announcement or the selection is traded afterwards, the contract may settle on the original club, the selecting club, or the receiving club; wording unknown.",
-    "A forfeited or voided pick, or a draft postponed beyond the market close, could void or delay settlement; no rules text to confirm."
+   "settlement_definition": "Settlement is on the named prospect and the overall slot, not on a club. KXNHLDRAFTPICK resolves YES only if the named player is taken at exactly the stated overall pick of the 2026 NHL Draft; KXNHLDRAFTTOP resolves YES if he is drafted anywhere within the top N overall picks (a cumulative ladder: P(top N) is non-decreasing in N). The sampled rules state nothing about the source of truth, forfeited picks, a draft postponed past expiry, or a player who goes undrafted (presumably NO). Draft-day pick trades do not change settlement because the slot number and player are what count.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNHLDRAFTPICK",
+     "quote": "If Wyatt Cullen is selected as the 5th overall pick in the 2026 NHL Draft, then the market resolves to Yes.",
+     "establishes": "Exact-slot contract on a named player: YES only at overall pick 5, so being taken at 4 or 6 is NO; player basis, not club basis."
+    },
+    {
+     "ticker": "KXNHLDRAFTTOP",
+     "quote": "If Malte Gustafsson is drafted top 10 in the 2026 NHL Draft, then the market resolves to Yes.",
+     "establishes": "Cumulative top-N threshold on a named player: any overall slot 1-10 settles YES, so rungs for different N are nested events."
+    }
    ],
-   "settlement_data_source": "Presumably the league's official draft announcement, NHL.com; unverified for these series."
+   "variants_and_edge_cases": [
+    "Exact slot (KXNHLDRAFTPICK, strike_type custom, e.g. 5th) versus cumulative top N (KXNHLDRAFTTOP, e.g. top 10): the first needs the full slot pmf of the player, the second its CDF at N.",
+    "Forfeited picks: when a first-round pick is forfeited (e.g. Arizona's 2021 #11) later clubs move up and the overall numbering shifts; whether 'Nth overall' refers to the announced ordinal is not stated in the rules.",
+    "Pick traded before or during the draft: settlement is unaffected (player + overall slot), but the club whose preferences apply at that slot changes, which moves probabilities.",
+    "Decentralised draft format (2025 onward, clubs picking from home markets) changes timing of announcements but not the slot definition; a postponed draft or unlisted strikes for slots above 16 are not covered by the sampled rules.",
+    "A selection later voided, or rights later renounced, should not matter because the rules key on being 'selected'/'drafted'; no rules text confirms treatment of an invalid selection reversed on the floor."
+   ],
+   "settlement_data_source": "Not stated in the sampled rules; presumably the NHL's official draft results (NHL.com draft tracker). Treated as unresolved.",
+   "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "A draft selection is the end of a chain: final standings and a weighted lottery produce slot order, trades and protections assign each slot to a club, independent scouting services and club staff form a board, and each holding club chooses from the remaining prospects using the board, positional need, staff habit and late information such as medical news. The chain is mostly institutional rather than athletic, so the outcome is a categorical choice whose probability is sharp at the top of the board and diffuse in the middle of the first round. Information arrives in jumps: lottery night, the combine and draft-week reports.",
+   "summary": "A draft-slot contract on a named prospect is the end of a sequential chain. Slots 1-16 belong to the non-playoff clubs in reverse standings order, reshuffled by a two-draw weighted lottery (maximum rise of 10 places, no club winning more than twice in five years); slots 17-32 belong to playoff clubs, set by how far each went in the playoffs. Trades, protections and forfeitures map each slot to a holding club. Public services and club staff form boards; each holder chooses from whatever is left, so the probability the prospect goes exactly at slot k equals P(still available at k) times P(chosen | available, holder at k), and top-N is the cumulative sum over k<=N. The chain is institutional, sharp at the top of the board and diffuse mid-round, and information arrives in jumps (lottery night, combine, draft week).",
    "stages": [
     {
      "id": "s1",
-     "name": "Pre-lottery standings fix the lottery pool and odds",
-     "description": "Final regular-season standings (points percentage, then tiebreakers) determine which non-playoff clubs enter the lottery and each club's odds of winning a draw. Clubs that make the playoffs, or whose picks are owned by others through trades, do not hold their own slot. This stage is a deterministic function of the last games of the season plus rules; the only variability comes from late-season results and from the tie-breaking order.",
-     "distribution": "Discrete ordering over 32 clubs; near-deterministic after the final game, with ties resolved by rule.",
+     "name": "Standings and playoff results set the pre-lottery order",
+     "description": "Non-playoff clubs (16 of 32) hold slots 1-16 in inverse order of regular-season points percentage and tiebreakers, which also fixes their lottery odds. Playoff clubs keep their own picks and hold slots 17-32: conference-final losers pick 29-30, the Cup finalist 31 and the winner 32, with first- and second-round losers ordered by regular-season points under a rule whose division-winner detail is unverified (d5). Before the season ends this stage is a season and playoff simulation; afterwards it is deterministic.",
+     "distribution": "Discrete permutation of 32 clubs; slots 1-16 fixed at season end, slots 17-32 fixed only as playoff rounds finish.",
      "categories": [
       "talent_strength",
       "settlement_contract"
      ],
      "input_ids": [
       "nhl.season_sim_distribution",
-      "nhl.draft_lottery_odds_by_standing"
+      "nhl.draft_lottery_odds_by_standing",
+      "nhl.draft_order_playoff_elimination"
      ]
     },
     {
      "id": "s2",
      "name": "Lottery draws and ownership assignment",
-     "description": "The league's weighted lottery draws for the top slots; non-winning lottery clubs fall in order of standing, with a maximum number of positions a club can rise. After the draws, pick ownership (trades, protected picks, forfeitures) assigns each slot to a holding club. The draw is genuinely random with published odds; ownership is a legal fact that may be conditional until resolved.",
+     "description": "The lottery holds two weighted draws among the 16 non-playoff clubs; a winner may rise at most 10 places, and the remaining lottery clubs fall in standings order. After the draws, pick ownership (trades, top-N protections, conditional swaps, forfeitures) assigns each slot to a holding club; protections resolve only once the lottery result is known, so the draw and ownership are joint.",
      "distribution": "Weighted random draw without replacement; only top slots random, remaining slots a deterministic order with ownership overlay.",
      "categories": [
       "settlement_contract",
@@ -165,7 +187,7 @@
     {
      "id": "s3",
      "name": "Prospect board formation and consensus",
-     "description": "Scouting services and the clubs' own staff rank the eligible prospects; independent public rankings converge near the draft but are uncertain months before. Eligibility, injuries and signing paths remove or demote some players. The board is a noisy ordering with very different spread at the top than in the middle of round one.",
+     "description": "Scouting services and club staff rank the eligible prospects. The public board is summarised by mean consensus rank, the agreement among services on each prospect, and league-adjusted production and combine testing that clubs weigh differently from the services. Eligibility, injuries and signing paths demote some players. Agreement is high at the top and low across slots 8-25.",
      "distribution": "Ranked order with slot-dependent dispersion; tight at the top, wide in the middle and late first round.",
      "categories": [
       "talent_strength",
@@ -175,7 +197,7 @@
       "nhl.prospect_consensus_ranking",
       "nhl.draft_board_dispersion",
       "nhl.prospect_eligibility_medical_flags",
-      "nhl.career_trajectory"
+      "nhl.prospect_production_profile"
      ]
     },
     {
@@ -196,19 +218,31 @@
     },
     {
      "id": "s5",
-     "name": "Late information and settlement on announcement",
-     "description": "In the final days, insider reports, combine news and trade rumours move the likelihood of particular selections; the outcome settles when the league announces the pick at the draft. Settlement may depend on the exact wording: player named, club making the selection, slot number, and whether a pick traded after being made counts for the original club.",
+     "name": "Sequential depletion of the board and ladder settlement",
+     "description": "Picks are made in order, so the choice at slot k is a conditional choice over prospects not taken at 1..k-1. One off-consensus pick early shifts every later slot by one name. The exact-slot contract therefore needs the joint path of the first k picks, simulated (e.g. Plackett-Luce or conditional logit over the remaining board with club-specific utilities), and the top-N contract is the cumulative availability-and-choice probability summed over slots 1..N, monotone in N.",
+     "distribution": "Joint categorical path over the first k slots; the named prospect's slot pmf is unimodal near consensus rank with a long right tail of slides.",
+     "categories": [
+      "distribution_variance",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nhl.draft_remaining_board_state",
+      "nhl.prospect_consensus_ranking"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Late information and announcement",
+     "description": "In draft week insider reports, combine medicals and trade rumours move the likelihood of particular selections in jumps; the outcome settles when the pick is announced at the draft. The sampled rules settle on the player selected at an overall slot, so post-selection trades of the player do not matter, while a pre-selection trade of the pick changes which club's board applies.",
      "distribution": "Binary resolution after a discrete announcement; late reports shift probabilities in jumps, not smoothly.",
      "categories": [
       "availability_news",
-      "settlement_contract",
-      "distribution_variance"
+      "settlement_contract"
      ],
      "input_ids": [
       "nhl.insider_report_credibility",
       "nhl.news",
-      "nhl.reference_class_hazard",
-      "nhl.offfield_base_rate"
+      "nhl.announcement_calendar"
      ]
     }
    ],
@@ -217,9 +251,9 @@
      "status": "COVERED",
      "input_ids": [
       "nhl.prospect_consensus_ranking",
-      "nhl.draft_board_dispersion"
+      "nhl.prospect_production_profile"
      ],
-     "note": "Prospect quality enters as the consensus order and its spread, not as on-ice performance of the selecting club."
+     "note": "Prospect quality enters as the public consensus order and league-adjusted production; not on-ice performance of the selecting club."
     },
     "opponent_matchup": {
      "status": "NOT_APPLICABLE",
@@ -266,20 +300,21 @@
     "efficiency_conversion": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "No conversion rate generates the outcome; the closest idea, how often consensus translates into the actual pick, is a distribution calibrator under distribution_variance."
+     "note": "No conversion rate generates the outcome; how often consensus translates into the actual pick is a calibration held in prospect_consensus_ranking."
     },
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
       "nhl.draft_board_dispersion",
-      "nhl.reference_class_hazard"
+      "nhl.draft_remaining_board_state"
      ],
-     "note": "Slot-level dispersion of rank versus actual pick is the distribution of the outcome."
+     "note": "Cross-service disagreement and the sequential-depletion path set the width and right tail of the prospect's slot pmf."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
       "nhl.draft_lottery_odds_by_standing",
+      "nhl.draft_order_playoff_elimination",
       "nhl.announcement_calendar",
       "nhl.draft_pick_trade_hazard"
      ],
@@ -289,17 +324,18 @@
      "status": "COVERED",
      "input_ids": [
       "nhl.draft_lottery_odds_by_standing",
+      "nhl.draft_order_playoff_elimination",
       "nhl.pick_ownership_and_protection"
      ],
-     "note": "League lottery rules (draws, max positions risen, win limits) and pick-ownership rules play the role of rules governing the process."
+     "note": "League lottery rules (two draws, max rise 10, two wins in five years), the playoff-slot ordering rule and pick-ownership rules govern the process."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
-      "nhl.pick_ownership_and_protection",
+      "nhl.draft_remaining_board_state",
       "nhl.announcement_calendar"
      ],
-     "note": "Whether the contract is settled on the player, club or slot, and how trades are treated, depends on rules text that was not sampled; see unresolved."
+     "note": "Rules settle on player + overall slot (exact or top N); the slot pmf/CDF from the board path maps directly to both. Source of truth and forfeiture numbering unresolved (d1)."
     }
    }
   },
@@ -314,7 +350,7 @@
     "free_sources": [
      "Elite Prospects team prospect pools (free tier)",
      "NHL.com draft and roster pages",
-     "CapFriendly/PuckPedia archives for contract expiries"
+     "PuckPedia contract tables (CapFriendly closed in 2024; Wayback snapshots only)"
     ],
     "registry_ids": [],
     "raw_data": [
@@ -326,24 +362,22 @@
     "role": "secondary"
    },
    "nhl.draft_board_dispersion": {
-    "label": "Dispersion of public draft rankings around each prospect's slot",
+    "label": "Cross-service disagreement on each prospect's rank",
     "category": "distribution",
-    "mechanism": "Measures how tight or fractured the independent scouting-service rankings are around the slots in question; the tighter the consensus, the more the pick behaves as a deterministic read of the board.",
-    "rationale": "Mean rank hides whether the top is a one-prospect consensus or a three-way debate. Slot-level variance is what turns a rank gap into a probability of selection, and it is much smaller at first overall than at slot 12 where historical misses by slot are large.",
-    "measurement": "For each prospect pool at the as-of date collect the ranks from at least 4 independent services (e.g. NHL Central Scouting, Elite Prospects, McKeen's, Bob McKenzie/TSN consensus, FC Hockey) and compute cross-service mean rank, standard deviation, and gap between the k-th and (k+1)-th mean ranks. Back-test calibration with the historical frequency that the consensus rank-k prospect went exactly at slot k, bucketed by slot 1, 2-3, 4-10, 11-32, pooled 2005-present, with Laplace shrinkage of 1 pseudo-count per bucket.",
+    "mechanism": "Measures how much independent services disagree about one prospect, which is information the mean consensus rank and the rank-1 vs rank-2 gap (held in prospect_consensus_ranking) do not carry.",
+    "rationale": "Two prospects with the same mean rank can have SD 0.5 or SD 6 across services; the second is far more likely to be taken well away from his mean. This input is only the disagreement measure; the slot calibration lives in prospect_consensus_ranking, so it is not counted twice.",
+    "measurement": "For each prospect at the as-of date take ranks from every service available for that year (NHL Central Scouting split NA/EU lists mapped to a combined rank, TSN/McKenzie, Elite Prospects public list, others where archived; minimum 3), compute the cross-service SD of rank and the inter-quartile range, winsorise ranks at 64. No slot calibration here; used as a covariate in the conditional-logit utility. History limited to years with >=3 archived services (expected ~2012 onward; see d6).",
     "pregame_knowable": "yes",
     "free_sources": [
      "NHL Central Scouting published lists",
-     "Elite Prospects draft rankings archive",
-     "TSN consensus rankings (public pages)",
-     "Wikipedia draft history for actual slots"
+     "TSN/Bob McKenzie final rankings (public pages, patchy before ~2010)",
+     "Elite Prospects public draft rankings"
     ],
     "registry_ids": [],
     "raw_data": [
-     "service ranks by prospect and publication date",
-     "actual draft slot by prospect and year"
+     "service ranks by prospect and publication date"
     ],
-    "why": "Sets the width of the selection probability around the consensus rank for a specific draft slot, the core of both the top-pick and slot contracts.",
+    "why": "Widens or narrows the named prospect's slot distribution for exact-slot and top-N contracts.",
     "role": "primary"
    },
    "nhl.draft_pick_trade_hazard": {
@@ -351,19 +385,20 @@
     "category": "other",
     "mechanism": "Estimates the chance the slot is traded to another club (or the selection traded post-pick) between the lottery and the selection call, changing which club makes the pick.",
     "rationale": "Contracts that settle on which team selects, rather than which player, depend on pick ownership at the moment the pick is announced. Picks are frequently moved on draft day, and top-3 picks move rarely but non-zero, so a static ownership table is not a final answer.",
-    "measurement": "From the draft-pick transaction history 2005-present compute, per slot bucket (1-3, 4-10, 11-20, 21-32), the share of picks that changed club within the 14 days before selection and on draft day, separated by whether the holding club is a seller or buyer by points% rank. Add a club-level multiplier from past count of draft-day trades per GM, shrunk to league with k=4 drafts. As-of the ownership table timestamp; zero out if the contract rules define the selecting club by pre-lottery ownership.",
+    "measurement": "From the draft-pick transaction history 2005-present compute, per slot bucket (1-3, 4-10, 11-20, 21-32), the share of picks that changed club within the 14 days before selection and on draft day, separated by whether the holding club is a seller or buyer by points% rank. Add a club-level multiplier from past count of draft-day trades per GM, shrunk to league with k=4 drafts. As-of the ownership table timestamp. Settlement is on the player, so the hazard enters only by switching which club's utility applies at the slot.",
     "pregame_knowable": "partial",
     "free_sources": [
-     "PuckPedia and CapFriendly transaction archives",
+     "PuckPedia transaction tables",
      "NHL.com transactions",
-     "Wikipedia draft-trade lists"
+     "Wikipedia draft-trade lists",
+     "Wayback snapshots of CapFriendly (closed July 2024)"
     ],
     "registry_ids": [],
     "raw_data": [
      "pick transaction log with date, from-club, to-club, slot",
      "GM tenure table"
     ],
-    "why": "Needed because a slot contract on a team can resolve against the club that holds the pick at announcement, which differs from the lottery winner after a trade.",
+    "why": "A pick changing hands swaps the club whose need and habits apply at that slot, moving the named prospect's slot probability.",
     "role": "secondary"
    },
    "nhl.prospect_eligibility_medical_flags": {
@@ -406,6 +441,66 @@
     ],
     "why": "Turns the board into a club-specific selection distribution when the contract settles on a named club's pick.",
     "role": "secondary"
+   },
+   "nhl.draft_order_playoff_elimination": {
+    "label": "Draft order of playoff clubs (slots 17-32) from round of elimination and regular-season points",
+    "category": "schedule_context",
+    "mechanism": "Assigns slots 17-32 to the 16 playoff clubs from how far each advanced and from regular-season points within groups, so it depends on playoff series outcomes.",
+    "rationale": "Before the playoffs end, which club picks at 17-32 is uncertain; a prospect projected in the 20s is more likely to go to a club whose board or need suits him. Cup winner 32, finalist 31 and conference-final losers 29-30 are firm; the ordering of earlier losers (pure points vs division-winner adjustment) must be checked against the current rule (d5).",
+    "measurement": "Simulate the bracket from nhl.bracket_path_difficulty and per-series win probabilities from ratings with posterior uncertainty (10,000 paths); for each path apply the league's slot rule to produce a 17-32 order; report P(club holds slot k) for k=17..32. After each round, condition on eliminated clubs. As-of: the latest completed series.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NHL.com playoff results and draft-order pages",
+     "Hockey-Reference playoff series results"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff series results by round",
+     "regular-season points by club",
+     "league draft-order rule text"
+    ],
+    "why": "Needed for exact-slot contracts above 16 and top-N ladders with N>16, which depend on which club picks in the 20s.",
+    "role": "secondary"
+   },
+   "nhl.draft_remaining_board_state": {
+    "label": "[Model state, joint simulation] Prospects still available at slot k given picks 1..k-1",
+    "category": "distribution",
+    "mechanism": "Simulates the draft pick by pick: each holder chooses among the remaining prospects, so availability at slot k is the result of all earlier choices.",
+    "rationale": "Calibrating on the unconditional 'rank-k prospect went at slot k' is wrong once an early reach happens, since one off-board pick shifts every later slot. The quantity the contracts need, P(prospect at k) and P(prospect by N), only exists as a joint path probability.",
+    "measurement": "Conditional logit (or Plackett-Luce) over the remaining top-64 board at each slot: utility = b1*consensus mean rank + b2*cross-service SD + b3*need match + b4*club reach tendency + b5*production/combine residual + medical flag, with club-staff random effects shrunk to league (k=6 picks). Fit on drafts with archived boards (~2012 onward, d6), validate by log-loss of actual picks 1-32. Simulate 20,000 draft paths with ownership and lottery draws; output each prospect's slot pmf and CDF.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Derived from the public ranking archive, ownership log and club profiles in required_data"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "full top-64 board by service and date",
+     "actual pick order by year",
+     "ownership by slot at draft time"
+    ],
+    "why": "Produces the exact-slot pmf and top-N CDF that the two Kalshi series settle on.",
+    "role": "primary"
+   },
+   "nhl.prospect_production_profile": {
+    "label": "Prospect league-adjusted production and combine testing",
+    "category": "player_role",
+    "mechanism": "Translates junior, NCAA and European scoring into an NHL-equivalent rate and records combine fitness results, the evidence clubs weigh when they leave the consensus.",
+    "rationale": "Consensus rankings absorb production, which suffices at slot 1, but mid-round deviations by clubs correlate with points per game, age-adjusted, and size/skating; the residual of production versus consensus rank is what helps predict a reach or a slide.",
+    "measurement": "Draft-year points per game by league, converted with NHLe league factors (published translation factors, re-estimated on 10 seasons of players moving between leagues), adjusted for age at 15 September of the draft year (birth-month effect) and position; combine fitness percentiles where released. Store as residual versus consensus rank, as of draft week.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Elite Prospects player stats",
+     "CHL/USHL/NCAA league stat pages",
+     "NHL combine results releases"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "prospect season stats by league",
+     "birthdate and position",
+     "combine testing results"
+    ],
+    "why": "Explains which prospects a club takes ahead of or behind consensus at the named slot.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -419,7 +514,7 @@
    },
    "nhl.prospect_consensus_ranking": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "The best public prior over who is selected at each slot; the catalog label already includes selection agreement history, which is the right target."
+    "reason": "Best public prior; its catalog definition already holds the rank-1/rank-2 gap and the historical slot-agreement calibration, so the separate dispersion input is narrowed to cross-service disagreement and reference_class_hazard was removed as a third copy."
    },
    "nhl.season_sim_distribution": {
     "verdict": "KEEP_SECONDARY",
@@ -429,10 +524,6 @@
     "verdict": "KEEP_SECONDARY",
     "reason": "Draft-week insider claims about the first pick are the main late information; credibility and lag weighting is what stops reports from being over- or under-weighted."
    },
-   "nhl.reference_class_hazard": {
-    "verdict": "KEEP_CONTEXT",
-    "reason": "Provides the historical agreement rate between consensus and the actual pick by era; a context calibrator, not a driver of any individual pick."
-   },
    "nhl.announcement_calendar": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Gives the timeline (lottery, combine, draft day) that determines when information resolves; does not move the probability itself."
@@ -440,14 +531,6 @@
    "nhl.news": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Generic transactions feed; relevant mainly for front-office changes and pick trades, otherwise noisy for draft slots."
-   },
-   "nhl.career_trajectory": {
-    "verdict": "WEAK",
-    "reason": "Built for NHL age curves and rookie ramps; for amateur prospects the decision uses scouting reports and junior production, so this only weakly informs club choice."
-   },
-   "nhl.offfield_base_rate": {
-    "verdict": "WEAK",
-    "reason": "Generic off-ice base rate; draft happening on schedule is near-certain, so it adds little beyond the calendar for slot-selection contracts."
    }
   },
   "interactions": [
@@ -457,8 +540,8 @@
      "nhl.draft_board_dispersion"
     ],
     "form": "conditional",
-    "mechanism": "A rank gap only means a confident pick when dispersion is small; when the top two prospects are separated by little compared with service disagreement, the same gap yields a near coin-flip, while a large gap with tight dispersion gives near certainty.",
-    "how_to_test": "Fit selection probability on the rank gap alone vs gap divided by cross-service standard deviation and compare log-loss over drafts 2005-present, split by slot 1 and slots 2-10."
+    "mechanism": "The consensus mean-rank gap between two prospects predicts their relative slots well only when services agree on each; with high cross-service disagreement the same mean gap carries little information and the slot distribution flattens.",
+    "how_to_test": "Conditional logit with consensus gap, cross-service SD and their product as covariates; test the product term by held-out log-loss on drafts ~2012-present, split slot 1-3 vs 4-32."
    },
    {
     "inputs": [
@@ -484,7 +567,7 @@
      "nhl.insider_report_credibility"
     ],
     "form": "multiplicative",
-    "mechanism": "A reach-prone general manager makes insider reports of an off-board choice more credible, and a consensus-following manager makes them less credible; credibility of the report and the club's historical reaching multiply rather than add.",
+    "mechanism": "A reach-prone general manager makes insider reports of an off-board choice more credible, and a consensus-following manager makes them less credible; credibility of the report and the club's historical reaching multiply rather than add. Untestable until insider reports are captured over several drafts (d7).",
     "how_to_test": "Back-test reported-pick accuracy by source for reach-prone vs consensus-following clubs and test an interaction term in the pick model."
    },
    {
@@ -495,23 +578,37 @@
     "form": "regime-switch",
     "mechanism": "Before the lottery, trade hazard concerns picks of unknown slot and is low for top slots; after the lottery and especially on draft day it concentrates on known slots, so the hazard regime changes at the lottery date and again on draft day.",
     "how_to_test": "Estimate pick-change frequency separately in windows before lottery, between lottery and draft day, and on draft day, and test slot x window interaction."
+   },
+   {
+    "inputs": [
+     "nhl.draft_remaining_board_state",
+     "nhl.draft_team_need_profile"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Need matters only over the prospects left: if an earlier club takes the defenceman a later club needed, that club's choice moves to the next need fit, so an off-consensus pick propagates down the order and the named prospect's slot pmf shifts as a whole.",
+    "how_to_test": "Compare a sequential simulation with need terms against independent slot-by-slot predictions, by log-loss of each prospect's actual slot, on drafts with one or more top-10 reaches."
    }
   ],
   "nonlinearities": [
    {
-    "input_id": "nhl.draft_board_dispersion",
-    "shape": "Dispersion rises steeply from slot 1 to slot 5, then flattens across mid-round slots, so selection probability for the consensus rank-k name falls convexly with k",
-    "why": "Historical agreement between consensus rank and actual slot is much higher at the very top than in the middle of round one, so a linear rank effect would overstate mid-round confidence."
+    "input_id": "nhl.prospect_consensus_ranking",
+    "shape": "Probability the consensus rank-k prospect goes exactly at k falls convexly with k: near 0.8-0.9 at k=1, quickly below 0.3 by k=5-10",
+    "why": "Historical agreement between consensus and actual slot is high only at the very top; a linear rank effect overstates mid-round confidence for exact-slot contracts."
    },
    {
     "input_id": "nhl.draft_lottery_odds_by_standing",
-    "shape": "Odds of winning the first draw are heavily concentrated in the worst few clubs and then decay slowly, with a cap on positions a club can rise",
-    "why": "The published odds are not proportional to standing; the cap on movement and two draws make the mapping from points rank to slot piecewise and non-linear."
+    "shape": "Odds of winning a draw are concentrated in the worst few clubs and capped by the 10-place rise limit",
+    "why": "The published odds are not proportional to standing; the two draws and movement cap make the mapping from points rank to slot piecewise."
    },
    {
     "input_id": "nhl.draft_team_need_profile",
     "shape": "Need effect saturates: beyond a modest positional deficit extra need adds little because clubs rarely reach more than a few slots",
     "why": "Clubs trade need off against board value; a large need does not translate into proportionally larger reach, so the effect is bounded."
+   },
+   {
+    "input_id": "nhl.draft_remaining_board_state",
+    "shape": "Top-N probability is a CDF in N: flat near 0 until slots where the prospect becomes available, steep near consensus rank, then saturating",
+    "why": "Top-N rungs are nested; P(by N) must be non-decreasing in N and the exact-slot pmf is its first difference, so ladder rungs must be priced from one joint simulation."
    }
   ],
   "required_data": [
@@ -526,7 +623,7 @@
      "pick owner"
     ],
     "timestamp_requirement": "Odds table as published before the lottery; ownership as of the lottery date and again at draft day; keep vintage of any conditional picks.",
-    "history_needed": "2005 to present (weighted lottery since 1995 with modifications since 2013, 2021).",
+    "history_needed": "2005 to present; rule eras: 2013 (all non-playoff clubs eligible), 2016-2020 three draws, 2021 two draws with max rise 10, 2022 limit of two wins in five years.",
     "candidate_sources": [
      {
       "name": "NHL.com draft lottery pages",
@@ -564,9 +661,9 @@
       "note": "Pick tables and trade history; detailed history may require sign-up."
      },
      {
-      "name": "CapFriendly archive",
-      "access": "free_scrape",
-      "note": "Historic pick ownership, site status should be confirmed before relying on it."
+      "name": "CapFriendly",
+      "access": "unavailable_public",
+      "note": "Shut down July 2024 after acquisition by the Washington Capitals; only Wayback Machine snapshots remain (free_scrape, incomplete)."
      },
      {
       "name": "NHL.com transactions",
@@ -580,7 +677,7 @@
     ]
    },
    {
-    "dataset": "Public prospect rankings",
+    "dataset": "Public prospect rankings (full top-64 board)",
     "grain": "prospect x service x publication date",
     "fields": [
      "rank",
@@ -591,28 +688,33 @@
      "age"
     ],
     "timestamp_requirement": "Each ranking stamped at publication; only rankings published before the as-of time used.",
-    "history_needed": "2005 to present, final-week rankings per year.",
+    "history_needed": "Years with >=3 archived services, expected ~2012 to present; 2005-present multi-service history is unlikely to exist (d6).",
     "candidate_sources": [
      {
       "name": "NHL Central Scouting",
       "access": "free",
-      "note": "Midterm and final lists."
+      "note": "Midterm and final lists, split North American / European."
      },
      {
       "name": "Elite Prospects",
       "access": "free_limited",
-      "note": "Draft rankings and player stats; archive depth for other services is SOURCE_UNVERIFIED."
+      "note": "Public rankings free; the draft guide with full rankings is paid."
      },
      {
-      "name": "TSN/Bob McKenzie consensus",
+      "name": "TSN/Bob McKenzie final ranking",
       "access": "free_scrape",
-      "note": "Annual consensus, archives vary by year."
+      "note": "Annual list; public archives patchy before ~2010."
+     },
+     {
+      "name": "McKeen's, FC Hockey",
+      "access": "paid",
+      "note": "Largely paywalled; historical archives SOURCE_UNVERIFIED."
      }
     ],
     "feeds_inputs": [
      "nhl.prospect_consensus_ranking",
      "nhl.draft_board_dispersion",
-     "nhl.career_trajectory"
+     "nhl.draft_remaining_board_state"
     ]
    },
    {
@@ -658,7 +760,7 @@
      "timestamp"
     ],
     "timestamp_requirement": "Report time-stamped to the minute; resolved against actual pick for credibility.",
-    "history_needed": "Several drafts of reports for credibility scoring.",
+    "history_needed": "Medical/eligibility flags since ~2012; insider reports have no archive and start at first own capture (d7).",
     "candidate_sources": [
      {
       "name": "X/Twitter and TSN/The Athletic report archives",
@@ -673,9 +775,65 @@
     ],
     "feeds_inputs": [
      "nhl.prospect_eligibility_medical_flags",
-     "nhl.insider_report_credibility",
-     "nhl.reference_class_hazard",
-     "nhl.offfield_base_rate"
+     "nhl.insider_report_credibility"
+    ]
+   },
+   {
+    "dataset": "Playoff results and draft-order rule",
+    "grain": "season x playoff series; season x slot 17-32",
+    "fields": [
+     "series winner/loser",
+     "round",
+     "regular-season points",
+     "division winner flag",
+     "assigned draft slot"
+    ],
+    "timestamp_requirement": "Series results as each series ends; slot order only from completed rounds.",
+    "history_needed": "2014 to present (current divisional bracket) to validate the slot rule against actual orders.",
+    "candidate_sources": [
+     {
+      "name": "NHL.com playoff and draft-order pages",
+      "access": "free",
+      "note": "Official order; rule text must be read."
+     },
+     {
+      "name": "Hockey-Reference playoff series",
+      "access": "free",
+      "note": "Series results by round."
+     }
+    ],
+    "feeds_inputs": [
+     "nhl.draft_order_playoff_elimination"
+    ]
+   },
+   {
+    "dataset": "Prospect production and combine",
+    "grain": "prospect x season x league",
+    "fields": [
+     "GP",
+     "G",
+     "A",
+     "league",
+     "birthdate",
+     "position",
+     "combine test results"
+    ],
+    "timestamp_requirement": "Draft-year stats frozen at the end of the prospect's season; combine results as released.",
+    "history_needed": "Draft classes ~2012 onward to match the board history; 10 seasons of league transitions for NHLe factors.",
+    "candidate_sources": [
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "Stats by league; bulk access via paid API."
+     },
+     {
+      "name": "NHL combine releases",
+      "access": "free",
+      "note": "Fitness results published in part."
+     }
+    ],
+    "feeds_inputs": [
+     "nhl.prospect_production_profile"
     ]
    }
   ],
@@ -683,8 +841,8 @@
    {
     "id": "d1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Neither KXNHLDRAFTTOP nor KXNHLDRAFTPICK has listed markets or sampled rules text, so whether they settle on the named player, the club, the slot number, or a pick-position ladder is unknown.",
-    "what_would_resolve": "Fetch rules_primary and market strikes for these tickers when they list, and read how traded picks and the selection time are handled.",
+    "description": "Sampled rules for KXNHLDRAFTPICK and KXNHLDRAFTTOP give only the YES condition; they do not name a source of truth, say whether 'Nth overall' counts forfeited slots, or say what happens if the draft is postponed past expiry or a selection is ruled invalid.",
+    "what_would_resolve": "Read the full Kalshi rulebook/terms page for these series or a disputed-settlement notice covering forfeits and postponement.",
     "category": "settlement_contract"
    },
    {
@@ -706,20 +864,61 @@
     "description": "Effect of the need profile versus best-available is contested in public work and may be near zero in the top five; its size by slot band is not established.",
     "what_would_resolve": "Estimate the need coefficient by slot band on historical drafts and test whether it is distinguishable from zero.",
     "category": "role_personnel"
+   },
+   {
+    "id": "d5",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "The exact current rule ordering playoff clubs in slots 17-28 (pure regular-season points versus a division-winner adjustment) is from memory; only slots 29-32 (conference-final losers, finalist, winner) are certain.",
+    "what_would_resolve": "Read the NHL's current draft-order procedure and check it against the 2024-2026 first-round orders.",
+    "category": "officiating_rules"
+   },
+   {
+    "id": "d6",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "A multi-service public ranking history back to 2005 probably does not exist: McKeen's and FC Hockey are paywalled, the Elite Prospects draft guide is paid, McKenzie archives are patchy before about 2010. Calibration windows for the board model may be limited to ~2012 onward.",
+    "what_would_resolve": "Inventory archived final rankings per service per year and fix the calibration window to years with at least three services."
+   },
+   {
+    "id": "d7",
+    "type": "DATA_UNAVAILABLE",
+    "description": "Draft-week insider reports have no clean public archive, so insider_report_credibility and its interaction with GM reach tendency cannot be back-tested until the project captures reports across several drafts.",
+    "what_would_resolve": "Capture timestamped insider claims for at least three drafts and score them against actual picks."
+   },
+   {
+    "id": "d8",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "CapFriendly, the main free historical source for pick conditions and protections, shut down in July 2024; completeness of PuckPedia and Wayback snapshots for 2005-2024 pick conditions is unchecked.",
+    "what_would_resolve": "Sample 30 conditional picks from 2010-2024 and check whether PuckPedia or Wayback snapshots record their conditions and resolution."
    }
-  ]
+  ],
+  "blueprint_input_dispositions": {
+   "nhl.award_stats": "Not used: award voting statistics have no role in draft selection.",
+   "nhl.award_voting_rules": "Not used: replaced by the lottery and draft-order rules (draft_lottery_odds_by_standing, draft_order_playoff_elimination).",
+   "nhl.ratings": "Used only indirectly through season_sim_distribution and the playoff simulation inside draft_order_playoff_elimination.",
+   "nhl.goalie_quality": "Not used: goalie awards are irrelevant to draft slots.",
+   "nhl.injuries_pit": "Not used: NHL roster injuries do not move draft slots; prospect injuries are in prospect_eligibility_medical_flags.",
+   "nhl.career_trajectory": "Removed: NHL age curves do not describe amateur prospect evaluation; prospect_production_profile replaces it.",
+   "nhl.offfield_base_rate": "Removed: the draft occurring on schedule is near-certain; postponement is a settlement edge case in d1.",
+   "nhl.reference_class_hazard": "Removed: its draft use duplicated the slot-agreement calibration already defined in prospect_consensus_ranking."
+  }
  },
  "unreg:playoff_series_aggregate": {
   "reviewer": "NHL_new author (playoff_series_aggregate)",
   "review_date": "2026-11-07",
   "catalog_entry": {
-   "label": "NHL playoff series aggregate outcomes (series total goals and related series-length props)",
+   "label": "NHL playoff series aggregate outcomes (series total goals, length, exact score, game spread, OT count, 3-0 comeback)",
    "blueprint": "season_outcome",
    "contract_types": [
-    "NHL Series Total Goals"
+    "NHL Series Total Goals",
+    "NHL Series Total Games",
+    "NHL Series Exact Score",
+    "NHL Series Game Spread",
+    "NHL Series Overtime",
+    "NHL Championship Series Score",
+    "NHL 3-0 Series Comeback"
    ],
-   "target": "A quantity added up across one best-of-7 playoff series (e.g. total goals in all games) compared with a threshold. Its value depends jointly on the number of games played (4-7) and on scoring in each game.",
-   "mechanism": "The total is a sum over a random number of games: the rating gap and goaltending set per-game win probabilities and therefore the 4-7 game length distribution, while the same quantities set the per-game goal mean, which is lowered by the playoff environment and shifted by series state, adjustments and overtime. Closer series run longer and produce more goals, so length and goals are jointly distributed.",
+   "target": "A quantity defined over a whole best-of-7 playoff series (total goals, games played, exact winner-and-length score, margin in games, count of overtime games), or a path event across all series of one postseason (any 0-3 comeback). Each depends on the joint distribution of the winner and length (4-7 games) and, for goals and OT, on per-game scoring and ties.",
+   "mechanism": "Per-game win probabilities from team ratings (with shared posterior uncertainty), goaltending and the 2-2-1-1-1 home pattern give the joint winner-by-length pmf that settles series games, exact score, game spread and championship score. Series total goals add per-game scoring, lowered by the playoff environment and shifted by series state, with every regulation tie adding exactly one sudden-death goal. The OT-game count uses regulation-tie probability with within-series dependence. The league-wide 0-3 comeback event aggregates the path probability over the bracket.",
    "inputs": [
     {
      "id": "nhl.series_context",
@@ -728,8 +927,8 @@
     },
     {
      "id": "nhl.series_game_count_pmf",
-     "role": "primary",
-     "why": "The probability of 4, 5, 6 or 7 games sets how many games contribute to the total."
+     "role": "secondary",
+     "why": "Model output, not data: the joint winner-by-length pmf computed from ratings, goalies, venue and the dependence parameter; it maps directly to games, score and spread settlement."
     },
     {
      "id": "nhl.ratings",
@@ -757,11 +956,6 @@
      "why": "Trailing, elimination and game-seven states shift the per-game goal rate in ways the series score reveals."
     },
     {
-     "id": "nhl.playoff_ot_length_distribution",
-     "role": "secondary",
-     "why": "Overtime periods add goals and games in the sum, with a frequency that depends on tie risk."
-    },
-    {
      "id": "nhl.series_adjustment_regime",
      "role": "secondary",
      "why": "Adjustments across the series change scoring by game index, which matters for later games in a long series."
@@ -779,7 +973,7 @@
     {
      "id": "nhl.series_goalie_volatility",
      "role": "secondary",
-     "why": "Goaltending variance beyond binomial widens the series length distribution and the goal total."
+     "why": "Goaltending variance beyond binomial changes how lopsided individual games are; the direction of its effect on length depends on which side's goalie runs hot."
     },
     {
      "id": "nhl.pace",
@@ -804,90 +998,184 @@
     {
      "id": "nhl.empty_net",
      "role": "context",
-     "why": "Empty-net goals add to totals and are more frequent in elimination games."
+     "why": "Explicit state-conditional empty-net module; dispersion is then fitted on non-empty-net goals so empty-net goals are not counted twice."
     },
     {
      "id": "nhl.league_scoring_environment",
      "role": "context",
      "why": "The year-level scoring level recalibrates the goal mean of every game."
+    },
+    {
+     "id": "nhl.reg_tie_model",
+     "role": "primary",
+     "why": "Probability a game is tied after regulation decides how often a game adds exactly one OT goal and is the per-game rate for the series OT-count contract."
+    },
+    {
+     "id": "nhl.series_ot_count_dependence",
+     "role": "primary",
+     "why": "Beta-binomial overdispersion of OT-game counts within a series sets the tail for 'at least k games go to overtime' strikes."
+    },
+    {
+     "id": "nhl.rating_posterior_uncertainty",
+     "role": "primary",
+     "why": "Uncertainty in the pair's strength and scoring rate is shared by every game, adding variance to totals that grows with the square of games played."
+    },
+    {
+     "id": "nhl.goalie_start_forecast",
+     "role": "secondary",
+     "why": "Playoff starter changes after a bad game shift per-game goals and win probability for the remaining games of the series."
+    },
+    {
+     "id": "nhl.rest_travel",
+     "role": "secondary",
+     "why": "Days between playoff games vary from one to three or more, and cross-country travel within a series changes per-game strength."
+    },
+    {
+     "id": "nhl.bracket_path_difficulty",
+     "role": "secondary",
+     "why": "Which matchups occur in later rounds drives the championship exact-score market listed before the Final and the league-wide comeback event."
+    },
+    {
+     "id": "nhl.series_game_dependence",
+     "role": "secondary",
+     "why": "Fitted sign and size of game-to-game dependence within a series; the only data-estimated quantity behind the length pmf beyond per-game probabilities."
+    },
+    {
+     "id": "nhl.series_state_win_prob_shift",
+     "role": "secondary",
+     "why": "Win probability of a team facing elimination or trailing 0-3 differs from its pre-series rate, which drives comeback and 7-game probabilities."
     }
    ],
    "interactions": [
     {
      "inputs": [
       "nhl.ratings",
-      "nhl.series_game_count_pmf"
+      "nhl.rating_posterior_uncertainty"
      ],
-     "hypothesis": "A larger rating gap shortens the series (fewer games to add) while it also raises the favourite's scoring and lowers the underdog's, so total goals depend on length and per-game mean jointly: the product E[N]*mu is not the sum of separate effects, since length and goals are correlated through the gap."
+     "hypothesis": "Uncertainty about the gap is shared by all games: averaging the length pmf over the rating posterior lowers expected length near parity and adds games-squared variance to series total goals."
     },
     {
      "inputs": [
       "nhl.goalie_quality",
       "nhl.series_goalie_volatility"
      ],
-     "hypothesis": "An elite goalie lowers goals against, but when goalie volatility is high a hot or cold streak shifts both the number of games and the goals per game in the same direction, so mean quality and volatility multiply in effect on the total's spread."
+     "hypothesis": "A hot favourite goalie shortens the series and lowers goals per game (both reduce the total); a hot underdog goalie lowers goals per game but lengthens the series, so the effects on the total offset."
     },
     {
      "inputs": [
       "nhl.series_state_scoring_shift",
       "nhl.empty_net"
      ],
-     "hypothesis": "Empty-net goals are rare in neutral states but common when a team trails by one late in an elimination game; the empty-net contribution to goals is concentrated in the elimination states, so its effect depends on series state."
+     "hypothesis": "Empty-net goals concentrate in late one-goal deficits of elimination games, so their contribution to series goals depends on series state."
     },
     {
      "inputs": [
-      "nhl.playoff_ot_length_distribution",
-      "nhl.ratings"
+      "nhl.reg_tie_model",
+      "nhl.series_ot_count_dependence"
      ],
-     "hypothesis": "Overtime probability peaks when teams are closely matched and the regulation tie probability is highest; below a rating-gap threshold OT frequency is flat, above it falls, so the rating gap acts on OT goals nonlinearly."
+     "hypothesis": "The OT-game count is a beta-binomial over games played with per-game rate from the tie model; closely matched pairs have both higher tie rates and longer series, so the count's tail rises faster than either alone."
+    },
+    {
+     "inputs": [
+      "nhl.series_state_win_prob_shift",
+      "nhl.series_game_dependence"
+     ],
+     "hypothesis": "A 0-3 comeback needs four straight wins by the trailing team; its probability depends on the trailing team's state-shifted win rate compounded by the sign of game-to-game dependence."
     }
    ]
   },
   "contract": {
-   "settlement_definition": "No rules text was sampled for KXNHLSERIESTOTALGOAL (NHL Series Total Goals). From the title, the contract probably settles on the number of goals scored across all games of a playoff series versus a threshold; the strike construction, whether overtime goals count, what happens to an unfinished series and the source of truth are unverified.",
-   "rules_verification": "NOT_VERIFIED_NO_RULES_TEXT",
-   "rules_evidence": [],
-   "variants_and_edge_cases": [
-    "Overtime goals: playoff overtime is sudden-death with no shootout; the contract may count all goals or regulation only, which changes totals in about a fifth of games.",
-    "Series length is random (4-7 games): the threshold may be a single total across variable length, so a sweep is mechanically lower than a seven-game series.",
-    "Siblings (Series Total Games, Game Spread, Exact Score, Series Overtime, KXNHLSERIESTOTALGOALS) are not in the sampled pack and may use different strikes or per-team goals."
+   "settlement_definition": "Seven series, all with rules text. KXNHLSERIESTOTALGOAL: YES if the two teams 'collectively score at least' N goals across the series (OT goals not mentioned; read as all goals). KXNHLSERIESGAMES: YES if more than 6.5 games are played (i.e. a game 7). KXNHLSERIESSCORE and KXNHLFINALSEXACT: YES on an exact winner-and-score such as 4-3. KXNHLSERIESSPREAD: YES if the named team wins by more than 2.5 games (4-0 or 4-1). KXNHLSERIESOT: YES if at least k games of the Final go to overtime. KXNHL30COMEBACK: YES if any team in the postseason wins a series after trailing 0-3. No rule states the source of truth or treatment of an unfinished series.",
+   "rules_verification": "PARTIALLY_VERIFIED",
+   "rules_evidence": [
+    {
+     "ticker": "KXNHLSERIESTOTALGOAL",
+     "quote": "collectively score at least 50 goals, then the market resolves to Yes",
+     "establishes": "Threshold on combined goals across the whole series (>= N, integer strike); overtime goals are not mentioned, neither included nor excluded."
+    },
+    {
+     "ticker": "KXNHLSERIESGAMES",
+     "quote": "If above 6.5 games are played in the Vegas Golden Knights vs Carolina Hurricanes Stanley Cup series",
+     "establishes": "Series-length over/under at 6.5, so YES iff the series reaches game 7; depends only on the length pmf."
+    },
+    {
+     "ticker": "KXNHLSERIESSCORE",
+     "quote": "If the series score is Vegas Golden Knights wins 4-3",
+     "establishes": "Exact joint outcome of winner and length; one cell of the 8-cell winner-by-length pmf."
+    },
+    {
+     "ticker": "KXNHLSERIESSPREAD",
+     "quote": "If Vegas Golden Knights wins by more than 2.5 games",
+     "establishes": "Game margin above 2.5 means the named team wins 4-0 or 4-1; sum of two pmf cells."
+    },
+    {
+     "ticker": "KXNHLSERIESOT",
+     "quote": "If at least 5 games go to overtime in the Vegas Golden Knights vs Carolina Hurricanes Stanley Cup",
+     "establishes": "Count of overtime games within one series compared with an integer strike (>=5); needs the tie rate and series length jointly."
+    },
+    {
+     "ticker": "KXNHL30COMEBACK",
+     "quote": "they lose the first three games of a series (going down 0-3), and then win four consecutive games to win the series 4-3",
+     "establishes": "League-wide path event over every series of the 2026 playoffs; requires the 0-3 start and four straight wins."
+    },
+    {
+     "ticker": "KXNHLFINALSEXACT",
+     "quote": "If Florida wins 4-3 in the 2025 Pro Hockey Championship series",
+     "establishes": "Exact winner-and-length score for the championship series, which may list before the finalists are known."
+    }
    ],
-   "settlement_data_source": "Presumably official NHL game results at NHL.com; unverified for this series."
+   "variants_and_edge_cases": [
+    "Overtime goals in KXNHLSERIESTOTALGOAL: the rule says 'collectively score', which naturally includes sudden-death OT goals (exactly one per OT game, no shootouts in the playoffs); not stated explicitly.",
+    "Markets listed mid-series: goals, games and OT games already played count toward the strike, so the model must condition on the banked state at the listing timestamp.",
+    "KXNHLFINALSEXACT and any pre-round listing: the named team may not reach the series, which then presumably settles NO; requires P(reach) times P(exact score | matchup).",
+    "KXNHL30COMEBACK aggregates up to 15 series across four rounds; a single comeback anywhere settles YES, and later-round series exist only conditionally on earlier results.",
+    "A series not completed (suspension, cancellation) and the source of truth are not addressed by any sampled rule; KXNHLSERIESTOTALGOALS (plural) appears in the ledger narrative but not in the live series of this pack."
+   ],
+   "settlement_data_source": "Not stated in the sampled rules; presumably official NHL game results (NHL.com / NHL API boxscores). Treated as unresolved (p1).",
+   "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "The series total is a compound sum: the number of games played (4 to 7) times, in effect, per-game goals, where both depend on the same pair of teams. Team and goalie quality produce per-game win probabilities, which, with the 2-2-1-1-1 home pattern and correlated goaltending, give the length distribution; the same quality and playoff environment give a goal mean per game that shifts with series state, coaching adjustment and overtime. Because the sum has a random number of terms that correlates with the per-game mean, its distribution is wider and skewed relative to a fixed-length total.",
+   "summary": "Every contract here is a function of one best-of-7 sequence. Per-game win probabilities from ratings, goaltending, rest and venue, with the 2-2-1-1-1 home pattern, give a joint pmf over winner and length (8 cells): games over/under, exact score, game spread and the championship score read cells directly. Uncertainty about the pair's strength is shared across games; averaging over it makes series more lopsided (shorter), not longer, while any negative game-to-game dependence would lengthen them, so the sign is empirical. Total goals are a random-length sum of overdispersed per-game totals, where each regulation tie adds exactly one sudden-death goal. The OT-game count is a dependent sum of tie indicators. The league-wide 0-3 comeback event combines path probabilities over the bracket.",
    "stages": [
     {
      "id": "s1",
      "name": "Per-game strength and goal means for the pair",
-     "description": "Each game's expected goals for and against come from the two teams' attack and suppression quality, the starting goalies, special teams and the playoff scoring environment, which runs below the regular season. This stage produces the mean total per game and the home-away split; it is where team ratings, shot quality and goaltending enter, and it does not yet know how many games will be played.",
+     "description": "Each game's expected goals for and against come from the two teams' attack and suppression quality, the confirmed starter, special teams, rest days and the playoff scoring environment. Strength is a posterior, not a point: its uncertainty is common to all games of the series. Injuries and goalie switches during the series change the inputs for remaining games only.",
      "distribution": "Poisson-like goal counts per team with overdispersion and a positive home-away correlation.",
      "categories": [
       "talent_strength",
       "efficiency_conversion",
-      "pace_volume"
+      "pace_volume",
+      "distribution_variance"
      ],
      "input_ids": [
       "nhl.ratings",
+      "nhl.rating_posterior_uncertainty",
       "nhl.xg_for",
       "nhl.xg_against",
       "nhl.goalie_quality",
+      "nhl.goalie_start_forecast",
+      "nhl.injuries_pit",
+      "nhl.rest_travel",
       "nhl.pace",
       "nhl.special_teams",
-      "nhl.league_scoring_environment"
+      "nhl.league_scoring_environment",
+      "nhl.total_goal_dispersion"
      ]
     },
     {
      "id": "s2",
-     "name": "Win probability, home-ice sequence and series length",
-     "description": "Per-game win probabilities, combined with the 2-2-1-1-1 home-ice pattern and dependence between games, determine whether the series ends in 4, 5, 6 or 7 games. Closer matchups mean longer series, so the same pair rating gap that sets per-game goals also sets the number of games. Series are positively correlated through goaltending runs, so seven-game tails are thicker than binomial.",
-     "distribution": "Discrete distribution on {4,5,6,7} games, skewed toward 5-6 for lopsided pairs and toward 6-7 for even pairs.",
+     "name": "Joint winner-by-length pmf from the game sequence",
+     "description": "Home and away win probabilities, the 2-2-1-1-1 home-ice pattern and any within-series dependence give P(winner, length) over 8 cells. Mixing over shared rating uncertainty spreads the effective per-game probability away from 0.5, which lowers E[length] (5.81 games at iid parity) and the game-7 share; only negative dependence such as bounce-back would raise them. The sign is estimated, not assumed. Elimination-state shifts in win probability alter the late cells.",
+     "distribution": "Discrete pmf over 8 winner-by-length cells; P(7 games) at most 0.3125 under iid parity and lower with heterogeneity.",
      "categories": [
       "game_context_script",
       "distribution_variance"
      ],
      "input_ids": [
       "nhl.series_game_count_pmf",
+      "nhl.series_game_dependence",
+      "nhl.series_state_win_prob_shift",
       "nhl.series_context",
       "nhl.series_goalie_volatility"
      ]
@@ -911,18 +1199,49 @@
     },
     {
      "id": "s4",
-     "name": "Overtime periods and settlement counting",
-     "description": "Tied games go to sudden-death five-on-five overtime periods with no shootout, so each OT game adds at least one goal and possibly several periods of events. Whether the contract counts overtime goals, and when a series that is stopped, postponed or not completed settles, decides the mapped total. The OT frequency depends on tie probability, which rises with evenly matched teams.",
-     "distribution": "Geometric number of overtime periods per tied game; OT adds one deciding goal plus any pre-OT regulation goals.",
+     "name": "Regulation ties, overtime games and the OT goal",
+     "description": "A playoff game tied after 60 minutes continues in 20-minute 5v5 sudden-death periods with no shootout, so it adds exactly one goal however many periods it takes, and the series total equals regulation goals plus the number of OT games. The OT-game count for the overtime contract is a sum of tie indicators over games played, with per-game rate from the regulation-tie model and within-series overdispersion; ties are more likely in closely matched pairs, which also play longer series.",
+     "distribution": "Bernoulli tie per game (~0.2-0.25); OT count beta-binomial given length; OT adds a deterministic +1 goal per tied game.",
+     "categories": [
+      "game_context_script",
+      "officiating_rules",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nhl.reg_tie_model",
+      "nhl.series_ot_count_dependence",
+      "nhl.playoff_context"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Bracket and league-wide path aggregation",
+     "description": "The championship exact-score market can list before the finalists are known, and the 0-3 comeback event spans up to 15 series whose later-round matchups depend on earlier results. Both need a bracket simulation: P(team reaches series) from the bracket path, then the series-level path probability. A team down 0-3 is usually the weaker side, which is why the historical comeback rate (four completions: 1942 TOR, 1975 NYI, 2010 PHI, 2014 LAK) sits far below the iid parity value of 1/16.",
+     "distribution": "Union over series of rare path events; approximately 1 - prod(1 - p_s) with dependence through shared bracket outcomes.",
+     "categories": [
+      "opponent_matchup",
+      "situational_schedule_motivation",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nhl.bracket_path_difficulty",
+      "nhl.series_state_win_prob_shift",
+      "nhl.rating_posterior_uncertainty"
+     ]
+    },
+    {
+     "id": "s6",
+     "name": "Mapping series outcomes to each contract and the banked state",
+     "description": "Each series reads a different functional of the simulation: total goals compares the summed goals (regulation plus one per OT game) with an integer strike, games over 6.5 is P(game 7), spread above 2.5 is P(4-0 or 4-1 for the named team), exact score is one cell, and the OT market compares the OT count with k. A market opened mid-series conditions on goals, games and OT games already banked.",
+     "distribution": "Deterministic functionals of the simulated path; integer strikes make each total a step function of the path.",
      "categories": [
       "settlement_contract",
-      "officiating_rules",
       "game_context_script"
      ],
      "input_ids": [
-      "nhl.playoff_ot_length_distribution",
-      "nhl.playoff_context",
-      "nhl.injuries_pit"
+      "nhl.series_context",
+      "nhl.series_game_count_pmf",
+      "nhl.series_ot_count_dependence"
      ]
     }
    ],
@@ -941,25 +1260,28 @@
      "status": "COVERED",
      "input_ids": [
       "nhl.series_adjustment_regime",
-      "nhl.special_teams"
+      "nhl.special_teams",
+      "nhl.bracket_path_difficulty"
      ],
-     "note": "Pair-specific special-teams and adjustment effects are the matchup channel across a repeated series."
+     "note": "Pair-specific special teams and adjustments within a series; bracket path sets which pairs meet."
     },
     "role_personnel": {
      "status": "COVERED",
      "input_ids": [
       "nhl.injuries_pit",
+      "nhl.goalie_start_forecast",
       "nhl.goalie_quality"
      ],
-     "note": "Availability of key skaters and the starting goalie changes the pair's goal mean; individual player roles are second-order for a series sum."
+     "note": "Availability of key skaters and who starts in goal change the pair's per-game rates."
     },
     "availability_news": {
      "status": "COVERED",
      "input_ids": [
       "nhl.injuries_pit",
+      "nhl.goalie_start_forecast",
       "nhl.series_context"
      ],
-     "note": "Mid-series injuries and goalie changes change per-game strength; the series state tracks the lineup."
+     "note": "Mid-series injuries and starter changes change remaining-game strength."
     },
     "coaching_scheme": {
      "status": "COVERED",
@@ -980,11 +1302,12 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nhl.series_game_count_pmf",
+      "nhl.reg_tie_model",
       "nhl.series_state_scoring_shift",
-      "nhl.empty_net"
+      "nhl.empty_net",
+      "nhl.series_context"
      ],
-     "note": "Series trajectory, game index and empty-net behaviour are the script of the aggregate."
+     "note": "Regulation ties, series state, empty-net behaviour and banked state are the script of the aggregate."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -992,7 +1315,7 @@
       "nhl.pace",
       "nhl.series_game_count_pmf"
      ],
-     "note": "Volume has two scales: attempts per game and number of games, and the second is specific to this contract."
+     "note": "Two volume scales: attempts per game and the number of games (from the length pmf, a model output)."
     },
     "efficiency_conversion": {
      "status": "COVERED",
@@ -1007,18 +1330,22 @@
      "status": "COVERED",
      "input_ids": [
       "nhl.total_goal_dispersion",
-      "nhl.series_goalie_volatility",
-      "nhl.series_game_count_pmf"
+      "nhl.rating_posterior_uncertainty",
+      "nhl.series_ot_count_dependence",
+      "nhl.series_game_dependence",
+      "nhl.series_goalie_volatility"
      ],
-     "note": "The sum of a random number of overdispersed games gives a compound distribution with heavier tails."
+     "note": "Per-game overdispersion, shared strength uncertainty (scales with games squared), OT-count overdispersion and game dependence."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
       "nhl.series_context",
-      "nhl.series_state_scoring_shift"
+      "nhl.series_state_scoring_shift",
+      "nhl.series_state_win_prob_shift",
+      "nhl.rest_travel"
      ],
-     "note": "Elimination, rest between games and travel in the round structure affect goals game by game."
+     "note": "Elimination states, rest days between games and travel inside the 2-2-1-1-1 pattern."
     },
     "officiating_rules": {
      "status": "COVERED",
@@ -1026,24 +1353,26 @@
       "nhl.penalty_rates",
       "nhl.playoff_context"
      ],
-     "note": "Playoff crews call fewer penalties, and sudden-death overtime format is the rule that creates multi-period games."
+     "note": "Playoff crews call fewer penalties; sudden-death OT with no shootout fixes the OT goal at exactly one."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
-      "nhl.playoff_ot_length_distribution"
+      "nhl.series_game_count_pmf",
+      "nhl.series_ot_count_dependence",
+      "nhl.series_context"
      ],
-     "note": "OT counting and series-completion rules unknown without rules text; the input allows both regulation-only and total-goal conventions."
+     "note": "Each series maps to a functional of the winner-length pmf, OT count or goal sum; OT goal counting for totals and source of truth unresolved (p1)."
     }
    }
   },
   "new_inputs": {
    "nhl.series_game_count_pmf": {
-    "label": "Series length distribution (P of 4, 5, 6, 7 games) from per-game win probabilities and home-ice pattern",
+    "label": "[Model output, not raw data] Joint series winner-by-length pmf (8 cells) from per-game probabilities and home-ice pattern",
     "category": "distribution",
     "mechanism": "Builds the probability that a best-of-seven ends in exactly 4, 5, 6 or 7 games from each game's win probability, with the 2-2-1-1-1 home sequence and between-game dependence.",
-    "rationale": "Total goals is a sum over a random number of games, so the length distribution is the first-order driver of the mean. The subtlety is that games within a series are not independent Bernoulli draws: goaltending streaks, injuries and adjustments create correlation that fattens the 7-game tail relative to a binomial.",
-    "measurement": "For each series compute per-game home win probabilities p_h(g) from team ratings, goalie, injuries and venue (as-of the pre-series timestamp), then enumerate paths through 2-2-1-1-1 to get P(len=n). Add dependence by mixing: with weight w=0.25 apply a common series-level shock to the log-odds with sd 0.15 (fit on 2005-present series, check the 7-game share ~ 20% of series). Report the length pmf and its expected value; recompute after each game conditional on the score.",
+    "rationale": "Games, exact-score, spread and championship-score contracts settle directly on cells of this pmf, and total goals sum over its length. It is computed from ratings, goalies and venue, so it must not be counted as independent information next to them. Shared rating uncertainty makes series more lopsided (shorter) rather than longer; whether game-to-game dependence offsets that is estimated in series_game_dependence.",
+    "measurement": "For each series compute home/away win probabilities from ratings drawn from the rating posterior, goalie, injuries and rest (as of the pre-series timestamp), apply series_state_win_prob_shift in elimination states and the fitted dependence from series_game_dependence, and enumerate or simulate 20,000 paths through 2-2-1-1-1 to get P(winner, length). Calibrate against 2005-06 onward series: historical game-7 share and sweep share by pre-series favourite bucket. Recompute after each game conditional on the series score.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NHL API schedule and results",
@@ -1056,8 +1385,8 @@
      "team ratings by date",
      "home-ice sequence by round"
     ],
-    "why": "Supplies the distribution of the number of summed games, which multiplies the per-game goal mean.",
-    "role": "primary"
+    "why": "Supplies the winner-by-length cells used by games, score and spread settlement and the number of summed games for goals.",
+    "role": "secondary"
    },
    "nhl.series_state_scoring_shift": {
     "label": "Series-state effect on per-game goal rate (elimination, trailing team, game-7 intensity)",
@@ -1078,25 +1407,6 @@
     "why": "Provides the conditional adjustment of the summed goals per game, which cannot be read from the single-game total archetype.",
     "role": "secondary"
    },
-   "nhl.playoff_ot_length_distribution": {
-    "label": "Playoff overtime frequency and length (number of 20-minute periods) and goals added",
-    "category": "game_state",
-    "mechanism": "Models how many extra periods each tied game plays and the goals scored in them, since playoff overtime is sudden-death, 5v5 and can run multiple periods.",
-    "rationale": "Series totals can include overtime goals and extra periods; one overtime goal is a game decided by exactly one goal added to regulation total, and a multi-overtime game adds more events. Whether these goals count for settlement is unverified, but exposure is material in close series.",
-    "measurement": "From playoff games 2005-present, compute per game P(OT) as a function of rating gap and series state, the distribution of OT periods played (1, 2, 3+) with geometric tail fit on the per-period hazard, and mean goals in overtime (exactly one by sudden death, plus any regulation-tied goals count preserved). Shrink team-level OT propensity with k=30 games; separate regulation goals from OT goals so both settlement conventions can be priced.",
-    "pregame_knowable": "yes",
-    "free_sources": [
-     "NHL API game summaries and play-by-play",
-     "Hockey-Reference playoff OT history"
-    ],
-    "registry_ids": [],
-    "raw_data": [
-     "playoff game periods played, OT goals, game ids",
-     "regulation tie status by game"
-    ],
-    "why": "Separates regulation goals from overtime goals, which matter if the strike counts only regulation or all goals.",
-    "role": "secondary"
-   },
    "nhl.series_adjustment_regime": {
     "label": "Coaching adjustment and matchup learning across games in a series",
     "category": "matchup",
@@ -1105,17 +1415,54 @@
     "measurement": "Compute from playoff games 2010-present the average change in goals per game from game 1-2 to game 5-7 conditioning on round, and the team coach-level adjustment effect measured as residual of scoring versus rating prediction at game index k. Use a team-coach random effect with shrinkage k=20 games, windows over four seasons, and exclude games played after a goalie change from the baseline.",
     "pregame_knowable": "partial",
     "free_sources": [
-     "NHL API play-by-play",
-     "Hockey-Reference playoffs game logs",
-     "Daily Faceoff line archives"
+     "NHL API play-by-play and shift charts (line combinations derived from shared shifts)",
+     "Hockey-Reference playoff game logs"
     ],
     "registry_ids": [],
     "raw_data": [
      "playoff game results by game index",
-     "line combinations and goalie by game",
+     "shift charts for line combinations, starters from boxscores",
      "coach tenure"
     ],
     "why": "Allows scoring to drift with game index rather than assuming constant per-game goals across the series.",
+    "role": "secondary"
+   },
+   "nhl.series_game_dependence": {
+    "label": "Within-series game-to-game dependence of results (sign and size)",
+    "category": "distribution",
+    "mechanism": "Estimates whether, beyond fixed per-game probabilities, the result of game g changes the win probability of game g+1 (positive: momentum; negative: bounce-back or loser-adjusts).",
+    "rationale": "The two candidate mechanisms push length in opposite directions: momentum and shared strength make series shorter, bounce-back lengthens them. Treating any dependence as 'fattening the 7-game tail' gets the sign wrong for shared shocks; it must be estimated after removing the shared-strength mixing.",
+    "measurement": "On playoff series 2005-06 onward, fit a logit for game g outcome with pre-series rating-implied log-odds, home flag, and lagged result of game g-1 (and series score), with the series-level rating posterior integrated out; the lag coefficient gives the dependence. Shrink toward 0 with a normal prior sd 0.15; compare the predicted game-7 and sweep shares with the observed shares as a check of sign.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NHL API schedule and results",
+     "Hockey-Reference playoff series history"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff game results in order with series id",
+     "pre-series team ratings"
+    ],
+    "why": "Determines whether the length pmf should be shifted toward or away from 6-7 games relative to the mixed-iid model.",
+    "role": "secondary"
+   },
+   "nhl.series_state_win_prob_shift": {
+    "label": "Series-state shift in per-game win probability (elimination, trailing 0-3 or 1-3, closeout games)",
+    "category": "game_state",
+    "mechanism": "Adjusts each team's per-game win probability for the series state entering the game, such as facing elimination or trying to close out.",
+    "rationale": "The comeback contract depends on the trailing team winning four straight; teams down 0-3 are selected to be weaker, so the raw historical rate mixes selection and any genuine desperation effect. Separating the two needs the pre-series rating as a control.",
+    "measurement": "From playoff games 2005-06 onward (plus 1987-2005 for the rare 0-3 states, with era flag), logit of game outcome on rating-implied log-odds, home flag and state dummies (facing elimination, closeout, 0-3, 1-3, 3-3); shrink state effects toward 0 with k=40 games per state. Report shift in log-odds by state; validate against the four completed 0-3 comebacks in NHL history and the count of 0-3 deficits.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Hockey-Reference playoff series and game logs",
+     "NHL API results"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff game results with series score entering the game",
+     "pre-series ratings or point percentages"
+    ],
+    "why": "Sets late-game cells of the length pmf and the per-series probability of a 0-3 comeback.",
     "role": "secondary"
    }
   },
@@ -1134,7 +1481,7 @@
    },
    "nhl.total_goal_dispersion": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Gives the per-game goal variance and correlation between teams; without it the series sum variance would be understated."
+    "reason": "Per-game variance and home/away correlation; its catalog label includes empty-net goals, so when the explicit empty_net module is active the dispersion is fitted on non-empty-net goals to avoid double counting."
    },
    "nhl.playoff_context": {
     "verdict": "KEEP_PRIMARY",
@@ -1150,7 +1497,7 @@
    },
    "nhl.series_goalie_volatility": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Directly relevant: goalie performance clusters within series, widening both length and total relative to independent games."
+    "reason": "Goalie performance clusters within series; widens the goal total and changes length in a direction that depends on whether the favourite's or underdog's goalie runs hot."
    },
    "nhl.pace": {
     "verdict": "KEEP_SECONDARY",
@@ -1170,31 +1517,55 @@
    },
    "nhl.empty_net": {
     "verdict": "KEEP_CONTEXT",
-    "reason": "Empty-net goals are a small additive component of totals that rises with elimination and one-goal games; context for the tail."
+    "reason": "Explicit state-conditional empty-net module for elimination and one-goal states; kept only with total_goal_dispersion refitted net of empty-net goals, otherwise drop as duplicate."
    },
    "nhl.league_scoring_environment": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Calibrates the level of goals per game by season; shifts the mean but does not differentiate series."
+   },
+   "nhl.reg_tie_model": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Regulation-tie probability is the rate of OT games, hence of the +1 sudden-death goal in totals and the per-game rate for the OT-count contract."
+   },
+   "nhl.series_ot_count_dependence": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Beta-binomial overdispersion of OT-game counts directly sets the tail for KXNHLSERIESOT strikes like 'at least 5 games go to overtime'."
+   },
+   "nhl.rating_posterior_uncertainty": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Shared uncertainty in the pair's strength adds games-squared variance to total goals and shortens expected length when integrated over."
+   },
+   "nhl.goalie_start_forecast": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Playoff starter changes are rarer than in the regular season but decisive when they happen; its back-to-back rotation logic mostly does not apply in playoffs."
+   },
+   "nhl.rest_travel": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Rest between playoff games ranges from one to three or more days and cross-country travel occurs within series; modest per-game effect."
+   },
+   "nhl.bracket_path_difficulty": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Only needed for markets listed before the matchup is fixed (championship score) and for the league-wide 0-3 comeback event."
    }
   },
   "interactions": [
    {
     "inputs": [
      "nhl.ratings",
-     "nhl.series_game_count_pmf"
+     "nhl.rating_posterior_uncertainty"
     ],
-    "form": "joint-distribution",
-    "mechanism": "A larger rating gap shortens the series (fewer games to add) while it also raises the favourite's scoring and lowers the underdog's, so total goals depend on length and per-game mean jointly: the product E[N]*mu is not the sum of separate effects, since length and goals are correlated through the gap.",
-    "how_to_test": "Compare series-total model with independent length and goals vs a joint simulation, on 2005-present series, by held-out log-loss in bins of rating gap."
+    "form": "concave",
+    "mechanism": "Expected length and P(game 7) are concave in per-game win probability near parity, so integrating over the rating posterior lowers both; the same shared uncertainty raises the variance of series goals in proportion to games squared, widening both total-goal tails.",
+    "how_to_test": "Compare predicted game-7 share, sweep share and series-goal variance from point ratings vs posterior draws on 2005-06 onward series, by log-loss and PIT histograms."
    },
    {
     "inputs": [
      "nhl.goalie_quality",
      "nhl.series_goalie_volatility"
     ],
-    "form": "multiplicative",
-    "mechanism": "An elite goalie lowers goals against, but when goalie volatility is high a hot or cold streak shifts both the number of games and the goals per game in the same direction, so mean quality and volatility multiply in effect on the total's spread.",
-    "how_to_test": "Add goalie_quality x volatility to a series-total regression and compare residual variance by volatility tercile."
+    "form": "conditional",
+    "mechanism": "A hot favourite goalie both shortens the series and lowers goals per game, so both channels cut the total; a hot underdog goalie lowers goals per game but lengthens the series, so the channels offset. The interaction is conditional on which side's goalie deviates.",
+    "how_to_test": "Regress series total and length on favourite-goalie and underdog-goalie in-series GSAx separately and test opposite signs on length."
    },
    {
     "inputs": [
@@ -1207,12 +1578,12 @@
    },
    {
     "inputs": [
-     "nhl.playoff_ot_length_distribution",
-     "nhl.ratings"
+     "nhl.reg_tie_model",
+     "nhl.series_ot_count_dependence"
     ],
-    "form": "threshold",
-    "mechanism": "Overtime probability peaks when teams are closely matched and the regulation tie probability is highest; below a rating-gap threshold OT frequency is flat, above it falls, so the rating gap acts on OT goals nonlinearly.",
-    "how_to_test": "Estimate OT share of playoff games by rating-gap decile and compare piecewise fit to linear."
+    "form": "joint-distribution",
+    "mechanism": "OT-game count is beta-binomial over games played with per-game rate from the tie model; evenly matched pairs have higher tie rates and longer series at once, so the upper tail of the count (5+ OT games) rises much faster than either factor alone.",
+    "how_to_test": "Compare observed OT-count distribution of 2005-06 onward series with independent-length vs joint-length simulations, bucketed by pre-series rating gap."
    },
    {
     "inputs": [
@@ -1222,12 +1593,21 @@
     "form": "regime-switch",
     "mechanism": "Early games reflect the regular-season matchup, while later games reflect adjustment and heavier playoff structure (fewer penalties, tighter checking); scoring drifts between regimes by game index.",
     "how_to_test": "Fit goals per game by game index with round fixed effects and test a break between games 1-3 and 4-7."
+   },
+   {
+    "inputs": [
+     "nhl.series_state_win_prob_shift",
+     "nhl.series_game_dependence"
+    ],
+    "form": "multiplicative",
+    "mechanism": "A 0-3 comeback is four consecutive wins by the trailing team: the per-game state-shifted win rate is raised to the fourth power, and any bounce-back dependence multiplies each step, so small shifts compound strongly.",
+    "how_to_test": "Predict the count of 0-3 comebacks and of 0-3 to 3-3 recoveries over 1987-2026 with and without state shift and dependence terms; compare with observed counts."
    }
   ],
   "nonlinearities": [
    {
     "input_id": "nhl.series_game_count_pmf",
-    "shape": "Expected series length rises concavely as per-game win probability moves toward 50 percent, reaching about 5.8 games at parity",
+    "shape": "Expected series length rises concavely as per-game win probability approaches 50 percent, reaching 5.8125 games at iid parity",
     "why": "The mean of a best-of-seven saturates near parity and falls quickly as one team becomes a heavy favourite, so goals scale concavely with team balance."
    },
    {
@@ -1236,9 +1616,14 @@
     "why": "Goals saved above expected measured on regular-season shots tends to regress strongly in playoffs; extreme values are shrunk heavily, which makes the effect saturating."
    },
    {
-    "input_id": "nhl.playoff_ot_length_distribution",
-    "shape": "Number of overtime periods has a geometric (heavy right) tail, with each extra period adding a constant hazard-based chance",
-    "why": "Sudden-death overtime has near-constant per-period scoring hazard, so P(k periods) decays geometrically, and the contribution of long games to the sum is small but not negligible."
+    "input_id": "nhl.reg_tie_model",
+    "shape": "Series total = regulation goals + number of tied games: each tie adds a deterministic +1, a step that interacts with integer strikes",
+    "why": "With sudden-death OT the period count is irrelevant; only P(tie) per game moves the total, and near an integer strike one extra OT game flips settlement."
+   },
+   {
+    "input_id": "nhl.series_state_win_prob_shift",
+    "shape": "Comeback probability scales as the fourth power of the trailing team's per-game win rate",
+    "why": "Four consecutive wins are required, so a 0.05 change in per-game probability around 0.45 moves the comeback probability by roughly 40 percent relative."
    }
   ],
   "required_data": [
@@ -1248,14 +1633,14 @@
     "fields": [
      "game id",
      "teams",
-     "goals by period",
-     "OT periods",
-     "series score",
+     "goals by period with OT-goal flag",
+     "regulation tie flag",
+     "series score entering game",
      "home team",
-     "date"
+     "date and start time"
     ],
-    "timestamp_requirement": "Only games played before the as-of time; series score as entering each game.",
-    "history_needed": "2005-06 to present for length and OT models; 2008 onward for state effects.",
+    "timestamp_requirement": "Only games final before the as-of time; per-game totals timestamped so goals, games and OT games banked before a market's listing time can be separated.",
+    "history_needed": "2005-06 to present for length, tie and OT models; 1987 onward for the rare 0-3 states.",
     "candidate_sources": [
      {
       "name": "NHL API (api-web.nhle.com) schedule and game center",
@@ -1271,8 +1656,12 @@
     "feeds_inputs": [
      "nhl.series_game_count_pmf",
      "nhl.series_state_scoring_shift",
-     "nhl.playoff_ot_length_distribution",
-     "nhl.series_context"
+     "nhl.series_context",
+     "nhl.reg_tie_model",
+     "nhl.series_ot_count_dependence",
+     "nhl.series_game_dependence",
+     "nhl.series_state_win_prob_shift",
+     "nhl.bracket_path_difficulty"
     ]
    },
    {
@@ -1312,7 +1701,9 @@
      "nhl.special_teams",
      "nhl.penalty_rates",
      "nhl.league_scoring_environment",
-     "nhl.total_goal_dispersion"
+     "nhl.total_goal_dispersion",
+     "nhl.rating_posterior_uncertainty",
+     "nhl.rest_travel"
     ]
    },
    {
@@ -1334,21 +1725,27 @@
       "note": "GSAx by season."
      },
      {
+      "name": "NHL API boxscores",
+      "access": "free",
+      "note": "Historical starting goalies for back-tests."
+     },
+     {
       "name": "Daily Faceoff starting goalies",
       "access": "free_scrape",
-      "note": "Confirmations, no clean archive."
+      "note": "Live confirmations only; no archive, not needed for history."
      },
      {
       "name": "NHL injury reports",
       "access": "own_capture",
-      "note": "Teams disclose little; capture needed."
+      "note": "Teams disclose little in playoffs; capture needed."
      }
     ],
     "feeds_inputs": [
      "nhl.goalie_quality",
      "nhl.series_goalie_volatility",
      "nhl.injuries_pit",
-     "nhl.empty_net"
+     "nhl.empty_net",
+     "nhl.goalie_start_forecast"
     ]
    },
    {
@@ -1367,12 +1764,7 @@
      {
       "name": "NHL API play-by-play and shift charts",
       "access": "free",
-      "note": "Event and shift data; field names may vary by season."
-     },
-     {
-      "name": "Daily Faceoff line combinations",
-      "access": "free_scrape",
-      "note": "Lines at game time."
+      "note": "Line combinations derived from shared shifts; field names vary by season (p3)."
      }
     ],
     "feeds_inputs": [
@@ -1386,14 +1778,14 @@
    {
     "id": "p1",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXNHLSERIESTOTALGOAL has no listed markets or sampled rules, so the strike, whether overtime goals count, how a series cut short is treated, and the source of truth are all unverified.",
-    "what_would_resolve": "Fetch rules_primary and strikes for the ticker when markets list; read how OT and incomplete series settle.",
+    "description": "No sampled rule names the source of truth, says whether OT goals count toward KXNHLSERIESTOTALGOAL ('collectively score' implies yes), or covers an unfinished series or a named team that never reaches the championship series.",
+    "what_would_resolve": "Read the full Kalshi rulebook for these series or a past settlement of a series total with OT games.",
     "category": "settlement_contract"
    },
    {
     "id": "p2",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "The strength of within-series dependence in goaltending and the sign of elimination-game effects on goals per game are estimated from small playoff samples and may be fragile.",
+    "description": "The sign and size of within-series game dependence (momentum vs bounce-back) and of elimination-state effects are estimated from small playoff samples; the 0-3 states have very few cases.",
     "what_would_resolve": "Estimate the effects across 15+ playoff seasons with out-of-sample checks, reporting standard errors by state."
    },
    {
@@ -1404,11 +1796,25 @@
    },
    {
     "id": "p4",
-    "type": "DATA_UNAVAILABLE",
-    "description": "Sibling series (total games, game spread, series overtime) have no listed markets and may be separate archetypes of their own; no rules text exists to say if one total-goal model serves them.",
-    "what_would_resolve": "Wait for listings and compare the rules; re-assess archetype assignment of siblings then.",
-    "category": "settlement_contract"
+    "type": "OTHER",
+    "description": "KXNHL30COMEBACK is a league-wide union over up to 15 series rather than a single-series aggregate; it fits this archetype's sequence model but needs bracket simulation, and KXNHLSERIESTOTALGOALS (plural) is mentioned in the ledger narrative but absent from the live series.",
+    "what_would_resolve": "Confirm the comeback series is modelled here in the integrated catalog and check the ledger for the plural total-goals ticker and its rules."
+   },
+   {
+    "id": "p5",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "goalie_start_forecast in the catalog is built around regular-season rotation rules (back-to-backs, 3-in-4) that rarely apply in playoffs; a playoff-specific starter-change hazard after poor games is not defined.",
+    "what_would_resolve": "Estimate P(starter change after a game with save percentage below a threshold) from 2005-06 onward playoff boxscores."
    }
-  ]
+  ],
+  "blueprint_input_dispositions": {
+   "nhl.pdo_regression": "Folded into ratings: shooting/save luck regression is part of building the playoff rating posterior.",
+   "nhl.news": "Not used: no trades are possible during the playoffs; injuries and starter news are covered by injuries_pit and goalie_start_forecast.",
+   "nhl.sos_remaining": "Not used: no remaining regular-season schedule in a playoff series.",
+   "nhl.standings_tiebreakers": "Not used directly: seeding and home ice are known once the bracket is set; only enters bracket_path_difficulty for pre-playoff listings.",
+   "m.external_lines": "BENCHMARK_ONLY: sportsbook series prices are a benchmark, never an input.",
+   "nhl.ot_sudden_death_hazard_5v5": "Not used: number of OT periods does not affect goals (one per OT game) or any listed contract.",
+   "nhl.playoff_ot_length_distribution": "Removed (was a new input): OT period length is irrelevant; replaced by reg_tie_model and series_ot_count_dependence."
+  }
  }
 }

@@ -10,7 +10,7 @@
     "Men's College Basketball KenPom Top Ratings"
    ],
    "target": "Team's rank on the KenPom ratings at a fixed timestamp (exact rank or top-N)",
-   "mechanism": "The outcome is the position of a team in a deterministic efficiency-margin list recomputed from all D1 results. It moves only through games played before the snapshot, each shifting AdjEM by the beat-the-expected-margin amount weighted by one over games played, so the probability is an order-statistic crossing problem set by AdjEM gaps, remaining games, update sensitivity and the page's exact reading time.",
+   "mechanism": "The outcome is the position of a team in a deterministic efficiency-margin list recomputed from all D1 results, read at Mar 15, 2027 12:00pm EST (the Monday after Selection Sunday, with no D1 games scheduled that day). From a November pricing date the horizon is the whole season: the preseason prior is phased out, true strength drifts with roster integration and injuries, and some 28-34 games each move AdjEM by an opponent-adjusted surprise. By March only 0-4 games remain. The probability is an order-statistic crossing problem set by AdjEM gaps, remaining rating variance, update sensitivity and which results the Monday-noon page has processed.",
    "inputs": [
     {
      "id": "cbb.kenpom_rank_projection",
@@ -34,7 +34,7 @@
     },
     {
      "id": "cbb.kenpom_snapshot_timing_rules",
-     "why": "Defines which games are counted at 12:00pm on Mar 15, 2027 and which timezone and refresh the page uses.",
+     "why": "Fixes which results the Monday-noon page contains: Selection Sunday finals and the overnight refresh, the EST/EDT label and downtime.",
      "role": "primary"
     },
     {
@@ -74,8 +74,8 @@
     },
     {
      "id": "cbb.rating_uncertainty",
-     "why": "Connectivity and sample size set how noisy the replicated rating is near the cutoff.",
-     "role": "context"
+     "why": "Posterior sd of each team's rating and the residual preseason-prior weight set how far a rank can move from November to March.",
+     "role": "primary"
     },
     {
      "id": "m.rules_text",
@@ -85,6 +85,56 @@
     {
      "id": "m.settlement_truth",
      "why": "Settled value and time show which page state the exchange actually read.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.kenpom_prior_drift",
+     "why": "Season-horizon variance of AdjEM from the pricing date to Mar 15, combining prior phase-out and true-strength drift; dominant from November to January.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.preseason_prior",
+     "why": "KenPom starts from a preseason prior that is phased out over the season, so the prior's error is a main source of early rank movement.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.roster_minutes",
+     "why": "Returning minutes and transfer integration predict how far a team's true strength departs from its preseason rating as the season develops.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.player_impact",
+     "why": "Player impact values convert portal arrivals, freshmen and injuries into expected efficiency changes over the remaining season.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.sos_remaining",
+     "why": "Remaining schedule strength and venue mix set expected margins and how much opponent re-adjustment the team will see before Mar 15.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.conference_standings_sim",
+     "why": "Conference seeding and tiebreakers decide byes and so the number of conference-tournament games before the snapshot.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.lineup_adj_rating",
+     "why": "Availability-adjusted strength for the active set gives expected game efficiency when a key player is out before the snapshot.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.three_pt_luck",
+     "why": "Own and opponent three-point luck in realised efficiency tends to regress, giving an expected direction of AdjEM drift.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.venue",
+     "why": "Home, away and neutral coding sets the venue adjustment of each game margin entering the rating.",
+     "role": "context"
+    },
+    {
+     "id": "cbb.neutral_site",
+     "why": "Conference tournaments and early-season events are at neutral or semi-home sites, which changes the venue term of those games.",
      "role": "context"
     }
    ],
@@ -109,11 +159,18 @@
       "cbb.kenpom_game_update_sensitivity"
      ],
      "hypothesis": "Blowout margins earn diminishing rating credit, so heavy favourites gain little from beating weak conference-tournament opponents while narrow wins can still cost rating."
+    },
+    {
+     "inputs": [
+      "cbb.kenpom_prior_drift",
+      "cbb.roster_minutes"
+     ],
+     "hypothesis": "Rank volatility from November to January is largest for high-churn rosters, because the phased-out prior was least informative for them and true strength moves most."
     }
    ]
   },
   "contract": {
-   "settlement_definition": "Yes settles if the named team holds exactly rank 1 (KXNCAAMBKENPOMRANK, rank given in the ticker) or is ranked 25 or better (KXNCAAMBKENPOMTOP) on the 2027 Pomeroy College Basketball Ratings page as shown on Mar 15, 2027 at 12:00pm EST; resolution rests solely on that KenPom page at that instant, so games completed after the page state do not count.",
+   "settlement_definition": "Yes settles if the named team holds exactly the rank in the ticker (rank 1 sampled, KXNCAAMBKENPOMRANK) or is ranked 25 or better (KXNCAAMBKENPOMTOP) on the 2027 Pomeroy College Basketball Ratings as shown on Mar 15, 2027 at 12:00pm EST; resolution rests solely on that KenPom page at that instant. No D1 games fall on that Monday, so the counted results are those the page had processed after Selection Sunday; no fallback for downtime or ties is stated.",
    "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
@@ -129,19 +186,20 @@
    ],
    "variants_and_edge_cases": [
     "Exact-rank markets (#1 sampled; other rank values may exist in the series) resolve on one slot, while top-25 is a threshold; the same team can be close to one and far from the other.",
-    "The label 12:00pm EST falls the day after US daylight time begins in 2027; whether it means 12:00 fixed-offset EST or New York clock time is not stated in the sampled rules.",
+    "The label 12:00pm EST falls the day after US daylight time begins (Mar 14, 2027); whether it means 12:00 fixed-offset EST (13:00 EDT) or New York clock time is not stated in the sampled rules.",
     "Rules do not say what happens if the site is unavailable at the timestamp, if the ranking is mid-refresh, or how tied ranks are shown; the sample is silent.",
-    "Season label '2027' ratings refer to the 2026-27 season; games on Mar 15 itself that finish after the page state are not counted."
+    "Mar 15, 2027 is the Monday after Selection Sunday (Mar 14) and before the Opening Round (Mar 16), so no D1 games are played on the snapshot day; the timing risk is whether Sunday's late conference finals were processed by the overnight refresh.",
+    "Season label '2027' ratings refer to the 2026-27 season; markets are listed in November 2026, so most of a contract's life has a full-season horizon rather than a final-week horizon."
    ],
-   "settlement_data_source": "KenPom (kenpom.com) Pomeroy College Basketball Ratings page read at Mar 15, 2027 12:00pm EST; paywalled single-operator source with no public API."
+   "settlement_data_source": "KenPom (kenpom.com) Pomeroy College Basketball Ratings page read at Mar 15, 2027 12:00pm EST; single-operator site with no public API. The main ratings table is believed to be free to view while team pages and the dated ratings archive need a subscription; access tiers are not verified here (kp_source_access)."
   },
   "mechanism": {
-   "summary": "The outcome is a rank in an algorithmic list, not a vote. KenPom ranks all D1 teams by adjusted efficiency margin, a running opponent- and venue-adjusted points-per-100-possessions margin computed from every game so far. A rank on Mar 15 is therefore (1) the current rating state, plus (2) the games each team still plays before noon on that date, which depends on the regular-season finale and conference-tournament survival, plus (3) the update each result causes, which is small late in the season because each game carries about one over games played weight and which rewards beating the expected margin, not winning, plus (4) the order-statistic mapping from AdjEM values to a rank where local density at the cutoff decides how fragile a position is, and (5) the exact reading of the page at the timestamp. The #1 contract is a single-slot race between a few teams; top-25 is a boundary-crossing problem against a bunched cluster.",
+   "summary": "The outcome is a rank in an algorithmic list, not a vote. KenPom ranks all D1 teams by adjusted efficiency margin, an opponent- and venue-adjusted points-per-100-possessions margin computed from every game so far and, early in the season, blended with a preseason prior that is phased out. Markets list in November, so a rank on Mar 15, 2027 is (1) the current rating state, plus (2) season-horizon change: the prior's error being revealed, true-strength drift from roster integration, injuries and shooting-luck regression, which dominate from November to January, plus (3) the games still to play, about 28-34 in November and 0-4 in March, including conference-tournament survival, plus (4) the update each result causes, large early and small late, rewarding beating the expected margin rather than winning, and moving neighbours too through opponent re-adjustment, plus (5) the order-statistic mapping from AdjEM values to a rank, where local density at the cutoff sets fragility, and (6) the page state at Monday noon after Selection Sunday. The #1 contract is a single-slot race between a few teams; top-25 is a boundary-crossing problem against a bunched cluster.",
    "stages": [
     {
      "id": "s1",
      "name": "Starting rating state",
-     "description": "The KenPom list at pricing time is a deterministic function of every D1 result so far: per-team adjusted offensive and defensive efficiency per 100 possessions, tempo, and opponent adjustment solved jointly across the connected schedule. The starting rank, the AdjEM level and the gap to neighbouring ranks are therefore observable by anyone with the paywalled data or a good replica such as Torvik's T-Rank. Early in the season preseason priors still carry weight; by March the rating is almost entirely results.",
+     "description": "The KenPom list at pricing time is a deterministic function of every D1 result so far plus, early in the season, the preseason rating: per-team adjusted offensive and defensive efficiency per 100 possessions, tempo, and opponent adjustment solved jointly across the connected schedule. The starting rank, the AdjEM level and the gap to neighbouring ranks are observable from the ratings table or approximated by Torvik's T-Rank. In November the list is mostly prior; by March it is almost entirely results.",
      "distribution": "Near-continuous AdjEM values; the rank is a discrete order statistic with local density that is high around #25 and thin at the top.",
      "categories": [
       "talent_strength",
@@ -158,9 +216,29 @@
     },
     {
      "id": "s2",
+     "name": "Prior phase-out and true-strength drift",
+     "description": "From a November pricing date the dominant uncertainty is not the next game but how far each team's rating will travel by mid-March. The preseason prior, built from returning minutes, transfers, recruiting and last season, is phased out, so its error is revealed game by game; true strength also drifts as portal players and freshmen integrate, injuries accumulate and lucky or unlucky three-point shooting regresses. High-churn rosters and teams with few connected games move most.",
+     "distribution": "AdjEM change from November to Mar 15 is roughly normal with sd of several points for high-churn teams and smaller for continuity teams; sd shrinks toward zero as the date approaches.",
+     "categories": [
+      "talent_strength",
+      "role_personnel",
+      "efficiency_conversion",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "cbb.kenpom_prior_drift",
+      "cbb.preseason_prior",
+      "cbb.roster_minutes",
+      "cbb.player_impact",
+      "cbb.rating_uncertainty",
+      "cbb.three_pt_luck"
+     ]
+    },
+    {
+     "id": "s3",
      "name": "Games still to be played",
-     "description": "Between pricing and noon on Mar 15 each team plays its regular-season finale and, if it qualifies, conference-tournament games. The count is set by format, byes, seed, and elimination: a conference favourite may play three games, a bubble team may play one and exit. Each game's outcome and margin come from the matchup of the two teams' strengths, venue and who is available, with the usual single-game noise of about 10 points of margin.",
-     "distribution": "Number of games is a small integer random variable (0 to 4) with a heavy dependence on bracket survival; per-game margin is roughly normal with sd near 10 to 11 points and fatter tails from blowouts.",
+     "description": "Between pricing and Selection Sunday each team plays the rest of its schedule: from November about 28-34 games including nonconference events, conference play and the conference tournament; by March only the finale and 0-4 tournament games remain, set by format, byes, seed and elimination. Each game's margin comes from the matchup of strengths, venue and who is available, with single-game noise of about 10 points.",
+     "distribution": "Games remaining fall from about 30 in November to a small integer (0 to 4) in March with dependence on bracket survival; per-game margin is roughly normal with sd near 10 to 11 points and fatter blowout tails.",
      "categories": [
       "opponent_matchup",
       "situational_schedule_motivation",
@@ -178,10 +256,10 @@
      ]
     },
     {
-     "id": "s3",
+     "id": "s4",
      "name": "Result to rating update",
-     "description": "Each completed game feeds the algorithm as an adjusted efficiency margin: points per 100 possessions relative to what the opponent usually allows, adjusted for venue, then blended into the team's running rating with a weight of roughly one over the games played and some recency emphasis. Opponents move too, so a win over a team that then collapses is worth less. Blowout margins are treated with diminishing returns, so running up the score gains little and a close win over a weak team can lower the rating.",
-     "distribution": "Per-game rating change is mean-near-zero with sd of a few tenths of AdjEM late in the season; the sign depends on beating the expected margin rather than winning, giving a concave response to margin.",
+     "description": "Each completed game feeds the algorithm as an adjusted efficiency margin: points per 100 possessions relative to what the opponent usually allows, adjusted for venue, blended into the running rating with a weight that falls as games accumulate (assumed about one over games played; see kp_algo). Opponents are re-adjusted too, so a team's rank moves on days it does not play. Blowout margins appear to earn diminishing credit, so a close win over a weak team can lower the rating.",
+     "distribution": "Per-game rating change is mean-near-zero with sd of about a point in November and a few tenths of AdjEM in March; the sign depends on beating the expected margin rather than winning, giving a concave response to margin.",
      "categories": [
       "efficiency_conversion",
       "pace_volume",
@@ -190,13 +268,12 @@
      "input_ids": [
       "cbb.kenpom_game_update_sensitivity",
       "cbb.margin_regime_mixture",
-      "cbb.score_resid",
       "cbb.venue",
       "cbb.tempo"
      ]
     },
     {
-     "id": "s4",
+     "id": "s5",
      "name": "Rank as an order statistic",
      "description": "The settled quantity is the position of one team among about 360 AdjEM values after all updates. For an exact-rank contract the team must hold one specific position, so both its own movement and the movement of every neighbour matter and the probability is a thin slice. For top-25 the team must sit above the AdjEM of the 25th-26th boundary, so a bunched cluster makes flips likely. Ties in displayed rating are unlikely at two decimals but possible in rank ordering rules unknown to us.",
      "distribution": "Probability mass is concentrated within a few ranks of the current position; exact-rank markets are far more concentrated and discrete than threshold markets, which behave like normal-tail crossing probabilities.",
@@ -207,13 +284,14 @@
      "input_ids": [
       "cbb.kenpom_adjem_gap_density",
       "cbb.rating_uncertainty",
-      "cbb.kenpom_rank_projection"
+      "cbb.kenpom_rank_projection",
+      "cbb.kenpom_prior_drift"
      ]
     },
     {
-     "id": "s5",
+     "id": "s6",
      "name": "Snapshot reading and settlement",
-     "description": "Resolution reads the ratings page at 12:00pm EST on Mar 15, 2027 and nothing else. Which games are processed by then, when the site refreshes, the EST versus daylight-time labelling and any mid-year methodology change decide the exact list used. KenPom is a single-operator paywalled site, so there is no formal feed and the Kalshi settlement source is whatever the page shows at that instant.",
+     "description": "Resolution reads the ratings page at 12:00pm EST on Monday Mar 15, 2027 and nothing else. No games are played that day, so the risk is whether Sunday's late conference finals were processed in the overnight refresh, the EST versus daylight-time label, site downtime and any methodology change. There is no formal feed; the settlement source is whatever the page shows at that instant.",
      "distribution": "Mostly deterministic once the page is read, but with a small probability of timing or refresh mismatches that flip teams sitting at a boundary.",
      "categories": [
       "settlement_contract"
@@ -231,9 +309,12 @@
      "input_ids": [
       "cbb.kenpom_rank_projection",
       "cbb.point_in_time_rating_snapshot",
-      "cbb.ratings_fundamentals"
+      "cbb.ratings_fundamentals",
+      "cbb.preseason_prior",
+      "cbb.kenpom_prior_drift",
+      "cbb.player_impact"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Current list state plus the preseason prior and its season-horizon drift."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -247,9 +328,10 @@
     "role_personnel": {
      "status": "COVERED",
      "input_ids": [
-      "cbb.lineup_adj_rating"
+      "cbb.lineup_adj_rating",
+      "cbb.roster_minutes"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Roster continuity and the availability-adjusted active set."
     },
     "availability_news": {
      "status": "COVERED",
@@ -261,7 +343,7 @@
     "coaching_scheme": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "The rating is a mechanical function of results; a coach's scheme matters only through the game margins that feed it, and no scheme feature adds information beyond the team's AdjO, AdjD and tempo for a one-to-four game horizon."
+     "note": "The list reads only game efficiency; scheme acts through AdjO, AdjD and tempo already modelled, and a coaching change enters through the coach-tenure term of cbb.preseason_prior, so no separate scheme input is needed."
     },
     "environment": {
      "status": "COVERED",
@@ -269,7 +351,7 @@
       "cbb.venue",
       "cbb.neutral_site"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Venue term of each game margin entering the rating."
     },
     "game_context_script": {
      "status": "COVERED",
@@ -286,18 +368,20 @@
      "note": "Covered by the listed inputs for this contract."
     },
     "efficiency_conversion": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "The KenPom rating is built from realised efficiency without a luck correction, so shooting luck only matters as noise in the few remaining games; there is no separate conversion mechanism beyond the game-level margin already modelled."
+     "status": "COVERED",
+     "input_ids": [
+      "cbb.three_pt_luck"
+     ],
+     "note": "KenPom uses realised efficiency without a luck correction, so own and opponent three-point luck that regresses gives an expected direction of rating drift."
     },
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
       "cbb.kenpom_adjem_gap_density",
       "cbb.rating_uncertainty",
-      "cbb.score_resid"
+      "cbb.kenpom_prior_drift"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Gap density at the cutoff and the remaining AdjEM variance to Mar 15."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
@@ -311,7 +395,7 @@
     "officiating_rules": {
      "status": "NOT_APPLICABLE",
      "input_ids": [],
-     "note": "Officiating affects individual games but is symmetric noise for a team's margin in a few late games, and nothing in the rank contract depends on rules interpretation beyond the final results."
+     "note": "Officiating is game-level noise in the margins that feed the rating and nothing in the rank contract reads a rules interpretation; the methodology version is handled under settlement timing."
     },
     "settlement_contract": {
      "status": "COVERED",
@@ -330,11 +414,11 @@
     "category": "distribution",
     "mechanism": "A rank contract is decided by the order statistics of ~360 AdjEM values; what matters is the AdjEM distance to the neighbouring ranks, not the absolute rating.",
     "rationale": "Near #25 teams are separated by a few tenths of a point of AdjEM while near #1 the gap can be a point or more, so identical rating noise moves a top-25 contract far more than a #1 contract. A team at #40 can be closer to the line in expected moves than a team at #28 if the intermediate teams are bunched.",
-    "measurement": "At each daily snapshot sort AdjEM and compute for the target team gap_up = AdjEM(rank r-1) - AdjEM(team) and gap_down = AdjEM(team) - AdjEM(rank r+1), plus the number of teams within +/-0.5 AdjEM. Divide each gap by sigma_move = sqrt(games_left) * per-game AdjEM change sd (from cbb.kenpom_game_update_sensitivity) to get a z-distance to a flip. For top-25 use the gap between AdjEM of the 25th and 26th teams. As-of: last snapshot before pricing, recomputed each day.",
+    "measurement": "At each daily snapshot sort AdjEM and compute for the target team gap_up = AdjEM(rank r-1) - AdjEM(team) and gap_down = AdjEM(team) - AdjEM(rank r+1), plus the number of teams within +/-0.5 AdjEM. Divide each gap by sigma_rel = sqrt(var_team + var_neighbour), where each team's variance to Mar 15 sums its own games_left times per-game update variance (cbb.kenpom_game_update_sensitivity), its season drift variance (cbb.kenpom_prior_drift) and an opponent re-adjustment term estimated from days without a game. For top-25 use the 25th-26th boundary. As-of: last snapshot before pricing.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Bart Torvik T-Rank (free proxy)",
-     "KenPom ratings table (subscription)"
+     "KenPom main ratings table (believed free to view; unverified)"
     ],
     "registry_ids": [],
     "raw_data": [
@@ -350,7 +434,7 @@
     "label": "Per-game AdjEM update sensitivity",
     "category": "team_strength",
     "mechanism": "KenPom's rating is a running opponent-adjusted efficiency margin, so one game moves it by (game-level adjusted margin minus current rating) weighted by 1/games played, with opponent strength and venue entering the game-level number.",
-    "rationale": "Late in the season each game carries a weight near 1/30 to 1/35, so a team can move only a few tenths per game, and the move is zero in expectation when the team performs at its rating; the algorithm weights recent games and its blowout treatment are not public, which is the subtle part.",
+    "rationale": "A game's weight falls as games accumulate (assumed near 1/g, to be fitted), so a team moves about a point per game in November and a few tenths in March; the move is zero in expectation when the team performs at its rating. Recency and blowout treatment are not public, which is the subtle part.",
     "measurement": "Fit on daily snapshot pairs from the prior three seasons: dAdjEM_team,t = w(g) * (adjusted game margin per 100 possessions - AdjEM_t-1) + opponent-feedback term, with g games played; estimate w(g), a recency multiplier, and a blowout cap by least squares. Output expected move and sd per game as a function of g, opponent AdjEM and location. Validate: out-of-sample RMSE of next-day AdjEM below 0.15. As-of: snapshots before the game.",
     "pregame_knowable": "yes",
     "free_sources": [
@@ -371,13 +455,14 @@
    "cbb.kenpom_snapshot_timing_rules": {
     "label": "KenPom snapshot timing and counting rules",
     "category": "other",
-    "mechanism": "The contract reads the ratings page at 12:00pm 'EST' on Mar 15, 2027, so which games have been processed, the daily refresh time and whether the label EST means a fixed offset or the local New York clock decide the exact state.",
-    "rationale": "Mar 15, 2027 falls after US daylight time starts (Mar 14, 2027), so literal EST would be 1pm Eastern daylight time; Selection Sunday conference finals may be unfinished at noon; the page may refresh only overnight. Any of these can swap which games count for a bubble-of-the-list team.",
-    "measurement": "Record for every past season the observed refresh timestamps of the ratings page (daily capture every 30 minutes from 04:00 to 14:00 ET), the last completed game included, and the games on the target date that start before noon. Compute n_games_pending_at_snapshot per team and a flag for mid-update states. Resolve the EST/EDT ambiguity by capturing both the 11:00 and 12:00 ET page. As-of: captured live on the date.",
+    "mechanism": "The contract reads the ratings page at 12:00pm 'EST' on Monday Mar 15, 2027, so which Selection Sunday results the overnight refresh processed, whether EST means fixed offset or New York clock time, and downtime decide the exact state.",
+    "rationale": "Mar 15, 2027 is the day after US daylight time starts and the day after Selection Sunday, with no D1 games scheduled until the Opening Round on Mar 16. Literal EST would be 1pm EDT. Late Sunday conference finals are normally processed overnight, but a delayed refresh or downtime could leave them out for a team sitting at a cutoff.",
+    "measurement": "For each past season capture the ratings page every 30 minutes from 00:00 to 14:00 ET on the Monday after Selection Sunday (archive captures where available); record the timestamp at which the last Sunday final appears in the games-played count, refresh times and downtime. Feature per team: played_on_selection_sunday flag x P(final unprocessed at 12:00 ET or 13:00 ET), using the historical refresh-time distribution. Capture both 12:00 and 13:00 ET pages on the settlement date.",
     "pregame_knowable": "partial",
     "free_sources": [
-     "own_capture of the KenPom page (requires subscription)",
-     "NCAA schedule listings for tip times"
+     "own_capture of the KenPom ratings page (main table believed free to view; unverified)",
+     "Internet Archive captures",
+     "NCAA and conference schedule listings for Sunday final tip times"
     ],
     "registry_ids": [],
     "raw_data": [
@@ -385,7 +470,30 @@
      "game tip and end times",
      "rank at each capture"
     ],
-    "why": "Defines exactly which results are in the list when the exchange reads it, which matters most for teams with a game on the morning of the snapshot.",
+    "why": "Defines exactly which results are in the list when the exchange reads it, which matters only for teams that played on Selection Sunday and sit near a cutoff.",
+    "role": "primary"
+   },
+   "cbb.kenpom_prior_drift": {
+    "label": "KenPom season-horizon rating drift and preseason-prior phase-out",
+    "category": "team_strength",
+    "mechanism": "Between a November pricing date and Mar 15 a team's AdjEM moves because the preseason prior is phased out and its error revealed, and because true strength drifts with roster integration, injuries and shooting-luck regression.",
+    "rationale": "For most of the contract's life this variance, not the last week's games, decides rank probabilities. It is larger for high-churn rosters (low returning minutes, many transfers) and for teams with weakly connected schedules, and its expected sign can be predicted from three-point luck and the gap between prior and results-only ratings.",
+    "measurement": "From stored daily ratings for the prior 5 seasons (KenPom archive if licensed, else Torvik T-Rank as proxy), compute D = AdjEM(Mar 15 equivalent: Monday after Selection Sunday) - AdjEM(d) per team for each pricing date d. Regress |D| and D on games remaining, preseason-prior weight at d (KenPom's stated phase-out, else estimated as the AdjEM gap between prior-inclusive and results-only ratings), returning-minutes share and transfer minutes (cbb.roster_minutes), own/opponent three-point luck (cbb.three_pt_luck) and schedule connectivity; output mean drift and sd per team-date, in AdjEM points per 100 possessions. As-of: ratings captured at d; no later revision used.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Bart Torvik T-Rank daily archives",
+     "Sports-Reference rosters and game logs",
+     "KenPom ratings archive (subscription)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "daily AdjEM by team",
+     "preseason ratings",
+     "returning minutes and transfer minutes",
+     "three-point luck by team",
+     "games remaining"
+    ],
+    "why": "Supplies the season-long rank variance that a final-week model omits; without it November and December prices for top-25 and #1 markets are badly overconfident.",
     "role": "primary"
    }
   },
@@ -427,8 +535,8 @@
     "reason": "An absence shifts expected efficiency in the last few games only; the effect on the rating is lagged and small."
    },
    "cbb.rating_uncertainty": {
-    "verdict": "WEAK",
-    "reason": "KenPom's displayed rating has no uncertainty by construction; the input only helps quantify replication error and early-season prior weight, which is minor by March."
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Markets price from November, when ratings are prior-heavy; posterior sd and residual prior weight are a primary driver of rank volatility until late January and still matter at the cutoff."
    },
    "m.rules_text": {
     "verdict": "KEEP_CONTEXT",
@@ -437,6 +545,42 @@
    "m.settlement_truth": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Settled outcomes and timestamps of prior snapshot markets reveal how the exchange read the page; not a predictor by itself."
+   },
+   "cbb.preseason_prior": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The KenPom list starts from a preseason prior that is phased out; its error is the largest early-season source of rank change."
+   },
+   "cbb.roster_minutes": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Returning minutes and transfer integration predict the size of true-strength drift; an ingredient of the drift input rather than a direct rank predictor."
+   },
+   "cbb.player_impact": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Translates arrivals, departures and injuries into efficiency changes for the remaining season; noisy for freshmen and transfers."
+   },
+   "cbb.sos_remaining": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Remaining opponents and venues set expected margins and the opponent re-adjustment the team will see; used only through simulation of remaining games."
+   },
+   "cbb.conference_standings_sim": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Seeding and byes decide how many conference-tournament games are played before the snapshot, which sets late rating variance."
+   },
+   "cbb.lineup_adj_rating": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Expected efficiency of the active set when a key player is out; feeds remaining-game simulation, not the current list."
+   },
+   "cbb.three_pt_luck": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "KenPom rates realised efficiency, so unsustainable own or opponent three-point shooting predicts the direction of later AdjEM drift."
+   },
+   "cbb.venue": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Venue adjustment of each margin; small for the ranking except where a schedule is home-heavy late."
+   },
+   "cbb.neutral_site": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Neutral and semi-home sites in early events and conference tournaments change the venue term of those games."
    }
   },
   "interactions": [
@@ -482,8 +626,17 @@
      "cbb.kenpom_adjem_gap_density"
     ],
     "form": "joint-distribution",
-    "mechanism": "A team playing on the morning of the snapshot has a chance that its result is or is not processed, and the effect only matters if the team sits within a few tenths of a cutoff, so timing and gap density jointly drive the risk.",
-    "how_to_test": "Flag team-days with a game finishing within 6 hours of the capture and measure how often rank at 12:00 differs from rank at the next refresh, split by gap bucket."
+    "mechanism": "Only teams that played a Selection Sunday final can be affected by a delayed overnight refresh or downtime, and only if they sit within a few tenths of a cutoff; the two conditions must hold together, so the risk is a small joint tail.",
+    "how_to_test": "In past seasons flag teams that played on Selection Sunday, compare their Monday 12:00 ET rank with the rank after the last Sunday result was processed, and split by gap bucket."
+   },
+   {
+    "inputs": [
+     "cbb.kenpom_prior_drift",
+     "cbb.rating_uncertainty"
+    ],
+    "form": "conditional",
+    "mechanism": "The variance of AdjEM to Mar 15 depends on the residual weight of the prior: in November a high-churn team's rating can move several points and flip a top-25 position, while by February the same roster churn adds little because results dominate.",
+    "how_to_test": "Regress |AdjEM change to Mar 15| on returning-minutes share interacted with pricing month over 5 past seasons; the churn slope should fall sharply after January."
    }
   ],
   "nonlinearities": [
@@ -494,13 +647,18 @@
    },
    {
     "input_id": "cbb.kenpom_game_update_sensitivity",
-    "shape": "hyperbolic decay in games played (about 1/g)",
-    "why": "Each game carries less weight as the season lengthens, so by mid-March the same blowout moves AdjEM roughly half as much as in January."
+    "shape": "assumed hyperbolic decay in games played (about 1/g), pending calibration under kp_algo",
+    "why": "Each game should carry less weight as the season lengthens, so a mid-March blowout moves AdjEM much less than a November one; the exact form is not published and must be fitted."
    },
    {
     "input_id": "cbb.margin_regime_mixture",
     "shape": "concave in points margin beyond expectation",
     "why": "The algorithm discounts garbage-time and very large margins, so rating credit saturates while the downside for a poor performance does not."
+   },
+   {
+    "input_id": "cbb.kenpom_prior_drift",
+    "shape": "remaining sd concave in days to snapshot, reaching zero at Mar 15",
+    "why": "Prior phase-out and drift accumulate quickly early and slowly later, so remaining rating variance falls steeply after January and rank prices should firm."
    }
   ],
   "required_data": [
@@ -521,9 +679,14 @@
     "history_needed": "At least 5 past seasons of daily snapshots, especially Mar 1-15.",
     "candidate_sources": [
      {
-      "name": "KenPom (kenpom.com)",
+      "name": "KenPom main ratings table (kenpom.com)",
+      "access": "free_limited",
+      "note": "believed free to view for the current list; current-day only; automated capture terms unverified"
+     },
+     {
+      "name": "KenPom ratings archive (subscriber feature)",
       "access": "paid",
-      "note": "subscription; automated pulls may violate terms"
+      "note": "dated past ratings; natural source for prior-season snapshots; access tier unverified"
      },
      {
       "name": "Bart Torvik T-Rank",
@@ -545,7 +708,8 @@
      "cbb.adj_def",
      "cbb.tempo",
      "cbb.rating_uncertainty",
-     "cbb.kenpom_snapshot_timing_rules"
+     "cbb.kenpom_snapshot_timing_rules",
+     "cbb.kenpom_prior_drift"
     ]
    },
    {
@@ -581,11 +745,12 @@
     "feeds_inputs": [
      "cbb.kenpom_game_update_sensitivity",
      "cbb.margin_regime_mixture",
-     "cbb.score_resid",
      "cbb.ratings_fundamentals",
      "cbb.venue",
      "cbb.neutral_site",
-     "cbb.lineup_adj_rating"
+     "cbb.lineup_adj_rating",
+     "cbb.three_pt_luck",
+     "cbb.sos_remaining"
     ]
    },
    {
@@ -614,6 +779,46 @@
      "cbb.sos_remaining",
      "cbb.injuries"
     ]
+   },
+   {
+    "dataset": "Preseason rosters, returning production and player impact",
+    "grain": "one row per player per team-season, plus one team row per preseason",
+    "fields": [
+     "player",
+     "team",
+     "prior-season minutes and team",
+     "transfer flag",
+     "class/recruit rank",
+     "player impact estimate",
+     "team returning-minutes share",
+     "preseason rating"
+    ],
+    "timestamp_requirement": "Rosters as of the season opener and updated on each roster or eligibility change; preseason ratings captured before the first game.",
+    "history_needed": "5 seasons to calibrate drift against roster churn.",
+    "candidate_sources": [
+     {
+      "name": "Sports-Reference CBB rosters",
+      "access": "free_scrape",
+      "note": "minutes and transfer history"
+     },
+     {
+      "name": "Bart Torvik player and preseason data",
+      "access": "free",
+      "note": "returning minutes, player ratings"
+     },
+     {
+      "name": "EvanMiya",
+      "access": "paid",
+      "note": "player impact (BPR)"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.preseason_prior",
+     "cbb.roster_minutes",
+     "cbb.player_impact",
+     "cbb.lineup_adj_rating",
+     "cbb.kenpom_prior_drift"
+    ]
    }
   ],
   "unresolved": [
@@ -621,7 +826,7 @@
     "id": "kp_tz",
     "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "The sampled rules state 12:00pm EST for Mar 15, 2027, which is after the US switch to daylight time on Mar 14, 2027; they do not say whether this is fixed-offset EST or New York local time, nor how a mid-refresh page is treated.",
+    "description": "The sampled rules state 12:00pm EST for Monday Mar 15, 2027, the day after the US switch to daylight time and after Selection Sunday; they do not say whether this is fixed-offset EST or New York local time, nor how a mid-refresh or unavailable page is treated.",
     "what_would_resolve": "Kalshi's full contract terms or a past settled KenPom snapshot market showing which page capture was used."
    },
    {
@@ -636,6 +841,20 @@
     "type": "CONTRACT_AMBIGUOUS",
     "description": "Only a #1 and a top-25 contract were sampled; other exact rank slots, tie display rules and the behaviour if the site is down at the timestamp are not visible in the sample.",
     "what_would_resolve": "A listing of all open KXNCAAMBKENPOMRANK strikes plus the full rule text."
+   },
+   {
+    "id": "kp_source_access",
+    "type": "SOURCE_UNVERIFIED",
+    "category": "settlement_contract",
+    "description": "Whether the KenPom main ratings table (rank, AdjEM, AdjO, AdjD, AdjT) is free to view and whether the dated ratings archive is subscriber-only could not be checked here: the site is unreachable from this environment.",
+    "what_would_resolve": "Load kenpom.com logged out and logged in, confirm which fields are visible, and confirm archive access and terms for automated capture."
+   },
+   {
+    "id": "kp_prior_schedule",
+    "type": "MECHANISM_UNCERTAIN",
+    "category": "talent_strength",
+    "description": "The schedule on which KenPom phases out its preseason prior during the 2026-27 season (date fully removed, functional form) is not verified, and it drives early-season rank volatility in cbb.kenpom_prior_drift.",
+    "what_would_resolve": "KenPom's methodology posts for the current season, or fit prior weight from the gap between KenPom and a results-only replica over past seasons."
    }
   ]
  },
@@ -652,7 +871,7 @@
     "Men's College Basketball Race to 50 Points"
    ],
    "target": "Which team first reaches N points in a game (first-passage event)",
-   "mechanism": "Each team's points arrive in discrete possession-by-possession chunks produced by the starting units, so the race is a first-passage problem on two alternating scoring processes. The edge comes from the opening five's points per possession, the opening possession tie-break, early turnovers and rebounds, and N, which scales luck versus rating: races to 10 are mostly variance, races to 50 approach the share of points over about 26 minutes.",
+   "mechanism": "Each team's points arrive in discrete possession-by-possession chunks, so the race is a first-passage problem on two alternating scoring processes. The edge comes from the opening five's points per possession (prior-heavy and uncertain early in the season), the jump-ball winner's tie-break, early turnovers and rebounds, the bench units for N=50, and N itself: races to 10 are mostly variance, races to 50 approach the share of points over about 26 minutes. If markets trade in-play, the live score gap to N and possession dominate.",
    "inputs": [
     {
      "id": "cbb.race_early_scoring_profile",
@@ -733,6 +952,26 @@
      "id": "m.lifecycle",
      "why": "Postponement and 48-hour rule decide whether a market resolves or goes to fair price.",
      "role": "context"
+    },
+    {
+     "id": "cbb.rating_uncertainty",
+     "why": "Early-season efficiencies are mostly preseason prior, so the uncertainty of the rating gap dilutes its weight in the 25 and 50 races.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.preseason_prior",
+     "why": "Markets list from early November, when the opening-unit scoring rate must be read off the preseason prior and roster churn.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.bench_unit_efficiency",
+     "why": "A race to 50 runs to about minute 27 and uses bench units, whose scoring rate differs from the starters'.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.race_live_state",
+     "why": "If the market trades after tip, the current score gap to N, possession and clock replace pregame inputs as the main predictor.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -756,40 +995,63 @@
       "cbb.adj_off"
      ],
      "hypothesis": "The same offensive gap converts into a larger race advantage at N=50 than at N=10 because the signal accumulates linearly while noise grows with the square root of possessions."
+    },
+    {
+     "inputs": [
+      "cbb.bench_unit_efficiency",
+      "cbb.race_n_threshold_scaling"
+     ],
+     "hypothesis": "Bench-unit scoring matters only for races long enough to outlast the starters' first stint, so its weight is near zero at N=10 and material at N=50."
     }
    ]
   },
   "contract": {
-   "settlement_definition": "Yes settles if the named team is the first to score N points (the sampled strike is 10) in the specified men's college basketball game originally scheduled on the stated date; the market is per team, a game postponed but starting within 48 hours remains open and settles on the official result, and a game cancelled or not started within 48 hours resolves all markets to a fair price.",
+   "settlement_definition": "Yes settles if the named team is the first to reach (KXNCAAMBFIRST10, KXNCAAMBFIRST25, KXNCAAMBFIRST50) or score (KXNCAAMBRACE, N in the ticker, 10 sampled) N points in the named men's college basketball game originally scheduled on the stated date. Scoring is sequential, so no tie is possible and overshooting N counts. KXNCAAMBRACE: a game postponed but starting within 48 hours stays open and settles on the official final result; cancelled or not started within 48 hours resolves to a fair price. The FIRST series samples show no postponement clause, and no sample addresses overtime or neither team reaching N.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
      "ticker": "KXNCAAMBRACE",
      "quote": "If Virginia is the first to score 10 points in the Arkansas vs Virginia men's college basketball game originally scheduled for Nov 8, 2026",
-     "establishes": "The racing entity is a team and the event is the first team to reach 10 points, tied to the game's original scheduled date."
+     "establishes": "The racing entity is a team and the event is the first team to score 10 points, tied to the game's original scheduled date; the series is live in November 2026."
     },
     {
      "ticker": "KXNCAAMBRACE",
      "quote": "If the game is cancelled or not started within 48 hours of its originally scheduled start, all markets will resolve to a fair price.",
-     "establishes": "Cancelled or long-postponed games resolve at fair price rather than Yes or No."
+     "establishes": "Cancelled or long-postponed games resolve at fair price rather than Yes or No for the RACE series."
+    },
+    {
+     "ticker": "KXNCAAMBFIRST10",
+     "quote": "If Michigan is the first to reach 10 points in the UConn vs Michigan men's college basketball game originally scheduled for Apr 6, 2026",
+     "establishes": "The FIRST10 series is also team-level (the named team first to reach 10), not a player market; the sample is the neutral-site national championship game."
+    },
+    {
+     "ticker": "KXNCAAMBFIRST25",
+     "quote": "If Michigan is the first to reach 25 points in the UConn vs Michigan men's college basketball game",
+     "establishes": "The 25-point variant uses the same team-level first-to-reach wording with N=25."
+    },
+    {
+     "ticker": "KXNCAAMBFIRST50",
+     "quote": "If Michigan is the first to reach 50 points in the UConn vs Michigan men's college basketball game",
+     "establishes": "The 50-point variant uses the same wording; nothing in the sample says what happens if neither team reaches 50."
     }
    ],
    "variants_and_edge_cases": [
-    "The sampled rules text exists only for KXNCAAMBRACE (strike 10); KXNCAAMBFIRST10, KXNCAAMBFIRST25 and KXNCAAMBFIRST50 are TITLE_ONLY with no sampled rules or listings, so their entity, ties and overtime handling are unverified.",
-    "A team may jump past N on a single possession (for example from 8 to 11 with a three); the sample does not say whether reaching or exceeding N counts, though reaching at least N is the natural reading.",
-    "N=50 can be reached only after halftime for slow teams, and for very low-scoring games it may be reached in overtime or never; the sample does not say how a game ending before N is handled.",
+    "Two series generations: KXNCAAMBFIRST10/25/50 (one series per N, finalized samples from Apr 6, 2026) say 'first to reach N points'; KXNCAAMBRACE (active, N in the ticker, e.g. -10-UVA) says 'first to score 10 points'. Both are team-level.",
+    "The FIRST samples contain only the trademark disclaimer in rules_secondary, so they show no postponement or cancellation clause; only KXNCAAMBRACE states the 48-hour rule and fair-price resolution.",
+    "Overshoot counts: a team going from 8 to 11 on a three has reached 10. Points are scored one event at a time, so no simultaneous crossing is possible; residual risk is an official-scorer or play-by-play correction to the sequence.",
+    "N=50 can be reached after halftime for slow teams and, in very low-scoring games, only in overtime or never; no sample says whether overtime counts or how a game ending with neither team at N settles.",
     "Both teams' markets in the same game are separate binary contracts so their prices should sum near one."
    ],
-   "settlement_data_source": "Official play-by-play and final result of the NCAA game (the rules cite the official final result); the specific provider is not named in the sampled text."
+   "settlement_data_source": "Not named for the scoring sequence. The KXNCAAMBRACE text mentions 'the official final result' only inside its postponement clause; the FIRST series name no source. The official play-by-play is the natural source but is not stated."
   },
   "mechanism": {
-   "summary": "The outcome is which team's cumulative score hits N first, a first-passage event on two interleaved point-accumulation processes. Points come in discrete amounts (free throws, twos, threes) on possessions that alternate between the teams, so for small N the winner is largely determined by the unit that starts, the tip and opening possession, and a few variance-heavy possessions. As N rises, the rating gap in points per possession accumulates linearly while noise grows with the square root of possessions, so the race approaches the full-game share of scoring, and the identity of the unit shifts from starters to rotation. Team defence matters through the rival's rate, tempo through time but little through relative advantage, and bonus free throws and early fouls matter for the 50-point race. Settlement follows the official scoring sequence.",
+   "summary": "The outcome is which team's cumulative score hits N first, a first-passage event on two interleaved point-accumulation processes. Points come in discrete amounts (free throws, twos, threes) on possessions that alternate between the teams, so for small N the winner is largely determined by the unit that starts, the tip and opening possession, and a few variance-heavy possessions. As N rises, the rating gap in points per possession accumulates linearly while noise grows with the square root of possessions, so the race approaches the full-game share of scoring, and the identity of the unit shifts from starters to rotation. Team defence matters through the rival's rate, tempo through time but little through relative advantage, and bonus free throws and early fouls matter for the 50-point race. Early in the season the rating gap is itself uncertain, which dilutes its weight. If the market trades after tip, the live gap to N and possession dominate. Settlement follows the official scoring sequence; no ties are possible.",
    "stages": [
     {
      "id": "s1",
      "name": "Opening possession and tip",
-     "description": "The game begins with a jump ball and the winner takes the first possession; the possession arrow then governs later held balls. Because the two teams alternate possessions, the team that starts with the ball is first whenever both need the same number of possessions to reach N. Tip-win probability is near 50 percent pregame with only a small centre-height effect, so this stage is mainly a tie-break and it is known only after tip.",
-     "distribution": "Bernoulli near 0.5 for the tip, converted into a few points of probability of winning the race; the effect shrinks as N grows from 10 to 50.",
+     "description": "The game begins with a jump ball and the winner takes the first possession. Because the teams alternate possessions, the team that starts with the ball is first whenever both need the same number of possessions to reach N. Tip-win probability is not a coin flip: jumper height and wingspan mismatch and each jumper's historical tip record move it well off 0.5, and the edge is largest in the race to 10. It is known only after tip.",
+     "distribution": "Bernoulli tip outcome with a pregame probability that can range well away from 0.5 for mismatched jumpers; converted into a few points of race probability that shrink as N grows from 10 to 50.",
      "categories": [
       "game_context_script",
       "role_personnel"
@@ -803,7 +1065,7 @@
     {
      "id": "s2",
      "name": "Starting-unit scoring rate",
-     "description": "For the first four to ten minutes the players on the floor are the announced starters, so the relevant rate is the points per possession of that five against the opponent's opening five, not the season-long team efficiency that includes bench units and garbage time. Matchup features such as press defence, zone, rim protection and three-point reliance shift the rate, and a late injury changes the opening five.",
+     "description": "For the first four to ten minutes the players on the floor are the announced starters, so the relevant rate is the points per possession of that five against the opponent's opening five, not season-long team efficiency. In November that rate is mostly preseason prior after portal churn, so its uncertainty matters. Press, zone, rim protection and three-point reliance shift the rate, and a late injury changes the opening five.",
      "distribution": "Points per possession per trial is discrete (0,1,2,3, sometimes 4) with mean near 1.0 and sd near 1.1, so total points after k possessions has heavy lumpiness; team rates differ by a few tenths of a point per possession.",
      "categories": [
       "talent_strength",
@@ -817,7 +1079,9 @@
       "cbb.lineups",
       "cbb.injuries",
       "cbb.starters",
-      "cbb.three_pt_dist"
+      "cbb.three_pt_dist",
+      "cbb.rating_uncertainty",
+      "cbb.preseason_prior"
      ]
     },
     {
@@ -838,7 +1102,7 @@
     {
      "id": "s4",
      "name": "Threshold crossing by N",
-     "description": "The outcome is a first-passage time: the first team whose cumulative points reach N. A 10-point race ends within roughly the first five minutes and mostly reflects luck; a 25-point race ends near the 10th to 12th minute and starts to separate the better offence; a 50-point race often ends in the second half after halftime and approximates the share of points over about 26 minutes, with foul trouble and bonus free throws mattering for who gets there first.",
+     "description": "The outcome is a first-passage time: the first team whose cumulative points reach N. A 10-point race ends within roughly the first five minutes and mostly reflects luck; a 25-point race ends near the 10th to 12th minute after first substitutions; a 50-point race often ends after halftime, around minute 27, so bench-unit scoring, foul trouble and second-half team-foul resets and bonus free throws matter for who gets there first.",
      "distribution": "Crossing times are discrete with overshoot (a 3-pointer can jump from 8 to 11); variance of the points gap grows like sqrt of possessions, so the favourite's race probability rises with N toward the full-game win probability.",
      "categories": [
       "game_context_script",
@@ -848,14 +1112,15 @@
      "input_ids": [
       "cbb.race_n_threshold_scaling",
       "cbb.half_foul_bonus",
-      "cbb.three_pt_dist"
+      "cbb.three_pt_dist",
+      "cbb.bench_unit_efficiency"
      ]
     },
     {
      "id": "s5",
      "name": "Event sequencing and settlement",
-     "description": "Settlement uses the official sequence of scoring events, with the market tied to the original scheduled game date and a 48-hour postponement window after which markets resolve to a fair price. Close races can depend on the ordering of simultaneous events in the official play-by-play, for example free throws after a shooting foul, and on stat-provider corrections.",
-     "distribution": "Mostly deterministic once play-by-play is final; small probability of ordering disputes or provider lag, and a small probability of postponement-driven fair-price resolution.",
+     "description": "Settlement depends on the order of scoring events. Points are scored one event at a time (free throws are sequential), so there are no simultaneous crossings and no ties; the residual risk is an official-scorer or play-by-play correction to the sequence. KXNCAAMBRACE adds a 48-hour postponement window then fair-price resolution; the FIRST series samples show no such clause, and no series states overtime or neither-reaches-N handling.",
+     "distribution": "Mostly deterministic once the scoring sequence is final; small probability of a sequence correction, of postponement-driven fair-price resolution, or of an unstated N=50 edge case.",
      "categories": [
       "settlement_contract"
      ],
@@ -864,6 +1129,20 @@
       "m.lifecycle",
       "cbb.box_score_source_risk"
      ]
+    },
+    {
+     "id": "s6",
+     "name": "In-play state (only if the market trades after tip)",
+     "description": "If KXNCAAMBRACE stays open after tip, the race becomes a first-passage problem from the current state: points still needed by each team, who has possession, the clock, and which units are on the floor. The pregame inputs then matter only through the remaining scoring rates, and stale quotes after a scoring run are the main risk. Whether trading continues in play is not visible in the evidence.",
+     "distribution": "Conditional on the state, a short random walk in possessions to the remaining gap; probabilities jump on every score and change of possession.",
+     "categories": [
+      "game_context_script",
+      "pace_volume"
+     ],
+     "input_ids": [
+      "cbb.race_live_state",
+      "cbb.race_possession_alternation_model"
+     ]
     }
    ],
    "category_coverage": {
@@ -871,9 +1150,11 @@
      "status": "COVERED",
      "input_ids": [
       "cbb.adj_off",
-      "cbb.adj_def"
+      "cbb.adj_def",
+      "cbb.rating_uncertainty",
+      "cbb.preseason_prior"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Opening-unit efficiency with its early-season uncertainty and prior."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -887,9 +1168,10 @@
      "status": "COVERED",
      "input_ids": [
       "cbb.starters",
-      "cbb.lineups"
+      "cbb.lineups",
+      "cbb.bench_unit_efficiency"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Opening five for N=10/25 and bench units for N=50."
     },
     "availability_news": {
      "status": "COVERED",
@@ -917,9 +1199,10 @@
      "status": "COVERED",
      "input_ids": [
       "cbb.race_n_threshold_scaling",
-      "cbb.race_early_scoring_profile"
+      "cbb.race_early_scoring_profile",
+      "cbb.race_live_state"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Race length by N and, if traded in play, the live score state."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -941,9 +1224,10 @@
      "status": "COVERED",
      "input_ids": [
       "cbb.race_n_threshold_scaling",
-      "cbb.three_pt_dist"
+      "cbb.three_pt_dist",
+      "cbb.rating_uncertainty"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Lumpy scoring, N-dependent noise and rating-gap uncertainty."
     },
     "situational_schedule_motivation": {
      "status": "NOT_APPLICABLE",
@@ -974,7 +1258,7 @@
     "category": "game_state",
     "mechanism": "Both teams get nearly equal possessions in the opening minutes, so the first to N points is decided by points-per-possession draws on alternating possessions, with ties in possession count broken by who has the ball first.",
     "rationale": "With about one point per possession a race to 10 is a 9-to-11 possession event; the team starting with the ball reaches N first whenever both need the same number of possessions, a built-in edge of a few points of probability. Offensive rebounds and turnovers break strict alternation, so the edge shrinks as N grows and with offensive-rebound rate.",
-    "measurement": "From play-by-play of 5 prior seasons estimate for each team in the opening segment the distribution of points per possession (outcomes 0,1,2,3,4 with free throws), the offensive-rebound continuation rate and opening turnover rate with shrinkage n/(n+15) to the opponent-adjusted conference mean. Simulate 50,000 races for N = 10, 25, 50 with alternating possessions, giving first possession to team A or B; output P(A first to N | possession A) and P(A first | possession B). Mixed with P(tip win) = 0.5 pregame, updated to 1 or 0 once the tip is known. As-of: lineup-confirmed time before tip.",
+    "measurement": "From play-by-play of 5 prior seasons estimate for each team in the opening segment the distribution of points per possession (outcomes 0,1,2,3,4 with free throws), the offensive-rebound continuation rate and opening turnover rate with shrinkage n/(n+15) to the opponent-adjusted conference mean. Tip model: P(tip win) = logistic(a + b*height difference of the expected jumpers + c*shrunk historical tip-win rate of each jumper from 'Jump Ball won by' play-by-play lines, shrinkage n/(n+10) to 0.5). Simulate 50,000 races for N = 10, 25, 50 with alternating possessions; output P(A first | possession A), P(A first | possession B) and their mixture by P(tip win), set to 1 or 0 once the tip is known. As-of: lineup-confirmed time before tip.",
     "pregame_knowable": "partial",
     "free_sources": [
      "Sports-Reference play-by-play (limited)",
@@ -984,7 +1268,8 @@
     "registry_ids": [],
     "raw_data": [
      "play-by-play with scoring sequence and possession flag",
-     "opening tip winner",
+     "opening tip winner and jumper names",
+     "player heights",
      "team opening-lineup points per possession"
     ],
     "why": "Gives the first-passage structure of the contract and quantifies the opening-possession edge that no efficiency rating contains.",
@@ -1010,6 +1295,27 @@
     ],
     "why": "Shows how much of the pre-game edge carries to each race length, which is needed because the contract comes in 10, 25 and 50-point forms with different variance.",
     "role": "primary"
+   },
+   "cbb.race_live_state": {
+    "label": "Live race state: points to N, possession and clock",
+    "category": "game_state",
+    "mechanism": "After tip the probability of reaching N first is a first-passage from the current state: each team's remaining points to N, who has the ball, game clock and the units on the floor.",
+    "rationale": "Used only if the market trades in play, which the evidence does not show. Then state dominates pregame inputs, a single three changes the price sharply, and latency between the live feed and quotes is the practical edge or risk.",
+    "measurement": "At each play-by-play event t: need_A = N - score_A(t), need_B = N - score_B(t), possession flag, seconds elapsed, foul/bonus state, on-floor unit ids. P(A first) = simulation from the state with the alternation model's per-possession point distributions for the current units (10,000 paths). Record feed latency = quote timestamp - event timestamp. As-of: event time; never use events after the quote time.",
+    "pregame_knowable": "no",
+    "free_sources": [
+     "ESPN live play-by-play JSON (unofficial, delayed)",
+     "NCAA live stats (stats.ncaa.org game pages)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "live play-by-play events with timestamps",
+     "score after each event",
+     "possession",
+     "quote timestamps"
+    ],
+    "why": "Covers the in-play regime of the contract if it exists; without it any after-tip price would be modelled from stale pregame information.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -1068,6 +1374,18 @@
    "m.lifecycle": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Postponements and cancellations resolve to fair price rather than win or lose, so timing matters for settlement."
+   },
+   "cbb.rating_uncertainty": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Markets are live from early November when efficiencies are prior-heavy; the uncertainty of the rating gap shrinks its weight for N=25 and N=50."
+   },
+   "cbb.preseason_prior": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Supplies the opening-unit scoring rate before enough games exist; fades as games accumulate."
+   },
+   "cbb.bench_unit_efficiency": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Needed for N=50, which runs into bench and rotation minutes; near irrelevant for N=10."
    }
   },
   "interactions": [
@@ -1115,6 +1433,24 @@
     "form": "threshold",
     "mechanism": "Reaching 50 depends on whether bonus free throws begin before the team gets there; once a team enters the bonus the points per possession rises, which switches the late race regime for teams that foul early.",
     "how_to_test": "For N=50 races, compare crossing times for games where either team entered the bonus before 12:00 of the first half against games where neither did."
+   },
+   {
+    "inputs": [
+     "cbb.rating_uncertainty",
+     "cbb.race_n_threshold_scaling"
+    ],
+    "form": "conditional",
+    "mechanism": "The rating gap should drive N=50 races more than N=10, but in November the gap is mostly prior and uncertain, so the slope on the gap at N=50 should be flatter early in the season and steepen after conference play begins.",
+    "how_to_test": "Fit race-to-50 win on the pregame rating gap with an interaction by month of season; expect a smaller slope in November-December."
+   },
+   {
+    "inputs": [
+     "cbb.bench_unit_efficiency",
+     "cbb.race_n_threshold_scaling"
+    ],
+    "form": "threshold",
+    "mechanism": "Bench units enter after the first media timeouts, so their scoring rate affects only races still open at that point; a weak bench costs a team the race to 50 but not the race to 10.",
+    "how_to_test": "Regress race-to-50 outcome on starter-unit and bench-unit efficiency gaps separately, and compare with race-to-10 where the bench coefficient should be near zero."
    }
   ],
   "nonlinearities": [
@@ -1126,7 +1462,7 @@
    {
     "input_id": "cbb.race_possession_alternation_model",
     "shape": "tie-break edge decays with N and with offensive-rebound rate",
-    "why": "The first-possession edge exists only while strict alternation holds; the more possessions and extra offensive-rebound tries, the more it washes out."
+    "why": "The first-possession edge exists only while strict alternation holds, and it is larger when jumpers are mismatched; the more possessions and extra offensive-rebound tries, the more it washes out."
    },
    {
     "input_id": "cbb.three_pt_dist",
@@ -1175,7 +1511,8 @@
      "cbb.three_pt_dist",
      "cbb.lineups",
      "cbb.half_foul_bonus",
-     "cbb.tempo"
+     "cbb.tempo",
+     "cbb.bench_unit_efficiency"
     ]
    },
    {
@@ -1187,7 +1524,9 @@
      "tempo",
      "starter ids",
      "injury status",
-     "venue"
+     "venue",
+     "rating posterior sd",
+     "returning minutes"
     ],
     "timestamp_requirement": "Snapshot taken before tip; lineup from the pregame announcement.",
     "history_needed": "Same 5 seasons.",
@@ -1213,7 +1552,9 @@
      "cbb.adj_def",
      "cbb.starters",
      "cbb.injuries",
-     "cbb.venue"
+     "cbb.venue",
+     "cbb.rating_uncertainty",
+     "cbb.preseason_prior"
     ]
    },
    {
@@ -1240,29 +1581,70 @@
      "m.lifecycle",
      "cbb.box_score_source_risk"
     ]
+   },
+   {
+    "dataset": "Live play-by-play and quote capture (only if traded in play)",
+    "grain": "one row per play-by-play event and per quote update",
+    "fields": [
+     "event time",
+     "score after event",
+     "possession",
+     "on-floor players",
+     "quote time",
+     "bid/ask"
+    ],
+    "timestamp_requirement": "Event and quote timestamps to the second; features use only events before the quote time.",
+    "history_needed": "One season of captured races to measure latency and in-play calibration.",
+    "candidate_sources": [
+     {
+      "name": "ESPN live play-by-play JSON",
+      "access": "free_scrape",
+      "note": "unofficial and delayed"
+     },
+     {
+      "name": "Sportradar or Genius Sports live NCAA feed",
+      "access": "paid",
+      "note": "low latency official data"
+     },
+     {
+      "name": "Kalshi API market data",
+      "access": "own_capture",
+      "note": "quotes and close time"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.race_live_state"
+    ]
    }
   ],
   "unresolved": [
-   {
-    "id": "race_title_only",
-    "type": "CONTRACT_AMBIGUOUS",
-    "category": "settlement_contract",
-    "description": "KXNCAAMBFIRST10, KXNCAAMBFIRST25 and KXNCAAMBFIRST50 have no sampled rules or listings; the entity (team versus player), tie handling and what happens if a game ends before N are not visible, so their treatment is inferred from the sibling KXNCAAMBRACE only.",
-    "what_would_resolve": "Rules text and market listings for the three FIRST-N series from Kalshi's API or contract terms."
-   },
-   {
-    "id": "race_overshoot",
-    "type": "CONTRACT_AMBIGUOUS",
-    "category": "settlement_contract",
-    "description": "The sampled text says first to score 10 points but does not state whether a team that jumps from 9 to 12 has scored 10 and whether the official scoring sequence of simultaneous free throws can flip the order.",
-    "what_would_resolve": "A settled example with an overshoot and the exchange's sequencing source."
-   },
    {
     "id": "race_pbp_source",
     "type": "SOURCE_UNVERIFIED",
     "category": "game_state",
     "description": "Free play-by-play sources for college basketball are inconsistent in time stamps and possession flags, and tip-winner fields may not exist; the claim of a measurable opening-possession edge needs verification.",
     "what_would_resolve": "Pull a sample of 500 games from ESPN and the NCAA feed and test whether first-possession and scoring order are reliably recoverable."
+   },
+   {
+    "id": "race_first_clauses",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "The KXNCAAMBFIRST10/25/50 samples contain no postponement or cancellation clause, and no series sample says whether overtime counts or how a game where neither team reaches N (plausible only for N=50) settles.",
+    "what_would_resolve": "Full contract terms for both series generations, or a settled N=50 market from a game that ended below 50."
+   },
+   {
+    "id": "race_close_time",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "game_context_script",
+    "description": "The evidence does not show whether KXNCAAMBRACE markets close at tip or keep trading in play; this decides whether cbb.race_live_state and a live feed are required or unused.",
+    "what_would_resolve": "Market close_time versus scheduled tip from the Kalshi API for a sample of KXNCAAMBRACE markets."
+   },
+   {
+    "id": "race_seq_correction",
+    "type": "DATA_UNAVAILABLE",
+    "category": "settlement_contract",
+    "description": "How often the official scoring sequence is corrected after the game (scorer changes that move a basket between teams or alter points) is unknown, and that is the only route to a disputed order.",
+    "what_would_resolve": "Compare live and final play-by-play for several hundred games and count sequence changes near N=10, 25 and 50."
    }
   ]
  },
@@ -1373,6 +1755,36 @@
      "id": "m.settlement_truth",
      "why": "Final leader and timing of settlement from past seasons show the lag and source used.",
      "role": "context"
+    },
+    {
+     "id": "cbb.team_postseason_games_projection",
+     "why": "Postseason games count, so each candidate team's expected postseason games set both the qualification denominator and the games still to average.",
+     "role": "primary"
+    },
+    {
+     "id": "cbb.stat_leader_source_reconciliation",
+     "why": "Settlement source is unseen; conference-office and NCAA tables can differ in minimums, games included and corrections, deciding close races.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.bracket_sim",
+     "why": "Simulated conference tournaments and the NCAA field give the probability of each extra postseason game for a candidate's team.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.conference_standings_sim",
+     "why": "Conference seeding and byes set the number of conference-tournament games each candidate can add.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.margin_regime_mixture",
+     "why": "Stars on heavy favourites lose minutes in blowouts all season, a systematic drag on their per-game average.",
+     "role": "secondary"
+    },
+    {
+     "id": "cbb.sos_remaining",
+     "why": "Remaining opponent strength, including soft nonconference slates, shifts per-game production systematically for a candidate.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -1396,12 +1808,19 @@
       "cbb.stat_leader_race_model"
      ],
      "hypothesis": "The same gap between candidates is worth more probability late than early because each remaining game moves an average by less, so race uncertainty collapses as games are played."
+    },
+    {
+     "inputs": [
+      "cbb.team_postseason_games_projection",
+      "cbb.stat_leader_qualification_tracker"
+     ],
+     "hypothesis": "A deeper team run raises the team-games denominator, so a candidate who has missed games can fall below the minimum by his team winning."
     }
    ]
   },
   "contract": {
    "settlement_definition": "Yes settles if the named player records the most of the stated per-game statistic (points per game and made threes per game in the samples) in Division I (KXNCAAMBSTATLEADER) or in a named conference (KXNCAAMBCONFLEADER) over the entire 2026-27 season including the postseason, subject to NCAA minimum qualification thresholds, using all official games and excluding games clearly designated as unofficial exhibitions.",
-   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
      "ticker": "KXNCAAMBCONFLEADER",
@@ -1420,7 +1839,7 @@
     }
    ],
    "variants_and_edge_cases": [
-    "Conference version covers per-game stats of players in one conference across all of their games, including nonconference games, not only conference games.",
+    "Conference version covers per-game stats of players in one conference across all of their games, including nonconference games ('Counts all official regular-season games, both conference and nonconference'); conference offices publish their own leaderboards, possibly with different minimums or conference-only splits, and which table settles is unseen.",
     "Categories vary by market (points per game for SEC, made threes per game for national in the samples); other categories such as rebounds or assists were not sampled.",
     "The sampled rules_secondary is truncated at 'If Zoom Diallo does not', so the clause on a non-qualifying or non-playing player is not visible; tie-break treatment is also not visible.",
     "Because postseason games count, the final answer is only known after the last postseason event, and a team's postseason run changes the sample size."
@@ -1450,12 +1869,13 @@
     {
      "id": "s2",
      "name": "Per-game production process",
-     "description": "Each game, a candidate's stat is produced from minutes, shot attempts or rebound and assist opportunities and conversion. For points it is possessions times usage times efficiency plus free throws, for threes made it is attempts times a make rate that is mostly noise, for rebounds it is the missed-shot pool and positioning, for assists it is teammates' shot making. Opponent, pace and game script change a single game's output, so the per-game sd is large relative to differences between candidates.",
+     "description": "Each game, a candidate's stat is produced from minutes, shot attempts or rebound and assist opportunities and conversion. Points are possessions times usage times efficiency plus free throws; threes made are attempts times a noisy make rate; rebounds come from the missed-shot pool; assists from teammates' shot making. Opponent strength, pace and blowout minute losses shift output systematically, not only as noise: stars on dominant teams sit more and soft schedules inflate averages.",
      "distribution": "Per-game counts are overdispersed and nonnegative; points have sd near 6 to 8, threes made near 1.5 to 2 with Beta-binomial-like tails, so a season average has sd near 1 over sqrt of games times that.",
      "categories": [
       "efficiency_conversion",
       "pace_volume",
-      "opponent_matchup"
+      "opponent_matchup",
+      "game_context_script"
      ],
      "input_ids": [
       "cbb.three_makes_compound_distribution",
@@ -1463,13 +1883,15 @@
       "cbb.rebound_pool",
       "cbb.assist_conversion_chain",
       "cbb.player_points_dispersion_by_role",
-      "cbb.tempo"
+      "cbb.tempo",
+      "cbb.sos_remaining",
+      "cbb.margin_regime_mixture"
      ]
     },
     {
      "id": "s3",
      "name": "Games played, availability and postseason sample",
-     "description": "The average is taken over all official games the player plays, regular season, conference tournament, NCAA, NIT and other official postseason events, so deep-run teams add games and eliminated teams stop. Injury, suspension, redshirt or coach decisions reduce games played and can end a candidacy; the sampled rules say exhibition and preseason games that are clearly unofficial do not count.",
+     "description": "The average is taken over all official games the player plays: regular season, conference tournament, NCAA, NIT and other official postseason events, so the number of games depends on the team's projected postseason run, including invitational selection for the Crown, CBI or CIT. Injury, suspension or coach decisions reduce games played; the sampled rules exclude exhibition and preseason games clearly designated unofficial.",
      "distribution": "Games played is a discrete count of about 28 to 38 with a left tail from injuries; missed games are clustered and correlated with team success and with the stage of the season.",
      "categories": [
       "availability_news",
@@ -1479,7 +1901,10 @@
       "cbb.dnp_cause_taxonomy",
       "cbb.star_injury_risk",
       "cbb.regular_season_game_inventory",
-      "cbb.leader_average_inertia"
+      "cbb.leader_average_inertia",
+      "cbb.team_postseason_games_projection",
+      "cbb.bracket_sim",
+      "cbb.conference_standings_sim"
      ]
     },
     {
@@ -1494,7 +1919,8 @@
      "input_ids": [
       "cbb.stat_leader_qualification_tracker",
       "cbb.stat_leader_race_model",
-      "cbb.leader_average_inertia"
+      "cbb.leader_average_inertia",
+      "cbb.team_postseason_games_projection"
      ]
     },
     {
@@ -1527,9 +1953,10 @@
      "status": "COVERED",
      "input_ids": [
       "cbb.rebound_pool",
-      "cbb.assist_conversion_chain"
+      "cbb.assist_conversion_chain",
+      "cbb.sos_remaining"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Opportunity pools plus remaining opponent strength for the candidate's schedule."
     },
     "role_personnel": {
      "status": "COVERED",
@@ -1559,9 +1986,12 @@
      "note": "Home-and-away and altitude effects average out across a season of 30-plus games for a leader, and nothing in the settlement depends on a single venue, so no separate environmental input is justified."
     },
     "game_context_script": {
-     "status": "NOT_APPLICABLE",
-     "input_ids": [],
-     "note": "Game script changes minutes in individual games, but over a whole season these effects average out and are captured in the season minutes and dispersion inputs rather than a separate script input."
+     "status": "COVERED",
+     "input_ids": [
+      "cbb.margin_regime_mixture",
+      "cbb.player_minutes"
+     ],
+     "note": "Blowout minute loss is systematic by team quality, so the margin regime mixture feeds projected minutes."
     },
     "pace_volume": {
      "status": "COVERED",
@@ -1592,9 +2022,11 @@
      "status": "COVERED",
      "input_ids": [
       "cbb.regular_season_game_inventory",
-      "cbb.stat_leader_qualification_tracker"
+      "cbb.stat_leader_qualification_tracker",
+      "cbb.team_postseason_games_projection",
+      "cbb.conference_standings_sim"
      ],
-     "note": "Covered by the listed inputs for this contract."
+     "note": "Regular-season inventory, postseason game count and conference-tournament path."
     },
     "officiating_rules": {
      "status": "NOT_APPLICABLE",
@@ -1620,7 +2052,7 @@
     "category": "other",
     "mechanism": "A player leads the official per-game list only if he meets the NCAA minimum (a share of team games or a minimum total of the stat), so a missed-games run turns a leading average into a non-qualifier and removes him from the max.",
     "rationale": "Qualification is a cliff, not a slope: a player averaging 24 ppg who has missed too many games is not eligible, while the next qualifying player wins. Thresholds differ by category and are set by the NCAA, and postseason games raise the team-games denominator.",
-    "measurement": "For each candidate and category compute games_played, team_games_played, projected team games including expected postseason (conference tournament, NCAA, NIT, CBB Crown) and the stat-specific NCAA minimum from the current NCAA statistics rules; the feature is P(qualify) = P(games played over remaining team games >= required share) using the player's per-game availability probability from cbb.dnp_cause_taxonomy, and distance in games to the threshold. As-of: recomputed after each team game.",
+    "measurement": "For each candidate and category compute games_played, team_games_played, projected team games including the expected postseason pmf from cbb.team_postseason_games_projection (conference tournament, NCAA, NIT, Crown, CBI, CIT) and the stat-specific NCAA minimum from the current NCAA statistics rules; the feature is P(qualify) = P(games played over remaining team games >= required share) using the player's per-game availability probability from cbb.dnp_cause_taxonomy, and distance in games to the threshold. As-of: recomputed after each team game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NCAA statistics rules and leaderboards (stats.ncaa.org)",
@@ -1640,16 +2072,18 @@
     "category": "other",
     "mechanism": "The rules count all official games including non-NCAA postseason events, but the usual leaderboard source may lag, may exclude events such as the College Basketball Crown, and can differ from box scores by stat corrections.",
     "rationale": "A season-long contract is settled off one table after the last game; differences of 0.1 to 0.3 per game between sources can decide a close race for threes made or rebounds, and the postseason inclusion list goes beyond NCAA-sanctioned events.",
-    "measurement": "For the 3 most recent seasons collect the final per-game value for top-20 players in each category from the NCAA site, Sports-Reference and ESPN, and compute the absolute difference, the date each source's table becomes final, and whether Crown, CBI and CIT games were included. Define source_gap_i = max pairwise difference and a flag if the gap between rank 1 and 2 is below it. As-of: refreshed weekly during the season and daily at the end.",
+    "measurement": "For the 3 most recent seasons collect the final per-game value for top-20 players in each category from the NCAA site, the relevant conference office's statistics page, Sports-Reference and ESPN; compute pairwise absolute differences, the minimum-games rule each table applies, whether conference tables split conference-only games, the date each becomes final, and whether Crown, CBI and CIT games are included. source_gap_i = max pairwise difference; flag when the rank 1-2 gap is below it or when the conference and NCAA tables name different leaders. As-of: weekly in season, daily at the end.",
     "pregame_knowable": "partial",
     "free_sources": [
      "NCAA statistics site",
+     "Conference office statistics pages",
      "Sports-Reference",
      "ESPN player stats pages"
     ],
     "registry_ids": [],
     "raw_data": [
      "final per-game stats by source",
+     "conference-office leaderboards and minimums",
      "game inclusion lists by source",
      "timestamp of last update"
     ],
@@ -1659,7 +2093,7 @@
    "cbb.leader_average_inertia": {
     "label": "Leaderboard average inertia and remaining-swing bound",
     "category": "distribution",
-    "mechanism": "A season average moves by at most (x - mean)/(g+1) per game, so the games remaining bound how far the gap between the leader and challengers can close, and late in the season a lead is close to locked.",
+    "mechanism": "A season average changes by exactly (x - mean)/(g+1) after a game with value x, so the games remaining limit how far the gap between the leader and challengers can close, and late in the season a lead is close to locked.",
     "rationale": "At 25 games played one 40-point game raises a 20 ppg average by under 0.8, and a challenger 1.5 ppg back needs several far above average games, so the effective uncertainty falls as 1/g; postseason games add few extra samples, which matters most for players on deep-tournament teams.",
     "measurement": "For each pair (leader, challenger) compute the gap in current average, the number of games remaining for each (regular-season schedule plus expected postseason), the per-game sd, and the swing bound d = (mu_challenger - mu_leader) * G_rem/(g+G_rem) plus the standard error sqrt(G_rem) * sd/(g+G_rem). The feature is z = (gap - expected_catch_up)/se. As-of: updated after every game by either player.",
     "pregame_knowable": "yes",
@@ -1674,6 +2108,28 @@
      "remaining games per team"
     ],
     "why": "Quantifies how much of the leaderboard is already locked in, so early-season and late-season prices are treated with the correct amount of remaining variance.",
+    "role": "primary"
+   },
+   "cbb.team_postseason_games_projection": {
+    "label": "Projected postseason games per team (conference tournament, NCAA, NIT, Crown, CBI, CIT)",
+    "category": "schedule_context",
+    "mechanism": "All official postseason games count, so a candidate's team's postseason game count adds samples to his average and raises the team-games denominator used for NCAA qualification.",
+    "rationale": "A team's run length varies from one conference-tournament game to about ten games, depending on strength, seed, byes, NCAA selection and invitational events. The Crown, CBI and CIT are invitational, so participation is partly a team choice and not simulable from ratings alone.",
+    "measurement": "From cbb.bracket_sim (market-free strength posterior from cbb.ratings_fundamentals): pmf of conference-tournament games by seed and bye (cbb.conference_standings_sim, cbb.auto_bid_structure), P(NCAA bid) and expected NCAA rounds, P(NIT bid | no NCAA bid) by rating rank, and P(Crown/CBI/CIT) from historical participation rates of non-NIT teams by rating rank and conference (5 prior seasons). Output pmf of total postseason games per team. As-of: ratings through the prior day; recomputed weekly and daily in March.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Bart Torvik T-Rank",
+     "NCAA and conference bracket pages",
+     "Sports-Reference postseason results"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "team ratings posterior",
+     "conference tournament formats and seeds",
+     "historical NIT/Crown/CBI/CIT fields",
+     "postseason results"
+    ],
+    "why": "Supplies the G_rem and qualification denominator that the race model and qualification tracker both need for deep-run and early-exit candidates.",
     "role": "primary"
    }
   },
@@ -1696,7 +2152,7 @@
    },
    "cbb.star_injury_risk": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Defined for postseason availability; it captures a valid risk of missing games but is calibrated for tournament games rather than a whole season."
+    "reason": "Defined for postseason availability; useful for late-season and tournament games, while season-long injury hazard rests on cbb.dnp_cause_taxonomy, which is acceptable."
    },
    "cbb.three_makes_compound_distribution": {
     "verdict": "KEEP_SECONDARY",
@@ -1745,6 +2201,22 @@
    "m.settlement_truth": {
     "verdict": "KEEP_CONTEXT",
     "reason": "Past season settlements indicate the data source and timing used; not a predictor."
+   },
+   "cbb.bracket_sim": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Gives NCAA and conference-tournament advancement probabilities that feed the postseason-games projection; use it with market-free ratings only."
+   },
+   "cbb.conference_standings_sim": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Seeding and byes decide the number of conference-tournament games, part of each candidate's remaining games."
+   },
+   "cbb.margin_regime_mixture": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Blowout probability by team quality is a systematic minutes drag on stars of dominant teams, not mean-zero noise over a season."
+   },
+   "cbb.sos_remaining": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Remaining opponent strength shifts expected per-game production; needs a player-level opponent adjustment to be useful."
    }
   },
   "interactions": [
@@ -1792,6 +2264,24 @@
     "form": "conditional",
     "mechanism": "A leader on a deep-run team gains postseason games that reduce noise but raise injury exposure, and a leader on an early-eliminated team stops accumulating games, so the effect of tournament depth depends on both the quality of opposition and risk of absence.",
     "how_to_test": "Compare changes in per-game average between the end of the regular season and the final for leaders by postseason games played."
+   },
+   {
+    "inputs": [
+     "cbb.team_postseason_games_projection",
+     "cbb.stat_leader_qualification_tracker"
+    ],
+    "form": "conditional",
+    "mechanism": "Postseason games raise the team-games denominator, so a candidate who has already missed games can lose qualification because his team keeps winning, while extra games also dilute a hot start; the effect exists only for candidates near the minimum.",
+    "how_to_test": "For past near-threshold leaders compute qualification status under realised versus counterfactual shorter postseason runs."
+   },
+   {
+    "inputs": [
+     "cbb.margin_regime_mixture",
+     "cbb.player_minutes"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Expected minutes are scaled down by the share of games that become blowouts, which is highest for stars on heavy favourites, so national scoring leaders tilt toward strong players on average or weak teams.",
+    "how_to_test": "Regress player-season minutes per game on team average expected margin among high-usage players; expect a negative slope beyond about 10 points."
    }
   ],
   "nonlinearities": [
@@ -1912,6 +2402,11 @@
       "note": "leaderboards; rule text needs verification"
      },
      {
+      "name": "Conference office statistics pages",
+      "access": "free",
+      "note": "conference leaderboards; minimums and game inclusion vary"
+     },
+     {
       "name": "Kalshi API",
       "access": "own_capture",
       "note": "rules and settlement"
@@ -1922,6 +2417,42 @@
      "cbb.stat_leader_source_reconciliation",
      "cbb.regular_season_game_inventory",
      "cbb.box_score_source_risk"
+    ]
+   },
+   {
+    "dataset": "Team strength, schedules and postseason fields",
+    "grain": "one row per team per day, plus one per postseason event and season",
+    "fields": [
+     "market-free rating and posterior sd",
+     "remaining schedule and venue",
+     "conference tournament format and seed",
+     "NCAA/NIT/Crown/CBI/CIT fields"
+    ],
+    "timestamp_requirement": "Ratings as of the prior day; brackets and invitational fields as announced.",
+    "history_needed": "5 seasons of postseason fields to estimate invitational participation rates.",
+    "candidate_sources": [
+     {
+      "name": "Bart Torvik T-Rank",
+      "access": "free",
+      "note": "ratings and schedules"
+     },
+     {
+      "name": "NCAA and conference bracket pages",
+      "access": "free",
+      "note": "formats and fields"
+     },
+     {
+      "name": "Sports-Reference postseason pages",
+      "access": "free_scrape",
+      "note": "historical fields"
+     }
+    ],
+    "feeds_inputs": [
+     "cbb.team_postseason_games_projection",
+     "cbb.bracket_sim",
+     "cbb.conference_standings_sim",
+     "cbb.sos_remaining",
+     "cbb.margin_regime_mixture"
     ]
    }
   ],
@@ -1945,6 +2476,20 @@
     "type": "CONTRACT_AMBIGUOUS",
     "description": "Only a points-per-game conference market and a made-threes national market were sampled; other categories (rebounds, assists, steals, blocks) and their qualification rules may exist with different drivers.",
     "what_would_resolve": "A full listing of open strikes by category in both series."
+   },
+   {
+    "id": "sl_invitational",
+    "type": "MECHANISM_UNCERTAIN",
+    "category": "situational_schedule_motivation",
+    "description": "Participation in the College Basketball Crown, CBI and CIT is by invitation and team choice, and the 2026-27 fields and formats are not known, so postseason game counts for mid-ranked teams are uncertain.",
+    "what_would_resolve": "Announced 2026-27 formats and historical acceptance rates of eligible non-NIT teams by rating rank."
+   },
+   {
+    "id": "sl_conf_table",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "For KXNCAAMBCONFLEADER the rules say 'the most points per game in the Southeastern Conference' but the visible text does not say whether the NCAA table filtered to the conference or the conference office's table, with its own minimum, settles.",
+    "what_would_resolve": "The truncated rules text, or a settled conference-leader market where the two tables differed."
    }
   ]
  }

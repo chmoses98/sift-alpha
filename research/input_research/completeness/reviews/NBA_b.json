@@ -3,8 +3,8 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Binary contract on one named player: YES if he records 10 or more in two (double double) or three (triple double) of the five categories points, rebounds, assists, steals, blocks in the single game named in the contract (floor_strike 0.5, strike_type greater). Inactive players, and active players who never take the court, settle at a fair price rather than NO; once the player enters the game the market settles on actual box-score statistics. A game postponed but starting within 48 hours stays open; cancelled or not started within 48 hours settles to a fair price. The rules sample is silent on whether overtime statistics count and the sample text is cut off before naming the source agency. KXNBAPLAYOFF3D (moved here by the reconciliation) is TITLE_ONLY; whether it is a per-game playoff triple-double ladder or a season-long 'any player records a playoff triple-double' event is unknown.",
-   "rules_verification": "PARTIALLY_VERIFIED",
+   "settlement_definition": "Two single-game forms and one playoff-long form. KXNBA2D/KXNBA3D: YES if the named player records 10 or more in two (double double) or three (triple double) of points, rebounds, assists, steals and blocks in the named game (floor_strike 0.5, strike_type greater); inactive players, and active players who never take the court, settle at a fair price, and once the player enters the market settles on his actual statistics; a game postponed but starting within 48 hours stays open, otherwise fair price. KXNBAPLAYOFF3D: YES if the named player records at least one triple-double in any single playoff game of the 2026 Pro Basketball Playoffs; cumulative stats across games do not count, and the text states no fair-price void, so missed games simply remove chances. None of the texts says whether overtime statistics count; the single-game text is cut off before naming the source agency, and the playoff text does not say whether Play-In games are playoff games.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
      "ticker": "KXNBA2D",
@@ -20,6 +20,11 @@
      "ticker": "KXNBA3D",
      "quote": "Once a player enters the game the market settles based on whether the player records a triple double.",
      "establishes": "No protection against early exit: a player who enters and leaves after minutes settles on whatever he accumulated."
+    },
+    {
+     "ticker": "KXNBAPLAYOFF3D",
+     "quote": "If Paolo Banchero records at least 1 triple-double in any playoff game in the 2026 Pro Basketball Playoffs, then the market resolves to Yes.",
+     "establishes": "KXNBAPLAYOFF3D is a union over the player's playoff games (at least one triple-double in one game), not a single-game ladder; its exposure is the number of playoff games he plays."
     }
    ],
    "variants_and_edge_cases": [
@@ -27,7 +32,7 @@
     "Steals and blocks are valid categories, so a rim protector can complete a DD with points+blocks or a TD with reb+blk; the common 'pts/reb/ast' simplification misses these paths.",
     "Overtime is not mentioned in the sampled text; 'in a single game' on the official box score ordinarily includes OT minutes, which adds roughly 5 minutes to starters in ~6% of games and shifts DD probability materially for players at 8-9.",
     "Inactive or never-entered player settles at a fair price (not NO), so unconditional participation modelling is unnecessary but the conditional-on-entering distribution needs a left tail for early exits.",
-    "KXNBAPLAYOFF3D (TITLE_ONLY): if per-game, playoff minutes for stars rise by about 2-4 and pace falls, so regular-season DD/TD rates must be re-based; if it is an at-least-one event across the playoffs, it becomes 1 - E[prod over games (1 - p_game)] with the number of games set by series advancement."
+    "KXNBAPLAYOFF3D (rules read): 'Cumulative stats across multiple games will not be considered', so the event is 1 - E[prod over his playoff games (1 - p_game)]; the number of games is set by qualification and series advancement, per-game rates must be re-based on playoff minutes (+2-4 for stars) and pace, and no fair-price void exists for an injured or eliminated player."
    ],
    "settlement_data_source": "Official game box score as reported by the sports data sources named in the full rules; the sampled rules_secondary is truncated before naming them, so the exact source agency and stat-correction policy are unverified (see unresolved)."
   },
@@ -113,6 +118,26 @@
       "m.rules_text",
       "nba.milestone_rates"
      ]
+    },
+    {
+     "id": "s6",
+     "name": "Playoff-run exposure for the playoff triple-double series",
+     "description": "KXNBAPLAYOFF3D pays if one playoff game of the run contains a triple-double, so the opportunity set is the player's playoff games: none if his team misses or loses in the Play-In, four to seven per round reached, up to 28 for a finalist. Per-game triple-double probability rises in the playoffs because rotations shrink to eight or nine and stars gain two to four minutes, but pace drops and opponents scheme against the primary creator for a whole series. Star health hazard and advancement are positively linked: the team goes deeper when he is healthy, which is also when he accrues games.",
+     "distribution": "Games played G is lumpy on {0, 4..28}; P(YES) = 1 - E[prod_g (1 - p_g)], concave in G and close to p x E[G] for low-rate players; per-game rates are correlated within a series through matchup and role.",
+     "categories": [
+      "pace_volume",
+      "availability_news",
+      "role_personnel",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.playoff_triple_double_rate",
+      "nba.series_player_exposure",
+      "nba.series_length_distribution",
+      "nba.playoff_star_health_hazard",
+      "nba.playoff_rotation",
+      "nba.milestone_rates"
+     ]
     }
    ],
    "category_coverage": {
@@ -175,7 +200,8 @@
      "status": "COVERED",
      "input_ids": [
       "nba.pace",
-      "nba.reb_chances"
+      "nba.reb_chances",
+      "nba.series_player_exposure"
      ],
      "note": "Possession count scales rebound pool and assist chances."
     },
@@ -210,9 +236,10 @@
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
-      "m.rules_text"
+      "m.rules_text",
+      "nba.playoff_triple_double_rate"
      ],
-     "note": "Five-category definition, voiding rule and postponement window are in the sampled rules."
+     "note": "Five-category definition, voiding rule and postponement window are in the sampled rules. KXNBAPLAYOFF3D is a union over playoff games with no fair-price void."
     }
    }
   },
@@ -317,6 +344,104 @@
      "Pregame inactive list and starter confirmation (NBA official injury report, game-day boxscore)",
      "Coach by team-season table"
     ]
+   },
+   "nba.playoff_triple_double_rate": {
+    "label": "Per-player playoff triple-double rate given expected games and minutes",
+    "category": "distribution",
+    "mechanism": "A playoff triple-double contract is an at-least-one-event over the playoffs; probability depends on the few players with triple-double production, the expected number of playoff games each plays and their playoff minutes.",
+    "rationale": "KXNBAPLAYOFF3D cannot be priced from regular-season rates alone: minutes rise for stars, games depend on series length and advancement, and triple-double rate per game is concentrated in a handful of high-assist bigs and guards.",
+    "measurement": "For each candidate compute P(triple-double | game) from regular-season rate adjusted by playoff minutes factor (starters about +2 to +4 minutes) with shrinkage to a role prior (weight 20 games); expected games from the bracket simulation as a distribution; P(at least one TD in playoffs) = 1 - E[(1-p)^G]; aggregate across candidates with correlations through team advancement. As-of: nightly.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api game logs",
+     "Basketball-Reference"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff bracket and series results by game",
+     "player playoff and regular-season game logs (pts, reb, ast, stl, blk, minutes)",
+     "injury report vintages during the playoffs"
+    ],
+    "why": "Gives the per-game playoff triple-double probability and its compounding over the run, the core of KXNBAPLAYOFF3D.",
+    "role": "primary"
+   },
+   "nba.series_player_exposure": {
+    "label": "Expected games and minutes exposure over a series",
+    "category": "pace_volume",
+    "mechanism": "Series totals depend on the number of games, availability in each, and playoff minutes inflation.",
+    "rationale": "The draft has a series model for the number of games but no link to each player's exposure, including injuries across games and early eliminations.",
+    "measurement": "E[games] = Σ_k P(series length = k) × k; exposure_i = Σ_games P(player i plays game g | series length) × expected minutes_g (playoff inflation factor from role-specific ratio of playoff to regular-season minutes over 10 seasons, shrunk with k=8 players); include injury persistence (probability of playing game g+1 given absent in g about 0.6, estimated); output exposure distribution (mean, sd).",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Basketball-Reference playoff logs",
+     "own series model"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff bracket and series results by game",
+     "player playoff and regular-season game logs (pts, reb, ast, stl, blk, minutes)",
+     "injury report vintages during the playoffs"
+    ],
+    "why": "Converts series-length uncertainty and game-to-game absence persistence into the number of playoff games and minutes the named player gets.",
+    "role": "primary"
+   },
+   "nba.series_length_distribution": {
+    "label": "Series-length distribution from per-game win probabilities",
+    "category": "game_state",
+    "mechanism": "The number of games in a best-of-seven series is a function of per-game win probability, home pattern and dependence between games.",
+    "rationale": "KXNBASERIESGAMES counts games, not points; the draft has no input for it except a generic series model reference outside the archetype.",
+    "measurement": "P(series ends in k games) by dynamic programming over home pattern 2-2-1-1-1 with per-game win probabilities from own-model ratings and series dependence parameter (game-to-game correlation about +0.05 on margin, estimated from 2000-2025 playoff series); injuries known as of the as-of date; output P(4), P(5), P(6), P(7).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference playoffs",
+     "own ratings"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff series results by game with venue",
+     "own team ratings"
+    ],
+    "why": "Series length per round sets how many triple-double chances each round contributes to KXNBAPLAYOFF3D.",
+    "role": "secondary"
+   },
+   "nba.playoff_star_health_hazard": {
+    "label": "Time-resolved probability that each rotation star is healthy for each playoff round",
+    "category": "availability",
+    "mechanism": "Title and conference odds are convex in star availability, and the relevant availability is in April-June, not the regular-season games-missed average.",
+    "rationale": "Games-missed expectations average over a season; the quantity that matters for round-reach contracts is the probability of being healthy at tip of each playoff series, which depends on current injury state, history, age and minutes load.",
+    "measurement": "For each player in the top-3 of each contender estimate a hazard model for an injury ending availability (survival model by age, previous-season games missed, minutes per game, current injury status) fitted on 10 seasons of injury data; output P(healthy at playoff start), P(healthy for round k) conditional on being healthy at the start; combine with team-level strength loss from the player's absence (impact x minutes share). As-of: injury report vintage.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA injury reports (archived)",
+     "Pro Sports Transactions injury/transaction data",
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "injury reports archived by vintage",
+     "player age, minutes and games missed"
+    ],
+    "why": "The named star must be healthy in each round to accrue games; his health also moves his team's advancement, coupling the two.",
+    "role": "secondary"
+   },
+   "nba.playoff_rotation": {
+    "label": "Playoff rotation tightening and minutes inflation",
+    "category": "player_role",
+    "mechanism": "Playoff games feature shorter rotations and higher starter minutes, changing player props and team-level ratings relative to the regular season.",
+    "rationale": "Stars play several more minutes per game and bench depth matters less; regular-season minutes baselines understate playoff volume for starters and overstate bench contributions. Subtle: the effect varies by round and by series pace/blowout probability.",
+    "measurement": "Compare each player's playoff vs regular-season minutes in historical series; team-level rotation depth; adjust minutes projections and series stat distributions by round.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Basketball-Reference (free; polite scraping, rate-limited)",
+     "nba_api / stats.nba.com (free, undocumented, rate-limited)",
+     "cdn.nba.com liveData JSON (boxscore, playbyplay, odds; free, unofficial)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "player playoff vs regular-season minutes by series"
+    ],
+    "why": "Playoff minutes inflation and shorter rotations change rebound and assist shares, so regular-season TD rates must be re-based.",
+    "role": "secondary"
    }
   },
   "input_audit": {
@@ -430,6 +555,15 @@
     "form": "conditional",
     "mechanism": "Inside the blowout branch, a player at 9 in a category late is more likely than his per-minute rate implies to finish, because teammates funnel the last opportunity; this partially offsets the minutes loss, in the direction opposite to the naive blowout penalty.",
     "how_to_test": "Among decided games, regress P(reach 10) from count 8-9 entering the last 8 minutes on baseline per-minute rate and a stat-chase coach indicator."
+   },
+   {
+    "inputs": [
+     "nba.series_player_exposure",
+     "nba.playoff_triple_double_rate"
+    ],
+    "form": "concave",
+    "mechanism": "The playoff triple-double probability compounds a per-game rate over a random number of games: doubling expected games less than doubles P(YES) for high-rate creators, but nearly doubles it for occasional triple-double players, so advancement matters most for the long shots.",
+    "how_to_test": "Compare realised playoff triple-double incidence by player rate bucket against 1 - (1-p)^G versus the linear p x G approximation across 15 playoff seasons."
    }
   ],
   "nonlinearities": [
@@ -639,6 +773,52 @@
     "feeds_inputs": [
      "nba.rating_blowout_minutes_curve"
     ]
+   },
+   {
+    "dataset": "Playoff bracket, series results and playoff box scores",
+    "grain": "series x game; player x playoff game",
+    "fields": [
+     "season",
+     "round",
+     "series_id",
+     "game_number",
+     "home_team",
+     "winner",
+     "player_id",
+     "minutes",
+     "pts",
+     "reb",
+     "ast",
+     "stl",
+     "blk",
+     "injury_status_vintage"
+    ],
+    "timestamp_requirement": "Bracket and series state as of each night of the playoffs; injury status at its published time.",
+    "history_needed": "15 playoff seasons for playoff minutes inflation and TD-rate re-basing",
+    "candidate_sources": [
+     {
+      "name": "Basketball-Reference playoff game logs",
+      "access": "free_scrape",
+      "note": "Polite scraping"
+     },
+     {
+      "name": "nba_api playoff box scores",
+      "access": "free_scrape",
+      "note": "Undocumented, rate-limited"
+     },
+     {
+      "name": "NBA official injury report",
+      "access": "own_capture",
+      "note": "Archive live for vintages"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.playoff_triple_double_rate",
+     "nba.series_player_exposure",
+     "nba.series_length_distribution",
+     "nba.playoff_star_health_hazard",
+     "nba.playoff_rotation"
+    ]
    }
   ],
   "unresolved": [
@@ -685,8 +865,8 @@
     "id": "pm-playoff3d-scope",
     "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "KXNBAPLAYOFF3D has no sampled rules; it could be a single-game playoff triple-double contract (same form as KXNBA3D) or a playoff-long event over all players or one player, which needs series-advancement and games-played inputs this record does not define.",
-    "what_would_resolve": "Sample KXNBAPLAYOFF3D rules; if playoff-long, add a bracket games-count input (from series_and_cup) and a per-game rate re-based on playoff minutes."
+    "description": "KXNBAPLAYOFF3D is read as at least one triple-double in any 2026 playoff game, but the text does not say whether Play-In games count as playoff games (other NBA series exclude them explicitly), nor whether overtime statistics count, nor what happens if the player is traded or ruled out for the playoffs before they start.",
+    "what_would_resolve": "Check a settled KXNBAPLAYOFF3D market for a player whose team played in the Play-In, and request the full rules_secondary for the source agency and overtime wording."
    }
   ]
  },
@@ -694,7 +874,7 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "After the market-universe reconciliation this archetype holds five series: KXNBAPTS (single-game player points N+), KXNBALADDERPTS (points ladder), KXNBAPTSPROT (protected points), KXNBAPLAYOFFPTS (playoff-game points) and KXNBABENCHPTS (bench points, apparently a team's non-starter total). Rules are sampled for KXNBAPTS and KXNBAPTSPROT: YES if the named player records N+ points (floor_strike N-0.5) in the named game; an inactive player, or one active but never taking the court, settles at a fair price, and once he enters the market settles on his recorded points. The protected variant additionally refunds at the pre-tip fair price a player who enters in the first half but not after it (including overtime), unless he already has the required points. Postponed games starting within 48 hours stay open, otherwise fair price. KXNBALADDERPTS, KXNBAPLAYOFFPTS and KXNBABENCHPTS are TITLE_ONLY; overtime inclusion and the bench definition are unverified.",
+   "settlement_definition": "After the reconciliation this archetype holds four series: KXNBAPTS (single-game player points N+), KXNBALADDERPTS (points ladder), KXNBAPTSPROT (protected points) and KXNBABENCHPTS (bench points, apparently a team's non-starter total). Rules are sampled for KXNBAPTS and KXNBAPTSPROT: YES if the named player records N+ points (floor_strike N-0.5) in the named game; an inactive player, or one active but never taking the court, settles at a fair price, and once he enters the market settles on his recorded points. The protected variant additionally resolves at the pre-tip fair price when the player enters in the first half but not after it (including any overtime period), unless he already has the required points. Postponed games starting within 48 hours stay open, otherwise all markets resolve at a fair price. KXNBALADDERPTS and KXNBABENCHPTS are TITLE_ONLY; overtime inclusion (not stated in either sampled text) and the bench definition are unverified.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -716,7 +896,6 @@
    "variants_and_edge_cases": [
     "Standard ladder (KXNBAPTS, rules-verified; KXNBALADDERPTS assumed the same): rungs are nested events P(points >= N), so the fitted curve must be monotone in N; inactive or never-entering players are voided at a fair price, while an early exit after entering settles on actual points.",
     "Protected points (KXNBAPTSPROT, rules-verified): a first-half-only appearance is refunded at the pre-tip fair price unless the strike is already met; the pre-tip fair price already embeds P(early exit), so the protected fair value is not the standard rung conditioned on playing the second half.",
-    "Playoff points (KXNBAPLAYOFFPTS): same settlement form assumed, but playoff rotations shorten (stars +2 to +4 minutes) and pace falls, so regular-season minutes and pace priors must be re-based on playoff games.",
     "Bench points (KXNBABENCHPTS): if it settles on a team's non-starter points, the starting-lineup announcement defines who counts as bench, blowouts raise bench minutes for both teams, and a scratched starter both promotes a reserve out of the bench pool and adds minutes to it; the direction of most drivers is opposite to the star ladders.",
     "Overtime: neither the KXNBAPTS nor the KXNBAPTSPROT text says whether ordinary-ladder points include overtime (the protected text mentions overtime only as part of 'after the conclusion of the first half'); official final box scores normally include OT, which adds about five minutes for starters in roughly 6% of games (pp-ot-inclusion)."
    ],
@@ -724,7 +903,7 @@
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Points are minutes times a possession-and-usage-driven attempt rate times conversion, with free throws added. The causal chain is: availability and minutes scenario (a mixture, not a mean), team possessions available while he is on court (matchup pace and game script), his share of those possessions given the specific five-man unit on the floor, shot mix and shot quality against this defense, free-throw trips from foul drawing and the opponent's foul rate, game-script truncation or extension (blowout rest, late intentional fouling, overtime), and finally the settlement form, which differs across the series in this archetype (threshold ladders, combined-stat ladders, head-to-head with 50/50 ties, a cubic scalar payout). Each stage adds variance of a different shape: discrete mixture for minutes, overdispersed count for attempts, Bernoulli noise with heavy shrinkage for makes, so the upper rungs are governed by scenario weights and tails rather than by the mean.",
+   "summary": "Points are minutes times a possession-and-usage-driven attempt rate times conversion, with free throws added. The causal chain is: availability and minutes scenario (a mixture, not a mean), team possessions available while he is on court (matchup pace and game script), his share of those possessions given the specific five-man unit on the floor, shot mix and shot quality against this defense, free-throw trips from foul drawing and the opponent's foul rate, game-script truncation or extension (blowout rest, late intentional fouling, overtime), and finally the settlement form, which differs across the series in this archetype (standard and ladder thresholds, the protected rung with its first-half-only refund, and a team bench-points total). Each stage adds variance of a different shape: discrete mixture for minutes, overdispersed count for attempts, Bernoulli noise with heavy shrinkage for makes, so the upper rungs are governed by scenario weights and tails rather than by the mean.",
    "stages": [
     {
      "id": "s1",
@@ -812,7 +991,7 @@
     {
      "id": "s6",
      "name": "Distribution, dependence and settlement form",
-     "description": "The live forms are the standard and ladder rung (a threshold probability on one player's points, nested across rungs so the curve must be monotone), the protected rung (the early-exit branch refunded if the player appears only in the first half, assumed from the rebounds wording), the playoff rung (same form on a shortened rotation) and the bench total, which is a sum over the non-starters fixed at the lineup announcement. Tail shape matters most for the 30+ and 40+ rungs, and the bench sum needs the dependence between reserves' minutes created by the margin path.",
+     "description": "The live forms are the standard and ladder rung (a threshold probability on one player's points, nested across rungs so the curve must be monotone), the protected rung (the KXNBAPTSPROT text refunds at the pre-tip fair price a first-half-only appearance unless the strike is already met) and the bench total, which is a sum over the non-starters fixed at the lineup announcement. Tail shape matters most for the 30+ and 40+ rungs, and the bench sum needs the dependence between reserves' minutes created by the margin path.",
      "distribution": "Integer-valued, right-skewed, heavy upper tail for star rungs; the bench total is a sum of positively dependent reserve counts whose mean rises with the blowout probability.",
      "categories": [
       "distribution_variance",
@@ -920,7 +1099,7 @@
     "situational_schedule_motivation": {
      "status": "GAP",
      "input_ids": [],
-     "note": "Rest-day and playoff-seeding stakes affect star minutes but only back-to-back/travel is represented; clinch-and-rest incentives and minutes-restriction ramp-ups after injury have no explicit input."
+     "note": "Rest-day and seeding stakes affect star minutes but only back-to-back/travel is represented; clinch-and-rest incentives and minutes-restriction ramp-ups after injury have no explicit input."
     },
     "officiating_rules": {
      "status": "COVERED",
@@ -936,7 +1115,7 @@
       "m.rules_text",
       "nba.stat_corrections"
      ],
-     "note": "Ladder, protected (assumed first-half refund), playoff and bench-total forms; no rules text sampled for any of them, so each assumption is listed in unresolved."
+     "note": "Ladder and protected forms read from the KXNBAPTS and KXNBAPTSPROT rules; the ladder series and the bench total are TITLE_ONLY, so their assumptions are listed in unresolved."
     }
    }
   },
@@ -1559,13 +1738,13 @@
    {
     "id": "pp-bucket-mixing",
     "type": "OTHER",
-    "description": "After the reconciliation the archetype still mixes single-player ladders with a bench-points series (KXNBABENCHPTS) that appears to be a team-level sum over non-starters, and a playoff points series whose rotation regime differs; the bench series' definition of bench and its settlement are inferred from the title only.",
+    "description": "After the reconciliation the archetype still mixes single-player ladders with a bench-points series (KXNBABENCHPTS) that appears to be a team-level sum over non-starters; the bench series' definition of bench and its settlement are inferred from the title only.",
     "what_would_resolve": "Sample KXNBABENCHPTS rules and confirm whether it is team bench points or a player contract; if team-level, consider moving it beside team_total."
    },
    {
     "id": "pp-titleonly",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "KXNBALADDERPTS, KXNBAPLAYOFFPTS and KXNBABENCHPTS are TITLE_ONLY: whether the ladder and playoff series share the KXNBAPTS void rule, and what counts as bench points (official starter flag, team-level sum), are inferred, not read.",
+    "description": "KXNBALADDERPTS and KXNBABENCHPTS are TITLE_ONLY: whether the ladder series shares the KXNBAPTS void rule, and what counts as bench points (official starter flag, team-level sum), are inferred, not read.",
     "what_would_resolve": "Sample rules_primary and rules_secondary for the three TITLE_ONLY series and replace the inferred statements with verbatim quotes."
    },
    {
@@ -1594,8 +1773,8 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Binary ladder on one player's official rebounds in the named game: YES if rebounds are at or above N (floor_strike N-0.5, strike_type greater, titles like '10+ rebounds'). Inactive or never-entering players settle at a fair price; once he enters the market settles on actual rebounds. A postponed game that begins within 48 hours stays open, otherwise all markets resolve at a fair price. The protected variant (KXNBAREBPROT) additionally refunds, at the pre-tip fair price, a player who enters in the first half but not after halftime (including overtime), unless he already has the required rebounds. Both live series (KXNBAREB, KXNBAREBPROT) have sampled rules; the series rebounds leader formerly filed here moved to player_h2h_series_stats in the reconciliation.",
-   "rules_verification": "PARTIALLY_VERIFIED",
+   "settlement_definition": "Binary ladder on one player's official rebounds in the named game: YES if rebounds are at or above N (floor_strike N-0.5, strike_type greater, titles like '10+ rebounds'). Inactive or never-entering players settle at a fair price; once he enters the market settles on actual rebounds. A postponed game that begins within 48 hours stays open, otherwise all markets resolve at a fair price. The protected variant (KXNBAREBPROT) additionally refunds, at the pre-tip fair price, a player who enters in the first half but not after halftime (including overtime), unless he already has the required rebounds. Both live series (KXNBAREB, KXNBAREBPROT) have sampled rules; neither says whether overtime rebounds count.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
      "ticker": "KXNBAREB",
@@ -2324,6 +2503,13 @@
     "description": "No input handles rest-for-seeding and post-injury minutes ramp-ups that change bigs' minutes; the effect may be large for specific stars but is not quantified.",
     "what_would_resolve": "Back-test projected-minutes error by rest state and clinch status.",
     "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "pr-ot-inclusion",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "The KXNBAREB and KXNBAREBPROT texts settle on 'the player's rebounds recorded' without saying whether overtime rebounds count; the protected text mentions overtime only when defining a second-half appearance.",
+    "what_would_resolve": "Check settled KXNBAREB markets from overtime games against regulation-only and full box-score rebound counts."
    }
   ]
  },
@@ -2331,7 +2517,7 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Binary ladder: YES if the named player makes at least N three-pointers (floor_strike N-0.5, e.g. 5+ with floor 4.5) in the named game. Inactive or never-entering players settle at a fair price; once he enters, the market settles on actual made threes. Postponed games that start within 48 hours stay open, otherwise all markets resolve at a fair price. KXNBA3PT and KXNBA3PTPROT have sampled rules; the protected variant refunds at the pre-tip fair price a player who enters in the first half but not after it (including overtime) unless he already has the required threes. KXNBALADDER3PT and KXNBA3PTALLGAMES (made threes in every game of a set, a multi-game conjunction) are TITLE_ONLY. The scalar escalator formerly filed here moved to player_escalator_payout in the reconciliation.",
+   "settlement_definition": "Binary ladder: YES if the named player makes at least N three-pointers (floor_strike N-0.5, e.g. 5+ with floor 4.5) in the named game. Inactive or never-entering players settle at a fair price; once he enters, the market settles on actual made threes. Postponed games that start within 48 hours stay open, otherwise all markets resolve at a fair price. KXNBA3PT and KXNBA3PTPROT have sampled rules; the protected variant resolves at the pre-tip fair price when a player enters in the first half but not after it (including overtime) unless he already has the required threes. KXNBALADDER3PT is TITLE_ONLY. Neither sampled text says whether overtime makes count for the standard ladder.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -2352,14 +2538,14 @@
    ],
    "variants_and_edge_cases": [
     "Ladder rungs: only 5+ (KXNBA3PT, floor_strike N-0.5) is sampled; a 1+ to 7+ span is assumed from the ladder titles and is not verified from rules text. Low rungs would depend mostly on attempts>=1 and minutes, high rungs on the attempt tail and shooting luck, so key drivers would differ by rung.",
-    "Protected (KXNBA3PTPROT, rules-verified): a first-half-only appearance is refunded at the pre-tip fair price unless the strike is met; the every-game series (KXNBA3PTALLGAMES) is TITLE_ONLY, so the multi-game conjunction cannot be specified from the sample.",
+    "Protected (KXNBA3PTPROT, rules-verified): a first-half-only appearance is refunded at the pre-tip fair price unless the strike is met; any appearance after halftime puts it back on actual makes.",
     "Overtime is not addressed in the sampled text; official box score made threes normally include OT, adding about five minutes of attempts in about 6% of games.",
-    "Every-game conjunction (KXNBA3PTALLGAMES, TITLE_ONLY): if it requires at least one made three in each game of a stated set, the probability is a product over games of P(>=1 make | plays), which is dominated by the worst-matchup and lowest-minutes game and by whether a missed game voids, fails or is skipped."
+    "Ladder series (KXNBALADDER3PT, TITLE_ONLY): assumed to be the same nested 'N+' rungs as KXNBA3PT, so cross-rung monotonicity must hold, but its void rule is not read."
    ],
    "settlement_data_source": "Official box score made three-pointers as named in the full rules; the sampled secondary text is truncated before naming source agencies, so the exact source is unverified."
   },
   "mechanism": {
-   "summary": "Made threes equal attempts times make probability. Attempts are minutes times a per-minute rate set by role (catch-and-shoot spot-up vs on-ball creator), the team's pace and who passes to him, modified by the score path (trailing teams launch more, leading teams bench shooters). Make probability is a context-weighted talent estimate (open catch-and-shoot vs contested pull-up) that is overwhelmingly noise in a single game, so the predictable component is attempts, and the make count is a thinned process whose variance exceeds a plain binomial because attempts and team-level shooting form are random. Settlement is the official count on single-game ladders and protected rungs, and a conjunction over games for the every-game series. The main modelling hazards are role-specific minutes volatility for bench shooters and the dependence between a shooter's attempts and a specific passer's availability.",
+   "summary": "Made threes equal attempts times make probability. Attempts are minutes times a per-minute rate set by role (catch-and-shoot spot-up vs on-ball creator), the team's pace and who passes to him, modified by the score path (trailing teams launch more, leading teams bench shooters). Make probability is a context-weighted talent estimate (open catch-and-shoot vs contested pull-up) that is overwhelmingly noise in a single game, so the predictable component is attempts, and the make count is a thinned process whose variance exceeds a plain binomial because attempts and team-level shooting form are random. Settlement is the official count on single-game ladders and protected rungs. The main modelling hazards are role-specific minutes volatility for bench shooters and the dependence between a shooter's attempts and a specific passer's availability.",
    "stages": [
     {
      "id": "s1",
@@ -2445,8 +2631,8 @@
     {
      "id": "s6",
      "name": "Settlement form",
-     "description": "The ladder and protected forms are thresholds on one game's count, nested across rungs so the curve must be monotone; the every-game form is a conjunction across several games whose weakest game dominates, and the protected form removes the first-half-exit branch only if it follows the rebounds wording. Low rungs depend mostly on the probability of at least one attempt and minutes, high rungs on the attempt tail and shooting luck.",
-     "distribution": "Integer count per game (mixture of binomials over attempts); the every-game conjunction is a product of per-game P(>=1) terms with dependence through role stability.",
+     "description": "The ladder and protected forms are thresholds on one game's count, nested across rungs so the curve must be monotone; the protected form (KXNBA3PTPROT text) removes the first-half-only branch unless the strike is already met, so its value differs from the standard rung exactly in the early-exit scenarios. Low rungs depend mostly on the probability of at least one attempt and minutes, high rungs on the attempt tail and shooting luck.",
+     "distribution": "Integer count per game (mixture of binomials over attempts); protected rungs replace the first-half-exit mass by the pre-tip price.",
      "categories": [
       "settlement_contract"
      ],
@@ -2554,7 +2740,7 @@
      "input_ids": [
       "m.rules_text"
      ],
-     "note": "Ladder and protected forms are rules-verified; the every-game conjunction is TITLE_ONLY."
+     "note": "Ladder and protected forms are rules-verified (KXNBA3PT, KXNBA3PTPROT); the ladder series KXNBALADDER3PT is TITLE_ONLY."
     }
    }
   },
@@ -2715,7 +2901,7 @@
    },
    "m.rules_text": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Distinguishes ladder, protected and every-game conjunction forms, each with different payoffs for the same count distribution; KXNBA3PT and KXNBA3PTPROT have rules text."
+    "reason": "Distinguishes the standard ladder and the protected form, which pay differently for the same count distribution when the player leaves after the first half; KXNBA3PT and KXNBA3PTPROT have rules text."
    },
    "m.external_lines": {
     "verdict": "BENCHMARK_ONLY",
@@ -3036,8 +3222,8 @@
    {
     "id": "p3-titleonly",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Ladder (KXNBALADDER3PT) and every-game (KXNBA3PTALLGAMES) series are TITLE_ONLY; whether ladder markets are cumulative rungs and how the every-game conjunction treats a missed game (fail, skip or void) are unknown.",
-    "what_would_resolve": "Sample the full rules text for each ticker and extend the settlement definition."
+    "description": "The ladder series KXNBALADDER3PT is TITLE_ONLY; whether its markets are cumulative 'N+' rungs with the KXNBA3PT void rule, or a different strike construction, is unknown.",
+    "what_would_resolve": "Sample KXNBALADDER3PT rules_primary/rules_secondary and compare strike_type and floor_strike with KXNBA3PT."
    },
    {
     "id": "p3-hothand",
@@ -3057,12 +3243,6 @@
     "type": "SOURCE_UNVERIFIED",
     "description": "nba.assisted_three_passer_map assumes every made three in the free play-by-play feed carries the assisting player id, and that missed threes can be linked to the intended passer. Assist ids exist on made shots, but missed-shot passer linkage is not available in box scores and may be absent in the feed.",
     "what_would_resolve": "Parse one season of playbyplayv3 and compare made-three counts with assisted counts against the official box-score assist totals; test whether any missed-shot passer field exists."
-   },
-   {
-    "id": "p3-escalator-text",
-    "type": "OTHER",
-    "description": "The KXNBAESCALATOR3PT text anomaly (primary ends 'Then the market resolves to Yes.' beside a scalar payout schedule) belongs to the escalator series, which the reconciliation moved to player_escalator_payout; this record no longer prices it and the anomaly must be carried into that archetype's review.",
-    "what_would_resolve": "Record the anomaly in the player_escalator_payout review and confirm on a settled escalator market that the Yes payout equalled the formula value."
    }
   ]
  },
@@ -3070,7 +3250,7 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Period contracts settle on points scored in a defined segment of the named game: quarter winner (YES if the named team outscores the opponent in that quarter), 'tie' markets (YES if neither team wins the quarter or half), spreads (named team wins the period by more than X.5), totals (combined points in the period above X.5) and team totals (one team's points in the period above X.5). Quarters 1-4 and the first half count only regulation points ('4th quarter markets do not include overtime'); the second half includes overtime ('2nd half markets are inclusive of overtime'). Postponement and void wording is not shown in the sampled period rules. Overtime wording was seen only in the footnotes of the sampled series (1H, 2H, 1Q-3Q spreads and totals, 1H team total); the 4Q winner, total and spread texts state '(excluding overtime)' in the primary sentence; the 1Q and 4Q team totals and remaining TITLE_ONLY series are assumed to follow the same footnotes, which appear to be printed generically across period series. Many series are TITLE_ONLY.",
+   "settlement_definition": "Period contracts settle on points scored in a defined segment of the named game: quarter and half winner (the team scoring more points in the period), 'tie' contracts (YES if neither team wins the period), spreads (named team wins the period by more than X.5), totals (combined period points above X.5) and team totals (one team's period points above X.5). Quarters 1-4 and the first half count regulation points only. The second half differs by family: KXNBA2H, KXNBA2HSPREAD and KXNBA2HTOTAL say '(including overtime)', while KXNBA2HWINNER covers 'the second half (excluding overtime)'. Two winner families coexist: KXNBA1Q-4Q/KXNBA1H/KXNBA2H list a separate tie contract, and the KXNBA*WINNER series state that on equal points all team strikes resolve No and the Tie strike Yes; the WINNER family keeps postponed games open until the rescheduled game ends within two weeks, while the spread/total/tie texts sampled show no postponement wording. KXNBA1QTEAMTOTAL and KXNBA4QTEAMTOTAL are TITLE_ONLY.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -3097,13 +3277,24 @@
      "ticker": "KXNBA4QTOTAL",
      "quote": "If over 68.5 total points are scored in the 4th quarter (excluding overtime)",
      "establishes": "Fourth-quarter totals explicitly exclude overtime in the primary text, so the overtime mixture applies only to 2H contracts."
+    },
+    {
+     "ticker": "KXNBA2HWINNER",
+     "quote": "If the market references the 2nd half, that does not include overtime.",
+     "establishes": "The second-half winner family excludes overtime, the opposite of KXNBA2H/KXNBA2HSPREAD/KXNBA2HTOTAL, so the same game produces different 2H outcomes across series when it goes to overtime."
+    },
+    {
+     "ticker": "KXNBA1HWINNER",
+     "quote": "If both teams score the same amount of points during the half, all team strikes resolve to No and the Tie strike resolves to Yes.",
+     "establishes": "Winner-family contracts are three-way partitions with an explicit Tie strike; a team strike pays nothing on a tied period."
     }
    ],
    "variants_and_edge_cases": [
-    "Overtime inclusion differs by contract: Q1-Q4 and 1H exclude OT, 2H (winner, spread, total) includes OT; a game tied after regulation triggers a five-minute OT which adds roughly 22-26 combined points (about 11-13 per team) to the 2H total, spread and team total but not to Q4.",
-    "Winner contracts have a tie leg (separate market 'tie in the 1st half/quarter'), so a model must produce a three-way probability, not a two-way split.",
-    "Sampled strikes are far from central values (e.g. 1st quarter total 71.5 and 2nd quarter total 70.5 versus a typical combined quarter score in the mid-fifties, 2nd half total 135.5 versus a typical ~110), consistent with listed ladders of rungs; strike construction and which rungs are live is not verified.",
-    "Spread strikes are half-points (7.5, 8.5), so no push exists; ties at zero margin go to the tie market (or NO for any team-win-by-X spread)."
+    "Overtime inclusion differs by series, not only by period: Q1-Q4 and 1H exclude OT; KXNBA2H, KXNBA2HSPREAD and KXNBA2HTOTAL include it; KXNBA2HWINNER excludes it. A game tied after regulation adds roughly 22-26 combined points to 2H totals and spreads but cannot change the KXNBA2HWINNER result.",
+    "Winner contracts are three-way: the KXNBA1Q-4Q/1H/2H series list 'tie' as its own contract and the WINNER family pays a Tie strike while team strikes resolve No, so a model must output a three-way probability with integer tie mass.",
+    "Sampled strikes are far from central values (1st quarter total 71.5, 2nd quarter total 70.5, 2nd half total 135.5) and 1H team total 64.5, consistent with ladders of rungs; which rungs are live is not stated in the rules.",
+    "Spread strikes are half-points (7.5, 8.5), so no push exists; a tied period is NO for any team-wins-by-X spread.",
+    "Postponement: the WINNER family stays open until a rescheduled game finishes within two weeks; the sampled tie/spread/total texts carry no postponement sentence, so their void handling is not read."
    ],
    "settlement_data_source": "Official game linescore / play-by-play scoring by period from the named league sources; the sampled period rules do not name the source agencies."
   },
@@ -3192,7 +3383,7 @@
     {
      "id": "s6",
      "name": "Settlement partitions and cross-market identities",
-     "description": "The contracts partition the game: Q1+Q2=1H, Q3+Q4 plus OT = 2H; OT is excluded from Q4 but included in 2H, and a game tied after regulation triggers a five-minute overtime that adds roughly 22-26 combined points (about 11-13 per team at about 2.3-2.4 points per team-minute) to the 2H total. Period winners carry a tie outcome. Consistency across period totals and the game total is an identity, not a signal, and rule text defines which points count.",
+     "description": "The contracts partition the game: Q1+Q2=1H and Q3+Q4 = regulation second half, to which overtime is added only for KXNBA2H, KXNBA2HSPREAD and KXNBA2HTOTAL; KXNBA2HWINNER and all quarter series stop at regulation. A game tied after regulation triggers a five-minute overtime that adds roughly 22-26 combined points (about 11-13 per team) to the OT-inclusive 2H series only. Period winners carry a tie outcome. Consistency across period totals and the game total is an identity, not a signal, and the series-specific rule text defines which points count.",
      "distribution": "Deterministic sum identities with a mixture over OT presence; P(OT) roughly 5-7% overall, taken from the zero mass of the ratings-implied regulation margin rather than a spread bucket, plus a small multi-OT tail.",
      "categories": [
       "settlement_contract",
@@ -3307,7 +3498,7 @@
       "m.rules_text",
       "nba.ot_prob_ratings_margin"
      ],
-     "note": "OT excluded from Q1-Q4 and 1H, included in 2H, tie markets."
+     "note": "OT excluded from Q1-Q4, 1H and KXNBA2HWINNER, included in KXNBA2H/2HSPREAD/2HTOTAL; three-way tie partitions; WINNER-family two-week postponement window."
     }
    }
   },
@@ -3808,8 +3999,8 @@
    {
     "id": "qh-titleonly",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Thirteen of the series (e.g. 3rd/4th quarter winners, 1Q spread, 4Q spreads and totals, 1H winner, team totals for 1Q/4Q) are TITLE_ONLY, so postponement and void wording and overtime treatment for team totals cannot be confirmed. The 4th-quarter overtime footnote is printed identically on first-, second- and third-quarter contracts, so for KXNBA1QTEAMTOTAL and KXNBA4QTEAMTOTAL the regulation-only treatment is inferred from a generic footnote, not read from their own rules.",
-    "what_would_resolve": "Sample rules_primary and rules_secondary for each TITLE_ONLY ticker and update the contract section."
+    "description": "KXNBA1QTEAMTOTAL and KXNBA4QTEAMTOTAL are TITLE_ONLY, so their overtime treatment (the 4Q one is the only team total where it could matter) and void wording are inferred from sibling series. The sampled spread, total and tie texts also print no postponement or cancellation sentence, unlike the game-level props.",
+    "what_would_resolve": "Sample rules for the two TITLE_ONLY team totals and the full rules_secondary of one quarter spread/total to read postponement handling."
    },
    {
     "id": "qh-q3-effect",
@@ -3835,6 +4026,13 @@
     "type": "INPUT_DEFINITION_UNCERTAIN",
     "description": "nba.starters_pit is KEEP_PRIMARY for Q1 and Q3 because starters are confirmed about 30 minutes before tipoff, but the sampled markets for Nov 8 games already show status active and no close time is sampled, so it is unknown whether the lineup confirmation arrives before the market stops trading.",
     "what_would_resolve": "Compare the starter-confirmation timestamp with each period market's close time over a sample of games and record the lead time."
+   },
+   {
+    "id": "qh-2h-ot-split",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "KXNBA2H's tie contract says the 2nd half includes overtime, while KXNBA2HWINNER excludes it; neither text says how a second half that is tied at the end of regulation but decided in overtime is treated in the other family's terms, and a model pricing both must branch on OT.",
+    "what_would_resolve": "Check settled KXNBA2H and KXNBA2HWINNER markets from the same overtime game to confirm opposite treatment."
    }
   ]
  },
@@ -4524,7 +4722,7 @@
    {
     "id": "rl-race-scope",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Scope is now read from rules: KXNBARACE is a single-game team race to N (sample N = 30), so the per-game first-passage table applies; KXNBAFIRST50PTS (season-long first player to 50) was moved to season_stat_markets. Still open: whether player-based race variants or N values above 30 are listed, where the first-passage table (N in 5-30) would need extrapolation.",
+    "description": "KXNBARACE is a single-game team race to N (sample N = 30), so the per-game first-passage table applies. Still open: whether player-based race variants or N values above 30 are listed, where the first-passage table (N in 5-30) would need extrapolation.",
     "what_would_resolve": "Enumerate KXNBARACE events across a week of games to list the N values and confirm no player-based race series exists."
    }
   ]
@@ -4533,28 +4731,13 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Twenty-three team-outcome series for 2026-27 after the reconciliation (19 with sampled rules): champion, conference champion and conference-of-champion (KXNBACONF), exact Finals winner and runner-up (KXNBAFINALSOUTCOME: No if either team is eliminated from its role), conference-finals qualifiers, franchise-set champions (KXNBAFIRSTTIMECHAMP lists the ten never-champion franchises; KXNBANEWCHAMPION lists the eight champions of 2018-19 to 2025-26), Cup champion, win totals (KXNBAWINS: at least N regular-season wins), the Atlantic Division winner (end-of-regular-season standings, ties by official tiebreak rules), best record to the All-Star break (KXNBAPOSTASREC: best winning percentage to Feb 19, 2027, ties pay $1/N), longest team win streak (ties pay $1/N), the regular-season MVP's team winning the title (KXNBAMVPCHAMP), head-to-head season wins between two teams (KXNBAH2HWINS: equal wins resolve 50/50), the worst regular-season record (KXNBARECORD: ties by win-loss percentage resolve at 1/N) and selection to the Cup All-Tournament Team (KXNBACUP1STTEAM). Regular-season-only series exclude preseason, play-in, playoffs, the All-Star Game and the Cup final, while Cup games before the final count. Award, audience and cross-league series formerly filed here were moved out by the reconciliation.",
+   "settlement_definition": "Thirty-two team-season series, 31 with rules text. Regular season: win totals (KXNBAWINS: at least N wins), any team to 72+ wins (KXNBAMOSTWINS), breaking the 73-win record (KXNBAWINRECORD, 2025-26 edition: more than 73 wins), more wins than a named rival (KXNBAH2HWINS: equal wins resolve 50/50), worst record (KXNBARECORD: ties by win-loss percentage at 1/N), best winning percentage to the All-Star break (KXNBAPOSTASREC: ties $1/N), six division winners (end-of-regular-season standings, ties by the league's official tiebreak rules, no split), conference 1 seeds at the end of the regular season, seed thresholds on the pre-Play-In seed (KXNBASEEDOU) versus exact seeds with 7 and 8 set by the Play-In (KXNBASEED), Play-In qualification and playoff qualification (Play-In qualification does not count). Postseason: conference-finals qualifiers, conference champions, champion, conference of the champion, exact Finals winner and runner-up (No if either team is eliminated from its role), playoff wins at least N (Play-In wins excluded), any Play-In team reaching the Conference Finals, three-peat, franchise-set champions (ten never-champions; teams without a title in 2018-19 to 2025-26) and the regular-season MVP's team winning the title. Regular-season series exclude preseason, Play-In, playoffs, the All-Star Game and the Cup final; Cup games before the final count. KXNBANEWCHAMP is TITLE_ONLY.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
      "ticker": "KXNBAWINS",
      "quote": "If the Utah Pro Basketball team wins at least 60 games in the 2026-27 regular season, then the market resolves to Yes.",
      "establishes": "Win-total contract counts regular-season wins only with a greater_or_equal strike, so playoffs and the play-in are excluded."
-    },
-    {
-     "ticker": "KXNBATEAMWINSTREAK",
-     "quote": "NBA Cup games before the Championship game are part of the regular season and do count towards a winning streak.",
-     "establishes": "Cup group and knockout games before the final count toward regular-season streaks and standings; contradicts the existing cup_format note."
-    },
-    {
-     "ticker": "KXNBATEAMWINSTREAK",
-     "quote": "Only regular season games count.",
-     "establishes": "Streak markets exclude playoffs, play-in, All-Star game and the Cup final."
-    },
-    {
-     "ticker": "KXNBACUP",
-     "quote": "If Washington is the Emirates 2026 Pro Basketball Cup champion in the 2026-27 season, then the market resolves to Yes.",
-     "establishes": "Cup champion contract resolves on who wins the 2026-27 Cup; the quote does not describe the bracket, so the single-elimination knockout structure is domain knowledge and not established by the rules text."
     },
     {
      "ticker": "KXNBAPOSTASREC",
@@ -4585,23 +4768,58 @@
      "ticker": "KXNBARECORD",
      "quote": "If two or more teams are tied for the worst regular-season record based on win-loss percentage, dead-heat rules apply",
      "establishes": "Worst-record contract is a minimum over 30 teams with tanking incentives, ties split 1/N; it needs the bottom tail of the win distribution, not the title side."
+    },
+    {
+     "ticker": "KXNBAPOSTASREC",
+     "quote": "NBA Cup games before the Championship game are part of the regular season.",
+     "establishes": "Cup group and knockout games before the final count in regular-season records (read on a contract of this archetype; KXNBAWINS is silent, so applying it to win totals is the league convention, not Kalshi text)."
+    },
+    {
+     "ticker": "KXNBASEEDOU",
+     "quote": "Results of Play-In games do not affect the outcome.",
+     "establishes": "Seed over/under contracts settle on the pre-Play-In conference seed."
+    },
+    {
+     "ticker": "KXNBASEED",
+     "quote": "Seeds #7 and #8 are determined by the results of the Western Conference Play-In Tournament.",
+     "establishes": "Exact-seed contracts use the post-Play-In seed for 7 and 8, so one simulated table must be mapped through two seed definitions."
+    },
+    {
+     "ticker": "KXNBAPLAYOFF",
+     "quote": "Qualifying for the Pro Basketball play-in tournament does not count as playoff qualification.",
+     "establishes": "Teams finishing 7-10 qualify for the playoffs only by winning Play-In games."
+    },
+    {
+     "ticker": "KXNBAPLAYOFFWINS",
+     "quote": "Any wins in the Pro Basketball Play-In Tournament will not be considered.",
+     "establishes": "Playoff-win ladders count best-of-seven wins only; a Play-In team's two Play-In wins add nothing."
+    },
+    {
+     "ticker": "KXNBAWINRECORD",
+     "quote": "win more than 73 games in a single regular season",
+     "establishes": "Record-breaking contract needs 74+ wins; 73 ties the record and resolves No."
+    },
+    {
+     "ticker": "KXNBAFIRSTTIMECHAMP",
+     "quote": "Only NBA championships count for the purposes of this market.",
+     "establishes": "Franchise-set contract is a sum of title probabilities over the ten listed never-champion franchises; ABA titles are ignored."
     }
    ],
    "variants_and_edge_cases": [
-    "Ties for the longest streak or the best record pay $1/N: a tied streak of 14 among two teams pays each $0.50, so the contract is on the distribution of the longest streak and the number of tied teams, not just one team's streak.",
-    "KXNBAWINS uses greater_or_equal at integer strikes, so a push does not exist; a team finishing exactly at the strike resolves YES.",
-    "Cup games before the championship game count as regular-season games for the streak contracts (KXNBATEAMWINSTREAK); the KXNBAWINS sample is silent, so applying the same split to win totals is an inference, not read from the rules.",
-    "KXNBAPOSTASREC compares winning percentage at the All-Star break when teams have played different numbers of games, so a team with fewer games has a wider percentage distribution; ties split 1/N.",
-    "KXNBAMVPCHAMP is not a Finals MVP contract: it couples the regular-season MVP vote (announced around the playoffs) with the title, and the dependence is strong because MVP voters reward team success; the MVP's own playoff health is part of the title probability.",
-    "Franchise-set contracts (KXNBAFIRSTTIMECHAMP, KXNBANEWCHAMPION) are sums of team title probabilities over the listed franchises, so their errors are the correlated errors of those teams' strength estimates; ABA titles do not count.",
-    "Scope: the award, audience and cross-league series formerly filed here (KXNBASJC, Finals and conference-finals MVPs, viewership, KXNBANHL) were moved by the reconciliation; the remaining series are all functionals of the team-season simulation plus one award vote (MVP) and one panel (Cup All-Tournament, TITLE_ONLY).",
-    "Bottom-of-table and pairwise forms: KXNBARECORD (worst record, 1/N dead heat) depends on tanking incentives and the lottery-driven rest of weak teams, and KXNBAH2HWINS pays 50/50 on equal wins, so both need integer-level win distributions rather than means."
+    "Three tie rules coexist: 1/N dead heat (KXNBARECORD worst record, KXNBAPOSTASREC best record at the break), 50/50 (KXNBAH2HWINS on equal wins) and the league tiebreak hierarchy with no split (division winners, 1 seeds, seeds); each needs integer-level win distributions, not means.",
+    "Two seed definitions: KXNBASEEDOU uses the seed before the Play-In (a 10 seed that enters as the 8 is still 10), KXNBASEED assigns 7 and 8 from the Play-In; KXNBAPLAYIN is qualification for the Play-In (seeds 7-10) and KXNBAPLAYOFF excludes it.",
+    "KXNBAWINS and KXNBAMOSTWINS use greater_or_equal integer strikes (no push); KXNBAWINRECORD needs more than 73 wins; KXNBAMOSTWINS is a maximum over 30 teams, so it is the upper tail of the best team, not of one named team.",
+    "KXNBAPOSTASREC compares winning percentage at the All-Star break (Feb 19, 2027) when teams have played different numbers of games; ties split 1/N.",
+    "KXNBAMVPCHAMP couples the regular-season MVP vote with the title, and the dependence is strong because voters reward team success; it is not a Finals MVP contract.",
+    "Franchise-set contracts (KXNBAFIRSTTIMECHAMP, KXNBANEWCHAMPION) are sums of title probabilities over fixed lists; KXNBANEWCHAMPION lists New York as 2025-26 champion, which also means the Oklahoma City three-peat (KXNBA3PEAT, 2024-25 to 2026-27) can no longer occur.",
+    "Several sampled tickers refer to completed seasons (KXNBAWINRECORD 2025-26, KXNBAPLAYOFFWINS and KXNBAPIADVANCE for the 2026 playoffs); the mechanism is the same for the 2026-27 editions but strikes and lists must be read per edition.",
+    "Playoff-win ladders exclude Play-In wins; KXNBAPIADVANCE asks whether any of the four Play-In entrants (two per conference) reaches the Conference Finals, a union over bracket paths of the 7 and 8 seeds."
    ],
-   "settlement_data_source": "Official league standings and results for win totals, records, streaks and division winners; league announcements for the champion, Cup champion and regular-season MVP. The sampled text does not name the specific source agencies.",
+   "settlement_data_source": "Official league standings, tiebreak procedure, Play-In and playoff results, and league announcements for the champion and regular-season MVP; the sampled texts name no source agency.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "Season-level team contracts are functionals of a simulated season: a latent team strength (a prior from the roster plus in-season updates, with real uncertainty), the realized availability of its stars over the games and into the playoffs, the remaining schedule with home/away and rest, game results as correlated Bernoulli trials giving a Poisson-binomial win total, standings with official tiebreakers and the play-in structure, and then a playoff bracket of best-of-seven series with tightened rotations. Probabilities of rare outcomes (title, 60 wins, longest streak) are convex in uncertainty: errors in rating sd and star health matter more than error in the mean, and boundary effects at tiebreaks and seed cut points drive seed contracts. The MVP-champion conjunction, the Cup knockout and franchise-set champion contracts add functionals (a vote correlated with team success, a single-elimination bracket, sums over fixed franchise lists) with their own mechanisms.",
+   "summary": "Season-level team contracts are functionals of a simulated season: a latent team strength (a prior from the roster plus in-season updates, with real uncertainty), the realized availability of its stars over the games and into the playoffs, the remaining schedule with home/away and rest, game results as correlated Bernoulli trials giving a Poisson-binomial win total, standings with official tiebreakers, two seed definitions around the Play-In, and then a playoff bracket of best-of-seven series with tightened rotations. Probabilities of rare outcomes (title, 72 wins, a Play-In team in the Conference Finals) are convex in uncertainty: errors in rating sd and star health matter more than error in the mean, and boundary effects at tiebreaks, seed cut points and the 1/N or 50/50 tie rules drive seed, division and record contracts. The MVP-champion conjunction and franchise-set champion contracts add functionals (a vote correlated with team success, sums over fixed franchise lists) on top of the bracket.",
    "stages": [
     {
      "id": "s1",
@@ -4638,8 +4856,8 @@
     },
     {
      "id": "s3",
-     "name": "Schedule: opponent strength, rest, Cup structure",
-     "description": "The remaining schedule determines each game's win probability through opponent strength, home/away and rest asymmetry; Cup group games count as regular-season games while the final does not (stated by the KXNBATEAMWINSTREAK rules; assumed, not read, for win totals). Early in the season schedule effects are small compared with rating uncertainty, but they matter for the final-weeks seed battle.",
+     "name": "Schedule: opponent strength, rest and Cup games in the regular season",
+     "description": "The remaining schedule determines each game's win probability through opponent strength, home/away and rest asymmetry. Cup group and knockout games before the Cup final count as regular-season games (KXNBAPOSTASREC text) and teams eliminated early receive filler games scheduled later, so part of the schedule is unknown in November. Early in the season schedule effects are small next to rating uncertainty, but they matter for division races, 1 seeds and the final-weeks seed battle.",
      "distribution": "Deterministic schedule given; game win probabilities range 15-85%; the rest/travel adjustments are about +/-1 point of margin.",
      "categories": [
       "situational_schedule_motivation",
@@ -4653,9 +4871,9 @@
     },
     {
      "id": "s4",
-     "name": "Regular-season win totals and streaks",
-     "description": "The win total is a sum of correlated game outcomes: independent Bernoulli noise (sd about 4.5 wins for an average team) plus common shocks through rating uncertainty and injuries, making the win-total distribution wider than a binomial. Longest-streak and best-record markets are extremes over thirty teams of run-length and total processes, with a heavy tail in the hot-streak regime. The worst-record contract (KXNBARECORD) lives in the bottom tail, where lottery incentives make weak teams rest veterans and shorten rotations late in the season, so their win probabilities fall below rating-implied values.",
-     "distribution": "Poisson-binomial with a hierarchical shock (total sd about 6-7 wins); extreme-value behaviour for longest streaks; ties pay 1/N.",
+     "name": "Regular-season win totals, extremes and pairwise records",
+     "description": "The win total is a sum of correlated game outcomes: independent Bernoulli noise (sd about 4.5 wins for an average team) plus common shocks through rating uncertainty and injuries, so the distribution is wider than a binomial. KXNBAMOSTWINS and KXNBAWINRECORD are upper-tail events of the best team (72+ or 74+ wins), KXNBARECORD is the minimum over 30 teams where lottery incentives make weak teams rest veterans late, KXNBAPOSTASREC is a maximum of partial-season percentages, and KXNBAH2HWINS is a difference of two totals linked by their head-to-head games, with the equal-wins mass paid at half.",
+     "distribution": "Poisson-binomial with a hierarchical shock (total sd about 6-7 wins); extreme-value behaviour for maxima and minima over 30 teams; integer ties paid 1/N or 50/50.",
      "categories": [
       "distribution_variance",
       "efficiency_conversion"
@@ -4664,15 +4882,15 @@
       "nba.standings_sim",
       "nba.pythag_residual",
       "nba.ratings",
-      "nba.longest_streak_max_and_tie_model",
+      "nba.team_record_head_to_head_linkage",
       "nba.standings_motivation"
      ]
     },
     {
      "id": "s5",
-     "name": "Seeding, tiebreakers and play-in",
-     "description": "Seeds and division winners are determined by win totals plus the official tiebreak hierarchy; the play-in structure further changes who makes the playoffs and who enters as which seed, and some Kalshi seed contracts are defined before the play-in. Boundary probabilities depend on ties, which depend on head-to-head and division/conference records.",
-     "distribution": "Discrete rank outcomes with ties; probability at boundary seeds is sensitive to a one-win difference and to tiebreak procedure.",
+     "name": "Division titles, seeding, Play-In and playoff qualification",
+     "description": "Six division winners, conference 1 seeds and seed contracts are ranks of simulated records resolved by the official tiebreak hierarchy (head-to-head, division and conference records). Seeds 7-10 enter the Play-In (KXNBAPLAYIN), whose bracket decides playoff qualification (KXNBAPLAYOFF) and the exact 7 and 8 seeds (KXNBASEED), while KXNBASEEDOU stays on the pre-Play-In seed. Boundary probabilities hinge on one win and on the tiebreak ledger, and division titles carry no seeding reward, so late-season resting follows the conference table.",
+     "distribution": "Discrete rank outcomes with deterministic tiebreaks; the Play-In adds a three-game mini-bracket with per-game probabilities near 50% that maps seeds 7-10 to 7, 8 or out.",
      "categories": [
       "settlement_contract",
       "situational_schedule_motivation"
@@ -4680,13 +4898,14 @@
      "input_ids": [
       "nba.standings_sim",
       "nba.tiebreak_ledger",
+      "nba.play_in_path_model",
       "m.rules_text"
      ]
     },
     {
      "id": "s6",
      "name": "Playoff bracket and series conversion",
-     "description": "Each series is a best-of-seven with home-court structure, playoff-tightened rotations and game-to-game correlation; per-game win probability converts steeply to series probability. The bracket path (who a team meets) and star health in each round give the round-reach and title probabilities, which are strongly convex in team strength.",
+     "description": "Each series is a best-of-seven with home-court structure, playoff-tightened rotations and game-to-game correlation; per-game win probability converts steeply to series probability. The bracket path and star health in each round give conference-finals qualification, conference and league titles, the exact Finals pair, the playoff-win count (sum of wins over series reached, Play-In excluded) and whether a Play-In entrant reaches the Conference Finals; all are strongly convex in team strength.",
      "distribution": "Series win probability is an S-shaped function of per-game edge (60% per game gives about 71% series); correlation between games from injuries and adjustments widens outcomes.",
      "categories": [
       "talent_strength",
@@ -4697,21 +4916,22 @@
       "nba.series_model",
       "nba.title_path",
       "nba.playoff_rotation",
-      "nba.playoff_star_health_hazard"
+      "nba.playoff_star_health_hazard",
+      "nba.series_length_distribution",
+      "nba.play_in_path_model"
      ]
     },
     {
      "id": "s7",
-     "name": "Derived award, Cup and franchise-set functionals",
-     "description": "Three contract families sit on top of the team simulation. The MVP-champion conjunction needs the regular-season MVP vote (a conditional choice among a few candidates whose odds rise with team record) joined to that player's team title probability, including his playoff health. The Cup champion is a single-elimination knockout at a neutral venue after group play. Franchise-set contracts (first-time champion, no title in eight seasons) are sums of title probabilities over fixed lists, and the Cup All-Tournament series is a panel selection.",
-     "distribution": "Conditional logit over MVP candidates joined to a title probability (strong positive dependence); single-elimination bracket for the Cup; sums of correlated team title probabilities for franchise sets.",
+     "name": "Derived award and franchise-set functionals",
+     "description": "Two contract families sit on top of the bracket. The MVP-champion conjunction needs the regular-season MVP vote (a conditional choice among a few candidates whose odds rise with team record) joined to that player's team title probability, including his playoff health. Franchise-set contracts (first-time champion, no title in eight seasons, the three-peat) are sums or single terms of title probabilities over fixed lists, so their errors are the correlated errors of those teams' strength estimates.",
+     "distribution": "Conditional logit over MVP candidates joined to a title probability (strong positive dependence); sums of correlated team title probabilities for franchise sets.",
      "categories": [
       "settlement_contract",
       "game_context_script"
      ],
      "input_ids": [
       "nba.award_vote_and_cowinner_model",
-      "nba.cup_format",
       "nba.title_path",
       "nba.playoff_star_health_hazard"
      ]
@@ -4732,7 +4952,8 @@
      "status": "COVERED",
      "input_ids": [
       "nba.title_path",
-      "nba.series_model"
+      "nba.series_model",
+      "nba.team_record_head_to_head_linkage"
      ],
      "note": "Bracket path and matchup-specific series results."
     },
@@ -4795,9 +5016,9 @@
       "nba.standings_sim",
       "nba.series_model",
       "nba.rating_update_gain",
-      "nba.longest_streak_max_and_tie_model"
+      "nba.team_record_head_to_head_linkage"
      ],
-     "note": "Win-total, streak and series distributions with rating uncertainty."
+     "note": "Win-total, extreme-record and series distributions with rating uncertainty and head-to-head linkage."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
@@ -4813,19 +5034,21 @@
     "officiating_rules": {
      "status": "COVERED",
      "input_ids": [
-      "nba.cup_format",
-      "nba.tiebreak_ledger"
+      "nba.tiebreak_ledger",
+      "nba.play_in_path_model",
+      "nba.cup_format"
      ],
-     "note": "Format rules: Cup structure, play-in and tiebreak hierarchy."
+     "note": "Format rules: tiebreak hierarchy, Play-In bracket and Cup games counted in the regular season."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
       "m.rules_text",
-      "nba.longest_streak_max_and_tie_model",
+      "nba.play_in_path_model",
+      "nba.tiebreak_ledger",
       "nba.award_vote_and_cowinner_model"
      ],
-     "note": "Per-series settlement forms: win thresholds, 1/N ties for streak and post-All-Star record, tiebreak-decided division winner, exact Finals pair, franchise lists and the MVP-title conjunction."
+     "note": "Per-series forms: integer win strikes, 1/N and 50/50 tie rules, tiebreak-decided divisions and seeds, pre- versus post-Play-In seeds, Play-In wins excluded, exact Finals pair, franchise lists and the MVP-title conjunction."
     }
    }
   },
@@ -4883,7 +5106,7 @@
     "raw_data": [
      "game results by pair, schedule, division/conference identifiers"
     ],
-    "why": "Needed for division winner, seed over/under and playoff qualifier contracts where ties decide outcomes at boundaries.",
+    "why": "Decides the six division winners, conference 1 seeds and seed contracts whenever simulated records tie at a boundary.",
     "role": "primary"
    },
    "nba.playoff_star_health_hazard": {
@@ -4904,26 +5127,6 @@
     ],
     "why": "Converts star health into a probability mixture for the series simulation, which is what makes title odds convex. Role lowered to secondary: the 10-season injury history it needs is not available as a clean public dataset (sf-injury-data), so its reliability is unproven.",
     "role": "secondary"
-   },
-   "nba.longest_streak_max_and_tie_model": {
-    "label": "Distribution of the league-longest win streak and the number of tied teams (1/N payout) from game-level simulation",
-    "category": "distribution",
-    "mechanism": "The league-longest streak is the maximum over 30 teams of the longest run of consecutive wins in each team's sequence, so a 'longest streak' contract depends on every team's game-by-game win probabilities, their serial dependence, and the chance that two or more teams share the maximum and split the payout.",
-    "rationale": "KXNBATEAMWINSTREAK pays $1/N to each of N teams tied for the longest streak and only regular-season games (Cup games before the final included) count, so the value for one team is P(it holds the maximum) times E[1/N | it does]. Strengths matter through a convex path: the best team is not only more likely to have a long run but also faces a different set of opponents and rest games, and common rating shocks make streaks cluster in time and in teams. Ignoring ties overstates the value of a favourite when two strong teams reach the same length.",
-    "measurement": "Simulate 20000 seasons from nba.standings_sim: draw team ratings from the posterior (rating uncertainty common across a team's games), form each game's win probability from rating difference, home court and rest, then record each team's longest run (a streak carrying over the Cup group stage and counting Cup knockout games before the final, excluding the final, play-in and playoffs). For each team report P(team has the strict maximum), P(team is in the tied set), the distribution of N and E[payout] = E[floor(100/N)/100 * 1{team in the tied set}]. Calibrate the serial dependence by comparing simulated run-length distributions with the last 15 seasons of real streak lengths (league-longest streak and its tie frequency). As-of: games completed to date, with the current run for each team carried in.",
-    "pregame_knowable": "yes",
-    "free_sources": [
-     "nba_api leaguegamelog (game results by team and date)",
-     "Basketball-Reference schedule and results"
-    ],
-    "registry_ids": [],
-    "raw_data": [
-     "Team game results by date for the current and 15 prior seasons",
-     "Full remaining schedule with home/away and rest",
-     "Cup game flags to exclude the final"
-    ],
-    "why": "KXNBATEAMWINSTREAK is rules-verified here and has no run-length or tie-count input in this archetype; the same mechanism is defined under another id (nba.team_win_streak_hazard) in the unregistered counting-specials record and should be reconciled when the catalog is merged.",
-    "role": "primary"
    },
    "nba.award_vote_and_cowinner_model": {
     "label": "Voting-panel and nominee model for award contracts, including the probability of multiple co-winners",
@@ -4963,6 +5166,64 @@
      "historical late-season rest patterns"
     ],
     "why": "KXNBARECORD (worst record, rules-verified) depends on tanking and late-season rest by lottery-bound teams, which pulls their win probabilities below rating-implied values.",
+    "role": "secondary"
+   },
+   "nba.play_in_path_model": {
+    "label": "Play-in bracket path probabilities given pre-play-in seed and relative strength",
+    "category": "schedule_context",
+    "mechanism": "The play-in tournament maps seeds 7-10 to final seeds 7 and 8 through a fixed bracket, so the playoff qualification and the post-play-in seed differ from the regular-season seed; Kalshi's seed contracts are measured before the play-in.",
+    "rationale": "KXNBASEEDOU resolves on the regular-season seed before the play-in while qualification/play-in series depend on play-in outcomes; the same team has different probabilities for 'seed 8 or better' depending on which definition applies.",
+    "measurement": "Encode the bracket (7v8 winner gets the 7 seed; 9v10 loser is out; loser of 7v8 plays winner of 9v10 for the 8 seed), compute per-game win probabilities with home-court from team ratings and rest, and convolve to P(final seed 7, 8, out | pre-play-in seed, opponents); estimate the distribution of opponents from the standings simulation. As-of: nightly; rules versioned by season.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com play-in format",
+     "nba_api standings"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "standings and seeds before the Play-In",
+     "Play-In format by season",
+     "team ratings and rest"
+    ],
+    "why": "Maps seeds 7-10 into playoff qualification and exact 7/8 seeds for KXNBAPLAYOFF, KXNBASEED and KXNBAPIADVANCE; KXNBAPLAYIN and KXNBASEEDOU stop before it.",
+    "role": "primary"
+   },
+   "nba.team_record_head_to_head_linkage": {
+    "label": "Dependence between teams' records via head-to-head games and conference schedule overlap",
+    "category": "team_strength",
+    "mechanism": "Records of contending teams are not independent: when two top teams play each other, one gains what the other loses, and shared opponents create correlation in schedule luck.",
+    "rationale": "Best-record and most-wins markets are about the maximum over teams, so the covariance of wins across teams matters; ignoring head-to-head linkage and common opponents misstates the extreme's distribution.",
+    "measurement": "From the remaining schedule compute pairwise numbers of head-to-head games and common-opponent overlap; in the simulation draw correlated team-strength shocks and enforce zero-sum head-to-head results; estimate the covariance of final win totals across the top-8 contenders by simulation; output distribution of the maximum and the probability of ties (tie handling per rule). As-of: nightly.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api schedule",
+     "Basketball-Reference schedule and results"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "remaining schedule with head-to-head counts",
+     "team rating posterior draws"
+    ],
+    "why": "KXNBAH2HWINS, division races and the extreme-record contracts depend on how head-to-head games make two teams' totals negatively dependent.",
+    "role": "secondary"
+   },
+   "nba.series_length_distribution": {
+    "label": "Series-length distribution from per-game win probabilities",
+    "category": "game_state",
+    "mechanism": "The number of games in a best-of-seven series is a function of per-game win probability, home pattern and dependence between games.",
+    "rationale": "KXNBASERIESGAMES counts games, not points; the draft has no input for it except a generic series model reference outside the archetype.",
+    "measurement": "P(series ends in k games) by dynamic programming over home pattern 2-2-1-1-1 with per-game win probabilities from own-model ratings and series dependence parameter (game-to-game correlation about +0.05 on margin, estimated from 2000-2025 playoff series); injuries known as of the as-of date; output P(4), P(5), P(6), P(7).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference playoffs",
+     "own ratings"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff series results by game with venue",
+     "own team ratings"
+    ],
+    "why": "Playoff-win ladders (KXNBAPLAYOFFWINS) count wins across series, which depend on series lengths, not only on advancement.",
     "role": "secondary"
    }
   },
@@ -5021,7 +5282,7 @@
    },
    "nba.cup_format": {
     "verdict": "WEAK",
-    "reason": "The attached reason says Cup games do not affect regular-season standings, which contradicts the rules text sampled for KXNBATEAMWINSTREAK ('NBA Cup games before the Championship game are part of the regular season and do count'); the Cup champion contract needs the knockout structure but the standings claim must be corrected."
+    "reason": "The Cup champion contract left for series_and_cup; here the Cup matters only because games before the Cup final count in regular-season records (KXNBAPOSTASREC text) and add filler games to the schedule."
    },
    "m.quote_history": {
     "verdict": "BENCHMARK_ONLY",
@@ -5062,6 +5323,10 @@
    "nba.finals_mvp_given_title_share": {
     "verdict": "IRRELEVANT",
     "reason": "Built for Finals and conference-finals MVP series, which the reconciliation moved to awards_draft; the remaining KXNBAMVPCHAMP concerns the regular-season MVP, which needs the MVP vote model, not a Finals-MVP share, so it is removed from stages, coverage and feeds."
+   },
+   "nba.longest_streak_max_and_tie_model": {
+    "verdict": "IRRELEVANT",
+    "reason": "Built for KXNBATEAMWINSTREAK, which the reconciliation moved to season_stat_markets (defined there); no streak contract remains in this archetype, and KXNBAMOSTWINS is a maximum of win totals, not of run lengths."
    }
   },
   "interactions": [
@@ -5113,21 +5378,30 @@
    },
    {
     "inputs": [
-     "nba.longest_streak_max_and_tie_model",
-     "nba.standings_sim"
-    ],
-    "form": "joint-distribution",
-    "mechanism": "A streak contract is an extreme-value statistic: common rating shocks within a team lengthen its runs together, while the 1/N split makes the payout fall when two strong teams hit the same maximum, so the value of the favourite is not monotone in its strength once ties are priced.",
-    "how_to_test": "Compare simulated and historical league-longest streak lengths and tie frequency across 15 seasons, with and without common team rating shocks."
-   },
-   {
-    "inputs": [
      "nba.standings_motivation",
      "nba.standings_sim"
     ],
     "form": "regime-switch",
     "mechanism": "Once a team is out of Play-In contention its incentive flips toward lottery position, and its late-season win probability drops below the rating-implied value; the worst-record contract is decided in this regime, so simulating the last 15-20 games with regular-season ratings overstates the weakest teams' wins.",
     "how_to_test": "Compare rating-implied and realised win rates over the last 20 games for teams eliminated from Play-In contention, over 10 seasons."
+   },
+   {
+    "inputs": [
+     "nba.play_in_path_model",
+     "nba.standings_sim"
+    ],
+    "form": "piecewise",
+    "mechanism": "Playoff qualification is near-certain for seeds 1-6, roughly 55-75% for seeds 7-8 and 20-35% for seeds 9-10 through the Play-In, and zero below; P(KXNBAPLAYOFF) is therefore a piecewise function of the simulated seed distribution with jumps at 6/7 and 10/11, while KXNBAPLAYIN is an indicator of seeds 7-10.",
+    "how_to_test": "Tabulate realised qualification by pre-Play-In seed since the Play-In began and compare with simulated piecewise probabilities."
+   },
+   {
+    "inputs": [
+     "nba.team_record_head_to_head_linkage",
+     "nba.ratings"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "Two teams that meet three or four times have negatively dependent win totals, which raises the variance of their difference and lowers the chance of equal wins relative to independent draws; KXNBAH2HWINS and division titles both sit on that difference.",
+    "how_to_test": "Compare simulated equal-wins frequency for pairs with 4 versus 2 meetings against historical pairs over 10 seasons."
    }
   ],
   "nonlinearities": [
@@ -5190,8 +5464,9 @@
      "nba.sos_remaining",
      "nba.tiebreak_ledger",
      "nba.rest_travel",
-     "nba.longest_streak_max_and_tie_model",
-     "nba.standings_motivation"
+     "nba.standings_motivation",
+     "nba.team_record_head_to_head_linkage",
+     "nba.play_in_path_model"
     ]
    },
    {
@@ -5296,7 +5571,8 @@
     "feeds_inputs": [
      "nba.series_model",
      "nba.title_path",
-     "nba.award_vote_and_cowinner_model"
+     "nba.award_vote_and_cowinner_model",
+     "nba.series_length_distribution"
     ]
    }
   ],
@@ -5304,20 +5580,20 @@
    {
     "id": "sf-titleonly",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Rules text exists for 19 of the 23 series; KXNBAPLAYOFFWINS, KXNBA3PEAT, KXNBANEWCHAMP, KXNBAMOSTWINS and KXNBAFINBLOWOUT are TITLE_ONLY (KXNBAPLAYOFFWINS may count play-in games or not; KXNBAMOSTWINS tie handling unknown; the blowout definition is unknown).",
-    "what_would_resolve": "Sample rules for the remaining TITLE_ONLY series, starting with KXNBAFINBLOWOUT and KXNBAPLAYOFFWINS."
+    "description": "Only KXNBANEWCHAMP is TITLE_ONLY (31 of 32 series have rules); it is presumably the same event as KXNBAFIRSTTIMECHAMP or KXNBANEWCHAMPION, but which franchise list it uses is unknown. KXNBAMOSTWINS and KXNBAWINS state no rule for a shortened season.",
+    "what_would_resolve": "Sample KXNBANEWCHAMP rules and compare its franchise list with KXNBAFIRSTTIMECHAMP and KXNBANEWCHAMPION."
    },
    {
     "id": "sf-mixed-bucket",
     "type": "OTHER",
-    "description": "After the reconciliation the bucket is team-simulation outcomes plus two non-simulation pieces: the regular-season MVP vote inside KXNBAMVPCHAMP and the Cup All-Tournament panel (KXNBACUP1STTEAM, TITLE_ONLY); the MVP vote's dependence on team record is not estimated by any fitted input yet.",
-    "what_would_resolve": "Fit the MVP conditional logit with team win percentage as a covariate on 20 seasons and sample KXNBACUP1STTEAM rules to confirm it is a panel selection."
+    "description": "Beyond the team simulation the bucket holds one award vote (the regular-season MVP inside KXNBAMVPCHAMP); the MVP vote's dependence on team record is not estimated by any fitted input yet.",
+    "what_would_resolve": "Fit the MVP conditional logit with team win percentage as a covariate on 20 seasons of voting results."
    },
    {
     "id": "sf-cup-rule",
     "type": "MECHANISM_UNCERTAIN",
-    "description": "The existing cup_format reason states Cup games do not affect standings, contradicting the rules text; the exact treatment of Cup tiebreakers (point differential) and their effect on regular-season records in this season format is not captured by the catalog. Also, the Cup-games-before-the-final-count wording was read only on streak contracts, not on KXNBAWINS.",
-    "what_would_resolve": "Read the league's Cup rules and add a Cup-structure simulation module."
+    "description": "The rule that Cup games before the final count in the regular season is read on KXNBAPOSTASREC but not on KXNBAWINS, KXNBARECORD or the division contracts; the scheduling of filler games for teams eliminated in the Cup group stage (opponent, venue, date) in 2026-27 is assumed, not verified.",
+    "what_would_resolve": "Read the league's 2026-27 Cup and schedule-completion rules and version the remaining schedule when filler games are announced."
    },
    {
     "id": "sf-injury-data",
@@ -5327,11 +5603,18 @@
     "category": "availability_news"
    },
    {
-    "id": "sf-combo-blowout-definitions",
+    "id": "sf-tiebreak-and-division-overlap",
+    "type": "SOURCE_UNVERIFIED",
+    "category": "settlement_contract",
+    "description": "Division, 1-seed and seed contracts defer to 'the governing league's official tie-breaking rules' without listing them; the 2026-27 two-team and multi-team order is assumed from past seasons. Five division contracts arrived from the unregistered record, which modelled them with nba.division_race_tiebreak_state, a duplicate of nba.tiebreak_ledger used here.",
+    "what_would_resolve": "Code the league's 2026-27 tiebreak document into nba.tiebreak_ledger, test on past tied divisions and mark nba.division_race_tiebreak_state DUPLICATE_OF it in the catalog."
+   },
+   {
+    "id": "sf-seed-tie-edge",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "The Finals blowout contract (KXNBAFINBLOWOUT) is TITLE_ONLY: whether a blowout means a single Finals game above a margin threshold, a series average or a sweep changes which inputs apply. The NBA+NHL combo formerly listed here moved to parlay_combo.",
-    "what_would_resolve": "Sample rules_primary and rules_secondary for KXNBAFINBLOWOUT and define the event from the series simulation's margin distribution.",
-    "category": "settlement_contract"
+    "category": "settlement_contract",
+    "description": "KXNBAEAST1SEED/KXNBAWEST1SEED and KXNBASEEDOU state no tie rule of their own (division texts explicitly defer to league tiebreaks); the record assumes the official seed after tiebreaks, and KXNBAPLAYOFFWINS states no treatment of a series not completed.",
+    "what_would_resolve": "Confirm on a settled seed market from a season with a tie at the boundary that the official tiebroken seed was used."
    }
   ]
  },
@@ -5339,7 +5622,7 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Eleven 2026-27 regular-season series are now filed here, nine with sampled rules. Player forms: per-game average at or above a strike (KXNBASTATAVG: no qualification minimum, zero games played means an average of zero, rounded figure from the Source Agencies), at least one made three in the season (KXNBAONE3PT), a single game at or above a points threshold including overtime (KXNBAPLAYERHIGHSCORE), the first player to a 50-point game (KXNBAFIRST50PTS: same-day firsts split $1/N), and league leader in total plus/minus (KXNBASTATLEADER: traded players' totals combined, ties $1/N). League-wide forms: any game with 325+ combined points including overtime (KXNBAGAMEHIGHSCORE), any player with 15+ steals plus blocks in a game (KXNBAGAMESPECIALS), any team with a 20+ game win streak (KXNBAWINSTREAK) and the last undefeated team by calendar day of first loss with same-day ties $1/N (KXNBALASTTOLOSE). All count only regular-season games: preseason, Play-In, playoffs, the All-Star Game and the Cup final are excluded and Cup games before the final count. KXNBAHIGHESTSCORING and KXNBAPLAYERSPECIALS are TITLE_ONLY.",
+   "settlement_definition": "Twelve 2026-27 regular-season series are filed here, ten with sampled rules. Player forms: per-game average at or above a strike (KXNBASTATAVG: no qualification minimum, zero games played means an average of zero, rounded figure from the Source Agencies), at least one made three in the season (KXNBAONE3PT), a single game at or above a points threshold including overtime (KXNBAPLAYERHIGHSCORE), the first player to a 50-point game (KXNBAFIRST50PTS: same-day firsts split $1/N), and league leader in total plus/minus (KXNBASTATLEADER: traded players' totals combined, ties $1/N). League-wide forms: any game with 325+ combined points including overtime (KXNBAGAMEHIGHSCORE), any player with 15+ steals plus blocks in a game (KXNBAGAMESPECIALS), any team with a 20+ game win streak (KXNBAWINSTREAK), the team with the longest win streak with ties paid $1/N (KXNBATEAMWINSTREAK) and the last undefeated team by calendar day of first loss with same-day ties $1/N (KXNBALASTTOLOSE). All count only regular-season games: preseason, Play-In, playoffs, the All-Star Game and the Cup final are excluded and Cup games before the final count. KXNBAHIGHESTSCORING and KXNBAPLAYERSPECIALS are TITLE_ONLY.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -5386,6 +5669,11 @@
      "ticker": "KXNBAPLAYERHIGHSCORE",
      "quote": "If Victor Wembanyama scores at least 54 points in any game (including overtime)",
      "establishes": "Single-game threshold in any regular-season game with overtime points counted; resolves YES as soon as it happens."
+    },
+    {
+     "ticker": "KXNBATEAMWINSTREAK",
+     "quote": "If multiple teams are tied for the longest consecutive winning streak, “Yes” positions will pay $1/N (rounded down to the nearest cent), where N is the number of tied teams",
+     "establishes": "Longest-streak contract is an argmax over 30 teams' maximal run lengths with ties split 1/N, so the number of teams sharing the maximum must be modelled."
     }
    ],
    "variants_and_edge_cases": [
@@ -5471,9 +5759,9 @@
     },
     {
      "id": "s5",
-     "name": "Team records and special season outcomes",
-     "description": "Team record contracts depend on a simulated season where head-to-head games link teams' results and rating uncertainty is common; the maximum over teams and tie handling define outcomes. The simulation also gives winning-streak and best-record probabilities.",
-     "distribution": "Extreme-value behaviour over thirty correlated Poisson-binomial win totals; ties possible at integer totals.",
+     "name": "Season simulation backbone for team run-length contracts",
+     "description": "The three team contracts here (any 20-game streak, the longest streak with 1/N ties, the last undefeated team) are read off one simulated regular season: game win probabilities from team strength with common rating shocks, head-to-head games that make one team's win another's loss, and Cup games before the final included in the sequence. Run lengths, the number of teams tied at the maximum and first-loss dates all come from the same paths, so they must be drawn jointly rather than from separate marginal models.",
+     "distribution": "Thirty correlated game-outcome sequences; extreme-value behaviour of the maximal run length with integer ties; first-loss day is discrete with same-day ties.",
      "categories": [
       "talent_strength",
       "situational_schedule_motivation"
@@ -6274,8 +6562,8 @@
    {
     "id": "ss-ownership-overlap",
     "type": "OTHER",
-    "description": "Team win-streak and team-record mechanisms are reviewed in three archetypes (season_stat_markets, the unregistered counting-specials key, season_futures_team) with different input ids for the same run-length process, and KXNBARECORD and KXNBAMOSTWINS sit in season_futures_team. nba.longest_streak_max_and_tie_model is defined identically here and in season_futures_team, but nba.team_win_streak_hazard in the unregistered record is a separate id for the same mechanism.",
-    "what_would_resolve": "Decide one owning archetype for team streak and record contracts, merge the duplicate inputs and record DUPLICATE_OF cross-references in the catalog.",
+    "description": "Team run-length contracts now all sit here (KXNBAWINSTREAK, KXNBATEAMWINSTREAK, KXNBALASTTOLOSE) while season win totals, records and KXNBAMOSTWINS sit in season_futures_team; both need the same simulated season, and nba.team_win_streak_hazard and nba.longest_streak_max_and_tie_model overlap (one any-team threshold, one argmax with ties) without a shared simulation definition.",
+    "what_would_resolve": "Define one shared regular-season path simulation referenced by both archetypes and record the two streak inputs as views of it.",
     "category": "settlement_contract"
    },
    {
@@ -6298,29 +6586,9 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Nineteen live series after the reconciliation, seven with sampled rules. Two different seed definitions coexist: KXNBASEEDOU ('#N seed or better') uses the conference seed at the end of the regular season, before the Play-In, whereas KXNBASEED ('#8 seed') awards seeds 1-6 by final standings but seeds 7 and 8 by the Play-In results. KXNBAPLAYOFF: YES if the team qualifies for the playoffs, and play-in qualification does not count. KXNBAEAST1SEED: YES if the team is the conference 1 seed at the end of the regular season. KXNBAPLAYOFFHOST: YES if the team actually hosts at least N playoff games in its home stadium, Play-In games excluded. KXNBAMATCHUP: YES if the named pair is confirmed as the Cup Finals matchup, resolving on qualification, not on the final. KXNBACUPGROUPWIN: YES if any team of the named Cup group wins the Cup. Series-length and path contracts (Game 7 series, series total games, clinch at home, Finals exact score, series comeback, undefeated playoff team), Cup qualifiers and group winners, play-in membership and advancement are TITLE_ONLY.",
+   "settlement_definition": "Twenty-four playoff-series and Cup series, 23 with rules text. Single series: winner (KXNBASERIES), total games over X.5 (KXNBASERIESGAMES), exact score (KXNBASERIESSCORE, KXNBAFINALSEXACT), games spread (named team wins by more than X.5 games), comeback after trailing by 2+ games (KXNBASERIESCOMEBACK: 0-2, 3-0 or 3-1 deficits count), any team winning a game after trailing by 30+ points (KXNBASERIESGCOMEBACK), exact number of road wins (a road win is a visiting-team win), no road win in the series (KXNBASERIESROADWIN), the champion clinching at home (wins the title in a home game) and a 40+ point margin in any Finals game (KXNBAFINBLOWOUT). Playoff-wide: any 3-0 series comeback (lose the first three, win four straight), at least N series going to Game 7, at least N sweeps or upsets in a round (an upset is a higher numerical seed beating a lower one), a team's exact playoff losses, a team going 16-0 and winning the title, and at least N home playoff games actually hosted in the home stadium (Play-In games excluded). Cup: champion, Finals qualifiers, group winners, any team of a group winning the Cup, and the Finals matchup, which resolves on qualification. No text addresses overtime, suspended games or relocated venues; KXNBAPLAYOFFHOMEGAMES is TITLE_ONLY.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
-    {
-     "ticker": "KXNBASEEDOU",
-     "quote": "Results of Play-In games do not affect the outcome.",
-     "establishes": "Seed contracts resolve on the end-of-regular-season conference seed, not the post-play-in seed."
-    },
-    {
-     "ticker": "KXNBASEEDOU",
-     "quote": "If the Washington Pro Basketball team is the #10 seed or better at the conclusion of the 2026-27 Pro Basketball regular season, then the market resolves to Yes.",
-     "establishes": "Threshold form: 'seed or better' with strike_type less; lower numbers are better seeds."
-    },
-    {
-     "ticker": "KXNBASEED",
-     "quote": "Seeds #7 and #8 are determined by the results of the Western Conference Play-In Tournament.",
-     "establishes": "The exact-seed series uses the post-Play-In seed for 7 and 8, the opposite of KXNBASEEDOU; the same simulated standings must be mapped through two different seed definitions."
-    },
-    {
-     "ticker": "KXNBAPLAYOFF",
-     "quote": "Qualifying for the Pro Basketball play-in tournament does not count as playoff qualification.",
-     "establishes": "Playoff-qualifier contracts for teams finishing 7-10 depend on winning Play-In games, not only on the regular-season rank."
-    },
     {
      "ticker": "KXNBAPLAYOFFHOST",
      "quote": "the specified number of playoff games have to be actually hosted by Miami and played in their home stadium in order for the market to resolve Yes.",
@@ -6335,104 +6603,147 @@
      "ticker": "KXNBACUPGROUPWIN",
      "quote": "If any team in West Group C wins the Pro Basketball Cup in the 2026-27 Pro Basketball season, then the market resolves to Yes.",
      "establishes": "Group-to-win is the sum of Cup-title probabilities of the group's teams, which share group-stage games and so are negatively dependent at the qualification step."
+    },
+    {
+     "ticker": "KXNBASERIESCOMEBACK",
+     "quote": "If either team is down 2-0, 3-0, or 3-1 in games and comes back to ultimately win the series, then the market resolves to Yes.",
+     "establishes": "Series comeback is a path event on the game sequence (any deficit of two games), not a function of the series winner or length alone."
+    },
+    {
+     "ticker": "KXNBA30COMEBACK",
+     "quote": "meaning they lose the first three games of a series (going down 0-3), and then win four consecutive games to win the series 4-3",
+     "establishes": "Playoff-wide 3-0 comeback is a union over all series of a specific seven-game path, extremely rare and sensitive to game-to-game dependence."
+    },
+    {
+     "ticker": "KXNBASERIESGCOMEBACK",
+     "quote": "either team must overcome a deficit of at least 30 points and win in any individual game within the series",
+     "establishes": "This is an in-game comeback from a 30-point deficit, unioned over the series' games, so it needs score-path data, not the series simulation."
+    },
+    {
+     "ticker": "KXNBAFINBLOWOUT",
+     "quote": "If either team in the Pro Basketball Finals records a margin of victory of at least 40 points in any individual game in the 2026 Pro Basketball Finals, then the market resolves to Yes.",
+     "establishes": "Finals blowout is the maximum single-game final margin over the Finals games reaching 40, a tail event compounded over four to seven games."
+    },
+    {
+     "ticker": "KXNBAUPSET",
+     "quote": "A series upset occurs when a team with a higher numerical seed defeats a team with a lower numerical seed in a playoff series",
+     "establishes": "Upset counts depend on the seeds of the teams that actually meet in the round, so earlier rounds and the Play-In determine which series can be upsets."
+    },
+    {
+     "ticker": "KXNBASERIESROADWIN",
+     "quote": "The first road win in a playoff series is achieved the first time the home team loses and the away team wins",
+     "establishes": "Road-win contracts are defined on venue-specific game results under the 2-2-1-1-1 format, so home-court strength per game matters, not only series strength."
+    },
+    {
+     "ticker": "KXNBAHOMECLINCH",
+     "quote": "The market resolves to Yes if the 2026 Pro Basketball champion wins the championship in a home game.",
+     "establishes": "Clinch-at-home depends on which game ends the Finals: the higher seed can clinch at home only in games 5 or 7, the lower seed only in games 4 or 6."
+    },
+    {
+     "ticker": "KXNBAUNBEATEN",
+     "quote": "needs to win the championship while going unbeaten (16-0)",
+     "establishes": "Undefeated run is four consecutive sweeps ending in the title, a product of four small probabilities."
     }
    ],
    "variants_and_edge_cases": [
-    "Two seed definitions: KXNBASEEDOU uses the pre-Play-In seed (a team finishing 10th that enters as the 8 seed is still 10), while KXNBASEED assigns seeds 7 and 8 from the Play-In; a model that maps one standings simulation to both must branch at the Play-In.",
-    "Home playoff games (KXNBAPLAYOFFHOST, KXNBAPLAYOFFHOMEGAMES) count only games actually hosted in the home stadium; the 2-2-1-1-1 format gives the higher seed games 1, 2, 5 and 7, so the count depends on seeding, series lengths and depth of run, and Play-In games are excluded.",
-    "Cup contracts: KXNBAMATCHUP resolves on qualification of both finalists; KXNBACUPGROUPWIN sums title probabilities over a group; group qualifiers and winners depend on group tiebreakers including point differential; Cup games before the final count as regular-season games per other Kalshi rules in this sport.",
-    "Series-path contracts (KXNBAGAME7, KXNBASERIESGAMES, KXNBAHOMECLINCH, KXNBAFINALSEXACT, KXNBASERIESGCOMEBACK, KXNBAUNBEATEN) are TITLE_ONLY; they are functionals of game-by-game series simulation with dependence across games, and the comeback definition (from 0-2, 1-3 or a single-game deficit) is unknown."
+    "Strike construction differs: series games 'over 6.5', games spread 'more than 2.5 games', road wins and playoff losses 'exactly N' (KXNBAPOLOSE is titled 'exactly 7 losses' but carries strike_type greater_or_equal), Game 7 and sweep/upset counts 'at least N'.",
+    "Path events (2+ game comeback, 3-0 comeback, first road win, clinch at home) are functions of the ordered game sequence and venue pattern, so the series model must be simulated game by game with dependence, not collapsed to winner and length.",
+    "In-game extremes (30-point comeback win, 40-point margin) union a per-game tail over the series' games; the number of games is itself random and correlated with how even the teams are, which works in opposite directions for the two events.",
+    "Home playoff games count only games actually hosted in the home stadium; Play-In games do not count, and a game moved to a neutral site would not count.",
+    "Cup: the Finals matchup resolves when both finalists qualify, group-to-win sums title probabilities over a group, group winners and qualifiers depend on group tiebreakers including point differential, and the Cup final itself is not a regular-season game.",
+    "Upsets use numerical seeds after the Play-In, so a 7 or 8 seed that came through the Play-In beating a 2 seed is an upset; equal seeds cannot meet before the Finals, where seed numbers from different conferences make the definition ambiguous."
    ],
-   "settlement_data_source": "Official league standings (regular-season seed), Play-In and playoff results, Cup standings and bracket; the sampled rules do not name the data provider.",
+   "settlement_data_source": "Official playoff results, game-by-game scores and venues, play-by-play score paths (for 30-point deficits), the post-Play-In seeding, and the Cup standings and bracket; the sampled texts name no source agency.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "These contracts are functionals of three structures laid on a simulated season. The first is the final regular-season standing distribution (team strength with uncertainty, availability, schedule, tiebreaks) giving seeds, qualification and 1-seeds; the second is the format machinery applied to it (two seed definitions before and after the Play-In, the Play-In bracket, Cup group tiebreaks including point differential and the Cup knockout); the third is the playoff bracket simulated game by game, which generates series lengths, clinch locations, home games hosted and undefeated runs. The outcome depends on rule-accurate simulation more than on a single rating, with boundary effects at ties and cutoffs; the draft and playoff triple-double series formerly here were moved to other archetypes.",
+   "summary": "These contracts are functionals of a playoff (or Cup) bracket simulated game by game. Per-game win probability comes from availability-adjusted strength, playoff-tightened rotations and the venue under the 2-2-1-1-1 pattern, with dependence between games of a series through injuries, adjustments and elimination-game effects. The ordered game sequence yields winners, lengths, exact scores, games spreads, comebacks from series deficits, road-win counts and clinch venues; concurrent series in a round yield counts of sweeps, upsets and Game 7s; and each team's run yields its losses, home games hosted and the rare 16-0 path. Two contracts need within-game score paths (a 30-point comeback, a 40-point margin). The Cup adds group tables with point-differential tiebreaks and a single-elimination knockout.",
    "stages": [
     {
      "id": "s1",
-     "name": "Final regular-season standing distribution",
-     "description": "Each team's final record is a sum of game outcomes with rating uncertainty, injuries and schedule, and the seed is its rank within the conference. Seed thresholds like 'the 10 seed or better' are cut points on this rank distribution, with ties common near boundaries. Late-season rest and tanking incentives alter results for teams that have clinched or been eliminated.",
-     "distribution": "Rank distribution derived from a hierarchical Poisson-binomial simulation; probability at boundary seeds sensitive to a single win.",
+     "name": "Per-game win probability inside a playoff series",
+     "description": "Each game's win probability comes from playoff-strength ratings adjusted for who is available, rotation tightening that lifts star-heavy teams, and home court under the 2-2-1-1-1 pattern (higher seed at home in games 1, 2, 5 and 7). Within a series the probability drifts with injuries, matchup adjustments and the series state: a team facing elimination tends to perform above its rating and a team that has just lost at home adjusts, so games are not independent draws.",
+     "distribution": "Per-game probabilities typically 30-80%, alternating with venue; mild positive serial dependence plus regime switches when a star is injured mid-series.",
      "categories": [
       "talent_strength",
       "availability_news",
-      "situational_schedule_motivation"
+      "environment",
+      "role_personnel"
      ],
      "input_ids": [
       "nba.ratings",
       "nba.lineup_adj_rating",
       "nba.injuries_pit",
-      "nba.standings_motivation",
-      "nba.rest_travel",
-      "nba.standings_sim"
+      "nba.playoff_rotation",
+      "nba.venue",
+      "nba.series_game_conditional_state"
      ]
     },
     {
      "id": "s2",
-     "name": "Format rules: seeding definition, play-in and tiebreaks",
-     "description": "The contract defines seed as the end-of-regular-season conference seed, so the play-in changes qualification but not the seed. The play-in bracket maps pre-play-in seeds 7-10 into the playoff field through games with specific home-court structure; tiebreakers decide equal records. The same simulated standings produce different answers for qualification, seed-over/under and play-in contracts.",
-     "distribution": "Discrete rule-based mapping; the play-in is a three-game mini-tournament with per-game win probabilities near 50%.",
+     "name": "Ordered game sequence: length, score, spread, comebacks, road wins, clinch venue",
+     "description": "The ordered win/loss sequence of a best-of-seven determines the series winner, the number of games, the exact score, whether a games spread is covered, whether a team came back from 0-2, 1-3 or 0-3, how many road wins occurred, whether no road team ever won, and in which arena the clinching game was played. These are not functions of the winner alone: road-win and clinch-venue contracts depend on venue-specific probabilities, and comeback contracts on the dependence between consecutive games.",
+     "distribution": "Discrete distribution over the 70 possible win/loss sequences; length on {4,5,6,7} with mass moving to 6-7 for even matchups; road wins on {0..7}; comeback paths have low single-digit probabilities.",
      "categories": [
-      "settlement_contract",
-      "officiating_rules"
+      "distribution_variance",
+      "game_context_script",
+      "environment"
      ],
      "input_ids": [
-      "m.rules_text",
-      "nba.play_in_path_model",
-      "nba.cup_format"
+      "nba.series_model",
+      "nba.series_length_distribution",
+      "nba.venue",
+      "nba.series_game_conditional_state"
      ]
     },
     {
      "id": "s3",
-     "name": "Series length, home-court sequence and clinch location",
-     "description": "Inside a best-of-seven the per-game win probability alternates with venue under the 2-2-1-1-1 pattern (higher seed at home in games 1, 2, 5 and 7), and game outcomes are positively dependent through injuries and adjustments. Contracts on a Game 7, total series games, a clinch at home, an exact Finals score or a comeback are functions of this game-by-game path, not of the series winner alone, so venue-specific win probabilities and the dependence between games drive them.",
-     "distribution": "Series length on {4,5,6,7} with mass shifting toward 6-7 as teams are matched; clinch-location and comeback events are path functionals with probabilities sensitive to game-to-game correlation.",
+     "name": "Round counts and whole-run totals across the bracket",
+     "description": "Playoff-wide contracts aggregate over concurrent series and over a team's run: the number of Game 7s, sweeps or upsets in a round depends on the seed gaps of the pairings that actually occur (set by earlier rounds and the Play-In); a team's exact playoff losses, its home games actually hosted and the 16-0 title run are sums or products over the rounds it reaches. Common shocks such as officiating emphasis or a league-wide injury wave make concurrent series dependent.",
+     "distribution": "Counts over four to eight concurrent series (Poisson-binomial with dependence); team losses and home games are lumpy sums over rounds; the 16-0 path is a product of four sweep probabilities, well under 1%.",
      "categories": [
       "distribution_variance",
-      "environment",
-      "availability_news",
-      "game_context_script"
+      "opponent_matchup",
+      "settlement_contract"
      ],
      "input_ids": [
-      "nba.series_model",
-      "nba.venue",
-      "nba.injuries_pit",
-      "nba.playoff_rotation"
+      "nba.title_path",
+      "nba.playoff_round_event_counts",
+      "nba.playoff_home_games_distribution",
+      "nba.play_in_path_model",
+      "nba.series_model"
      ]
     },
     {
      "id": "s4",
+     "name": "Within-game score extremes compounded over a series",
+     "description": "KXNBASERIESGCOMEBACK pays if any game in the series is won by a team that trailed by 30 or more, and KXNBAFINBLOWOUT if any Finals game ends with a 40-point margin. Both need the score path or final margin distribution of playoff games, conditional on the strength gap and pace, compounded over a random number of games. Even matchups produce longer series (more chances) but fewer huge leads; uneven ones produce blowouts but end sooner, so the series length and the per-game tail interact.",
+     "distribution": "Per-game P(margin >= 40) and P(win after trailing by 30+) are well below 1% for even playoff teams; union over 4-7 games with dependence through matchup and pace.",
+     "categories": [
+      "game_context_script",
+      "distribution_variance"
+     ],
+     "input_ids": [
+      "nba.final_margin_pmf_empirical",
+      "nba.playoff_max_deficit_comeback_rate",
+      "nba.series_length_distribution"
+     ]
+    },
+    {
+     "id": "s5",
      "name": "Cup group stage and knockout",
-     "description": "Cup group winners and qualifiers are determined by group record and tiebreakers (including point differential), and the knockout stage is single-elimination at neutral or higher-seed venues. The Finals-matchup contract resolves when both finalists are known, so it is the joint probability of two bracket paths, and group-to-win sums title chances of teams that played each other in the group. Teams' incentives in the last group games depend on the standings state, and margin matters for tiebreaks.",
+     "description": "Cup group winners and qualifiers are determined by group record and tiebreakers (including point differential), and the knockout stage is single-elimination. The Finals-matchup contract resolves when both finalists are known, so it is the joint probability of two bracket paths, group-to-win sums title chances of teams that played each other in the group, and the champion contract is three knockout wins after qualification. Incentives in the last group games depend on the standings state, and margin matters for tiebreaks.",
      "distribution": "Small group tables with discrete outcomes; margin enters via the tiebreak; knockout rounds are single games with win probability near rating-implied values.",
      "categories": [
       "situational_schedule_motivation",
-      "game_context_script"
+      "game_context_script",
+      "officiating_rules"
      ],
      "input_ids": [
       "nba.cup_format",
       "nba.cup_group_tiebreak_state",
       "nba.single_game_margin_pmf",
       "nba.cup_finals_pair_probability"
-     ]
-    },
-    {
-     "id": "s5",
-     "name": "Playoff bracket and counting products",
-     "description": "Given the bracket, advancement and series lengths drive the number of home games actually hosted and the chance of an undefeated run (four consecutive sweeps). These are functionals of the full playoff simulation in which a star injury in one round changes every later round, so correlation across series matters as much as within a series.",
-     "distribution": "Home-games count is a discrete sum over rounds (0 to 16, lumpy at multiples tied to seeding); the undefeated run is a product of four sweep probabilities and is very small.",
-     "categories": [
-      "game_context_script",
-      "talent_strength",
-      "role_personnel"
-     ],
-     "input_ids": [
-      "nba.series_model",
-      "nba.title_path",
-      "nba.playoff_rotation",
-      "nba.venue",
-      "nba.playoff_home_games_distribution"
      ]
     }
    ],
@@ -6443,7 +6754,7 @@
       "nba.ratings",
       "nba.lineup_adj_rating"
      ],
-     "note": "Team strength with availability for standings, Play-In and bracket simulations."
+     "note": "Availability-adjusted playoff strength for per-game and Cup game probabilities."
     },
     "opponent_matchup": {
      "status": "COVERED",
@@ -6465,12 +6776,12 @@
      "input_ids": [
       "nba.injuries_pit"
      ],
-     "note": "Star availability vintages for seed, qualification and series."
+     "note": "Star availability vintages inside series and between rounds."
     },
     "coaching_scheme": {
      "status": "GAP",
      "input_ids": [],
-     "note": "Coach-specific playoff rotation shortening, tanking decisions and Cup tiebreak management are not represented by an input in this archetype; coaching effects on the late-season standing are unquantified."
+     "note": "Coach-specific playoff rotation shortening, in-series adjustments and Cup tiebreak management (running up margin) are not represented by a dedicated input; their effect on series paths is unquantified."
     },
     "environment": {
      "status": "COVERED",
@@ -6483,10 +6794,11 @@
     "game_context_script": {
      "status": "COVERED",
      "input_ids": [
-      "nba.single_game_margin_pmf",
-      "nba.series_model"
+      "nba.series_game_conditional_state",
+      "nba.playoff_max_deficit_comeback_rate",
+      "nba.single_game_margin_pmf"
      ],
-     "note": "Margin distribution for Cup tiebreak and game-to-game correlation in series."
+     "note": "Series-state effects, in-game deficit comebacks and Cup margins."
     },
     "pace_volume": {
      "status": "NOT_APPLICABLE",
@@ -6501,20 +6813,21 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nba.series_model",
-      "nba.playoff_home_games_distribution",
-      "nba.cup_finals_pair_probability"
+      "nba.series_length_distribution",
+      "nba.playoff_round_event_counts",
+      "nba.final_margin_pmf_empirical",
+      "nba.playoff_home_games_distribution"
      ],
-     "note": "Series-length pmf, home-games count and the joint bracket-reach distribution for the Cup pair."
+     "note": "Series-sequence pmf, round counts, final-margin tail and home-games count."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
-      "nba.standings_motivation",
+      "nba.series_game_conditional_state",
       "nba.cup_group_tiebreak_state",
       "nba.rest_travel"
      ],
-     "note": "Tanking, clinching and Cup incentives."
+     "note": "Elimination-game effects, Cup group incentives and rest between games."
     },
     "officiating_rules": {
      "status": "COVERED",
@@ -6522,15 +6835,15 @@
       "nba.cup_format",
       "nba.play_in_path_model"
      ],
-     "note": "Format rules: Play-In, two seed definitions, Cup tiebreakers and bracket (rules, not referees)."
+     "note": "Format rules: 2-2-1-1-1, post-Play-In seeds for upset counting, Cup tiebreakers and bracket (rules, not referees)."
     },
     "settlement_contract": {
      "status": "COVERED",
      "input_ids": [
       "m.rules_text",
-      "nba.play_in_path_model"
+      "nba.playoff_round_event_counts"
      ],
-     "note": "Pre- versus post-Play-In seed definitions, games actually hosted at home, Cup matchup resolving on qualification."
+     "note": "Exact versus at-least strikes, path definitions (2+ game and 3-0 comebacks, first road win, home clinch), seed-based upsets, games actually hosted, Cup matchup on qualification."
     }
    }
   },
@@ -6550,8 +6863,8 @@
     "raw_data": [
      "standings, play-in format, team ratings"
     ],
-    "why": "Required to separate pre-play-in seed contracts from qualification contracts for the same team.",
-    "role": "primary"
+    "why": "Sets which teams enter as the 7 and 8 seeds, which defines which first-round results count as upsets for KXNBAUPSET-type contracts.",
+    "role": "context"
    },
    "nba.playoff_home_games_distribution": {
     "label": "Distribution of the number of home playoff games by seed and path",
@@ -6625,6 +6938,101 @@
     ],
     "why": "KXNBAMATCHUP (rules-verified) resolves on the named Cup Finals pair qualifying; this archetype had no input for the joint bracket-reach probability of two teams.",
     "role": "primary"
+   },
+   "nba.series_length_distribution": {
+    "label": "Series-length distribution from per-game win probabilities",
+    "category": "game_state",
+    "mechanism": "The number of games in a best-of-seven series is a function of per-game win probability, home pattern and dependence between games.",
+    "rationale": "KXNBASERIESGAMES counts games, not points; the draft has no input for it except a generic series model reference outside the archetype.",
+    "measurement": "P(series ends in k games) by dynamic programming over home pattern 2-2-1-1-1 with per-game win probabilities from own-model ratings and series dependence parameter (game-to-game correlation about +0.05 on margin, estimated from 2000-2025 playoff series); injuries known as of the as-of date; output P(4), P(5), P(6), P(7).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference playoffs",
+     "own ratings"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff series results by game with venue and series state",
+     "own team ratings and injury status"
+    ],
+    "why": "Series-games, exact-score, Game 7 and games-spread contracts are direct functionals of the length distribution.",
+    "role": "primary"
+   },
+   "nba.series_game_conditional_state": {
+    "label": "Playoff-series game-conditional state",
+    "category": "game_state",
+    "mechanism": "In a series, a game's mean margin depends on series score, rest days between games, accumulated injuries and coaching adjustments.",
+    "rationale": "Single-game ratings treat games as independent; series markets (home clinch, game 7, comeback) depend on the dependency between games and on elimination-state minutes tightening.",
+    "measurement": "Features: games played, series score, rest days since the last game, minutes of the stars in the previous game, margin of the previous game, injury-status change since game 1; fit a hierarchical model of game margin residual on 2000-2025 series with series-level random effect (sd about 2 points) and elimination-game dummy; as-of the last completed game.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "Basketball-Reference playoff series",
+     "NBA schedule"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff series results by game with venue and series state",
+     "own team ratings and injury status"
+    ],
+    "why": "Comebacks from 0-2/3-1/0-3 and road-win counts depend on how the next game's probability moves with the series score and the previous result.",
+    "role": "secondary"
+   },
+   "nba.final_margin_pmf_empirical": {
+    "label": "Empirical final-margin pmf by own-model mean and sd",
+    "category": "distribution",
+    "mechanism": "The final margin has non-smooth pmf structure (hole at zero, OT bump, late-game parity) that a normal density does not reproduce.",
+    "rationale": "The draft names score_resid as the margin density by spread bucket, but spread buckets from market lines are circular and the pmf structure lives at the integer level; band edges at 5/6 and 10/11 fall exactly on such structure.",
+    "measurement": "Collect 15 seasons of final signed margins; standardise z = (margin - mu_own)/sigma_own using own-model mean and sd; estimate the pmf of the integer margin by kernel smoothing of the z-density plus an explicit multiplicative correction per integer margin in [-12, 12] (ridge-shrunk to 1); validate by log-loss of band probabilities in 2 held-out seasons; recompute annually.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference game logs"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "final scores of all games for 15 seasons",
+     "own-model mean and sd of margin per game"
+    ],
+    "why": "Gives the per-game probability of a 40-point final margin that KXNBAFINBLOWOUT compounds over the Finals games.",
+    "role": "primary"
+   },
+   "nba.playoff_max_deficit_comeback_rate": {
+    "label": "Probability of winning a game after trailing by D or more points (max-deficit comeback rate)",
+    "category": "game_state",
+    "mechanism": "A team wins after trailing by D only if the leader's in-game margin path reaches D and then reverses fully; large leads trigger starter rest and slower pace by the leader, so reversals from 30+ are rare and depend on when the lead was built.",
+    "rationale": "KXNBASERIESGCOMEBACK settles on any series game won after a 30-point deficit, a path event that no final-score model sees: a game can end close after a 30-point swing. Both the chance of a 30-point lead and the chance of reversing it depend on the strength gap, pace and how coaches manage big leads in the playoffs.",
+    "measurement": "From play-by-play score paths of 15 seasons compute each game's maximum deficit faced by the eventual winner; fit P(max deficit of winner >= D) by logistic regression on D (20-35), own-model pregame margin mean and sd, playoff flag and pace, with the playoff coefficient shrunk to the regular-season value (prior weight 200 playoff games); output per-game P(win after trailing >= 30) for each side and the series union 1 - E[prod over games (1 - p_g)] using series length draws. As-of: before game 1 and after each game.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nba_api playbyplayv2 / cdn.nba.com liveData play-by-play",
+     "Basketball-Reference play-by-play pages"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "play-by-play score after every scoring event with game clock",
+     "own-model pregame margin mean and sd",
+     "playoff flag"
+    ],
+    "why": "The only input that prices KXNBASERIESGCOMEBACK; series simulations and final-margin distributions cannot see a 30-point deficit that was erased.",
+    "role": "primary"
+   },
+   "nba.playoff_round_event_counts": {
+    "label": "Joint distribution of round-level series event counts (sweeps, upsets, Game 7s) and team playoff losses",
+    "category": "distribution",
+    "mechanism": "Counts of sweeps, upsets and Game 7s in a round, and a team's total playoff losses, are sums over series whose pairings depend on earlier rounds and whose outcomes share common shocks.",
+    "rationale": "KXNBASWEEP, KXNBAUPSET, KXNBAGAME7, KXNBAPOLOSE and KXNBAUNBEATEN settle on counts or exact totals; multiplying independent series probabilities ignores that second-round pairings and seed gaps are random, and that league-wide shocks (injury waves, officiating emphasis) make concurrent series dependent, which fattens the tails of the count.",
+    "measurement": "Simulate the full bracket 50,000 times from nba.title_path with per-game probabilities from the series model, including a common per-round shock to home-court advantage (sd estimated from 20 seasons of round-level home win rates); record per round the number of sweeps, upsets (higher numerical seed beats lower, post-Play-In seeds) and Game 7s, and per team the total losses and the 16-0 indicator; output the joint pmf and marginal P(count >= N), P(losses = k). As-of: nightly during the playoffs; before the playoffs from the seed distribution.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "Basketball-Reference playoff series results",
+     "own bracket simulation"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "playoff series results with seeds and game-by-game outcomes for 20 seasons",
+     "current seeds and bracket"
+    ],
+    "why": "Prices the round-count and team-total contracts (sweeps, upsets, Game 7s, exact losses, 16-0) whose payoffs depend on the joint distribution across series.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -6634,11 +7042,11 @@
    },
    "nba.lineup_adj_rating": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Availability-adjusted strength helps late-season seeding and playoff series; for Cup group outcomes it matters only for the few group games."
+    "reason": "Availability-adjusted strength moves per-game probabilities inside a series when a star is out; for Cup group games it matters only for the game-night active set."
    },
    "nba.ratings": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "Team strength drives seed, qualification, 1-seed and cup group outcomes; the playoff-adjusted version mentioned is not defined and regular-season ratings need rotation-concentration adjustment for series."
+    "reason": "Team strength drives per-game probabilities in every series and Cup game; a playoff-rotation version (top-8 health) is needed for series contracts, the regular-season version for the Cup."
    },
    "nba.playoff_rotation": {
     "verdict": "KEEP_SECONDARY",
@@ -6661,12 +7069,12 @@
     "reason": "Rest between games in a series and Cup travel are second-order next to rating and availability; the series home/away pattern already encodes most of it."
    },
    "nba.standings_motivation": {
-    "verdict": "KEEP_SECONDARY",
-    "reason": "Clinch and rest incentives late in the season move seed and Play-In outcomes, and Cup group incentives depend on the tiebreak state; sparse and hard to measure, kept secondary."
+    "verdict": "WEAK",
+    "reason": "Seed, Play-In and qualifier series moved to season_futures_team; here end-of-season incentives only shape which pairings occur, and Cup group incentives are carried by nba.cup_group_tiebreak_state."
    },
    "nba.title_path": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Bracket path matters for 1-seed, home playoff games and the Cup pair; only context for qualification thresholds."
+    "reason": "Bracket path determines which pairings occur in each round, and so the upset, sweep and Game 7 counts, team losses, home games hosted and the Cup pair; only context for a single named series."
    },
    "nba.score_resid": {
     "verdict": "BENCHMARK_ONLY",
@@ -6717,15 +7125,6 @@
    },
    {
     "inputs": [
-     "nba.play_in_path_model",
-     "nba.standings_motivation"
-    ],
-    "form": "threshold",
-    "mechanism": "Teams near the 6-7 and 10-11 boundaries have incentives that change in the last games (avoid the 7-8 game, avoid the 10 seed), which makes win probabilities in the final week depend on the standings state; the play-in structure creates thresholds in the value of one win.",
-    "how_to_test": "Estimate the dependence of late-season win probability on the standings state and on the play-in value of marginal wins."
-   },
-   {
-    "inputs": [
      "nba.cup_format",
      "nba.cup_group_tiebreak_state",
      "nba.single_game_margin_pmf"
@@ -6760,6 +7159,33 @@
     "form": "conditional",
     "mechanism": "Clinch-at-home depends on the venue sequence: under 2-2-1-1-1 a higher-seed winner clinches at home only in games 5 or 7, a lower-seed winner only in games 4 or 6, so the probability is a path functional; a larger home-court edge makes home teams win more of their games, which lengthens series between even teams (more 2-2 and 3-3 states) and shifts clinches toward the higher seed's games 5 and 7.",
     "how_to_test": "Compare simulated series-length and clinch-location frequencies with a venue-free model on 20 seasons of playoff series, split by seed gap."
+   },
+   {
+    "inputs": [
+     "nba.series_game_conditional_state",
+     "nba.series_length_distribution"
+    ],
+    "form": "conditional",
+    "mechanism": "If teams facing elimination play above their rating and teams up 3-0 relax, series lengthen and 2+ game comebacks become more frequent than independent games imply; the effect exists only in specific series states, so it shifts the tails of the sequence distribution, not the winner.",
+    "how_to_test": "Compare observed frequencies of 6-7 game series and 0-2/1-3 comebacks over 25 seasons with an independent-games model and with the state-dependent model."
+   },
+   {
+    "inputs": [
+     "nba.final_margin_pmf_empirical",
+     "nba.series_length_distribution"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A 40-point Finals margin is likelier in uneven matchups, which also end in fewer games, so the per-game tail and the number of games are negatively linked; treating them as independent overstates the blowout probability for lopsided Finals and understates it for even ones.",
+    "how_to_test": "Simulate Finals with per-game margins drawn from the same strength gap that sets series length and compare the union probability with the independent product on historical Finals."
+   },
+   {
+    "inputs": [
+     "nba.playoff_round_event_counts",
+     "nba.title_path"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Second-round upset and sweep counts depend on which pairings survive round one: chalk first rounds produce even 1-4/2-3 matchups (few sweeps, few upsets by definition), while first-round upsets create mismatched or seed-inverted pairings, so round-two counts switch regime with round-one results.",
+    "how_to_test": "Condition historical second-round sweep and upset counts on the number of first-round upsets and compare with unconditional rates."
    }
   ],
   "nonlinearities": [
@@ -6774,14 +7200,14 @@
     "why": "Each sweep needs about 60-80% for the favorite, so the product is a few percent; small errors in per-game probability multiply across 16 games."
    },
    {
-    "input_id": "nba.ratings",
-    "shape": "logistic with ties: seed-threshold probability near cutoffs",
-    "why": "The probability of reaching 'seed 6 or better' is a steep function of expected wins near the boundary, with ties broken by rule making it step-like at integer win totals."
+    "input_id": "nba.series_length_distribution",
+    "shape": "inverted-U of P(7 games) in the per-game edge",
+    "why": "P(series reaches Game 7) is maximal (about 31%) when teams are even and falls steeply as the per-game edge grows, so Game 7 counts depend on how many even pairings the bracket produces, not on average strength."
    }
   ],
   "required_data": [
    {
-    "dataset": "Standings, schedule, tiebreak ledger and play-in format",
+    "dataset": "Playoff seeds, bracket and team strength inputs",
     "grain": "team x game; team pair",
     "fields": [
      "game_id",
@@ -6817,10 +7243,9 @@
      "nba.ratings",
      "nba.lineup_adj_rating",
      "nba.play_in_path_model",
-     "nba.standings_motivation",
      "nba.rest_travel",
      "nba.venue",
-     "nba.standings_sim"
+     "nba.title_path"
     ]
    },
    {
@@ -6902,7 +7327,42 @@
      "nba.title_path",
      "nba.playoff_rotation",
      "nba.playoff_home_games_distribution",
-     "nba.injuries_pit"
+     "nba.injuries_pit",
+     "nba.series_length_distribution",
+     "nba.series_game_conditional_state",
+     "nba.playoff_round_event_counts"
+    ]
+   },
+   {
+    "dataset": "Play-by-play score paths and final margins of playoff and regular-season games",
+    "grain": "game x scoring event",
+    "fields": [
+     "game_id",
+     "season",
+     "playoff_flag",
+     "period",
+     "clock",
+     "home_score",
+     "away_score",
+     "final_margin"
+    ],
+    "timestamp_requirement": "Completed games only; model mean and sd of margin as of pre-tip.",
+    "history_needed": "15 seasons including playoffs",
+    "candidate_sources": [
+     {
+      "name": "nba_api playbyplayv2 / cdn.nba.com liveData",
+      "access": "free_scrape",
+      "note": "Undocumented, rate-limited"
+     },
+     {
+      "name": "Basketball-Reference play-by-play",
+      "access": "free_scrape",
+      "note": "Polite scraping"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.final_margin_pmf_empirical",
+     "nba.playoff_max_deficit_comeback_rate"
     ]
    }
   ],
@@ -6910,14 +7370,14 @@
    {
     "id": "sc-titleonly",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "12 of 19 live series are TITLE_ONLY: KXNBAPIADVANCE, KXNBAPLAYOFFHOMEGAMES, KXNBAFINALSEXACT, KXNBAHOMECLINCH, KXNBAGAME7, KXNBAUNBEATEN, KXNBAPLAYIN, KXNBACUPQUAL, KXNBAWEST1SEED, KXNBASERIESGCOMEBACK, KXNBACUPGROUP and KXNBASERIESGAMES; whether play-in games count, which series are in scope and how a comeback is defined are unknown.",
-    "what_would_resolve": "Sample rules for the TITLE_ONLY series, prioritising KXNBASERIESGCOMEBACK, KXNBAHOMECLINCH and KXNBAPLAYOFFHOMEGAMES (whose definitions change the path functional)."
+    "description": "23 of 24 series have rules text; KXNBAPLAYOFFHOMEGAMES is TITLE_ONLY and shares its title with KXNBAPLAYOFFHOST ('NBA Team Home Playoff Games'), so it is presumably the same count, but whether it also requires games 'actually hosted' and excludes the Play-In is not read.",
+    "what_would_resolve": "Sample KXNBAPLAYOFFHOMEGAMES rules and compare with the KXNBAPLAYOFFHOST text."
    },
    {
     "id": "sc-archetype-mismatch",
     "type": "OTHER",
-    "description": "The catalog blueprint of this archetype is series winner and series length, while most live series are standings, Play-In and Cup-bracket contracts; the series-path contracts now present (Game 7, series games, clinch at home, Finals exact) finally match the blueprint, but seed and Cup contracts still share the archetype.",
-    "what_would_resolve": "Split standings/seed and Cup-bracket contracts from series-path contracts, each with its own input list and rules review."
+    "description": "After the reconciliation the archetype is playoff-series paths plus the Cup; the Cup group and knockout contracts share no mechanism with best-of-seven paths beyond team strength, and two series contracts (30-point comeback, 40-point blowout) need in-game score data unlike the rest.",
+    "what_would_resolve": "Split Cup contracts into their own archetype with the Cup inputs, or keep them here with a separate stage and data set as now."
    },
    {
     "id": "sc-coaching-gap",
@@ -6927,17 +7387,10 @@
     "category": "coaching_scheme"
    },
    {
-    "id": "sc-top5roty-semantics",
-    "type": "OTHER",
-    "description": "KXNBATOP5ROTY (title only; draft slot versus Rookie-of-the-Year vote semantics unknown) was moved to awards_draft by the reconciliation; this record no longer prices it and the semantic question must be carried into the awards_draft review.",
-    "what_would_resolve": "Record the question in the awards_draft review and sample KXNBATOP5ROTY rules there.",
-    "category": "settlement_contract"
-   },
-   {
     "id": "sc-ownership-overlap",
     "type": "OTHER",
-    "description": "Seed, Play-In and playoff-qualifier series here overlap in mechanism with the playoff and division machinery of season_futures_team (which uses nba.tiebreak_ledger and nba.standings_sim), and team win-streak contracts are now split between season_futures_team and season_stat_markets; the same standings simulation is reviewed under several archetypes with different input ids.",
-    "what_would_resolve": "Define one shared standings-and-bracket simulation input set and reference it from every archetype that consumes it."
+    "description": "Series-length and bracket machinery is defined here (nba.series_length_distribution, nba.playoff_round_event_counts) and also consumed by season_futures_team (titles, playoff wins), player_milestones (KXNBAPLAYOFF3D) and the playoff-points record; each references catalog ids, but no single bracket simulation is defined as the shared source.",
+    "what_would_resolve": "Define one shared playoff bracket simulation input referenced by every archetype that consumes series lengths or advancement."
    },
    {
     "id": "sc-cup-bracket-structure",
@@ -6950,8 +7403,15 @@
     "id": "sc-comeback-definition",
     "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "KXNBASERIESGCOMEBACK (title 'Series Game Comeback') is TITLE_ONLY: it could mean a series won from a 0-2 or 1-3 deficit, or a single playoff game won after trailing by a stated margin; the two need different inputs (series-path simulation versus in-game win probability by deficit).",
-    "what_would_resolve": "Sample KXNBASERIESGCOMEBACK rules and, if it is an in-game comeback, add a market-free in-game win-probability-by-deficit input."
+    "description": "KXNBASERIESGCOMEBACK's text says 'overcome a deficit of at least 30 points and win' without saying whether the deficit is measured at any moment including overtime, and KXNBAPOLOSE is titled 'exactly 7 losses' while its strike_type is greater_or_equal, so the strike construction of the losses ladder is ambiguous.",
+    "what_would_resolve": "Check settled KXNBAPOLOSE markets (exact versus at-least payout) and a settled KXNBASERIESGCOMEBACK market against play-by-play maximum deficits."
+   },
+   {
+    "id": "sc-ot-venue-silence",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "None of the series texts addresses overtime (relevant to KXNBAFINBLOWOUT margins and 30-point comebacks), a game relocated to a neutral site (road-win and home-clinch definitions use home/away), or a series not completed; the record assumes official final results including overtime.",
+    "what_would_resolve": "Request full rules_secondary for KXNBAFINBLOWOUT, KXNBASERIESROADWINS and KXNBAHOMECLINCH and check settlements of overtime Finals games."
    }
   ]
  },
@@ -7667,23 +8127,43 @@
   "reviewer": "NBA_b author (Claude Sonnet 5.5)",
   "review_date": "2026-11-07",
   "contract": {
-   "settlement_definition": "Five Summer League series are now filed here: KXNBASUMMERTOTAL and KXNBASUMMERSPREAD (game total and spread), KXNBASUMMER (Summer League champion), KXNBASUMMERPTS (player points) and KXNBASUMMERMVP (MVP award). Only KXNBASUMMERMVP has sampled rules: YES if the named player wins the Summer League Most Valuable Player award in the 2026 season; the text names no voting body, no co-winner rule and no tie or void handling. The game, champion and player-points series are TITLE_ONLY with no listed markets at sampling time, so every statement about them is conditional: overtime format and whether totals and spreads include it, game length, the void rule for an inactive player and the source of results are unverified.",
-   "rules_verification": "PARTIALLY_VERIFIED",
+   "settlement_definition": "Eight Summer League series, all with sampled rules. Game level: KXNBASUMMERGAME (named team wins the game), KXNBASUMMERSPREAD (named team wins by more than X.5), KXNBASUMMERTOTAL (combined points above X.5), KXNBASUMMER1HSPREAD and KXNBASUMMER1HTOTAL (same forms on first-half points) and KXNBASUMMER1HWINNER (team scoring more points in the first half of regulation; equal points make all team strikes No and the Tie strike Yes; postponed games stay open until the rescheduled game ends within two weeks). Event level: KXNBASUMMER (named team wins the 2026 Summer League championship) and KXNBASUMMERMVP (named player wins the Summer League MVP award). Only the 1H winner text speaks to ties and postponement; the game, spread and total texts say nothing about overtime, ties, cancellation or the result source, and the MVP text names no voting body or co-winner rule.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
    "rules_evidence": [
     {
      "ticker": "KXNBASUMMERMVP",
      "quote": "If Zuby Ejiofor wins the Pro Basketball Summer League Most Valuable Player award in the 2026 season, then the market resolves to Yes.",
      "establishes": "The MVP series settles on the official award, so the outcome is a selection by whoever votes (not stated), driven by individual production and team success in the event."
+    },
+    {
+     "ticker": "KXNBASUMMERTOTAL",
+     "quote": "If the teams collectively score more than 199.5 points in the Golden State vs Memphis Pro Basketball Summer League game originally scheduled for Jul 19, 2026, then the market resolves to Yes.",
+     "establishes": "Game total is combined points against a half-point strike; the text does not say whether overtime points count."
+    },
+    {
+     "ticker": "KXNBASUMMER1HWINNER",
+     "quote": "If both teams score the same amount of points during the half, all team strikes resolve to No and the Tie strike resolves to Yes.",
+     "establishes": "First-half winner is a three-way partition with an explicit Tie strike, so the integer tie mass of the half margin is priced directly."
+    },
+    {
+     "ticker": "KXNBASUMMERGAME",
+     "quote": "If Memphis wins the Golden State vs Memphis Pro Basketball Summer League game originally scheduled for Jul 19, 2026, then the market resolves to Yes.",
+     "establishes": "Game-winner contract on a single Summer League game; no tie leg, so the game must produce a winner under the event's overtime format."
+    },
+    {
+     "ticker": "KXNBASUMMER",
+     "quote": "If Washington wins the 2026 Pro Basketball Summer League championship, then the market resolves to Yes.",
+     "establishes": "Champion contract settles on the tournament championship, a function of group-stage seeding and single-elimination knockout games."
     }
    ],
    "variants_and_edge_cases": [
-    "Summer League formats differ from NBA regulation (shorter quarters at some events, a different overtime procedure, tournament with seeding and a final); whether Kalshi game totals include overtime and what happens to postponed games is unknown.",
-    "Multiple events exist (Las Vegas, California Classic, Utah) with different participating teams and formats; a contract's event identity changes the baseline parameters.",
-    "Tournament or 'Summer League champion' contracts depend on seeding rules (record, point differential tiebreak) as well as team strength, and consolation games lessen incentives.",
-    "Player points (KXNBASUMMERPTS, now in this archetype, TITLE_ONLY): minutes plans, shutdowns after one or two games and the void rule for a player who sits drive the distribution far more than scoring talent; nba.sl_minutes_plan_hazard and nba.sl_format_scoring_baseline supply those pieces.",
-    "MVP (KXNBASUMMERMVP): the award is decided before or at the championship game and usually goes to a high-usage player on a team that reaches the final rounds; a player shut down early cannot win, and the text gives no rule for co-MVPs."
+    "Overtime: the game, spread and total texts are silent; Summer League overtime formats differ from regulation NBA overtime, so whether and how OT points enter KXNBASUMMERTOTAL and KXNBASUMMERSPREAD is unverified, while first-half contracts are unaffected.",
+    "First-half winner has a Tie strike (team strikes resolve No on equal points); first-half spread and total use half-point strikes, so no push.",
+    "Multiple events exist (Las Vegas, California Classic, Salt Lake City) with different participating teams and formats; the sampled game contracts are dated Jul 19, 2026, during the Las Vegas event, which also hosts the championship.",
+    "Champion (KXNBASUMMER) depends on seeding rules (record, point-differential tiebreak) as well as team strength, and teams that miss the knockout play consolation games with weaker incentives.",
+    "MVP (KXNBASUMMERMVP): the award is decided around the championship game and usually goes to a high-usage player on a team that reaches the final rounds; a player shut down early cannot win, and the text gives no rule for co-MVPs."
    ],
-   "settlement_data_source": "League announcement of the Summer League MVP for KXNBASUMMERMVP; for the game, champion and player-points series the source is unverified (Summer League official box scores on NBA.com are the natural source).",
+   "settlement_data_source": "Official Summer League box scores and period scores (NBA.com) for game and first-half series, the tournament bracket for the champion and the league announcement for the MVP; the sampled texts name no source agency.",
    "series_mapping_issues": []
   },
   "mechanism": {
@@ -7778,6 +8258,41 @@
       "nba.sl_talent_translation",
       "m.rules_text"
      ]
+    },
+    {
+     "id": "s7",
+     "name": "Game and first-half margin and total distributions",
+     "description": "Game winner, spread and total and their first-half versions are read off one joint distribution of Summer League team points. The mean margin comes from translated roster strength weighted by who actually plays; the variance is far larger than in the NBA because of loose defense and fluid rotations. First halves are where drafted rookies and invited starters log most of their minutes, so the half margin tracks roster quality more closely, while second halves are handed to end-of-bench players and the margin regresses. The 1H winner adds an explicit tie outcome at integer margin zero.",
+     "distribution": "Approximately normal team-point totals with Summer-League-specific sd; margin pmf on integers with tie mass near 3-5% for halves; full-game margin wider and fat-tailed when one roster rests its prospects.",
+     "categories": [
+      "distribution_variance",
+      "pace_volume",
+      "talent_strength",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nba.sl_format_scoring_baseline",
+      "nba.sl_talent_translation",
+      "nba.sl_first_half_share",
+      "nba.sl_minutes_plan_hazard",
+      "m.rules_text"
+     ]
+    },
+    {
+     "id": "s8",
+     "name": "Championship seeding and knockout path",
+     "description": "The champion contract is a path through the Las Vegas event: group-stage games produce a standings table in which ties are broken by tiebreakers including point differential, the top teams enter a single-elimination bracket and the rest play consolation games. Rosters thin as teams shut down prospects after qualification fails or after a few games, so a team's strength in the knockout is not its group-stage strength. Probability is a product of three or four near-coin-flip knockout wins on top of the qualification probability.",
+     "distribution": "Qualification is a discrete function of a four-game record plus margin tiebreak; title probability is a product of single-game win probabilities, heavily compressed toward 1/N by Summer League variance.",
+     "categories": [
+      "situational_schedule_motivation",
+      "officiating_rules",
+      "talent_strength"
+     ],
+     "input_ids": [
+      "nba.sl_tournament_bracket_sim",
+      "nba.sl_game_importance_incentive",
+      "nba.sl_talent_translation"
+     ]
     }
    ],
    "category_coverage": {
@@ -7848,15 +8363,17 @@
     "distribution_variance": {
      "status": "COVERED",
      "input_ids": [
-      "nba.sl_format_scoring_baseline"
+      "nba.sl_format_scoring_baseline",
+      "nba.sl_first_half_share"
      ],
-     "note": "League-specific margin and total variance from Summer League scores (nba.sl_format_scoring_baseline); the line-residual nba.score_resid is benchmark-only."
+     "note": "League-specific margin and total variance, plus the first-half share and tie mass for 1H contracts; the line-residual nba.score_resid is benchmark-only."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
      "input_ids": [
       "nba.rest_travel",
-      "nba.sl_game_importance_incentive"
+      "nba.sl_game_importance_incentive",
+      "nba.sl_tournament_bracket_sim"
      ],
      "note": "Schedule density and tournament incentives."
     },
@@ -7871,9 +8388,10 @@
      "status": "COVERED",
      "input_ids": [
       "m.rules_text",
-      "nba.sl_mvp_award_model"
+      "nba.sl_mvp_award_model",
+      "nba.sl_tournament_bracket_sim"
      ],
-     "note": "MVP award selection (rules-verified, no tie rule); OT, tie and postponement rules for game, champion and points series unknown without rules text."
+     "note": "All eight series have rules: 1H winner tie strike and two-week postponement; game, spread and total texts silent on overtime; champion via bracket; MVP award with no co-winner rule."
     }
    }
   },
@@ -7972,6 +8490,46 @@
     ],
     "why": "KXNBASUMMERMVP is the only rules-verified series in this archetype and had no input; the award depends on games played, production share and team advancement.",
     "role": "secondary"
+   },
+   "nba.sl_first_half_share": {
+    "label": "Summer League first-half share of team points and margin by roster composition",
+    "category": "distribution",
+    "mechanism": "Summer League coaches give prospects and invited starters most first-half minutes and hand the second half to fringe players, so first-half points and margin depend more on top-of-roster strength than the full game.",
+    "rationale": "First-half spread, total and winner contracts need the half distribution, not half the game distribution: the half margin carries a larger share of the roster-strength signal, its variance is not half the game variance, and the tie mass at zero is priced by KXNBASUMMER1HWINNER directly.",
+    "measurement": "From the last five Summer League events compute, per game and team, first-half points / game points and first-half margin / game margin; regress the first-half margin on the minutes-weighted translated strength of the players who logged first-half minutes (from play-by-play substitutions) versus the full-game weighted strength; report the first-half share of mean total (shrunk to the pooled value with prior weight 40 games), the half-margin sd and the empirical integer tie frequency of first halves. As-of: pre-tip, using announced participation.",
+    "pregame_knowable": "partial",
+    "free_sources": [
+     "NBA.com Summer League box scores and period scores",
+     "nba_api play-by-play for Summer League games (league id for Summer League)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "Summer League period scores by game",
+     "Summer League play-by-play substitutions",
+     "player translated strength from nba.sl_talent_translation"
+    ],
+    "why": "Prices KXNBASUMMER1HSPREAD, KXNBASUMMER1HTOTAL and KXNBASUMMER1HWINNER, which settle on first-half points only and whose margin is driven by the prospects who play first-half minutes.",
+    "role": "primary"
+   },
+   "nba.sl_tournament_bracket_sim": {
+    "label": "Summer League tournament standings, tiebreak and knockout simulation",
+    "category": "schedule_context",
+    "mechanism": "The Summer League champion is the winner of a knockout among the top teams of the group stage; qualification depends on a short record and a point-differential tiebreak, and later rounds are single games.",
+    "rationale": "With four group games per team, ties in record are common and point differential decides qualification, so a team's title chance depends on margin as well as wins; rosters also change between stages as prospects are shut down, so the knockout strength must be re-estimated, not carried over.",
+    "measurement": "Encode the current event format (group games per team, number of knockout qualifiers, tiebreak order including point differential) from the league's published rules; simulate remaining group games from the game-level margin distribution (nba.sl_format_scoring_baseline with team means from nba.sl_talent_translation and participation from nba.sl_minutes_plan_hazard), apply the tiebreaks, then simulate the bracket with per-round strength that drops by the expected shutdown share; 20,000 paths; output P(qualify), P(reach final), P(champion). As-of: after each game day.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "NBA.com Summer League standings and format page",
+     "NBA.com Summer League schedule"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "Summer League schedule and results",
+     "event format and tiebreak rules",
+     "standings with point differential"
+    ],
+    "why": "Gives the qualification and knockout path that KXNBASUMMER settles on; the archetype otherwise had no input for the bracket or its margin-based tiebreak.",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -8067,6 +8625,15 @@
     "form": "multiplicative",
     "mechanism": "A candidate's MVP chance is roughly P(keeps playing) times P(chosen | plays through), so a top pick with the best per-game production can be a poor MVP bet if his team plans a two-game appearance, while a second-year player on a contending roster gains; the shutdown hazard multiplies the whole award probability.",
     "how_to_test": "On past events compare MVP winners' games played with the field's top scorers per game; fit the award logit with and without expected games played."
+   },
+   {
+    "inputs": [
+     "nba.sl_first_half_share",
+     "nba.sl_minutes_plan_hazard"
+    ],
+    "form": "conditional",
+    "mechanism": "When a team's top prospect is announced out, the first-half margin loses most of its roster-strength signal while the full-game margin changes less, because the second half was going to fringe players anyway; first-half contracts react more to participation news than game contracts.",
+    "how_to_test": "Compare first-half and full-game margin residuals in games where a top-10 pick sat versus played, over five Summer League events."
    }
   ],
   "nonlinearities": [
@@ -8257,14 +8824,49 @@
      "nba.sl_mvp_award_model",
      "nba.sl_talent_translation"
     ]
+   },
+   {
+    "dataset": "Summer League play-by-play, period scores and event format",
+    "grain": "game x period; game x substitution event; event x season",
+    "fields": [
+     "game_id",
+     "event",
+     "period",
+     "team_pts",
+     "sub_in_player",
+     "sub_out_player",
+     "clock",
+     "group",
+     "tiebreak_rules",
+     "knockout_qualifiers"
+    ],
+    "timestamp_requirement": "Completed games as of the previous game day; event format captured at the start of each event.",
+    "history_needed": "5 events per site",
+    "candidate_sources": [
+     {
+      "name": "NBA.com Summer League box scores and play-by-play",
+      "access": "free_scrape",
+      "note": "Coverage of play-by-play for all sites not verified"
+     },
+     {
+      "name": "NBA.com Summer League format and standings pages",
+      "access": "free",
+      "note": "Text; code by hand each year"
+     }
+    ],
+    "feeds_inputs": [
+     "nba.sl_first_half_share",
+     "nba.sl_tournament_bracket_sim",
+     "nba.sl_format_scoring_baseline"
+    ]
    }
   ],
   "unresolved": [
    {
     "id": "sl-no-series",
     "type": "CONTRACT_AMBIGUOUS",
-    "description": "Five Summer League series are now in this archetype, but only KXNBASUMMERMVP has rules text, and it states no co-winner or void rule; total, spread, champion and player-points series had no listed markets at sampling, so OT, ties, game length and postponement rules for them are unknown.",
-    "what_would_resolve": "Sample rules for KXNBASUMMERTOTAL, KXNBASUMMERSPREAD, KXNBASUMMER and KXNBASUMMERPTS when markets list in July and rewrite the game-level settlement."
+    "description": "All eight Summer League series have rules text, but the game, spread and total texts do not say whether overtime points count or how a cancelled game settles, the MVP text names no voting body or co-winner rule, and only the first-half winner text gives a tie and postponement rule.",
+    "what_would_resolve": "Check settled KXNBASUMMERTOTAL and KXNBASUMMERSPREAD markets from an overtime Summer League game and request the full rules_secondary for the source agency."
    },
    {
     "id": "sl-announcement-data",

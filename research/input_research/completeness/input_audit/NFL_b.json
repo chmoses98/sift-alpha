@@ -1,0 +1,2244 @@
+{
+ "auditor": "input-audit-NFL-b",
+ "inputs": {
+  "nfl.own_rating_game_state_prior": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as nfl.model_team_points_mean (market-free team expected points and margin with SD). The MARKET_MARKER flag is a false positive: the text only states that no spread/total is used. The hard-coded margin SD 13.0 and total SD 9.5 should come from nfl.heteroskedastic_margin_sd instead.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, posteam, defteam, epa, play_type, qb_dropback",
+    "schedules: game_id, home_team, gameday",
+    "inactives: starting QB"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.model_team_points_mean"
+  },
+  "nfl.own_team_rating_market_free": {
+   "verdict": "FIXED",
+   "assessment": "Canonical market-free points rating; mostly exact, but the ridge penalty is unspecified, the returning-production term is ambiguous, and the QB term cites a catalog input whose conversion is itself shaky. Leak risk: final-season ratings and returning production must be frozen at the prior season end / preseason roster date, and the 2002-2025 recalibration must be walk-forward.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules: game_id, season, week, home_team, away_team, home_score, away_score",
+    "pbp: game_id, posteam, defteam, epa, play_type",
+    "roster/snaps: player_id, team, season, snaps",
+    "QB starter history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Weekly rating in points of margin per game: ridge regression (penalty lambda chosen by leave-one-season-out CV, start at 20 game-equivalents) of capped game margin (cap +/-24) on team and opponent indicators plus a home indicator (home constant refit yearly, about 1.5), over all games since the start of the prior season, weights exp(-ln2*games_ago/10); average 50/50 with an opponent-adjusted EPA/play margin rating converted to points (EPA margin x about 63 plays per team-game, refit yearly). Preseason prior = 0.67 x last-season final rating + 0.10 x (returning-production pct minus league mean pct)/10 points, where returning production = share of prior-season snaps (offence and defence) held by players on the roster at the week-1 cutoff, + QB-change term = (EPA/dropback prior of new starter minus old starter) x 38 dropbacks. Prior sd 4.0 points; posterior sd = 1/sqrt(1/4.0^2 + n/13.5^2). As-of next kickoff; spread, total and moneyline excluded."
+  },
+  "nfl.paired_score_covariance_own": {
+   "verdict": "FIXED",
+   "assessment": "Useful for both-teams-score-35 style legs but under-specified: the wind bins leave a 10-15 mph gap, the order of copula sampling versus home/venue shifts is ambiguous, and it overlaps nfl.leg_dependence_by_model_regime. Bin correlations on ~4,000 games with k=150 shrinkage are noisy; discrete scores need a Gaussian-copula-on-PMF mapping stated explicitly.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules: game_id, scores, roof, wind, temp, home_team",
+    "pbp: plays per team",
+    "nfl.team_score_pmf_own_mean means"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Using 2010-2025 regular-season games, compute residual correlation rho_b of (home score - own model home mean) and (away score - own model away mean), where means are walk-forward outputs of nfl.model_team_points_mean including the home shift and dome flag. Bins: expected total (<40, 40-50, >50 model points) x wind (<10, 10-15, >=15 mph; roofed games count as calm), 9 cells; shrink each rho_b toward the pooled rho with weight n_b/(n_b+150). Simulate pairs by drawing a bivariate normal with rho_b, mapping each margin through the inverse CDF of that team's nfl.team_score_pmf_own_mean marginal (Gaussian copula on integer scores). Output P(both scores >= 35) and rho_b per cell. As-of kickoff weather forecast and model means; no betting total used."
+  },
+  "nfl.pass_run_split_epa_both_sides": {
+   "verdict": "FIXED",
+   "assessment": "Genuine decomposition (pass/run, offence/defence) not present in nfl.off_epa/def_epa, but the pass share is sourced from 'nfl.pace-adjusted neutral pass rate', which is not a defined quantity (pace does not give pass share; nfl.proe does). Window wording (2016+ for league means vs last 12 games) mixes two scales. Win-probability garbage filter must use a no-spread WP.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, posteam, defteam, play_type, epa, wp, qb_kneel, qb_spike, qb_dropback"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Per team, from 2016+ regular-season plays excluding kneels, spikes and plays with pre-play wp below 0.05 or above 0.95 (no-spread nflfastR wp): off EPA per dropback, off EPA per rush, def EPA per dropback faced, def EPA per rush faced, each opponent-adjusted by ridge over the last 12 games with exp half-life 6 games, shrunk to league mean with weight n/(n+150) for pass and n/(n+100) for rush (n = plays). Expected EPA/play for team A vs B = pA x (offA_pass - defB_pass) + (1-pA) x (offA_rush - defB_rush) where pA = A's neutral-situation pass rate = league expected pass rate (nfl.proe model) + A's PROE, as of last completed game. Output four components plus the blended rate."
+  },
+  "nfl.per_game_rate_persistence": {
+   "verdict": "FIXED",
+   "assessment": "Reasonable variance-component idea but the stat list and count distribution are undefined, 'season total variance' formula ignores games remaining uncertainty and between-opportunity correlation, and per-position-stat fits are not specified. Point-in-time: u must be estimated only from games before the as-of week.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-game stats: player_id, season, week, position, targets, receptions, rec_yards, carries, rush_yards, pass_att, pass_yards, TDs"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each position x stat in {targets, receptions, receiving yards, carries, rushing yards, pass attempts, passing yards, TDs} fit on 2012-2025 player-games (player played at least 1 snap) a Poisson/negative-binomial GLMM y_ij ~ NB(mu_ij, phi) with log mu_ij = a_pos + u_i,season + log(exposure_ij), u ~ N(0, sigma_u^2); report sigma_u, phi and ICC = sigma_u^2/(sigma_u^2+mean within variance). Season-to-date posterior of u_i uses only games before the as-of week with shrinkage weight n_games/(n_games + phi/ sigma_u^2 scale); remaining-games total variance = m x Var(e) + m^2 x Var(u|data) where m is remaining games from nfl.games_played_dist."
+  },
+  "nfl.period_drive_scoring_rates": {
+   "verdict": "OK",
+   "assessment": "Specific enough (multinomial logit, half-life, k, garbage-time exclusion) and market-free. Overlaps nfl.drive_outcome_by_index and nfl.drive_result_lattice but adds the period dimension. Subtle: drive_result must use final drive results, and random-effect refits must be walk-forward.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, drive, qtr, drive_result (fixed_drive_result), posteam, defteam, wp"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.period_zero_tie_mass": {
+   "verdict": "FIXED",
+   "assessment": "Bivariate smoothing model and calibration are named but not specified, and 'as-of start of season with rolling refresh' conflicts with the quarter-level marginals that depend on game-specific drive allocation. Atom masses at 0/3/7 need a stated construction.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, qtr, total_home_score, total_away_score at quarter ends",
+    "schedules: game_id, scores"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "From 2010-2025 regular-season quarters (regulation only) tabulate P(home pts=a, away pts=b) per quarter q in 1..4. Model: independent per-team quarter-points PMFs from nfl.period_drive_scoring_rates x nfl.drive_clock_allocation (drives per quarter), then add a Gaussian-copula correlation per quarter estimated from the data (shrink to pooled with k=300 games). Fix atoms at 0,3,6,7,10 by isotonic regression of simulated against empirical frequency within expected-total terciles (low <42, mid 42-48, high >48 model total). Report P(0-0), P(tie) and P(both score) per quarter; as-of kickoff using the pregame model inputs, refit once per season, never using the game's own quarters."
+  },
+  "nfl.play_length_evt_tail_fit": {
+   "verdict": "OK",
+   "assessment": "Well specified peaks-over-threshold fit with era term and uncertainty propagation. Subtle: 99-yard plays are about 2-3 per decade so the tail is extrapolated from the 60-yard threshold; kick-distance rule eras and kickoff touchback rules change exposure; return-length fields must be kept separate from scrimmage gains as the definition says.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.yards_gained, pbp.yardline_100",
+    "pbp.kick_distance, pbp.field_goal_result",
+    "season-game counts per year",
+    "running maximum to date"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.player_destination_choice": {
+   "verdict": "FIXED",
+   "assessment": "Two-stage structure is sensible but several features are undefined or unmeasurable at the as-of time (reported-interest flag, starter quality gap, scheme ties) and only ~100-150 meaningful veteran moves per year make a 31-way multinomial fragile. Cap data from OTC is revised after the fact, so vintage snapshots are needed.",
+   "market_free": "yes",
+   "raw_data": [
+    "team cap space by date (vintage snapshots)",
+    "player contract status and tags",
+    "depth charts / starter value by position",
+    "transactions history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Stage 1: P(move) = logistic on 2012-2025 veteran offseasons (contract expired or released) with features years remaining, franchise-tag eligibility flag, age, prior-season snap share, retirement-eligible age; ridge lambda by CV. Stage 2: conditional multinomial logit over 31 other teams with features (i) team cap space on the as-of date from a dated OTC snapshot, (ii) starter gap = team's best current starter's EPA-or-grade percentile at the player's position minus the player's, floored at 0, (iii) draft capital spent at the position in the last 2 drafts, (iv) 1[head coach or coordinator previously coached player], (v) 1[prior-team-of-record tie]; drop the subjective 'reported interest' flag unless captured with timestamp (own_capture). P(retire/no team) from age-position base rate. Shrink utilities with Dirichlet alpha=1. As-of timestamped snapshot before the decision window."
+  },
+  "nfl.player_longest_reception_max_model": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same max-of-K-catches exceedance formula as nfl.player_reception_length_distribution (1 - F(x)^N); only the source of N and the length model differ. Keep one definition: the other input has the cleaner distribution fit. The 'no live snap' multiplier belongs in nfl.zero_snap_active_risk.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.receiver_player_id, pbp.complete_pass",
+    "pbp.yards_gained, pbp.air_yards, pbp.yards_after_catch",
+    "snap_counts.offense_snaps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.player_reception_length_distribution"
+  },
+  "nfl.player_reception_length_distribution": {
+   "verdict": "FIXED",
+   "assessment": "Keeper of the max-reception family. The opponent factor is specified (k=120) but not how it enters the distribution, and N is left to 'projected receptions distribution'. Leak risk: none if windows are strictly prior games; catch-only samples ignore that long targets that fall incomplete are not in the max.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: receiver_id, complete_pass, yards_gained, air_yards, yards_after_catch, defteam, game_id"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each receiver take completions from the last 24 games before the as-of date (need at least 40, else pool to the position-alignment template with weight 30 receptions), length = yards_gained. Fit a log-normal body below the 85th percentile of the pooled sample and a generalized Pareto tail above it. Opponent factor f = (defence's allowed rate of receptions >=20 yards per reception over last 16 games, shrunk to league with k=120 receptions) / league rate, multiplied into the tail exceedance probability (capped 0.6-1.7). N = projected receptions from nfl.targets x nfl.catch_rate_oe as a negative binomial. P(longest >= x) = 1 - sum_n P(N=n) (1-S(x))^n where S is the survival function including f; output at each strike; multiply by P(active and snaps)."
+  },
+  "nfl.player_single_game_yardage_extreme_rate": {
+   "verdict": "FIXED",
+   "assessment": "Market-free by construction (explicitly no spread) but the 'starter-pull cap at margins above 28' is undefined, carries mean depends on nfl.carries which in the catalog is only loosely defined, and 200+ yard games (about 5-10 per season) give a tiny calibration sample. Duplicates part of nfl.game_rushing_leader_field_sim.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.rusher_player_id, yards_gained, qtr, score_differential",
+    "player game logs: carries, rushing_yards",
+    "team rush attempts, own-model expected margin"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each rusher-game: carries ~ NB with mean = player carry share (last 8 games, half-life 4, shrink to depth-slot prior with k=3 games) x team rush attempts, where team attempts are a function of own-model expected margin (nfl.own_team_rating_market_free, no betting spread) fitted on 2015-2025 team-games; per-carry yards drawn from the discrete tail of nfl.rush_yardage_tail with the opponent explosive-allowed adjustment; in simulated paths where the team leads by 28+ in Q4 cap the rusher's remaining carries at 2. Report P(yards >= 200/225/250). Calibrate by comparing simulated count of 200+ games per season with the 2000-2025 empirical frequency per season (scale intercept only). As-of start of week."
+  },
+  "nfl.player_trade_hazard": {
+   "verdict": "OK",
+   "assessment": "Discrete-time hazard with named covariates and base-rate shrinkage; plausible and market-free. Weak points: 'positional value tier' is undefined, trades cluster at the deadline and draft (not smooth hazard), and OTC contract fields are revised, so covariates must use dated snapshots. About 20-40 player trades per year means small samples.",
+   "market_free": "yes",
+   "raw_data": [
+    "transactions: date, player_id, from_team, to_team, type",
+    "contracts: cap hit, dead cap by year, years remaining",
+    "standings by week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.player_xtd": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as nfl.expected_touchdowns_by_play_location (play-level P(TD | yardline, down, distance, type) summed per player, shrunk to role). This version adds a team-share step and slightly different window; consolidate. ff_opportunity field names are unverified.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, play_id, yardline_100, down, ydstogo, play_type, rusher_id, receiver_id, touchdown, air_yards",
+    "participation: offense_personnel, defenders_in_box"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse ff_opportunity expected-TD columns",
+      "access": "free",
+      "note": "field names not confirmed"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.expected_touchdowns_by_play_location"
+  },
+  "nfl.position_peer_production_index": {
+   "verdict": "FIXED",
+   "assessment": "Weights are explicit assumptions, 'pressures per game (if available)' is not in public weekly data (needs participation/PFF/NGS), and the QB composite refers to another input rather than a computed z-score. Award voting differs by award, so weights fit to DPOY vote share only generalize poorly (about 20 data points).",
+   "market_free": "yes",
+   "raw_data": [
+    "weekly player stats: player_id, week, position, sacks, qb_hits, def_interceptions, passes_defended, tackles_for_loss, forced_fumbles",
+    "pbp: player epa totals",
+    "roster: rookie flag, position"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Offensive: per-game EPA contributed (QB: EPA per dropback x dropbacks per game + 0.5 x CPOE-based EPA; RB/WR/TE: rushing or receiving EPA per game from pbp) converted to a z-score vs all same-position players over 2015-2025 at the same week of season; Defenders: z = 0.40 sacks/g + 0.20 QB hits/g + 0.15 TFL/g + 0.15 (interceptions + passes defended)/g + 0.10 forced fumbles/g using only public weekly fields (no pressures), weights fit by conditional logit on past DPOY voting, ridge toward the stated values. Shrink z toward 0 with weight g/(g+5) (g=games). Rank within eligible pool (rookie flag for rookie awards); output rank and z-gap to next. As-of last completed week."
+  },
+  "nfl.preseason_long_kick_evidence": {
+   "verdict": "WEAK",
+   "assessment": "Preseason and warm-up 55+ yard attempts are a handful per year, nflverse pbp does not reliably include preseason games, and warm-up makes rely on beat reports with no standard capture. 'Half weight per attempt' is ad hoc. Marginal over nfl.kicker and nfl.kicker_ceiling_range_tail.",
+   "market_free": "yes",
+   "raw_data": [
+    "preseason pbp.kick_distance, field_goal_result",
+    "warm-up distance reports with date"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse pbp (preseason coverage)",
+      "access": "unavailable_public",
+      "note": "preseason games not in standard nflverse pbp"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "Beat-writer reports",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.primetime_flex_probability": {
+   "verdict": "FIXED",
+   "assessment": "Counting rule is partly defined but the flex model is not (no features beyond record and prior primetime count, no training data stated), and flex rules differ by network and week (flexible scheduling windows differ for SNF, MNF and Thursday). Only about 5-10 flex moves per season make estimation thin.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedule by team with network window and original vs final kickoff",
+    "flex announcements by week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL schedule releases / flex announcements",
+      "access": "free_scrape",
+      "note": "no structured feed"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Base count B_t = number of games for team t designated in the released schedule in national windows (Thursday night, Sunday night, Monday night, Thanksgiving, Christmas, excluding the Wednesday opener and Saturday-doubleheader windows unless the contract says otherwise). For each remaining week w in the flex-eligible windows per current league rules (verify each season against the league's published flex policy), compute P(team t flexed in) and P(flexed out) by logistic regression on 2023-2025 flexible-slot decisions with features team win%, opponent win%, playoff-leverage flag, team's primetime count so far (cap of 7 games) and the league's 12-day notice deadline. Expected final count = B_t + sum_w (P_in - P_out); output the full PMF by Poisson-binomial convolution. As-of latest flex announcement."
+  },
+  "nfl.pro_bowl_flag_roster_strength": {
+   "verdict": "WEAK",
+   "assessment": "Pro Bowl is a flag-football exhibition with roster replacements, opt-outs and about 3 games of format history; the logit coefficient is shrunk almost to zero so the output is effectively 50/50 plus noise. Retains value only as a documented prior.",
+   "market_free": "yes",
+   "raw_data": [
+    "Pro Bowl rosters by conference with replacement dates",
+    "regular-season QB CPOE and EPA per dropback, WR/TE yards per route run",
+    "Pro Bowl Games results by year"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com Pro Bowl rosters",
+      "access": "free_scrape"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "NGS public tables",
+      "access": "free_limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.prospect_declaration_eligibility_medical": {
+   "verdict": "FIXED",
+   "assessment": "Vague: no model form beyond a feature list, 'medical flag risk' is undefined and combine updates are not parameterised. Public injury histories are sparse and as-of timing of early-entry lists is the main source of knowledge (declaration deadline is a hard date).",
+   "market_free": "yes",
+   "raw_data": [
+    "declaration status and date",
+    "college injury log",
+    "combine measurements"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL early-entry lists",
+      "access": "free"
+     },
+     {
+      "name": "NCAA transfer/eligibility notices",
+      "access": "free_limited"
+     },
+     {
+      "name": "Beat reporting",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "P(declare) per underclass prospect by logistic regression on early-entry outcomes of 2021-2026 classes (NIL era, fitted separately from 2010-2020) with features class year, position, consensus round bucket (1, 2-3, 4-7, undrafted) from nfl.prospect_slot_dispersion_model, consensus-rank percentile, and an injury flag = 1 if the player missed 4+ games in either of the last two seasons from team injury reports or beat reports; ridge lambda by CV. Add post-combine/pro-day update: replace round bucket by the updated consensus rank. P(in pool) = P(declare) for eligible players, 1 for exhausted-eligibility seniors. As-of the last official list or the player's dated statement; no market data."
+  },
+  "nfl.prospect_eligibility_clock_and_nil_era": {
+   "verdict": "FIXED",
+   "assessment": "Eligibility-clock arithmetic is deterministic and valuable (the draft requires three years after high-school graduation), but P(no extra-year grant) is not estimated and 'court dockets' are one-off events. Heavy hand-capture for few prospects.",
+   "market_free": "yes",
+   "raw_data": [
+    "high school graduation and college enrolment dates",
+    "NCAA eligibility rulings and case dockets",
+    "post-2021 early-entry lists by position"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL early-entry announcements",
+      "access": "free"
+     },
+     {
+      "name": "NCAA eligibility and waiver news",
+      "access": "free_limited"
+     },
+     {
+      "name": "Court dockets",
+      "access": "free_limited"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per prospect compute first eligible draft year = year in which three full seasons have elapsed since high-school graduation. Eligibility flag E = 1 if first eligible year <= target draft year. Extra-year risk X = P(player receives additional college eligibility via waiver or court ruling) = 1 if ruling announced, else base rate from 2021-2026 cases (decided cases won / filed, Beta(1,1) prior) when a case is pending, else 0. P(in pool) = E x (1 - X) x P(declare | NIL era, position, consensus round) from nfl.prospect_declaration_eligibility_medical's model. As-of: timestamp of latest ruling, statement or early-entry list."
+  },
+  "nfl.prospect_pre_combine_athletic_prior": {
+   "verdict": "OK",
+   "assessment": "Clear regression with defined inputs, shrinkage and as-of day. Limits: only a minority of prospects have collegiate FAT track marks, GPS speeds are self-reported, and Combine 40 is itself noisy (hand vs laser, surface); train/test split should be by year. Paid Athletic Freaks list is optional.",
+   "market_free": "yes",
+   "raw_data": [
+    "track.athlete, event, mark, wind, date",
+    "combine.ht, wt, forty, broad_jump",
+    "reported GPS top speed with source and date"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "TFRRS collegiate track results",
+      "access": "free_scrape"
+     },
+     {
+      "name": "nflverse combine data",
+      "access": "free"
+     },
+     {
+      "name": "The Athletic Freaks list",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.prospect_slot_dispersion_model": {
+   "verdict": "FIXED",
+   "assessment": "The MARKET_MARKER flag is a false positive (it excludes boards citing sportsbook odds), but consensus boards can themselves absorb betting information so strictly market-free status is only approximate. 'Quantile or ordinal regression' is an unresolved choice, and historical board vintages (90/30/1 day) need own capture.",
+   "market_free": "yes",
+   "raw_data": [
+    "consensus rank by date (90, 30, 1 days pre-draft)",
+    "realized overall pick",
+    "position and school"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "NFL Mock Draft Database",
+      "access": "free_scrape",
+      "note": "historical vintages need own capture"
+     },
+     {
+      "name": "Draft board archives",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "From 2010-2026 drafts (seven rounds) join consensus rank (mean of public big boards dated 90, 30 and 1 days before the draft; exclude mock drafts and any source that cites sportsbook odds) to realized pick. Fit ordinal logistic regression of draft-pick bucket (1-32 by pick, then round buckets) plus an undrafted category on log(rank), position (QB, EDGE, OT, other) and days-to-draft, with spread parameter rising with rank; shrink thin positions toward the pooled model with weight 20 draftees. Output a slot PMF over picks 1-257 + undrafted per prospect; cross-prospect order statistics by sampling slots sequentially without replacement. As-of the board vintage date."
+  },
+  "nfl.qb_attempt_forecast": {
+   "verdict": "FIXED",
+   "assessment": "'Expected spread bucket (model-based)' is ambiguous and invites inserting the betting spread (which would make it hybrid). Rest of the specification (NB, team effects, 2015+) is fine. Overlaps nfl.proe + nfl.pace but yields a distribution.",
+   "market_free": "yes",
+   "raw_data": [
+    "QB-game attempts, team plays, expected margin bucket, wind, dome, opponent run-defence rank"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Negative-binomial regression on 2015+ QB-games (starting QBs) of pass attempts on log expected team plays (nfl.total_plays_state_model), neutral PROE (nfl.proe), own-model expected margin bucket (<=-7, -7..-3, -3..3, 3..7, >7 from nfl.own_team_rating_market_free; never a betting spread), wind>=15 mph flag, dome flag, opponent rush-EPA-allowed rank, with team random effect; output mean and NB dispersion. Mix over P(QB pulled early) from nfl.qb_blowout_pull_threshold (attempts after exit set to 0). As-of start of week; refit each season, walk-forward."
+  },
+  "nfl.qb_blowout_pull_hazard": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same event as nfl.qb_blowout_pull_threshold (QB's last snap before game end by lead and clock) with coach random effect; the threshold input is better specified. The injury-exit piece belongs in nfl.in_game_exit_risk.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: passer_id by play, score_differential, game_seconds_remaining"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.qb_blowout_pull_threshold"
+  },
+  "nfl.qb_blowout_pull_threshold": {
+   "verdict": "FIXED",
+   "assessment": "Conditioning the fit on games 'decided by 17+' selects on the final margin, which is unknown pregame and biases the pull rule (games where the starter stayed in were closer). Needs a hazard on in-game state across all games. Depth chart/backup identity is a legitimate pregame input.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, qb_id, play order, score_differential, game_seconds_remaining",
+    "depth chart / inactives for the backup identity",
+    "head coach by game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each head coach over the last 3 seasons (shrink coach effect toward league with k=6 games), fit a discrete-time logistic hazard over all starter-QB drives: P(starter's last snap is this drive | lead L in points, minutes remaining m, starter-injury flag excluded) using all games, not just those decided by 17+, with coach random effect. Pregame output: P(pulled before end) and expected minutes lost = sum over simulated margin paths (nfl.heteroskedastic_margin_sd around the own-model mean from nfl.model_team_points_mean, no betting spread) of the hazard. As-of the last pre-game depth chart."
+  },
+  "nfl.qb_career_milestone_accrual": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same construct as nfl.career_record_chase_survival (rate x remaining games x availability x aging curve to a career/season total); this just specializes to passing TDs. Rate piece duplicates nfl.qb_expected_pass_td and nfl.season_to_date_pace.",
+   "market_free": "yes",
+   "raw_data": [
+    "QB-season logs: games, attempts, TDs, age",
+    "schedule: games remaining, byes"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.career_record_chase_survival"
+  },
+  "nfl.qb_challenger_prior": {
+   "verdict": "OK",
+   "assessment": "Exact and computable: window, prior weight, regression on log draft pick and blending are stated. Minor gaps: the SD output is not defined, and the first-three-season training set is conditional on at least 150 dropbacks (survivorship toward successful picks).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: passer id, epa, qb_dropback, week",
+    "draft_picks: player, pick, position"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.qb_change_hazard": {
+   "verdict": "FIXED",
+   "assessment": "Too vague: 'incumbent EPA+CPOE composite vs prior', 'owner pressure' and 'contract' are not measurable, hazard form lacks event definition (benching vs injury vs trade). About 10-20 true benchings per year give limited sample.",
+   "market_free": "yes",
+   "raw_data": [
+    "QB-week table: starter id, performance, record, depth chart, bye",
+    "draft round/contract of backup",
+    "coach tenure"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Event = a different QB is the week's starter for a non-injury reason (exclude injury inactives and rest weeks). Discrete-time logistic over team-weeks 2010-2025 with features: incumbent EPA/dropback over last 6 games minus nfl.qb_efficiency prior (z), incumbent turnovers per game last 4, team win% minus own-model expectation, weeks since bye, backup draft round (1, 2-3, 4+, UDFA), incumbent guaranteed-money flag (OTC), head-coach tenure in years; drop the unobservable 'owner pressure'. Ridge penalty by leave-one-season-out CV. Output weekly hazard h_w and cumulative 1 - prod(1-h_w) over scheduled non-bye weeks in the horizon. As-of report date."
+  },
+  "nfl.qb_completion_count_model": {
+   "verdict": "OK",
+   "assessment": "Fully specified (windows, shrinkage k, clip, wind adjustment, beta-binomial rho) and market-free. Caveats: nflfastR cp/cpoe are produced by a model trained on all seasons including future ones, a mild backtest look-ahead; wind adjustment of -2 pp is a hard-coded assumption to refit.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: passer_id, pass_attempt, complete_pass, cp, cpoe, air_yards, qb_hit, defteam, game_id",
+    "player_stats: completions, attempts by QB-game",
+    "weather: wind by game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.qb_dropback_to_attempt_leakage": {
+   "verdict": "FIXED",
+   "assessment": "Title and text disagree: kneels are in the title but not in the formula, and kneels/spikes are not dropbacks in nflfastR (spikes are pass attempts). Pressure rate from 'charting vendors' is not defined and public pressure data is limited (participation was_pressure, 2018+).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, passer_id, qb_dropback, sack, qb_scramble, qb_spike, qb_kneel, pass_attempt",
+    "pressure rate faced per defence (participation was_pressure)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse participation (2016+) and FTN charting (2022+)",
+      "access": "free_limited",
+      "note": "coverage by season varies; was_pressure/personnel fields not present before the participation era"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Define leakage rate = (sacks + scrambles) / qb_dropback, excluding spikes and kneels from both numerator and denominator. Per QB over his last 17 starts before the as-of week, time-decayed with half-life 8 games, shrunk to the offence's rate with weight n/(n+150) dropbacks. Opponent adjustment: add b x logit-difference of the opposing defence's pressure rate (last 12 games, participation was_pressure; fall back to sack+QB-hit rate) versus league, with b fit by logistic regression 2018+ and the adjusted rate capped at league mean +/- 3 SD. Output expected fraction of dropbacks that do not become pass attempts."
+  },
+  "nfl.qb_expected_pass_td": {
+   "verdict": "OK",
+   "assessment": "Specified logistic model with pbp-only baseline and participation-era upgrade, plus shrinkage. Mostly redundant with summing nfl.expected_touchdowns_by_play_location over receivers, but the QB aggregation and 70% regression of actual/expected are specific. Sacks/scrambles on dropbacks excluded from the denominator.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: passer_id, yardline_100, down, ydstogo, air_yards, pass_location, pass_touchdown, interception",
+    "participation: offense_personnel, defenders_in_box"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse ff_opportunity",
+      "access": "free",
+      "note": "field names unconfirmed"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.qb_scenario_rating_drop": {
+   "verdict": "FIXED",
+   "assessment": "The conversion constant is applied twice (EPA prior x dropbacks x 0.2 points per 0.01 EPA) and its value (0.2 points per 0.01 EPA per game) is asserted not shown: with ~38 dropbacks, 0.01 EPA/dropback is about 0.4 points. Needs a defined games-missed model and as-of depth chart.",
+   "market_free": "yes",
+   "raw_data": [
+    "QB dropbacks and EPA by player",
+    "depth chart rank of QB2",
+    "QB games missed history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Per team: rating drop (points per game) = (EPAdb_QB1 - EPAdb_QB2) x 38 expected dropbacks, where EPAdb = career-regressed EPA/dropback from nfl.qb_efficiency shrunk toward league mean with weight n/(n+300) dropbacks and the 38/game and slope (1 EPA per dropback = 1 point of margin per dropback, not a separate regression constant) are refit by regressing team game margin on QB EPA prior 2010-2025. Missed-games distribution: negative binomial of QB games missed per season by age bucket and prior-season games missed (2010-2025, ridge). Scenario tree: QB1 plays all remaining games, part, none; output expected wins lost (drop x 0.03 wins per point) and distribution. As-of latest depth chart and injury report."
+  },
+  "nfl.qb_scramble_yield_given_pressure": {
+   "verdict": "DUPLICATE",
+   "assessment": "Covers the same quantities as nfl.qb_rushing (designed runs, scrambles, conditioned on pressure and opponent contain, shrunk to career prior). Pressure and 'spy' tendencies need charting data not in nflverse pbp.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: qb_scramble, rushing_yards for QB, run_location",
+    "participation was_pressure"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse participation (2016+) and FTN charting (2022+)",
+      "access": "free_limited",
+      "note": "coverage by season varies; was_pressure/personnel fields not present before the participation era"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.qb_rushing"
+  },
+  "nfl.qb_target_concentration": {
+   "verdict": "WEAK",
+   "assessment": "Herfindahl of a QB's target distribution is largely a function of his receivers' quality and is already captured by nfl.targets and nfl.target_competition; the multiplier b is fit post hoc and is likely unstable. Low incremental value.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: passer_id, receiver_id, targets, game_id"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.quarter_total_order_statistics": {
+   "verdict": "OK",
+   "assessment": "Detailed simulation spec with clear inputs, regulation-only convention, dead-heat payout rule and calibration. Depends on three other inputs (drive allocation, period rates) so errors compound; 'Friday injury report' as-of must be frozen consistently in backtests.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, qtr, game_seconds_remaining, total_home_score, total_away_score, drive, fixed_drive_result",
+    "schedules: game_id, roof, wind, temp"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.rating_state_space": {
+   "verdict": "FIXED",
+   "assessment": "Overlaps nfl.own_team_rating_market_free (both are updating team ratings with prior) but in EPA units with separate offence/defence; keep as alternative. Under-specified: the 'preseason_prior' is undefined, garbage-time weights are not defined and the 0.6/0.4 coefficient is both asserted and 'estimated'.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: epa, posteam, defteam, wp, week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Kalman filter on a 64-dim state (off and def EPA/play rating per team). Season boundary: state = rho x last-season final state + (1-rho) x league mean, rho estimated by regressing year t+1 final ratings on year t (2005+), expected about 0.5-0.6; preseason prior variance = residual variance of that regression. Weekly process variance sigma_p^2 estimated by marginal likelihood on 2005-2025. Observation = team-game opponent-adjusted EPA/play (offence and defence separately) with observation weight w = 1 for plays with 0.05<=wp<=0.95 (no-spread wp) and 0.2 otherwise. Output posterior mean and variance per team as-of previous week; refit walk-forward."
+  },
+  "nfl.rating_uncertainty_shared_error": {
+   "verdict": "DUPLICATE",
+   "assessment": "The posterior sd formula 1/sqrt(1/prior_sd^2 + n/s^2) with prior 4.0 and s=13.5 is identical to the one embedded in nfl.own_team_rating_market_free; only the 'one shared draw per simulation' design is added, which is a simulator rule rather than an input.",
+   "market_free": "yes",
+   "raw_data": [
+    "game results with scores",
+    "pre-season ratings per team"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "own rating history",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.own_team_rating_market_free"
+  },
+  "nfl.ratings": {
+   "verdict": "FIXED",
+   "assessment": "Market-implied ratings inverted from spreads/totals/moneylines are benchmark-only. The definition is vague (Bradley-Terry 'or' Elo, no windows or ridge) and the market-free Elo half duplicates nfl.own_team_rating_market_free. raw_data was missing.",
+   "market_free": "no",
+   "raw_data": [
+    "games.csv: spread_line, total_line, home_moneyline, away_moneyline, home_team, away_team, scores, roof, week",
+    "own ratings for comparison"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "ESPN public JSON odds",
+      "access": "free_limited",
+      "note": "unofficial endpoint"
+     },
+     {
+      "name": "FiveThirtyEight nfl-elo",
+      "access": "unavailable_public",
+      "note": "discontinued"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Inverts closing spreads, totals and moneylines, so every output is market-derived; usable as a benchmark/comparison column only. A market-free rating is nfl.own_team_rating_market_free.",
+   "measurement_fix": "Benchmark only (not a model input): for each season fit a ridge Bradley-Terry model of closing spread (home perspective, spread points only) on team indicators plus home constant over games up to the as-of week, with weights exp(-ln2 x games_ago/10) and ridge lambda 1; output team rating in points. Track kickoff-time rating and opening-to-closing change in rating. Label the output market-derived; the market-free counterpart is the points rating of nfl.own_team_rating_market_free."
+  },
+  "nfl.receiving_corps_route_weighted_quality": {
+   "verdict": "FIXED",
+   "assessment": "Separation and cushion are not available weekly in public tables (NGS publishes season aggregates), so the rolling 12-game route-weighted score cannot be built point-in-time from free data. Overlaps nfl.routes, nfl.ngs and nfl.with_without_target_redistribution.",
+   "market_free": "yes",
+   "raw_data": [
+    "routes run by player-game (participation/FTN)",
+    "targets, receptions, air yards, YAC, cp",
+    "inactive lists with timestamps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse participation (2016+) and FTN charting (2022+)",
+      "access": "free_limited",
+      "note": "coverage by season varies; was_pressure/personnel fields not present before the participation era"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per receiver: rolling last-12-game score = 0.5 x yards per route run z + 0.3 x catch rate over expected (complete_pass - cp) z + 0.2 x YAC over expected z, each shrunk to the position mean with weight n/(n+60) targets (routes from participation/FTN charting; do not use NGS separation, which is season-aggregate only). Corps score = sum over projected active receivers of projected route share x player score, where route shares are redistributed over the inactive list using each receiver's route share in the last 3 games conditional on the same teammate absence (fallback to proportional). As-of inactive list timestamp (about 90 min pre-kick) else last Friday report."
+  },
+  "nfl.red_zone_target_quality": {
+   "verdict": "OK",
+   "assessment": "Computable with stated windows and shrinkage; the label 'contested-catch and size-weighted' is not what is calculated (catch rate over expected inside the 20 only) and red-zone samples are small (k=20 targets). Active/inactive status must come from the timestamped list.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: receiver_id, yardline_100, complete_pass, pass_touchdown, air_yards, cp",
+    "roster: height, weight, position",
+    "inactives at the as-of time"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.rest_of_season_stat_projection": {
+   "verdict": "DUPLICATE",
+   "assessment": "Banked total plus expected per-game production times P(plays) is the definition of nfl.season_to_date_pace; the 50/50 blend with a 3-year prior and +/-10% schedule cap are details. Ballot cutoff assumption is unverified.",
+   "market_free": "yes",
+   "raw_data": [
+    "weekly player stats by player-week",
+    "schedule: remaining opponents and byes",
+    "injury status vintages"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.season_to_date_pace"
+  },
+  "nfl.role_regime_change_hazard": {
+   "verdict": "WEAK",
+   "assessment": "Defining 'regime shift' as a 25% change in 4-game usage share is arbitrary, events are rare and confounded (teammate injury both causes and is the event), and the usage-share forecast is already handled by nfl.target_competition and nfl.with_without_target_redistribution.",
+   "market_free": "yes",
+   "raw_data": [
+    "weekly usage shares by player",
+    "team transactions and coaching staff changes with dates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.rookie_opportunity_and_draft_capital": {
+   "verdict": "FIXED",
+   "assessment": "As-of is ambiguous: 'snap share and touches over the season' implies using full-season data, which leaks the outcome. Regression window (first six weeks) is only mentioned in the last clause.",
+   "market_free": "yes",
+   "raw_data": [
+    "draft_picks: pick, round, team",
+    "snap counts by player-week",
+    "depth chart vintages"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each rookie at as-of week w (w >= 1): features = log(draft pick), depth chart rank in the week-w report, snap share and touches (or pressures) per game over games 1..w-1 shrunk to the draft-slot mean with weight (w-1)/(w-1+3). Target = rest-of-season production per game (weeks w..17). Fit OLS/ridge on 2010-2025 rookies separately by position group, evaluated by leave-one-season-out. Output expected rest-of-season production and SD. Never use games on or after the as-of week; for w=1 use draft capital and preseason depth chart only."
+  },
+  "nfl.roster_designation_constraints": {
+   "verdict": "OK",
+   "assessment": "Hard rule table; computable but needs the season-specific rule values stored (IR return counts, 21-day practice window, PUP/NFI timing, suspension terms) and the as-of transaction wire. Low predictive variance but valuable for eligibility strikes. Changes with each CBA/league rule update.",
+   "market_free": "yes",
+   "raw_data": [
+    "roster status by date, rules by season"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL Operations roster rules",
+      "access": "free",
+      "note": "policy documents, not machine-readable"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.run_scheme_vs_front_matchup": {
+   "verdict": "OK",
+   "assessment": "Computable matchup score with stated windows and shrinkage k; market-free. run_gap/run_location are missing for many plays (QB runs, kneels) and bins are sparse; the odd/even front flag is a context label, not part of the score.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: run_gap, run_location, rusher_id, defteam, yards_gained, success"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.rush_explosive_tail_rate": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as nfl.rush_yardage_tail (P(yards >= 10/20 per carry), position shrinkage, opponent explosive-allowed adjustment); windows differ only in half-life. 'Carries from stage s1-s4' references pipeline stages, not inputs.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: rusher_id, yards_gained, defteam, carries"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.rush_yardage_tail"
+  },
+  "nfl.rush_yardage_tail": {
+   "verdict": "OK",
+   "assessment": "Keeper of the explosive-run family: thresholds, half-life 25 carries, k=60 and opponent k=100 are specified. Note NGS rushing is season aggregate only; use defenders_in_box from participation where available and treat QB scrambles separately.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: rusher_player_id, rushing_yards, yardline_100, defenders_in_box"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse participation (2016+) and FTN charting (2022+)",
+      "access": "free_limited",
+      "note": "coverage by season varies; was_pressure/personnel fields not present before the participation era"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.sb_defender_highlight_hazard": {
+   "verdict": "FIXED",
+   "assessment": "No functional form: 'estimate per-game sack and takeaway rates from pressure rate' does not state a model, and the paid pass-rush win rate data is vendor-specific. Super Bowl is one game so P(2+ sacks) is dominated by Poisson noise and opponent protection.",
+   "market_free": "yes",
+   "raw_data": [
+    "defender sack and pressure counts",
+    "opponent sacks and interceptions allowed",
+    "defensive TD log"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "ESPN/PFF pass-rush win rate",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per defender: sack rate per team pass-rush snap and per opponent dropback over the last 3 seasons (regular season + playoffs), shrunk to position mean with weight 12 games; expected sacks in the game = player rate x opponent expected dropbacks (nfl.pace x nfl.proe) x opponent sack-rate-allowed ratio vs league. Takeaway rate analogously from interceptions + forced fumbles recovered. Defensive TD hazard per team = takeaways x 0.06 league conversion rate (refit 2000-2025). P(2+ sacks) = 1 - P(0) - P(1) under Poisson; P(any defensive TD for player) from the share of team takeaways; combine with outcome sim from the matchup model. As-of week-of-game injury report."
+  },
+  "nfl.sb_mvp_depth_chart_position_map": {
+   "verdict": "OK",
+   "assessment": "Settlement-position capture is useful for position strikes (hybrid listings like WR/RB decide payouts). Fully pregame; but depth chart vintage coverage for the Super Bowl week is unverified and the 'compare with last 10 finals' step is a diagnostic.",
+   "market_free": "yes",
+   "raw_data": [
+    "depth chart listings per player at game time",
+    "roster position"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Team and league depth charts",
+      "access": "free_scrape"
+     },
+     {
+      "name": "nflverse depth_charts",
+      "access": "free",
+      "note": "game-week vintage coverage unverified"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.sb_mvp_historical_position_base_rates": {
+   "verdict": "OK",
+   "assessment": "Simple tabulation with Beta shrinkage and era decay; fully market-free and stable. Only ~60 events so era splits are thin; official MVP list is verified public.",
+   "market_free": "yes",
+   "raw_data": [
+    "MVP list with position and team",
+    "game outcome and score"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "Official league Super Bowl records",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.sb_mvp_live_ballot_state": {
+   "verdict": "OK",
+   "assessment": "In-game input: not pregame knowable by design and only usable for live decisions with a strict as-of play timestamp. Must use the no-spread nflfastR wp (verify the column used is the model without Vegas spread, not vegas_wp). Live feed latency and ballot-close time are unverified.",
+   "market_free": "yes",
+   "raw_data": [
+    "live play-by-play with timestamps",
+    "running player box score",
+    "ballot close time announcement"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL GameCenter live play-by-play",
+      "access": "free_scrape",
+      "note": "latency not verified"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.sb_mvp_winner_conditional_credit": {
+   "verdict": "OK",
+   "assessment": "Well specified conditional-logit design (covariates, sack coverage from 1982, tackles excluded, QB premium prior). Only ~60 Super Bowls plus playoff winners; relies on simulated box scores from other inputs. Market-free.",
+   "market_free": "yes",
+   "raw_data": [
+    "Super Bowl box scores by player",
+    "MVP winner and position",
+    "game scripts and key plays"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.sb_neutral_site_matchup_win_prob": {
+   "verdict": "FIXED",
+   "assessment": "Composition of own rating, a lineup adjustment and a normal CDF; the 'full-strength lineup adjustment' and the bye/rest effect are undefined, and summing over conference-championship pairs requires a bracket model (nfl.bracket_path). Market-free as written.",
+   "market_free": "yes",
+   "raw_data": [
+    "team game results and EPA",
+    "injury and depth chart vintages",
+    "playoff bracket results"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For finalists A,B: margin mean = rating_A - rating_B (nfl.lineup_adjusted_team_rating at the latest injury report, shrunk to league mean with weight n/(n+10) games), home-field = 0, rest edge = 0 (both teams have a two-week gap); P(A wins) = Phi(mean/13.0). Pregame of the conference championships: sum P(pair) x P(A beats B) over the four possible championship outcomes, with each championship game using its own host-field constant (about 1.5 points) and rest-edge term of +0.5 points for the team coming off a bye. As-of latest game result and injury vintage; no betting spread, total or moneyline used."
+  },
+  "nfl.school_draftable_prospect_pool": {
+   "verdict": "FIXED",
+   "assessment": "Reasonable school-level count model but 'shared class-depth shock' has no size, tiers and the 'top 300' assignment are undefined, and early-entry lists change the pool until the declaration deadline.",
+   "market_free": "yes",
+   "raw_data": [
+    "prospect list by school and class",
+    "historical draftees by school and round",
+    "league college classification for transfers"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "College rosters / early-entry lists",
+      "access": "free_scrape"
+     },
+     {
+      "name": "NFL Mock Draft Database",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per school S: for each eligible prospect i, P(drafted_i) and P(round<=3_i) from nfl.prospect_slot_dispersion_model; prospects outside the top 300 of the consensus board get position-specific base rates by school tier (power-conference top-25, other power, group of five, FCS) from 2015-2026 drafts. Simulate 20,000 classes: draw one school-level shock z_S ~ N(0, 0.35^2) on the logit of each prospect's probability (sd refit so the cross-school variance of round-1-3 counts matches 2015-2026), then draw selections independently; output P(count >= N) and P(school has max rounds 1-3 count, ties by 1/k split). As-of latest early-entry list."
+  },
+  "nfl.score_path_sequence_sim": {
+   "verdict": "OK",
+   "assessment": "The MARKET_MARKER flag is a false positive (it states no spread or total). Detailed drive-level simulation with calibration to own expected margin/total. Inherits risk from the multiplier estimation and the dependence on three other inputs; coin-toss winner unknown pregame (treated as random).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, drive, drive_result, posteam, total_home_score, total_away_score, game_seconds_remaining",
+    "schedules: final scores, overtime flag"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.scoring_event_point_values": {
+   "verdict": "OK",
+   "assessment": "Computable (XP make by kicker/distance, 2-pt rate by coach and state, safeties). Notice that PAT distance changed in 2015, so training must be 2015+; combinations to the P(TD value in {6,7,8}) are straightforward.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: extra_point_result, two_point_conv_result, two_point_attempt, safety, kicker_player_id"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.scrimmage_turnover_return_long_tail": {
+   "verdict": "OK",
+   "assessment": "Specified hierarchical Poisson with explicit exposure and shrinkage; the extreme rarity (a 99+ return occurs a few times per decade) means the posterior is dominated by the prior, and it overlaps nfl.play_length_evt_tail_fit's turnover-return component. Exposure on yardline_100<=10 is a reasonable proxy.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.return_yards",
+    "pbp.interception, pbp.fumble_lost",
+    "pbp.field_goal_result, pbp.kick_distance",
+    "pbp.yardline_100"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.season_extreme_era_base_rate": {
+   "verdict": "OK",
+   "assessment": "GEV on 48 seasonal maxima with scoring-environment covariate and per-rung empirical frequency; fully market-free. Limitations: 17-game scaling is approximate, ties between seasons and single-game records are very few, and the 225-yard rung is a count model, not GEV.",
+   "market_free": "yes",
+   "raw_data": [
+    "game results 1978-2025: scores, overtime",
+    "single-game rushing leaders by season"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.season_participation_streak_hazard": {
+   "verdict": "OK",
+   "assessment": "Specified hazard with covariates and frailty; injury-state carry-forward in simulation is the subtle part. Week-17 x clinched flag and 'as-of market time' must use only information known at that time. Overlap with nfl.games_played_dist is partial (streak versus total games).",
+   "market_free": "yes",
+   "raw_data": [
+    "player-week snaps and active status",
+    "weekly injury designations",
+    "team schedule with byes",
+    "clinch status by week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.single_game_ceiling_tail_model": {
+   "verdict": "FIXED",
+   "assessment": "References unspecified pipeline stages ('s2-s4'), does not define the fantasy/score scale, and 'game-specific total' could be the betting total (would make it hybrid). Overlaps nfl.game_fantasy_max_field_sim and nfl.player_single_game_yardage_extreme_rate.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-game fantasy points history by position",
+    "player-game yards and TDs"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Score scale = full-PPR fantasy points (1 per reception, 0.1 per scrimmage yard, 6 per TD, 0.04 per passing yard, 4 per passing TD, -2 per INT/fumble lost). Per player-game: body = compound Poisson (touchdowns) plus yardage from the player's nfl.rush_yardage_tail/receiving models; tail above the position's 90th percentile of 2012-2025 player-game scores replaced with a generalized Pareto fitted by maximum likelihood. P(max over N remaining games >= x) = 1 - prod_g (1 - p_g(x)) where p_g is adjusted for the own-model game total from nfl.model_team_points_mean (never a betting total) and P(active), with an inter-game correlation correction from nfl.fantasy_component_and_stack_covariance. Output at thresholds 30, 40, 50, 60 points."
+  },
+  "nfl.slate_max_tie_mass": {
+   "verdict": "OK",
+   "assessment": "Specified simulation from integer score PMFs with empirical calibration; dead-heat payout rule belongs to the contract (read from m.rules_text). Empirical 2002-2025 tie frequency is a small-sample check (24 seasons x 18 weeks).",
+   "market_free": "yes",
+   "raw_data": [
+    "games.week, home_score, away_score",
+    "per-week team score lists"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.slate_running_extreme_state": {
+   "verdict": "FIXED",
+   "assessment": "Terms like 'model mismatch per game' and 'shared-error correction' are undefined; overlaps nfl.week_running_state_by_window (running maxima within week) but covers season-to-date margin, total and rushing. As-of final score timing is fine.",
+   "market_free": "yes",
+   "raw_data": [
+    "games.game_id, week, home_score, away_score, overtime",
+    "player_stats.rushing_yards by game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "After each completed game g update running maxima: M_margin = max |home-away|, M_total = max (home+away, OT included), M_rush = max player rushing yards (single game). For each rung r: cleared_r = 1[M >= r]. For remaining games compute p_g(r) from nfl.deep_tail_margin_model, nfl.total_distribution_tail and nfl.player_single_game_yardage_extreme_rate respectively, using the shared team-rating draw (nfl.rating_uncertainty_shared_error) in 20,000 simulations rather than an analytic product. P(YES at rung r) = 1 if cleared_r else share of simulations where any remaining game reaches r. As-of the final official score of the last completed game; remaining list with week and kickoff."
+  },
+  "nfl.slate_total_extremes": {
+   "verdict": "WEAK",
+   "assessment": "Slate-level highest-total/margin order statistics are a simulation wrapper around nfl.model_team_points_mean, nfl.total_distribution_tail and nfl.corr; incremental value is the 1/N payout logic only. Mean 'from nfl.pace/off_epa model' is not an exact definition.",
+   "market_free": "yes",
+   "raw_data": [
+    "game total distributions, slate composition (bye weeks), weather"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "derived from nflverse schedules and own models",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.sleeper_scoring_and_group_definitions": {
+   "verdict": "OK",
+   "assessment": "Settlement-source archive rather than a forecast; legitimate for scoring-rule and correction risk. Sleeper's stats endpoints are partly undocumented and values change over 24 hours, so timestamped own capture is required. Market-free (no price).",
+   "market_free": "yes",
+   "raw_data": [
+    "Sleeper player metadata (fantasy_positions), weekly stats, scoring settings",
+    "timestamps of value capture"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sleeper public API",
+      "access": "free_limited",
+      "note": "stats endpoints are unofficial"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.snap_appearance_given_active": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same probability as nfl.zero_snap_active_risk (P(at least one snap | active)). The spread adjustment ('blowouts raise backup snaps') is market-derived if the betting spread is used.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "snap counts per player-game by unit (off, def, ST)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "The 'adjust for spread' step is market-derived if the closing spread is used; rebuild with own-model |expected margin| from nfl.own_team_rating_market_free.",
+   "duplicate_of": "nfl.zero_snap_active_risk"
+  },
+  "nfl.streak_and_undefeated_hazard_path": {
+   "verdict": "DUPLICATE",
+   "assessment": "Explicitly 'do not build a separate simulator': it is a set of output statistics of nfl.standings_sim (longest streak, first-loss week, undefeated flag). No new data.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedule order, byes, completed results to date, current streak and undefeated flags",
+    "outputs of nfl.standings_sim"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "own simulator outputs",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.standings_sim"
+  },
+  "nfl.supplemental_draft_mechanics": {
+   "verdict": "WEAK",
+   "assessment": "Supplemental draft produces 0-2 selections per year, so the base rate is a coin flip on tiny history and P(selected) per player depends on unobservable team bids. Only value is the rule description.",
+   "market_free": "yes",
+   "raw_data": [
+    "supplemental draft results by year",
+    "eligibility rulings",
+    "team pick inventory"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "League announcements",
+      "access": "free"
+     },
+     {
+      "name": "Beat reports",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.td_play_length_by_source": {
+   "verdict": "FIXED",
+   "assessment": "Refers to 'the same tail model as above' (not self-contained) and overlaps nfl.play_length_evt_tail_fit; kick-return length 'from the catch spot' needs explicit definition (return_yards vs yardline).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.touchdown, pbp.return_touchdown",
+    "pbp.yards_gained, pbp.return_yards",
+    "pbp.play_type, pbp.yardline_100"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "From 1999-2026 regular-season plays with a touchdown, assign route: scrimmage (pass or rush; length = yards_gained), interception return, fumble return, kickoff return, punt return, missed/blocked FG return (length = return_yards, kick returns measured from the receiving spot as yardline of catch to goal). Tabulate counts per season and route, per-season maximum and minimum, and rate per 1,000 snaps of that route type (kicks per team kick). Fit per route a generalized Pareto above its 80th percentile length (peaks-over-threshold as in nfl.play_length_evt_tail_fit). Output both aggregates with and without return TDs so either contract reading can be priced."
+  },
+  "nfl.team_first_td_attribution": {
+   "verdict": "WEAK",
+   "assessment": "Recency-weighted shares of first-TD scorers largely duplicate the first-TD allocation in nfl.td_rates and the xTD share in nfl.expected_touchdowns_by_play_location; first TDs are 1 per team-game so shares are noisy (k=10 shrinkage).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, posteam, touchdown, td_player_id, yardline_100, drive number"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.team_points_for_against_rates": {
+   "verdict": "OK",
+   "assessment": "Specified opponent-adjusted ridge with half-life, shrink k and a simulation with shared team-rate draw; market-free. Assumptions (sd 9.5, 1.2) flagged as to be refit. Season-extreme contracts need banked points to be exact.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules: game_id, week, team scores, home flag",
+    "pbp: plays and epa per team"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.team_positional_need_and_qb_regime": {
+   "verdict": "FIXED",
+   "assessment": "Weights, grade source (PFF-style is paid) and QB regime coding are undefined, so the need score is not reproducible. As-of 'last transaction timestamp' is fine.",
+   "market_free": "yes",
+   "raw_data": [
+    "roster and depth chart by position",
+    "contract years and cap hits",
+    "starter production"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape"
+     },
+     {
+      "name": "PFF grades",
+      "access": "paid"
+     },
+     {
+      "name": "Beat-writer reports",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Need score per team-position = 0.30 x starter age percentile above position median (0-1) + 0.25 x [years remaining <= 1] + 0.25 x (1 - last-season EPA-based percentile of the starter at the position from nflverse, no PFF) + 0.20 x depth gap (1 if no starter-grade player is under contract after free agency). QB regime codes: 0 = long-term starter (guarantees through next 2 seasons), 1 = bridge/short deal, 2 = no starter-grade QB, plus a flag for QB drafted in rounds 1-2 within 2 years. Shrink position-group means with weight 10 team-years. Weights are assumptions to be fit by regression on historical first-round position choices. Refresh weekly until the draft; as-of last transaction."
+  },
+  "nfl.team_score_pmf_own_mean": {
+   "verdict": "FIXED",
+   "assessment": "The MARKET_MARKER flag is a false positive. Gap: means come from nfl.drive_result_lattice (fit on 2016-2025) but the pmf bins use team-games from 2010, so 2010-2015 expected points are needed in sample, and the training must use walk-forward means. KXNFLBOTH/KXNFLTEAMTOTAL OT-treatment is contract-specific.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules: game_id, team scores, overtime flag",
+    "pbp: scoring plays by quarter",
+    "own pregame expected team points per team-game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "From all regular-season team-games 2010-2025, bin by the pregame expected team points from nfl.model_team_points_mean computed walk-forward (for seasons before the drive model's window use the ridge EPA-points rating of nfl.own_team_rating_market_free, no betting data), in 1-point bins from 10 to 35 (pooled outside). Within each bin fit a negative-binomial body (dispersion per bin) times a smoothed correction ratio observed/NB at scores 0,3,6,7,9,10,13,14,16,17,20,21,23,24,27,28 shrunk to 1 with weight n/(n+60). Keep two pmfs: including overtime points and regulation-only. Output P(score >= n) for n=0..60 as of the final pre-kickoff mean."
+  },
+  "nfl.team_season_stat_accrual": {
+   "verdict": "OK",
+   "assessment": "Detailed accrual spec (dropbacks, sack yards, shrinkage k, per-game sd 70 yards) with shared rating draw. Dependent on pace/PROE/clinched-rest inputs; Week 17-18 rest factor is the largest uncertainty. Market-free.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules: game_id, week, home/away, scores, remaining opponents",
+    "team-game stats: points, passing yards, sack yards, rushing yards"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse team stats",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.team_stat_accounting_constraints": {
+   "verdict": "FIXED",
+   "assessment": "Allocation constraint is useful for same-game parlays but the Dirichlet concentration and treatment of unlisted players are not specified, and it overlaps nfl.fantasy_component_and_stack_covariance and nfl.corr.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: player ids by yards, TD and target",
+    "team-game totals"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each team-game and stat in {rushing yards, receiving yards, TDs, receptions} compute top-k player shares from the previous 17 games (half-life 8). Dirichlet-multinomial: concentration alpha_stat = a_team x (mean share vector over the 17 games) with a_team set by method of moments on the observed share variance, shrunk to the league alpha with weight 20 games; unlisted players get the residual 'other' category (floor of 5% of team total for yards). Sample team total from nfl.model_team_points_mean-based team stat model, allocate by Dirichlet-multinomial, output joint pairs of player legs (same-team) with sum(players) = team constraint. As-of previous game and latest inactive list."
+  },
+  "nfl.team_total_split": {
+   "verdict": "FIXED",
+   "assessment": "Benchmark: uses closing spread and total to produce implied team means; the formula is mu_A=(T-s)/2 but sign convention and key-number adjustment are undefined. Useful only to compare team-total quotes with a pair of quotes. raw_data was missing.",
+   "market_free": "no",
+   "raw_data": [
+    "games.csv: spread_line, total_line, home_team, away_team, scores",
+    "team total quote history (own capture)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "ESPN public JSON odds",
+      "access": "free_limited"
+     },
+     {
+      "name": "Sportsbook team totals",
+      "access": "paid"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Uses the closing spread and total, so implied team means are market-derived; benchmark only. The market-free counterpart is nfl.model_team_points_mean.",
+   "measurement_fix": "Benchmark only: with spread_line s defined as nflverse (positive = home favored by s) and total T, implied home mean = (T + s)/2, implied away mean = (T - s)/2. Compare to quoted team totals Q_home, Q_away: inconsistency = (Q_home + Q_away) - T and (Q_home - Q_away) - s. Adjust each mean for key-number mass by shifting to the nearest of the discrete means in nfl.team_score_pmf_own_mean using the own-mean pmf as a likelihood ratio. Label output as market-derived; use nfl.model_team_points_mean for market-free analysis."
+  },
+  "nfl.teammate_vote_split_penalty": {
+   "verdict": "FIXED",
+   "assessment": "Plackett-Luce with a rival-score penalty is a defensible idea but the latent score and the 'best rival' score are not defined, and AP MVP/OPOY votes are 50 ballots so only ~20 seasons of tables with few contested splits exist; beta will be noisy.",
+   "market_free": "yes",
+   "raw_data": [
+    "AP vote shares by candidate-season, team, position",
+    "per-candidate production score"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Latent score for candidate i in season s = x_i'theta where x_i are the features of nfl.vote_outcome_model (team win%, positional EPA rank, prior wins) minus beta x max over same-team or same-position rivals j of x_j'theta. Estimate theta and beta jointly by maximum likelihood of the observed first-place vote shares under a Dirichlet-multinomial for 2005-2025 seasons (candidates with at least 1 vote), ridge penalty lambda chosen by leave-one-season-out CV, shrink beta toward 0. Output winner probabilities after the split correction. As-of announcement date."
+  },
+  "nfl.total_distribution_tail": {
+   "verdict": "FIXED",
+   "assessment": "Conditions on nfl.model_team_points_mean for 2000+ games though that model only exists for 2015+, an undefined backfill. Key-total atoms and bootstrap CI are fine. Overlaps nfl.team_score_pmf_own_mean convolution and nfl.deep_tail_margin_model.",
+   "market_free": "yes",
+   "raw_data": [
+    "final scores since 2000, wind, roof, model expected-total regime (market-free)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Fit a shifted-lognormal (or NB-mixture) to 2000-2025 regular-season game totals conditioned on walk-forward expected total E_g in terciles (<40, 40-48, >48) and weather regime (calm/dome, wind>=15 or temp<32); for seasons before 2015 compute E_g with the ridge rating of nfl.own_team_rating_market_free (never a betting total), for 2015+ use nfl.model_team_points_mean. Add atoms at totals 37, 41, 43, 44, 47, 51 as residuals of a smoothed fit with Dirichlet smoothing. Report P(total >= 70) and P(total <= 24) with 5,000-game bootstrap CI; validate calibration by decile of E_g. As-of season start, refreshed weekly."
+  },
+  "nfl.total_plays_state_model": {
+   "verdict": "FIXED",
+   "assessment": "Leak risk: covariates like pass-completion rate and penalty rate must be pregame rolling values, not game-level realized values, and 'as-of previous week' must be explicit. Overlaps nfl.pace's expected plays.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, plays by team, seconds per play, qtr, score_differential, penalty",
+    "team neutral pace"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Regress total plays per game (2015+) on both teams' rolling neutral seconds per play (last 10 games, half-life 5), PROE, own and opponent run rate, expected absolute margin (own model from nfl.own_team_rating_market_free, not market), rolling completion rate and penalty rate (all computed from games before the as-of week), with team and opponent random effects and ridge shrinkage; output expected plays and SD. Weather only via wind/dome flags from the kickoff forecast. As-of previous week; fit walk-forward."
+  },
+  "nfl.trick_play_and_goal_line_pass_events": {
+   "verdict": "OK",
+   "assessment": "Clear rate definitions (non-QB passes; passes from the 1-yard line, sacks/scrambles excluded) with shrinkage and Poisson aggregation. Rare events so coach random effect is weak. Market-free.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, posteam, passer_player_id, pass_attempt, sack, qb_scramble, yardline_100, down",
+    "rosters: player_id, position"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.vote_outcome_model": {
+   "verdict": "FIXED",
+   "assessment": "Umbrella over many awards with undefined 'narrative flags' and an aggregation layer; the T100 ordered logit is a different model. Vote histories are small (about 25 seasons per award), so overfitting is the main risk.",
+   "market_free": "yes",
+   "raw_data": [
+    "historical winners and vote tallies, candidate stats, previous T100 ranks"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "NFL T100 archives",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per award, conditional (multinomial) logit of winner on candidate features: team win% at announcement, statistical rank within position (EPA or season totals), prior award wins, position dummy, drop undefined narrative flags, with ridge penalty by leave-one-season-out CV and prior weight 3 pseudo-observations. T100: ordered logit on previous rank, change in production, position group, age. Output P(candidate=winner) and P(rank=r); group markets P(group) = sum of P(win) by team at announcement time with 1/N co-winner payout; Executive of the Year tie probability = own-award co-winner frequency shrunk to pooled co-winner frequency of comparable awards with weight 10 awards. As-of announcement date."
+  },
+  "nfl.voter_exposure_and_straw_poll_signal": {
+   "verdict": "WEAK",
+   "assessment": "Manual media straw polls and primetime counts have a short history (under 10 years), subjective capture and unknown correlation with the actual voter panel; weights fit to few award-years will overfit. Market-free as stated (no Kalshi use).",
+   "market_free": "yes",
+   "raw_data": [
+    "primetime flags per game",
+    "straw poll tables by week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Public media straw polls",
+      "access": "own_capture"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.weather_delay_hazard": {
+   "verdict": "OK",
+   "assessment": "Specified logistic (roof, month, hour, climatology, NWS thunderstorm probability) with vintages. The outcome label (any weather delay) requires manually coded game-book/news records, rare events (about 1-3 per year) and NWS probability archives are not complete; open-roof dome status must be dated.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules: game_id, stadium, roof, kickoff time",
+    "weather delay records per game",
+    "NWS thunderstorm probability forecasts by location and hour",
+    "NOAA monthly thunderstorm-day climatology"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "NWS/NOAA forecast archives",
+      "access": "free_limited"
+     },
+     {
+      "name": "NFL game books / news delay notes",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.weather_total_response": {
+   "verdict": "FIXED",
+   "assessment": "'Game total minus team-baseline expectation' could be read as the betting total (hybrid) or realized points; must be realized points minus own-model expectation. Training on game-time observed wind/temp but predicting from forecasts needs the measurement-error step stated.",
+   "market_free": "yes",
+   "raw_data": [
+    "game-time observed wind/temp, forecast vintages, roof",
+    "team baseline expected total (own model)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "NOAA/NWS forecast archives",
+      "access": "free_limited"
+     },
+     {
+      "name": "Weather API vendors e.g. Tomorrow.io",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Outcome = realized game total points minus own-model expected total from nfl.model_team_points_mean (never a betting total). Hierarchical regression on 2010+ games: wind piecewise-linear with knots 10, 15, 20 mph, temperature knots 32, 50 F, precipitation flag, dome flag, and bin random effects shrunk with k=100 games. Fit on observed game-time weather; at prediction time use forecast vintages at 24 h and 3 h pregame and propagate forecast error (estimated from archive vs observed) by errors-in-variables attenuation. As-of pregame forecast."
+  },
+  "nfl.week_running_state_by_window": {
+   "verdict": "OK",
+   "assessment": "Specified running-bar logic with dead-heat treatment and kickoff-window schedule. The Kalshi market close timestamp is exchange metadata, not a price, so it does not make the value market-derived. Overlaps nfl.slate_running_extreme_state in part (week vs season state).",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules.game_id, week, gameday, gametime, home_score, away_score",
+    "Kalshi market close timestamps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "Kalshi market close timestamps",
+      "access": "own_capture",
+      "note": "timestamp only, no prices"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.weekly_field_projection_grid": {
+   "verdict": "DUPLICATE",
+   "assessment": "The MARKET_MARKER flag is a false positive (it forbids sportsbook totals). Simulation of every player in the pool for P(rank=1), with ties, is what nfl.leader_order_statistic already defines ('for weekly leaders include all players on the slate').",
+   "market_free": "yes",
+   "raw_data": [
+    "player-week components, game totals, inactives"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.leader_order_statistic"
+  },
+  "nfl.weekly_leader_threshold_distribution": {
+   "verdict": "WEAK",
+   "assessment": "GEV of historical weekly maxima by position gives an unconditional benchmark; the 'player-specific field simulation' step is nfl.leader_order_statistic. Low incremental value beyond a calibration check.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-week stats, number of games in the week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats (weekly)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.weekly_qb_depth_slot_model": {
+   "verdict": "OK",
+   "assessment": "Chained model (hazard, challenger prior, rank score, team listing policy) with stated shrinkage; useful because the contract may key on depth chart slot. Rank-score logit coefficients are unspecified and depth chart vintages are partly own capture; partly overlaps nfl.depth_chart_publication_lag.",
+   "market_free": "yes",
+   "raw_data": [
+    "depth chart snapshots: team, week, position, depth order, player_id, publication date",
+    "preseason snap counts by quarter",
+    "QB draft slot and contract APY"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse depth_charts",
+      "access": "free",
+      "note": "snapshot coverage by week varies"
+     },
+     {
+      "name": "Team official depth charts",
+      "access": "own_capture"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.weekly_slate_composition": {
+   "verdict": "OK",
+   "assessment": "Deterministic schedule table needed to size slate legs (N games, byes, windows, relocated games). Low modelling value but exact; as-of must be the week's first kickoff with change log.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedules.game_id, week, gameday, home_team, away_team, roof"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games.csv",
+      "access": "free",
+      "note": "scores, roof, wind, temp, kickoff time; also carries betting columns that must be dropped"
+     },
+     {
+      "name": "NFL.com schedule",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.with_without_target_redistribution": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as nfl.target_competition (with/without-teammate target-share splits, shrinkage, redistribution). This version has the more precise definition (4 games without X, k=40, pooled template), so its measurement should replace the vague catalog text.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: receiver_id, target flag, air_yards, game_id",
+    "weekly inactive lists",
+    "team depth chart roles"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse play_by_play (nflreadr / nfl_data_py)",
+      "access": "free",
+      "note": "stable public schema; 1999+"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.target_competition"
+  },
+  "nfl.wpmoty_nominee_profile": {
+   "verdict": "WEAK",
+   "assessment": "Multinomial logit on 15 winners from ~32 nominees per year with manually counted news articles and unverifiable foundation ages; effectively unestimable. Voting is by league/committee decision.",
+   "market_free": "yes",
+   "raw_data": [
+    "nominee list by year and team",
+    "winner by year",
+    "prior nominations, seasons played, Pro Bowls",
+    "foundation founding year and news counts"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com WPMOY nominee announcements",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.zero_snap_active_risk": {
+   "verdict": "OK",
+   "assessment": "Beta-shrunk frequency by depth slot is computable; 'Friday-designation uplift from past data' is not defined, but otherwise fine. Keeper of the active-but-no-snap family. Inactive list is released about 90 minutes pre-kick, a hard as-of boundary.",
+   "market_free": "yes",
+   "raw_data": [
+    "snap_counts: game_id, player, offense_snaps, offense_pct",
+    "inactives by game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse rosters / depth_charts / injuries / inactives",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  }
+ }
+}

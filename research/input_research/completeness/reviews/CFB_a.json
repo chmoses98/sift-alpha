@@ -289,7 +289,7 @@
     "category": "player_role",
     "mechanism": "Converts a confirmed or doubtful quarterback change into an expected-margin shift in points per game.",
     "rationale": "Identity of the starter (cfb.qb_status_pit) is a vintage, not a number. A backup with 40 career dropbacks has a very wide EPA/play posterior, so the swap cost is both a mean shift and a variance increase; the market tends to over- or under-react depending on prior-year snaps.",
-    "measurement": "For each team-season, starter value = EPA per dropback (incl. designed rushes) over the last 2 seasons, opponent-adjusted, weighted by dropbacks with a 1-season half-life, shrunk to the recruiting-class prior (247/On3 composite rating mapped to expected EPA/play from historical FBS QBs) with k = 150 dropbacks. Swap value = (starter - replacement) EPA/dropback x team dropbacks per game (about 35 to 45) x 0.75 points per EPA-equivalent play; report mean and posterior SD. As-of timestamp = last confirmed depth-chart or beat-report vintage before kickoff.",
+    "measurement": "Starter value = opponent-adjusted EPA per dropback (incl. designed QB runs) over the last 2 seasons with 1-season half-life weights, shrunk to a recruiting-composite prior (mapping of 247/On3 rating to EPA/dropback fitted on historical FBS QBs) with k = 150 dropbacks; the same for the replacement. Swap value in points per game = (starter - replacement) EPA/dropback x team dropbacks per game (35-45, from script inputs); no extra conversion factor. Report mean and posterior SD. As-of timestamp = last confirmed depth chart or beat-report vintage before kickoff.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD plays and PPA endpoints (free key)",
@@ -299,7 +299,7 @@
     "raw_data": [
      "play-by-play with passer id, EPA, dropbacks",
      "recruiting composite by player",
-     "depth chart/availability vintages (own capture)"
+     "depth chart/availability vintages"
     ],
     "why": "Quarterback change is the biggest discrete news item in a college spread, and the replacement pool is thin and unevenly observed, so a point value with uncertainty is required, not just a flag.",
     "role": "primary"
@@ -309,7 +309,7 @@
     "category": "availability",
     "mechanism": "Aggregates all known absences (any position) into a single points-per-game value using snap share times player value over replacement.",
     "rationale": "College injury information is sparse, so the model needs a way to price a partial list (two starting linemen out, a corner doubtful) consistently; counting injuries is wrong because snap load and positional value differ by factors of five or more.",
-    "measurement": "For each missing or doubtful player i: loss_i = P(out_i) x snap_share_i(prior season or current season to date) x (grade_i - grade_replacement_pos) x positional_points_per_grade, with positional weights fitted from historical snap-weighted ratings (QB >> OT/CB > WR/DL > RB/TE/S). Sum over players, subtract nothing for the opponent. P(out) = 1.0 for confirmed out, 0.5 for doubtful or questionable, 0.15 for unreported-but-flagged. Grades from PFF where available, otherwise PPA-on-field proxy. Timestamp each source report.",
+    "measurement": "For each player i reported out or flagged: loss_i = P_out_i x snap_share_i x (value_i - value_replacement_pos) in points, where value is on-field PPA/EPA per play (or PFF grade converted by a fitted regression to points per game) and P_out takes the share of historical 'flagged' cases that missed the game, estimated per source type (coach statement, beat report, team release) from captured history, not fixed constants. Sum over players (offence and defence separately), with QB handled by cfb.qb_replacement_value. Timestamp every report; as-of pregame.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD player usage and season stats (free key)",
@@ -317,9 +317,10 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "player snaps by game (PFF or proxy)",
+     "player snaps by game",
      "availability reports with timestamps",
-     "depth chart"
+     "depth chart",
+     "player grades or PPA"
     ],
     "why": "Turns an unstructured injury list into the same unit as the spread, so a +/- 1.5 point late shift can be compared with the quote move rather than judged qualitatively.",
     "role": "secondary"
@@ -397,7 +398,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "game date, home/away/neutral flag, team ids and division, final score including overtime, playoff round and seed for every D3 and FCS game since 2010"
+     "game date, home/away/neutral, team ids and division, final score including overtime, playoff round and seed since 2010"
     ],
     "why": "KXNCAAFD3GAME and KXNCAAFCSGAME are winner markets on teams outside FBS data coverage; their probability comes from this score-based rating, not from SP+ or PPA.",
     "role": "primary"
@@ -1226,7 +1227,7 @@
     "category": "pace_volume",
     "mechanism": "Plays per minute differ when leading, tied or trailing, and by clock situation; determines total plays inside 60 minutes plus any overtime.",
     "rationale": "A hurry-up team trailing can add 8 to 12 plays versus its average; a ball-control team leading runs the clock. The season mean hides this, and the rule set since 2023 (clock running after first downs outside the last two minutes) changed the baseline.",
-    "measurement": "For each offence compute seconds per snap in four buckets (trailing by 9+, within 8, leading 9-16, leading 17+) in Q1-Q4, excluding two-minute drills, over the last 12 games with 0.5 shrink toward conference mean (k = 200 snaps). Combine with the opponent's pace allowed and expected state mix from the script input to produce expected snaps; flag the season's clock-rule regime. As-of last completed game.",
+    "measurement": "Per offence: mean seconds per snap (clock elapsed between snaps, excluding two-minute drills, timeouts and the final 4 minutes of a half) in four score-state buckets (trailing by 9+, within 8, leading 9-16, leading 17+) over the last 12 games with 0.9 per-game decay, shrunk per bucket to the conference mean with weight n/(n + 200) (k = 200 snaps). Expected snaps = 3600 clock seconds adjusted for the season regime divided by the opponent-adjusted bucket seconds weighted by the expected score-state mix (cfb.script). As-of last completed game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD plays with clock (free key)"
@@ -1252,7 +1253,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "pass plays with yards gained, receiver, air yards where available",
+     "pass plays with yards gained and receiver",
+     "air yards where available",
      "opponent allowed splits"
     ],
     "why": "Sets the dispersion of per-completion yards, and so P(325+) relative to the mean.",
@@ -1282,7 +1284,7 @@
     "category": "pace_volume",
     "mechanism": "Expected team rushing attempts as plays times run share given the expected lead, counting sacks as rushing attempts under NCAA statistics.",
     "rationale": "KXNCAAFTEAMRSHATT sits in this archetype and counts a team stat, not points; in NCAA statistics a sack is recorded as a rushing attempt with negative yards, so attempts rise with sack-prone offences, and run share rises sharply for leaders.",
-    "measurement": "Rush attempts = plays x run share, where run share = neutral-situation run share (first/second down, score within 7) + lead effect (piecewise: +0.10 when leading by 14+, -0.10 when trailing by 14+) estimated by logistic regression on historical plays, plus sack rate x dropbacks (NCAA convention to be verified in the official stat definition). Opponent run-defence adjust by opponent's attempts allowed; shrink with k = 6 games. As-of last game.",
+    "measurement": "Rush attempts = (plays - dropbacks) + sacks under NCAA convention (sacks and kneels count as rushes). Run share on neutral situations (1st/2nd down, score within 7) per team over the last 10 games decay 0.8, then lead effect from a logistic on plays fitted by score margin (piecewise at +-14), opponent run-defence adjust by opponent rush attempts allowed, shrink with k = 6 games to FBS mean. Add sack rate x expected dropbacks (sack rate shrunk with k = 150 dropbacks). As-of last game; no market input.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD plays with play types incl. sacks (free key)",
@@ -1302,7 +1304,7 @@
     "category": "team_strength",
     "mechanism": "Expected team total yards from plays times net yards per play, built from rushing and passing components under NCAA accounting.",
     "rationale": "Total yards is plays times yards per play, and under NCAA conventions sack yardage lost is charged to rushing, so net yards per play depends on the sack rate; explosive plays create heavy right tails and yards correlate strongly with pace and script.",
-    "measurement": "Per team: opponent-adjusted rush yards per attempt with sack and kneel yardage charged to rushing yards (the KXNCAAFTEAMYDS note confirms only this yardage accounting; it does not say sacks count as rush attempts, which does not change total yards), pass yards per attempt, run share expected from script; expected total yards = expected plays x [run share x rush ypc + pass share x (net pass ypa)]; opponent adjustments by opposing allowed values with 10-game window, 0.8 decay, k = 6 games shrinkage; dispersion from historical residuals by bucket. As-of last game.",
+    "measurement": "Per team: NCAA accounting where sack plays count as rush attempts with negative yards and kneels count as rushes. Expected plays N (from pace inputs), pass share p from script-adjusted attempts; E[yards] = N x [(1-p) x rush_ypa_adj + p x pass_ypa_adj], where rush_ypa includes sack and kneel yardage and pass_ypa excludes sacks (per NCAA pass attempt definition), each opponent-adjusted by the opposing allowed values over the last 10 games with 0.8 decay and k = 6 games shrinkage. Dispersion from historical residuals by bucket. As-of last game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD plays and team stats (free key)"
@@ -1328,7 +1330,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "play-by-play: play_type, play_text, yards_gained, period, clock, offense score, defense score"
+     "play-by-play: play_type, play_text, yards_gained, period, clock, scores"
     ],
     "why": "Small but rule-specified deduction in KXNCAAFTEAMYDS for the leading team; ignored by gross-yardage models.",
     "role": "context"
@@ -2075,7 +2077,7 @@
     "category": "pace_volume",
     "mechanism": "Number of drives in the game computed from both teams' seconds per drive rather than from averaged plays.",
     "rationale": "Total points scale with the number of possessions, roughly 22-26 combined in modern FBS games. Seconds per play, plays per drive and run/pass mix interact: two slow teams produce fewer possessions than the average of their individual paces implies, because clock-killing drives are shared.",
-    "measurement": "For each team compute average drive duration (seconds) on non-garbage-time drives over last 10 games with 0.8 per-game decay, excluding drives ending a half; expected possessions per team = (3600 - stoppage-adjusted halftime-neutral time) / (0.5*(d_own + d_opp_allowed)) with a clock-regime constant fitted by season; add 1 when either team has no-huddle rate above 40 percent. Report mean and SD (about 2 possessions). As-of the last completed game.",
+    "measurement": "Per team: mean drive duration d (seconds, excluding drives that end a half or occur in garbage time) over the last 10 games with weight 0.8 per game back, shrunk to the FBS mean with k = 5 games. Expected combined drives = (T_eff) / (0.5 x (d_A_own + d_B_allowed + d_B_own + d_A_allowed)/2) where T_eff = 3600 seconds minus mean untimed seconds (stoppages and halftime excluded) fitted on the season clock regime, with the clock regime as a covariate and no-huddle rate as a regressor, not a fixed +1. Report mean and SD fitted on residuals. As-of last completed game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD drives (start time, duration, plays; free key)"
@@ -2100,7 +2102,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "drive start/end yard line, result, points scored",
+     "drive start/end yard line, result, points",
      "opponent identity"
     ],
     "why": "Splits efficiency into moving and finishing, important because totals depend on 3-versus-7 outcomes rather than yardage.",
@@ -2158,7 +2160,7 @@
     "raw_data": [
      "final scores with overtime periods by game 2005 onward",
      "division of both teams",
-     "scheduled pairings of the current season"
+     "scheduled pairings"
     ],
     "why": "KXNCAAFHIGHSCORE settles on whether any Division I regular-season game (overtime included) exceeds the strike, an extreme-value quantity over all game totals that a one-game total model cannot price.",
     "role": "secondary"
@@ -2828,7 +2830,7 @@
     "raw_data": [
      "final regulation scores by period",
      "overtime flag",
-     "pre-game ratings"
+     "pre-game ratings vintages"
     ],
     "why": "Tie incidence is the entire target of KXNCAAFOT and the entry condition for KXNCAAFMOSTOT; direct estimation from non-market axes avoids circularity with the price.",
     "role": "primary"
@@ -2838,14 +2840,14 @@
     "category": "game_state",
     "mechanism": "How often a coach settles for a tie (kneel, kick the tying field goal) versus plays for the win in the last two minutes.",
     "rationale": "Tied games are created or avoided in the final minutes: a trailing team that kicks a field goal to tie creates overtime, and a team with the ball tied with 40 seconds left may kneel. Coaches differ systematically, so two matchups with equal margin distributions can differ in tie incidence.",
-    "measurement": "From plays with clock under 2:00 in Q4 and score diff in {-3..-1, -8..-1 requiring TD+2, 0}: for each head coach compute the rate of choosing kneel/tying FG versus aggressive play over expected from a fitted decision model, over 3 seasons with shrinkage k = 15 situations to the conference mean. Output coach-level tie-propensity z-score; coach change resets to prior of coordinators plus career data.",
+    "measurement": "Situations: Q4 plays with clock <= 2:00 where the offence trails by 1-3 (FG ties), trails by 8 (needs TD+2), or the score is tied. Fit a logistic model on 2014-2025 of aggressive choice (go for TD / pass on 4th, no kneel) on score diff, time, timeouts, field position, down, distance. For each head coach compute observed minus predicted aggressive rate over the last 3 seasons, shrunk with k = 15 situations to the conference mean; z-score = shrunk excess / SE. Coach change resets to coordinator plus career data prior. As-of previous Sunday.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD plays with clock and play_type (free key)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "play-by-play final 2:00 with down, distance, score, timeouts"
+     "play-by-play final 2:00 of Q4 with down, distance, score, timeouts, clock"
     ],
     "why": "The existing coaching input measures tenure and scheme but not the one decision that converts a close game into overtime.",
     "role": "secondary"
@@ -2863,7 +2865,7 @@
     "registry_ids": [],
     "raw_data": [
      "drives starting inside opponent 30",
-     "OT drives (period >= 5) with result",
+     "OT drives with result",
      "kicks 40-45 yards"
     ],
     "why": "Sets the conditional probability of a second and later overtime period, which compounds geometrically into the 9+ period contract.",
@@ -2892,7 +2894,7 @@
     "category": "schedule_context",
     "mechanism": "Number of remaining Division I games in the regular season and the maximum overtime periods already seen.",
     "rationale": "KXNCAAFMOSTOT is a season-extreme event: if a nine-overtime game has already occurred the market is decided, otherwise the number of remaining games times the per-game probability of reaching 9+ periods determines the price. The decay of exposure through the season is a deterministic input.",
-    "measurement": "Count remaining Division I regular-season games as of query date (FBS plus FCS, per the contract's scope) by week; current season maximum number of overtime periods across all D-I games; P(YES) = 1 - (1 - q)^N with q from the tie curve x period-length geometric (with regime change at OT 3), unless max already >= 9 (then 1.0). Update weekly.",
+    "measurement": "For a contract 'some game reaches at least K overtimes' in scope S (FBS or all D-I): per remaining game q_K = P(tie after 60) x P(game lasts >= K OT periods | OT) with P(tie) from cfb.regulation_tie_curve and period continuation probability r (fitted on OT games, with a separate r from OT3 for the 2-point regime), q_K = P(tie) x r^(K-1). P(YES) = 1 - prod over remaining games (1 - q_K), or 1.0 if the current-season maximum is already >= K. Update weekly with the remaining schedule.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD schedules and games (free key)",
@@ -3400,7 +3402,7 @@
     "category": "game_state",
     "mechanism": "Expected possessions per team in each quarter given who receives the opening kickoff, deferral habits and tempo.",
     "rationale": "A quarter has only about 2-3 possessions per team, and receiving the opening kickoff gives one extra drive in Q1 (and typically ends Q2 with the other team holding the ball); the share swings expected quarter margin by 0.3 to 0.8 points between the two possession orders. The toss itself is only known at kickoff, so the input must be probabilistic.",
-    "measurement": "Per head coach: P(defer | win toss) over last 3 seasons (shrink k = 10 tosses to the conference mean) and P(win toss) = 0.5; P(team receives first) = 0.5 x P(receive | win) + 0.5 x (1 - opponent P(defer)). Expected drives per quarter per team = season drives per team x quarter share (0.24-0.26 each) with Q1 and Q3 adjusted by the receive-first indicator times 0.5 drive. Store the realised toss only after kickoff.",
+    "measurement": "Per head coach: P(defer | wins toss) over last 3 seasons, shrunk with k = 10 tosses to the conference mean (remaining mass = receive; ignore choosing the end). P(win toss) = 0.5. P(team A receives first) = 0.5 x (1 - defer_A) + 0.5 x defer_B, and P(team A receives second half) = 1 - that. Expected drives in quarter k per team = season mean drives per team x quarter share (0.24-0.26) with Q1 and Q3 adjusted by +0.5 drive for the receiving-first team (Q1) or second-half receiver (Q3). Record realised toss only after kickoff; before that use the probabilities.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD games and plays (kickoff and coin toss from play text, free key)",
@@ -3410,7 +3412,8 @@
     "raw_data": [
      "opening kickoff receiving team",
      "second-half kickoff receiving team",
-     "drives by quarter"
+     "drives by quarter",
+     "coin toss decisions by coach"
     ],
     "why": "Possession count in a quarter is the dominant source of difference between a quarter spread and a share of the game spread.",
     "role": "primary"
@@ -4067,7 +4070,7 @@
     "registry_ids": [],
     "raw_data": [
      "plays with period, clock, score diff, offense",
-     "player depth usage (backup snaps)"
+     "backup snaps"
     ],
     "why": "Fourth-quarter and second-half totals diverge from a share-of-total rule precisely in games with large gaps; this input quantifies that divergence.",
     "role": "secondary"
@@ -4766,7 +4769,7 @@
     "category": "schedule_context",
     "mechanism": "Game-by-game win probabilities for every unplayed game, from non-market ratings with site, rest and injury state.",
     "rationale": "Futures contracts on wins, undefeated seasons, conference title and playoff berth are functions of the whole schedule: a team's chance of 12 wins depends on the order, site and quality of each remaining game, and on correlated rating uncertainty; a scalar strength-of-schedule loses the product structure that drives P(undefeated).",
-    "measurement": "For each team and each unplayed game compute P(win) = logistic(rating_diff / 13.5 + site_effect) using non-market ratings (SP+ or own, updated through the latest completed week), site effect 2.5 points home / 0 neutral, rest-adjust only for known byes; carry rating posterior SD into correlated draws (see cfb.rating_posterior_draws). Output vector and its Poisson-binomial distribution of wins. As-of the most recent Sunday.",
+    "measurement": "For each team and each unplayed game: margin mean m = rating_team - rating_opponent + site_effect (2.5 points home, 0 neutral, -2.5 away; fitted per season) in points; P(win) = Phi(m / sigma_g), sigma_g = 13.5 points (game SD fitted on FBS 2014-2025), using non-market ratings (SP+ or own) as of the most recent Sunday. For uncertainty use posterior draws from cfb.rating_posterior_draws (draw-wise P). Output the vector and its Poisson-binomial win distribution; rest adjustment only for known byes.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD schedule and ratings (free key)"
@@ -4815,7 +4818,8 @@
     "raw_data": [
      "committee rankings by week",
      "game results with opponent ranks",
-     "conference champions"
+     "conference champions",
+     "ESPN Strength of Record vintages"
     ],
     "why": "The contracts on playoff, quarterfinal, semifinal, seed and conference representation are selection outcomes whose mapping from results is committee-specific.",
     "role": "primary"
@@ -4833,9 +4837,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "conference membership by season",
+     "conference membership by season with effective dates",
      "tiebreaker rules text",
-     "scheduling formats"
+     "scheduling formats (8 or 9 games)"
     ],
     "why": "Conference champion, qualifier and top-finisher markets depend on structure, and the 2026 season contains markets for conferences with changed membership.",
     "role": "secondary"
@@ -4845,7 +4849,7 @@
     "category": "team_strength",
     "mechanism": "Composite of coach tenure, recruiting trend, portal net value, financial resources and past performance for the next four seasons.",
     "rationale": "KXNCAAFTFUT asks whether a team makes the CFP before 2030, which cannot be answered with this year's rating alone: it depends on coach stability, talent pipeline, and revenue-sharing resources over four seasons, and on a random walk of team strength with regression to the mean.",
-    "measurement": "Annual team strength follows an AR(1) process: rating_t+1 = mu + 0.7 (rating_t - mu) + shock with shock SD 4 points (placeholder values 0.7 and 4, unsourced and unfitted; to be estimated on 2014-2025 rating changes) augmented by observed 3-year recruiting rank trend, portal net transfer rating change and head-coach tenure/contract status; simulate 4 seasons ahead, add coach-exit hazard and realignment membership, compute P(at least one CFP berth) per path. As-of preseason, updated at the portal window.",
+    "measurement": "Estimate by regression on 2014-2025 team-seasons: rating_{t+1} - mu = phi x (rating_t - mu) + b1 x (3-year recruiting composite z) + b2 x (net portal rating change z) + b3 x (new head coach flag) + e, with phi, b1-b3 and the residual SD fitted (report values and CI), rating = non-market SP+ or own. Simulate 4 seasons ahead from the as-of preseason rating; add coach-exit hazard and conference membership as stated. P(at least one CFP berth) uses cfb.cfp_committee_resume_model. As-of preseason, update after portal window.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD talent and portal endpoints (free key)",
@@ -4856,7 +4860,7 @@
      "recruiting composites by year",
      "portal net rating change",
      "coach contract/tenure",
-     "revenue-sharing resources (not public)"
+     "annual team ratings"
     ],
     "why": "Only a multi-season strength process with program inputs can price long-dated qualification contracts.",
     "role": "secondary"
@@ -4886,7 +4890,7 @@
     "category": "schedule_context",
     "mechanism": "KXNCAAFBOWLGAME settles on being selected (not playing) for a certified Division I bowl or the CFP: the chain is 6-win eligibility, the count of eligible teams against bowl slots, conference tie-in order, bowl committee choices and top teams taken by the CFP.",
     "rationale": "Selection is not a function of wins alone: when eligible teams (6 or more wins) exceed slots, the weakest eligible teams miss out; when slots exceed eligible teams, 5-7 teams are taken (typically ranked by APR, a rule that changes by season); a conference with more eligible teams than tie-ins sends the surplus to open slots with bowls choosing by expected draw and travel, so a 6-6 mid-major is a bubble case while a 7-5 power team is safe.",
-    "measurement": "Per simulation of the season (the cfb.rating_posterior_draws and remaining-game win probabilities), compute each team regular-season wins, flag eligibility at >=6 wins (and, for 5-7 teams, an APR-ranked fallback list), count eligible teams per conference, allocate teams to bowl slots by the season tie-in table (conference, pick order, bowl slot count 2026 list from the rules text) with a selection score of wins, rank and historical draw (seed to be fitted on bowl selections 2014-2025), and remove the CFP field first. Output P(selected) per team and per-conference shortage probability of eligible teams below slots. Re-run weekly; the bowl list is the one in the contract text.",
+    "measurement": "For each draw of cfb.rating_posterior_draws simulate regular-season wins; team eligible if wins >= 6, else if 5-7 included in an APR-ranked fallback list used only when eligible teams < open slots. Remove CFP field first. Allocate in bowl pick order of that season's tie-in table: each bowl takes the best remaining team of its tie-in conference by score = wins + 0.5 x (AP-ranked flag) + logit-fitted draw term (fitted on 2014-2025 bowl selections by multinomial logit on wins, rank, conference, travel distance). Output P(selected) per team and per-conference P(eligible < tie-in slots). Re-run weekly as-of latest results; no market input.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD games and bowl records (free key)",
@@ -4897,8 +4901,9 @@
     "raw_data": [
      "season schedule and results",
      "bowl tie-in table by conference and year",
-     "APR (academic progress rate) by team",
-     "bowl slot counts by season"
+     "APR by team",
+     "bowl slot counts by season",
+     "CFP field from simulation"
     ],
     "why": "KXNCAAFBOWLGAME (sampled WYO, rules text: selected to play in a bowl game or the CFP, regardless of whether they actually compete; only NCAA-certified Division I bowls count) needs eligibility and slot-balance logic that no win-total or title model supplies.",
     "role": "secondary"
@@ -4908,7 +4913,7 @@
     "category": "team_strength",
     "mechanism": "For FCS, D3 and Ivy League champion markets: team strength from FCS-specific results and the postseason format (FCS playoff bracket and seeds; Ivy League has no title game and awards titles on conference record, possibly shared).",
     "rationale": "FBS ratings (SP+) do not cover these teams; FCS results require their own rating from scores with large mismatch capping, a 24-team bracket with seeds and byes, and the Ivy champion is decided by conference record with possible co-champions, so a market on a single Ivy champion depends on tie handling in the contract (unread, title only).",
-    "measurement": "Fit an Elo-style rating on FCS (and D3/Ivy) game scores 2014 onward with margin cap 21 points, home-field 2.5 points, preseason carry-over 0.7 shrunk to conference mean, and rating SD from the game count; simulate the conference race (Ivy: record-based, shared title probability reported separately) and the FCS bracket from the announced seeds, 20,000 runs, weekly. Output P(champion) per team and P(co-champion) where applicable. No market input; as-of last completed week.",
+    "measurement": "Use the single score-based rating of cfb.lower_division_game_margin_model (ridge margin rating per division, margin cap 35, home edge fitted, game weight halving each 1.5 seasons, preseason = 0.6 x prior final shrunk to conference mean) with its posterior SD. Simulate 20,000 seasons: remaining conference games, then conference title by that conference's tiebreak rule (Ivy: best conference record, ties shared and reported as co-champion), then the FCS playoff bracket from announced seeds with neutral/home site per round. Output P(champion) and P(co-champion) per team. Weekly as-of last completed game; no market input.",
     "pregame_knowable": "partial",
     "free_sources": [
      "NCAA statistics and FCS schedules (free scrape)",
@@ -4938,7 +4943,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "conference schedule grid by season (team, opponent, site, week)",
+     "conference schedule grid by season",
      "completed results as-of date",
      "team rating and rating SD as-of date",
      "non-conference opponent division flag"
@@ -4962,7 +4967,7 @@
      "weekly CFP rankings",
      "conference membership 2026",
      "remaining schedule and conference title game rules",
-     "CFP bid and seeding rule text for the season"
+     "CFP bid and seeding rule text"
     ],
     "why": "Prices the KXNCAAFCFPCONF count rungs, where slot competition and the conference-champion bid rule dominate.",
     "role": "primary"
@@ -6217,7 +6222,7 @@
     "registry_ids": [],
     "raw_data": [
      "drives with start/end field position and result",
-     "scoring plays with type (rush, pass, return)",
+     "scoring plays with type",
      "opponent allowed values"
     ],
     "why": "Converts efficiency into the count variable the live contracts settle on, and separates rushing from receiving touchdowns.",
@@ -6255,7 +6260,8 @@
     "raw_data": [
      "scoring plays with time and drive index",
      "opening possession",
-     "no-TD games"
+     "no-TD games",
+     "overtime results"
     ],
     "why": "The first-TD market needs the order of arrival of two Bernoulli processes, not a count, and has an explicit No TD outcome.",
     "role": "primary"
@@ -6290,7 +6296,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "touchdowns by game and team and type",
+     "touchdowns by game, team and type",
      "expected total/gap (non-market)"
     ],
     "why": "Gives tail probabilities for high-count rungs where a continuous model fails.",
@@ -6811,7 +6817,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "player game logs with carries, targets, yards, TDs, sacks",
+     "player game logs",
      "schedule with remaining games",
      "team scoring expectation"
     ],
@@ -6823,7 +6829,7 @@
     "category": "availability",
     "mechanism": "Per-game probability that a candidate plays and the probability of a season-ending injury or benching, by position and usage.",
     "rationale": "Contracts resolve to No if the player does not play in the season, and a candidate who misses games falls out of a counting-stat race; running backs and edge rushers have higher injury exposure than quarterbacks and are the main candidates of leader markets.",
-    "measurement": "Per candidate: P(miss a given game) = base rate by position (estimated from FBS history, to be measured; assume a few percent per game for backs) x workload multiplier (carries per game above the position median) x prior-injury indicator; P(season-ending) as a fraction of misses; combine across remaining games as a Bernoulli path. Redshirt and transfer eligibility flags enter as availability states. Weekly update with timestamped news capture.",
+    "measurement": "Fit on FBS 2014-2025 player-games: P(miss game g) = logistic(position, carries per game over position median (z), prior-season games missed share, previous-week missed flag, team games remaining) with a position-specific intercept from the data (no assumed constant); P(season-ending | miss) = fraction of misses followed by all remaining games missed, by position. Remaining-season path = Bernoulli chain over games remaining. Redshirt and transfer eligibility enter as absorbing states. Weekly update with news captured with timestamps; as-of previous Sunday.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD player usage, rosters (free key)",
@@ -6833,7 +6839,8 @@
     "raw_data": [
      "games played by season",
      "carries and snaps",
-     "injury news with timestamps"
+     "injury news with timestamps",
+     "depth chart"
     ],
     "why": "Controls how often an award candidate loses production or resolves No under the did-not-play clause, directly shaping late-season probabilities.",
     "role": "primary"
@@ -6852,8 +6859,9 @@
     "registry_ids": [],
     "raw_data": [
      "award winners and finalists by year",
-     "candidate season stats",
-     "team record and rank at ballot time"
+     "candidate season stats by position",
+     "team record and AP rank at ballot date",
+     "prior-year honours"
     ],
     "why": "Replaces the unmeasurable narrative input by features voters can observe, separately per award.",
     "role": "primary"
@@ -6863,7 +6871,7 @@
     "category": "team_strength",
     "mechanism": "Wins above preseason expectation and rank change for a head coach's team, from non-market preseason ratings.",
     "rationale": "Coach of the Year voting rewards teams that exceed expectations, not simply the best team; a coach who takes a team expected to win 5 to 11 wins is favoured over one at the top of the polls, but ranking and conference title also matter.",
-    "measurement": "Expected wins from non-market preseason rating and schedule (Poisson-binomial of game win probabilities) minus actual wins to date plus projected remaining wins; add change in AP rank from preseason to ballot date and a conference-title indicator; fit historical Coach of the Year winners 2005-2025 with a logit on the index, final record, final ranking, and first-year/turnaround flags. As-of ballot date.",
+    "measurement": "Index = (actual wins to date + sum of remaining-game win probabilities) - (sum of preseason win probabilities over all regular-season games), where every game win probability comes from the frozen preseason non-market rating (SP+ or own, Week 0 vintage) plus site effect; add (AP rank at preseason - AP rank at ballot date)/25 and a conference-title indicator as separate columns. Fit historical Coach of the Year winners 2005-2025 with a logit on index, final record, final rank, first-year flag. As-of ballot date; no market input.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD ratings and schedule (free key)",
@@ -6871,10 +6879,11 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "preseason ratings",
-     "schedule",
-     "results",
-     "AP rank history"
+     "preseason non-market ratings vintage",
+     "schedule and results",
+     "AP rank history",
+     "conference title flags",
+     "COY winners"
     ],
     "why": "Coach of the Year (KXNCAAFCOTY) is decided on surprise relative to expectation, which no other input measures.",
     "role": "primary"
@@ -6894,7 +6903,7 @@
     "registry_ids": [],
     "raw_data": [
      "defender sacks, TFL and pressures by game",
-     "pass-rush snaps (paid or estimated)",
+     "pass-rush snaps",
      "opponent sacks allowed and pass attempts"
     ],
     "why": "The four AP Defensive Player of the Year series need defender production and pass-rush usage, which the offence-centric inputs do not carry.",
@@ -7434,7 +7443,8 @@
      "head coach records by season",
      "contract terms and buyout",
      "athletic department revenue",
-     "AD change dates"
+     "AD change dates",
+     "coach exit events with dates and cause"
     ],
     "why": "Supplies the hazard process behind two series where the window end date is the main difference.",
     "role": "primary"
@@ -7453,9 +7463,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "contract documents",
-     "buyout schedules",
-     "athletic revenue"
+     "head coach contract terms and buyout schedules",
+     "athletic department revenue",
+     "contract amendments with dates"
     ],
     "why": "Separates ability to pay from desire to fire; a key friction missing from base rates.",
     "role": "secondary"
@@ -7494,7 +7504,7 @@
     "registry_ids": [],
     "raw_data": [
      "stakeholder statements with dates",
-     "governance documents and voting thresholds",
+     "governing documents and voting thresholds",
      "meeting calendar"
     ],
     "why": "Creates a structured state variable out of otherwise qualitative news for governance contracts.",
@@ -7556,7 +7566,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "big board ranks",
+     "big board ranks with timestamps",
      "eligibility from enrollment dates",
      "declaration announcements with dates"
     ],
@@ -8167,7 +8177,7 @@
     "category": "other",
     "mechanism": "Points and first-place votes of the top teams as published, giving the margin by which the leader leads the next team.",
     "rationale": "If the number-one team loses, the successor is the team with the next-most points unless voters coalesce around a winner; a large first-place vote share for the number two team means a quick handover, and a small gap leads to a split and possibly a different team ascending, which controls the count of distinct number-one teams.",
-    "measurement": "From each weekly AP release record points and first-place votes for ranks 1 to 5; compute share = points_i / (62 x 25 +... ) using ballot count n of that week; gap = (points_1 - points_2) / total points possible; successor probability = softmax over ranks 2-5 with temperature fitted on historical handovers (n about 50 events). As-of the latest published poll.",
+    "measurement": "For each AP release t record points P_i and first-place votes F_i for ranks 1-5 and voter count n_t (max points = 25 x n_t). share_i = P_i / (25 x n_t); gap_t = (P_1 - P_2) / (25 x n_t). Successor probability given the #1 team loses = softmax over ranks 2-5 of beta x (P_i / (25 x n_t)) with beta fitted by maximum likelihood on historical handovers where the #1 team lost (CFP era plus earlier polls, report the number of events). As-of the latest release published before the decision time; no revised data.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD rankings endpoint (free key; points and first-place votes field availability SOURCE_UNVERIFIED)",
@@ -8175,8 +8185,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "weekly AP points and first-place votes",
-     "ballot count"
+     "weekly AP points and first-place votes by rank",
+     "number of voters per release",
+     "release timestamp"
     ],
     "why": "Needed for successor-given-loss in churn and any-week-number-one contracts.",
     "role": "secondary"
@@ -8226,7 +8237,7 @@
     "category": "other",
     "mechanism": "Points of unranked teams receiving votes and the gap among teams ranked 20 to 30, for entry and exact-rank markets near the cut line.",
     "rationale": "Contracts such as top 25 in AP Week 5 or exactly #25 in the CFP rankings sit on the boundary where many teams have similar resumes and tiny vote differences decide placement; probabilities depend on the density of teams around the cut line rather than on the strength of the team in question alone.",
-    "measurement": "At each release collect points for ranks 15-25 and the unranked others receiving votes list (typically 10-20 teams with points); for each team compute z = (team points - points at rank 25) / SD of week-to-week points change (fitted); P(ranked next week) = Phi(z + expected effect of the coming game from the transition model). For CFP exact-rank: density of resume-metric gaps around ranks 22-28. As-of latest release.",
+    "measurement": "At each AP release take points of ranks 20-25 and every unranked team receiving votes. For team i: z_i = (points_i - points_at_rank_25) / sigma_w, sigma_w = SD of week-to-week points change fitted on 2014+ releases for teams within 50 points of the cut; P(top 25 next release) = Phi(z_i + b x E[points change | result], opponent rank, margin) with E[...] from cfb.poll_transition_model. For CFP exact-rank use the committee rank model (cfb.cfp_committee_resume_model) predicted rank distribution and report P(rank = k) for k = 22..28. As-of latest release.",
     "pregame_knowable": "yes",
     "free_sources": [
      "CFBD rankings endpoint (free key)",
@@ -8234,8 +8245,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "weekly AP points for ranks 1-25 and others",
-     "committee ranks 20-28"
+     "weekly AP points for ranks 15-25 and others receiving votes",
+     "game results",
+     "committee ranks 20-28 and resume metrics"
     ],
     "why": "Handles boundary markets where individual strength is not the main driver.",
     "role": "secondary"
@@ -8815,7 +8827,7 @@
     "registry_ids": [],
     "raw_data": [
      "dropbacks, sacks, pressures by QB",
-     "time to throw where available",
+     "time to throw",
      "line pass-block efficiency"
     ],
     "why": "Separates the quarterback component from the opposing rush in the team sack total.",
@@ -8826,7 +8838,7 @@
     "category": "player_role",
     "mechanism": "Expected interceptions per attempt from turnover-worthy throws and depth of target, regressed away from realised interception rate.",
     "rationale": "Interception rates are noisy: a quarterback with a high realised rate over 150 attempts regresses by about half; turnover-worthy plays and depth of target are more predictive of next-game interceptions than past interceptions, and the defence's ball-hawking skill adds only a small increment.",
-    "measurement": "Per QB: expected INT rate = 0.5 x realised INT per attempt (2 seasons, 0.6 decay) + 0.5 x charting-based turnover-worthy rate x conversion factor; if charting unavailable use depth-of-target and completion rate proxy with shrinkage k = 200 attempts; opposing defence adjustment by its INT rate over expected (k = 300 opponent attempts). Multiply by opponent dropbacks (cfb.opp_dropback_volume).",
+    "measurement": "Per QB: INT rate = w x realised INT per attempt (2 seasons, weights 0.6 per season) + (1-w) x predicted INT rate from a logistic on average depth of target proxy (yards per completion, completion%, sack rate) fitted on all FBS QBs, w = n/(n + 200) so weight on realised rate rises with attempts (k = 200). Where PFF turnover-worthy rate exists, replace the predicted component by turnover-worthy rate x fitted conversion (INT per TWP). Opponent defence factor = opponent INT rate over expected, shrunk with k = 300 attempts. Multiply by expected opponent dropbacks. As-of pregame QB status.",
     "pregame_knowable": "partial",
     "free_sources": [
      "CFBD plays (free key)",
@@ -8854,7 +8866,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "field-goal attempts with distance, result",
+     "field-goal attempts with distance and result",
      "4th-down decisions in range",
      "drive results"
     ],

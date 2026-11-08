@@ -190,13 +190,35 @@
    "category": "pace_volume",
    "mechanism": "Spread and total jointly imply each team's expected points and thus possessions and efficiency for every player in the game.",
    "rationale": "Implied team total = (total +/- spread)/2; it moves with news before box-score features update, and summarizes the book's view of pace and scoring for this matchup.",
-   "measurement": "implied_home = (T - S)/2, implied_away = (T + S)/2 with S home spread; deviation from each team's rating-implied points; move since open.",
+   "measurement": "At snapshot time t (the last captured consensus total T and home spread S before tip, home spread S negative when favored): implied_home = (T - S)/2 and implied_away = (T + S)/2 in points; dev_team = implied_team_points minus model expected team points from AdjEM_fund and expected possessions (same units); move = implied value at t minus value at the first captured snapshot, in points, with capture timestamps stored. Benchmark only, never fed to a market-free forecast.",
    "pregame_knowable": "yes",
    "free_sources": [
     "The Odds API (free tier, limited credits; sportsbook lines)",
     "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball) (odds block when present)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "sportsbook spread and total with capture time",
+    "open and close snapshots",
+    "rating-implied team points"
+   ],
+   "market_free": "no",
+   "provenance": {
+    "sources": [
+     {
+      "name": "The Odds API / sportsbook line archives (paid history, limited free tier)",
+      "access": "paid",
+      "note": "market-derived; benchmark only"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Implied team points come directly from the sportsbook total and spread, so this is benchmark only; the market-free equivalent is the model's own expected team points (cbb.ratings_fundamentals plus tempo), not this input."
   },
   "cbb.adj_off": {
    "label": "Adjusted offensive efficiency (opponent/venue-adjusted)",
@@ -237,7 +259,7 @@
    "category": "team_strength",
    "mechanism": "A single opponent-adjusted team rating, optionally blended with market-implied strength, summarizes team quality for any game and for season simulation.",
    "rationale": "Free ratings (Barttorvik, Massey, Haslametrics, ESPN BPI) share structure but differ in recency, margin caps and garbage handling; averaging reduces idiosyncratic error. Market-implied ratings back out the teams' strengths from closing lines and often dominate in-sample rating-only models. Subtle: KenPom is paid and not a free source; use Barttorvik as the free analog.",
-   "measurement": "Ensemble of free ratings (z-scored) plus ratings inferred from de-vigged closing lines (Bradley-Terry style fit on spreads); output mean and standard error per team; separate preseason, current and availability-adjusted versions.",
+   "measurement": "Two named outputs. (1) rating_free(team,t) = cbb.ratings_fundamentals AdjEM_fund (z-scored free ratings: Torvik, own ridge rating, optionally Haslametrics/Massey), weights fit by out-of-sample game-margin MSE, as-of last snapshot before 00:00 ET on tip date; no line enters. (2) rating_mkt(team,t) = Bradley-Terry least squares on de-vigged closing spreads of the last 30 days (ridge toward rating_free, home term fitted), benchmark only. Report each mean and standard error separately; preseason, current and availability-adjusted versions use the same formulas with the roster-minutes adjustment from cbb.lineup_adj_rating.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
@@ -248,7 +270,34 @@
    ],
    "registry_ids": [
     "cbb.ratings"
-   ]
+   ],
+   "raw_data": [
+    "free ratings tables (Torvik, Haslametrics, Massey, ESPN BPI) at as-of",
+    "de-vigged closing lines (benchmark component)",
+    "game results"
+   ],
+   "market_free": "hybrid",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "EvanMiya (evanmiya.com player/team ratings)",
+      "access": "free_limited",
+      "note": "partial free, no API"
+     },
+     {
+      "name": "The Odds API / sportsbook line archives (paid history, limited free tier)",
+      "access": "paid",
+      "note": "market-derived; benchmark only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "The Bradley-Terry fit on de-vigged closing spreads is market-derived; the market-free rebuild is the ensemble of free ratings (cbb.ratings_fundamentals) with that component excluded."
   },
   "cbb.preseason_prior": {
    "label": "Preseason prior (returning production, recruiting, portal, coach)",
@@ -311,14 +360,41 @@
    "category": "team_strength",
    "mechanism": "A regularized player impact value converts absences and role changes into team rating changes and anchors player-level projections.",
    "rationale": "Box-score-based impact (BPM) and adjusted plus-minus approaches estimate value; CBB lineups have small samples, so shrinkage to a box-score prior is essential. Level of competition and role change after transfer matter.",
-   "measurement": "Blend BPM/box-score prior with regularized on/off estimates; shrink by minutes; adjust for competition level and role.",
+   "measurement": "impact_i = w*BPM_i + (1-w)*RAPM_i in points per 100 possessions, BPM from season-to-date box score components (position-adjusted) and RAPM from a ridge regression of lineup-stint margin on player indicators (last 2 seasons, ridge lambda chosen by cross-validation, stints weighted by possessions); shrink with n/(n+500 minutes) toward role-bucket mean; w = 0.5 prior, fitted by out-of-sample game-margin RMSE; adjust BPM for opponent strength via team adjusted ratings; all inputs as of the prior game; EvanMiya values used only as a benchmark.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely) player ratings",
     "EvanMiya (evanmiya.com, free partial player/team ratings; no API)",
     "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit) (advanced stats)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "player box-score BPM components",
+    "on/off lineup net rating",
+    "minutes",
+    "opponent and conference ratings"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "EvanMiya (evanmiya.com player/team ratings)",
+      "access": "free_limited",
+      "note": "partial free, no API"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.four_factors": {
    "label": "Four factors (eFG, TO, ORB, FT rate)",
@@ -535,21 +611,48 @@
    "category": "distribution",
    "mechanism": "Regulation ties lead to 5-minute overtimes that add roughly 8-10 points to totals and affect OT-inclusive settlement.",
    "rationale": "CBB overtime frequency is a few percent of games; late fouling by the trailing team shifts the distribution of margins. OT matters for totals, spreads and player props when included in settlement and not at all when excluded. Subtle: more fouls late means more free throws, so P(tie at end of regulation) is not independent of FT%.",
-   "measurement": "Empirical OT frequency by closing spread and total bucket; expected OT points per team; match to rules_text inclusion.",
+   "measurement": "Using the last 10 D1 seasons, P(OT | |expected margin| bucket, expected-possessions tercile) = OT games / games per bucket with buckets of |expected margin| 0-2,2-4,4-7,7-10,10+ taken from the market-free ratings model (not closing lines), Beta(2,18) prior shrinkage; expected OT points per team = mean points scored in the 5-minute OT period (per team, per OT) for games that reached OT; as-of: season-to-date counts included only before the game date; re-estimate each season.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
     "ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball)",
     "hoopR / sportsdataverse (free ESPN men's college basketball box scores and play-by-play)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "game final scores with OT flag and OT points",
+    "model expected margin and total",
+    "closing spread (benchmark only)"
+   ],
+   "market_free": "hybrid",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "The Odds API / sportsbook line archives (paid history, limited free tier)",
+      "access": "paid",
+      "note": "market-derived; benchmark only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Spread and total buckets are market-derived; the market-free rebuild buckets games by cbb.ratings_fundamentals expected margin and expected possessions, which gives the same OT frequency curve without lines."
   },
   "cbb.score_resid": {
    "label": "Score residual distribution (key numbers, halves)",
    "category": "distribution",
    "mechanism": "The distribution of actual margin/total minus the closing line gives the sd, skew and tail mass for turning a point edge into a probability.",
    "rationale": "College basketball margins around the spread have sd of about 10-11 points (larger for large spreads and mismatched tiers), totals sd about 14-16; blowouts are more frequent than in the NBA due to talent disparity. Subtle: residual sd must be conditioned on spread size, tier and expected possessions.",
-   "measurement": "Empirical residual by spread bucket, total bucket, conference tier and tempo bucket; fit scale/skew; half-level residuals for first-half markets.",
+   "measurement": "Residual_margin = actual home-minus-away margin minus model expected margin (cbb.ratings_fundamentals, no lines); residual_total likewise; first-half residual = first-half margin minus 0.55 * expected margin. Bucket by |expected margin| (0-3,3-7,7-12,12+), expected total tercile, conference tier and tempo tercile; fit scale and skew (skew-normal) per bucket on the last 10 seasons with Bayesian shrinkage n/(n+200) to the pooled residual; as-of: model values from the last snapshot before tip. A line-bucketed version is a separate benchmark.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
@@ -558,7 +661,36 @@
    ],
    "registry_ids": [
     "cbb.score_resid"
-   ]
+   ],
+   "raw_data": [
+    "final scores and first-half scores",
+    "model expected margin and total",
+    "closing spread and total (benchmark)",
+    "conference tier",
+    "tempo bucket"
+   ],
+   "market_free": "hybrid",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "The Odds API / sportsbook line archives (paid history, limited free tier)",
+      "access": "paid",
+      "note": "market-derived; benchmark only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Residuals bucketed by spread and total use sportsbook lines (market-derived); the market-free rebuild buckets by the model expected margin and expected total from cbb.ratings_fundamentals."
   },
   "cbb.blowout_garbage": {
    "label": "Blowout / garbage-time probability and bench-clearing behavior",
@@ -816,7 +948,7 @@
    "category": "player_role",
    "mechanism": "Players with high foul rates are benched or foul out, truncating minutes and counting stats, especially bigs.",
    "rationale": "Foul trouble creates left-tail outcomes for props; the risk depends on baseline fouls per 40, opponent foul-drawing, and officiating. Coaches differ in how early they bench players. Subtle: first-half foul trouble affects first-half markets differently from full-game markets.",
-   "measurement": "PF per 40, P(2+ first-half fouls) and P(foul-out) from game logs; opponent foul-drawing rate; coach benching rule.",
+   "measurement": "PF per 40 = personal fouls per 40 minutes over the last 20 games, half-life 10 games, shrunk to role-bucket mean with weight n/(n+300 minutes), multiplied by opponent drawn-foul factor (opponent FTA per 100 possessions relative to league, shrunk n/(n+10)) and by crew foul factor from cbb.officials_crew when known; P(2+ first-half fouls) and P(foul-out) from a Poisson-binomial over expected minutes (cbb.player_minutes) using a negative-binomial with dispersion fitted by role bucket on 3 seasons; coach benching from cbb.coach_early_foul_bench_rule. As-of: through the prior game.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Sports-Reference CBB (sports-reference.com/cbb; free, strict rate limit)",
@@ -825,7 +957,33 @@
    ],
    "registry_ids": [
     "cbb.player_foul"
-   ]
+   ],
+   "raw_data": [
+    "player game logs (PF, minutes, first-half fouls from play-by-play)",
+    "opponent fouls drawn rate",
+    "coach benching rule"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.player_role_position": {
    "label": "Player role/position (ball handler, wing, stretch big, rim runner)",
@@ -1049,14 +1207,40 @@
    "category": "team_strength",
    "mechanism": "Cross-conference games anchor ratings across conferences; conference-level strength shapes bids, seeds and the relative value of in-conference ratings.",
    "rationale": "Ratings within a conference are well-identified but conference-to-conference offsets rest on a limited set of non-conference games, so conference strength has uncertainty that propagates to futures. Subtle: the bubble is sensitive to this uncertainty.",
-   "measurement": "Hierarchical rating model with conference random effect; offset uncertainty from non-conference game counts; compare to market-implied conference strength.",
+   "measurement": "Fit a hierarchical margin model on all D1 games before as-of t: margin_ij = r_i - r_j + h*home_ij + e, with r_i = c_conf(i) + u_i, c ~ N(0, tau_c^2), u ~ N(0, tau_u^2), variance components estimated by REML on the last 3 seasons and ratings shrunk toward a preseason prior; conference strength = posterior mean and sd of c_conf plus mean team u of that conference's games; uncertainty scales with 1/sqrt(non-conference games played). Game weight exp(-days/60). Uses no price, line or market rating; the market comparison is a separate benchmark.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Barttorvik (barttorvik.com: T-Rank team tables, player tables, game logs; free, scrape politely)",
     "cbbdata API / cbbdata R package (Barttorvik-derived data, free API key)",
     "Massey Ratings (masseyratings.com, free ratings and comparison tables)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "game results (team, opponent, site, margin, date) with conference labels",
+    "non-conference game counts"
+   ],
+   "market_free": "hybrid",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "The Odds API / sportsbook line archives (paid history, limited free tier)",
+      "access": "paid",
+      "note": "market-derived; benchmark only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Only the final 'compare to market-implied conference strength' step is market-derived; the hierarchical conference random-effect model uses game results alone, so a market-free rebuild is the model without that comparison."
   },
   "cbb.title_path": {
    "label": "Bracket path, region strength and matchup-specific adjustments",
@@ -1139,7 +1323,38 @@
     "The Odds API (free tier, limited credits; sportsbook lines)",
     "AP poll history (free)"
    ],
-   "registry_ids": []
+   "registry_ids": [],
+   "raw_data": [
+    "Kalshi price history",
+    "sportsbook de-vigged prices with capture time",
+    "popularity proxies (titles, TV appearances, ranks)"
+   ],
+   "market_free": "no",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi public market-data API (markets, trades, candlesticks)",
+      "access": "own_capture",
+      "note": "history requires own capture"
+     },
+     {
+      "name": "The Odds API / sportsbook line archives (paid history, limited free tier)",
+      "access": "paid",
+      "note": "market-derived; benchmark only"
+     },
+     {
+      "name": "AP Top 25 polls and ballots (apnews.com)",
+      "access": "free_limited",
+      "note": "ballot archive depth and bulk access unconfirmed"
+     }
+    ],
+    "verified": false
+   },
+   "market_note": "Dependent variable is Kalshi price minus de-vigged sportsbook price; both are market prices, so this is benchmark-only and has no market-free rebuild.",
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.market_calibration_bias"
+   }
   },
   "cbb.poll_voter_behavior": {
    "label": "AP/coaches poll voter behaviour and rank-change dynamics",
@@ -1168,10 +1383,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical game results of D1 vs D3 and D1 vs transitioning schools with final margins",
-    "program reclassification year and conference",
-    "opponent D1 games played to date"
-   ]
+    "opponent D1 game counts",
+    "tier and conference mean ratings",
+    "D3/D1 buy-game results history"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.coach_blowout_substitution_rate": {
    "label": "Coach-specific bench-clearing and lead-protection behaviour",
@@ -1187,10 +1423,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play with game clock and score",
-    "box score minutes by player",
-    "coach-to-team-season mapping"
-   ]
+    "play-by-play with score and clock by game",
+    "coach by team-season",
+    "lead at timeout times",
+    "final margins"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.margin_regime_mixture": {
    "label": "Competitive versus blowout regime mixture of the final margin",
@@ -1205,10 +1463,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical final scores with OT flag",
-    "pregame expected margin per game (model output)",
-    "coach decay estimates"
-   ]
+    "historical final margins",
+    "model expected margins",
+    "OT frequency",
+    "coach_decay"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.margin_total_covariance": {
    "label": "Joint distribution of margin and total for same-game parlays",
@@ -1223,10 +1502,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical final score for both teams per game",
-    "pregame expected margin and expected total from the model",
-    "tempo tercile labels"
-   ]
+    "historical final scores",
+    "model expected margin and total",
+    "tempo terciles"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.point_in_time_rating_snapshot": {
    "label": "Point-in-time rating snapshots (no retroactive revision)",
@@ -1241,9 +1536,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "daily rating tables by team with timestamps",
-    "game results to rebuild ratings point-in-time"
-   ]
+    "daily snapshots of adj_off, adj_def, tempo, games_played, rank, adjustment version for all D1 teams"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.ratings_fundamentals": {
    "label": "Fundamentals-only power rating ensemble (no betting lines)",
@@ -1258,10 +1568,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game efficiency and possessions",
-    "daily rating snapshots with timestamps",
-    "prior-season roster minutes and returning-minutes shares"
-   ]
+    "game results with sites",
+    "Torvik snapshots",
+    "preseason prior inputs (returning minutes, prior rating)"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.possession_length_profile": {
    "label": "Average possession length and transition share (offence and defence)",
@@ -1277,11 +1607,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team season-to-date average possession length offence and defence",
-    "transition frequency",
-    "possessions per game with date",
-    "team fouls per game"
-   ]
+    "team average possession length offence and defence",
+    "possessions per game",
+    "league mean"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "KenPom (kenpom.com ratings, game logs, snapshots)",
+      "access": "paid",
+      "note": "subscription; terms restrict redistribution"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.ot_period_tie_chain": {
    "label": "Overtime reach and repeat-tie chain",
@@ -1296,10 +1646,27 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical final scores with number of OT periods",
-    "points scored in each OT period (line score)",
-    "pregame expected margin and total"
-   ]
+    "final scores and OT indicator",
+    "margin distributions",
+    "possessions",
+    "OT periods per game"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.total_variance_by_style": {
    "label": "Game-level total variance by tempo and shot mix",
@@ -1314,11 +1681,28 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical final totals",
-    "pregame expected total",
-    "three-point attempt shares",
-    "free-throw rates"
-   ]
+    "historical game totals",
+    "model expected total",
+    "possessions",
+    "3PA share",
+    "FT rate"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.league_scoring_baseline_drift": {
    "label": "League-wide scoring baseline and rule-emphasis drift",
@@ -1334,10 +1718,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "daily league-wide points per 100 possessions",
-    "games per day",
-    "rule-change calendar"
-   ]
+    "league game points and possessions by date",
+    "NCAA rules committee announcement dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.handler_absence_pace_shift": {
    "label": "With and without primary ball handler: pace and efficiency shift",
@@ -1352,10 +1755,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "lineup on/off possession and scoring splits by player",
-    "assist rate and usage",
-    "scenario probabilities from status inputs"
-   ]
+    "play-by-play on/off lineups with possessions",
+    "assist rate and usage by player",
+    "pregame availability probabilities"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.pace_elasticity_to_opponent": {
    "label": "Team pace elasticity to opponent tempo",
@@ -1370,10 +1789,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per-game possessions",
-    "both teams' season-to-date adjusted tempo before each game",
-    "game date"
-   ]
+    "game possessions",
+    "team adjusted tempo",
+    "opponent adjusted tempo",
+    "league mean tempo"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.pace_mismatch"
+   }
   },
   "cbb.team_points_margin_coupling": {
    "label": "Coupling of one team's points to the game margin by role and spread bucket",
@@ -1388,10 +1828,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical points for and against by team",
-    "pre-game model expected margin and total",
-    "favourite/underdog flag from model not market"
-   ]
+    "historical team scores",
+    "expected margins",
+    "role favorite/underdog"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.margin_total_covariance"
+   }
   },
   "cbb.bench_unit_efficiency": {
    "label": "Bench-unit and garbage-time-unit offensive efficiency",
@@ -1406,10 +1866,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play substitutions with clock",
-    "possessions and points by lineup",
-    "minutes by player"
-   ]
+    "play-by-play with substitution events and score",
+    "possession counts by lineup",
+    "season minutes by player to date"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.opp_foul_propensity_ft_points": {
    "label": "Opponent foul propensity converted to the team's expected free-throw points",
@@ -1424,11 +1905,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team FTA, FGA, possessions by game",
-    "opponent FTA allowed",
-    "FT% by team",
-    "officials crew for the game (if known)"
-   ]
+    "team FTA and possessions by game",
+    "opponent-allowed FT rates",
+    "FT% by team"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.first_half_pace_ratio": {
    "label": "Team first-half possession share and early-game pace ratio",
@@ -1443,10 +1939,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per-half field-goal, free-throw, rebound and turnover counts",
-    "regulation possessions",
-    "game date"
-   ]
+    "per-half team box lines (FGA, FTA, OREB, TO) by game"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.coach_early_foul_bench_rule": {
    "label": "Coach policy: benching players with early fouls in the first half",
@@ -1461,11 +1971,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play foul events with player id and clock",
-    "substitution events",
-    "coach-team mapping",
-    "starter flags"
-   ]
+    "play-by-play foul and substitution events with clock",
+    "starter flags",
+    "coach by team-season",
+    "player foul rates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.half_tie_probability": {
    "label": "Integer pmf and tie probability of the half margin",
@@ -1480,9 +2011,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "first-half scores for historical games",
-    "pregame expected margin and 1H possessions"
-   ]
+    "half scores by game (line scores)",
+    "expected margin",
+    "possessions in first half"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.halftime_state_adjustment": {
    "label": "Halftime state update for second-half markets",
@@ -1497,10 +2045,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "first-half score, fouls by player, shooting splits",
-    "pregame expected margin and total",
-    "in-game injury flags"
-   ]
+    "halftime margin, team fouls, players in foul trouble, first-half 3P%, pregame expected margin, injury-in-game flags",
+    "final second-half margin"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.second_half_pregame_expectation": {
    "label": "Pregame second-half expectation with late-foul and overtime terms",
@@ -1515,10 +2078,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "period-by-period line scores including OT flag",
-    "play-by-play fouls and free throws after 4:00 of the 2nd half",
-    "pregame expected total and margin from the model"
-   ]
+    "expected regulation total",
+    "first-half expectation",
+    "late-foul and OT contributions",
+    "box and play-by-play history"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.minutes_scenario_mixture": {
    "label": "Minutes scenario mixture by game state and foul risk",
@@ -1534,11 +2118,33 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player minutes by game",
-    "final margin and pregame expected margin",
-    "personal fouls by half",
-    "coach and team ids"
-   ]
+    "player game minutes with role bucket",
+    "expected margin",
+    "foul rate",
+    "back-to-back flag",
+    "coach identity"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.player_shot_mix_xpps": {
    "label": "Location-based expected points per shot attempt with opponent adjustment",
@@ -1555,9 +2161,30 @@
    "registry_ids": [],
    "raw_data": [
     "player shot attempts and makes by zone",
-    "assisted/unassisted flags",
-    "opponent defensive zone rates"
-   ]
+    "opponent zone allowed rates",
+    "FT component"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "hoop-math.com shot-location and assisted/unassisted splits",
+      "access": "free_scrape",
+      "note": "coverage and update cadence not confirmed"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.player_ft_trips_xfta": {
    "label": "Player expected free-throw attempts: drawn-foul rate and late-game ball-handling share",
@@ -1572,11 +2199,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player FTA per game with minutes",
-    "team FTA",
-    "late-game possession handling from play-by-play",
-    "pregame closeness probability"
-   ]
+    "player FTA, drawn fouls, minutes by game",
+    "close-game indicator",
+    "late-game FTA by player"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.player_points_dispersion_by_role": {
    "label": "Player points dispersion index by role",
@@ -1591,10 +2233,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player points per game with minutes",
-    "role assignment",
-    "usage rate"
-   ]
+    "player game points and minutes by game",
+    "role bucket",
+    "expected usage"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.stat_dist"
+   }
   },
   "cbb.race_early_scoring_profile": {
    "label": "Early-game scoring profile and opening-possession edge for race-to-N markets",
@@ -1609,10 +2271,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play with clock and score by team",
-    "first-possession information (tip or arrow)",
-    "starting lineup identity"
-   ]
+    "play-by-play cumulative score with clock for first 10, 25, 50 points",
+    "starters' units"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.transfer_role_cold_start_prior": {
    "label": "Cold-start role and rate prior for transfer and freshman players",
@@ -1628,11 +2310,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "prior-season player stats by team",
-    "transfer portal destination and date",
-    "new team minutes vacated",
-    "recruiting composite rank"
-   ]
+    "previous-season player stats",
+    "team ORtg rank prior and new",
+    "roster departures and minutes available",
+    "recruiting composite"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "247Sports composite recruiting and transfer portal tracker",
+      "access": "free_scrape",
+      "note": "terms restrict bulk scraping"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.player_stat_covariance": {
    "label": "Cross-stat covariance of points, rebounds, assists and threes within a player",
@@ -1647,10 +2350,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per-game stat lines with minutes for each player",
-    "role label",
-    "expected minutes"
-   ]
+    "player game stat lines (points, rebounds, assists, threes) and minutes"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.role_stable_effective_sample": {
    "label": "Role-stable effective sample size for shrinkage",
@@ -1665,9 +2382,28 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player game log with starter flag and minutes",
-    "team availability per game"
-   ]
+    "player game minutes, starter flags, teammate availability per game"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "cbb.venue_scorekeeper_stat_bias": {
    "label": "Home-venue scorekeeper bias in recorded assists, blocks and rebounds",
@@ -1682,8 +2418,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "home and away team assists, blocks, FGM, opponent FGA by game and venue"
-   ]
+    "team game logs (assists, blocks, rebounds) by home/away with arena",
+    "league home gap"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.dnp_cause_taxonomy": {
    "label": "Cause-specific non-appearance probabilities (injury, coach decision, eligibility, suspension)",
@@ -1699,10 +2452,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "roster appearances by game",
-    "status posts with timestamps",
-    "cause labels from news"
-   ]
+    "pregame status labels with timestamps",
+    "box-score DNP",
+    "news-derived cause labels",
+    "days since status"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.rebound_competition_on_floor": {
    "label": "Rebound competition from the other four players on the floor",
@@ -1718,10 +2493,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player ORB% and DRB% by season",
-    "lineup minutes together",
-    "availability scenario probabilities"
-   ]
+    "player ORB%, DRB%, minutes",
+    "lineup scenarios and availability probabilities"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.miss_location_mix": {
    "label": "Expected location mix of missed shots (rim, mid-range, three) and perimeter rebound share",
@@ -1737,10 +2532,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team shot attempts and makes by zone",
-    "rebound events with rebounder and shot type",
-    "positions"
-   ]
+    "team FGA/FGM by zone and opponent allowed rates",
+    "rebound events by shot-miss location and rebounder position"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "hoop-math.com shot-location and assisted/unassisted splits",
+      "access": "free_scrape",
+      "note": "coverage and update cadence not confirmed"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.assist_conversion_chain": {
    "label": "Assist chain: potential assists times assisted share of teammates' shots",
@@ -1755,10 +2570,35 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team assisted and unassisted FGM by shot type",
-    "player assists and minutes",
-    "creation share by lineup"
-   ]
+    "team FGA/FGM by zone with assisted flag",
+    "player assists and minutes by game",
+    "on-floor assist events from play-by-play"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "hoop-math.com shot-location and assisted/unassisted splits",
+      "access": "free_scrape",
+      "note": "coverage and update cadence not confirmed"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.assist_creation"
+   }
   },
   "cbb.ball_handler_succession_map": {
    "label": "Ball-handler succession: who inherits creation when the primary handler is out",
@@ -1773,10 +2613,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "on/off possession and assist data by player",
-    "positions and handler flags",
-    "availability scenarios"
-   ]
+    "play-by-play assist events with on-floor lineups",
+    "minutes by game",
+    "primary handler identity by season"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.teammate_absence_shift"
+   }
   },
   "cbb.shooting_shock_loadings": {
    "label": "Shared game shooting shock with opposite loadings on rebounds and assists",
@@ -1791,11 +2651,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player rebounds and assists per game",
-    "team eFG per game",
-    "minutes",
-    "role labels"
-   ]
+    "player rebounds, assists, minutes by game",
+    "team eFG residual",
+    "pace"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.crash_vs_get_back_scheme": {
    "label": "Offensive-rebounding crash rate versus transition-defence tradeoff by team",
@@ -1811,9 +2686,30 @@
    "registry_ids": [],
    "raw_data": [
     "team ORB% and DRB% by game",
-    "transition points allowed (if available)",
-    "pace"
-   ]
+    "opponent transition points allowed per 100 (play-by-play classification)",
+    "possessions"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.three_shot_quality_xp": {
    "label": "Expected make probability per three-point attempt from shot context",
@@ -1829,10 +2725,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player three-point attempts and makes by assisted flag and zone",
-    "FT% by season",
-    "league make rates by shot type"
-   ]
+    "three-point attempts by shot type and make",
+    "assisted flag",
+    "transition flag",
+    "corner vs above-break"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "hoop-math.com shot-location and assisted/unassisted splits",
+      "access": "free_scrape",
+      "note": "coverage and update cadence not confirmed"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.trailing_three_attempt_lift": {
    "label": "Three-point attempt lift when trailing and drop when leading",
@@ -1847,9 +2765,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play shot events with score state and clock",
-    "team and player three-point attempts"
-   ]
+    "play-by-play shots with score and clock",
+    "team 3PA share by state bin"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.assisted_three_dependency": {
    "label": "Share of a shooter's threes that are assisted, and by whom",
@@ -1864,10 +2803,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "three-point makes with assister id",
-    "on/off lineup splits",
-    "availability probabilities for creators"
-   ]
+    "three-point makes with shooter and assister ids (play-by-play)",
+    "lineup on/off minutes",
+    "pregame availability probabilities"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.three_makes_compound_distribution": {
    "label": "Compound distribution of threes made (minutes, attempts, Beta-uncertain make rate)",
@@ -1882,10 +2842,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player game logs with 3PA, 3PM and minutes",
-    "role labels",
-    "dispersion parameters by role"
-   ]
+    "player 3PA and 3PM by game",
+    "minutes mixture",
+    "team pace"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "cbb.opp_three_defense_persistence_split": {
    "label": "Opponent three-point defence: persistent attempts conceded versus non-persistent percentage allowed",
@@ -1900,10 +2880,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "opponent 3PA and 3P% allowed by game",
-    "league means",
-    "prior season values"
-   ]
+    "opponent 3PA and 3P% allowed per game, possessions, league means"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.strength_evolution_to_march": {
    "label": "Distribution of team strength change from pricing date to Selection Sunday",
@@ -1919,11 +2913,33 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team rating by date for each season",
+    "weekly rating snapshots for past seasons",
+    "games played",
     "returning minutes share",
-    "roster class-year composition",
-    "injury events"
-   ]
+    "roster age",
+    "final pre-tournament rating"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.pod_site_proximity": {
    "label": "Distance from campus to first- and second-round site and expected crowd imbalance",
@@ -1938,10 +2954,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "campus and arena coordinates",
-    "round-by-round site assignments per tournament",
-    "game margins and rating-implied margins"
-   ]
+    "arena and campus coordinates",
+    "site assignments by seed and round",
+    "tournament game margins versus rating-implied margin"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.conf_tournament_format_table": {
    "label": "Conference tournament format table for 2026-27 (size, byes, hosting, seeding, tiebreakers)",
@@ -1956,11 +2987,23 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "conference tournament format by season",
-    "venue and dates",
-    "tiebreaker rules",
-    "membership list"
-   ]
+    "league tournament size, rounds, byes, hosting rule, venue, dates, auto-bid flag"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     },
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.two_way_balance_profile": {
    "label": "Two-way balance profile: joint offence and defence rank at the top of the rating list",
@@ -1975,9 +3018,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "pre-tournament offence and defence ranks by team per season",
-    "tournament results by team"
-   ]
+    "pre-tournament off and def ranks",
+    "tournament advancement outcomes",
+    "net rating"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.tournament_field_format": {
    "label": "NCAA tournament field structure and seeding rules for 2027",
@@ -1992,10 +3052,18 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "field size and bid counts by season",
-    "seed list and bracket rules",
-    "round naming"
-   ]
+    "field size, play-in games, auto and at-large bids, bracket-integrity rules, effective dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.committee_ordinal_seed_model": {
    "label": "Committee ordinal seed-line model from resume metrics and fundamentals ratings (no bracketology consensus)",
@@ -2011,10 +3079,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "Selection Sunday team sheets by team and season (NET, quadrant records, WAB, SOR)",
-    "final seed lines and field membership by season",
-    "simulated remaining results"
-   ]
+    "Selection Sunday team sheets (NET, quadrant records, WAB, SOR, last-10, conference champion)",
+    "final seeds and field",
+    "AdjEM_fund snapshot"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com NET rankings and team sheets (daily during season)",
+      "access": "free",
+      "note": "history of team sheets as published"
+     },
+     {
+      "name": "WarrenNolan.com NET, quadrant records, team sheets",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.top_n_tie_inclusive_cutoff": {
    "label": "Tie-inclusive top-N cutoff probability from the joint conference win-total distribution",
@@ -2029,10 +3117,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "conference schedule with home/away",
-    "current conference record by team",
-    "team strength posteriors"
-   ]
+    "conference standings and schedules",
+    "team posteriors",
+    "simulation draws"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.strength_uncertainty_game_correlation": {
    "label": "Shared-strength correlation among a team's game outcomes",
@@ -2047,9 +3155,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical preseason and in-season ratings with final records",
-    "season schedules with sites"
-   ]
+    "historical rating-based win totals vs actual",
+    "games remaining",
+    "roster-change flags"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.regular_season_game_inventory": {
    "label": "Regular-season game inventory: number of games, sites, opponent class and which count as official",
@@ -2065,10 +3194,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team schedules with site type and event labels",
-    "opponent division flag",
-    "official record flag"
-   ]
+    "team schedules with date, opponent, site, event, D1 and counts-toward-record flags"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.joint_advancement_dependence": {
    "label": "Dependence of two teams' tournament advancement (region, pod, avoidance rules)",
@@ -2084,10 +3227,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "bracket structure by year",
-    "committee rules for conference avoidance",
-    "team ratings and seeds"
-   ]
+    "bracket structure and region assignments",
+    "seed distributions pre-bracket",
+    "avoidance rules",
+    "team win probabilities"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "Bracket Matrix (bracketmatrix.com) bracketology consensus archive",
+      "access": "free",
+      "note": "bracketologist consensus, not betting prices"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.clinch_and_elimination_effort_shift": {
    "label": "Effort and rotation change after clinching or elimination from title races",
@@ -2102,10 +3265,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "final-week game results with margins",
-    "standings before each game",
-    "seed and bid leverage computed by simulation"
-   ]
+    "game results with dates",
+    "conference standings simulation output per game",
+    "rating-implied expected margins",
+    "clinch dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.remaining_game_resume_leverage": {
    "label": "Resume leverage of each remaining game (win and loss value by opponent quadrant and site)",
@@ -2122,10 +3301,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "opponent NET ranks and sites for remaining games",
-    "current WAB/SOR/quadrant records",
-    "pairwise win probabilities"
-   ]
+    "remaining schedule",
+    "opponent ranks and sites",
+    "WAB inputs",
+    "NET value index components"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com NET rankings and team sheets (daily during season)",
+      "access": "free",
+      "note": "history of team sheets as published"
+     },
+     {
+      "name": "WarrenNolan.com NET, quadrant records, team sheets",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.committee_metric_revealed_weights": {
    "label": "Revealed committee weights on NET, WAB, SOR, quadrant record and predictive ratings by seed range",
@@ -2142,10 +3342,45 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "final seeds and field per year",
-    "metric values at Selection Sunday per team per year",
-    "conference tournament results"
-   ]
+    "NET and team sheet metrics on Selection Sunday",
+    "WAB, SOR, KPI, KenPom rank",
+    "Q1-Q4 records",
+    "final seeds 2019-2026"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com NET rankings and team sheets (daily during season)",
+      "access": "free",
+      "note": "history of team sheets as published"
+     },
+     {
+      "name": "WarrenNolan.com NET, quadrant records, team sheets",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bracket Matrix (bracketmatrix.com) bracketology consensus archive",
+      "access": "free",
+      "note": "bracketologist consensus, not betting prices"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.committee_ordinal_seed_model"
+   }
   },
   "cbb.committee_protocol_vintage": {
    "label": "Committee protocol vintage: metrics used, quadrant definitions, field size and bracketing rules",
@@ -2160,10 +3395,18 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "season-by-season protocol descriptions",
-    "quadrant definitions",
-    "bid counts"
-   ]
+    "per-season committee principles, quadrant thresholds, field size, bids, play-in structure, protocol change dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.recency_weighting_in_seeding": {
    "label": "Committee weighting of recent results relative to the full season",
@@ -2178,10 +3421,27 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team game results with dates",
-    "last-10 efficiency margin",
+    "ordered-probit seed residuals",
+    "last-10 records and margins",
+    "conference tournament results",
     "final seeds"
-   ]
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "NCAA.com NET rankings and team sheets (daily during season)",
+      "access": "free",
+      "note": "history of team sheets as published"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.committee_availability_treatment": {
    "label": "Seed adjustment for key players missing at Selection Sunday",
@@ -2196,10 +3456,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "injury list at Selection Sunday per team per year",
-    "seed residuals",
-    "player impact values"
-   ]
+    "Selection Sunday seeds",
+    "injury reports before bracket reveal",
+    "player minutes and BPM shares",
+    "team rosters"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "cbb.number_one_transition_model": {
    "label": "Markov model of the #1 holder and successor distribution after a loss",
@@ -2215,10 +3496,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "weekly AP poll top 8 with points",
-    "results of top teams",
-    "season schedules of contenders"
-   ]
+    "AP poll archive 2000-2026 (rank 1 by week, points)",
+    "results of #1 team each week",
+    "ratings"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "AP Top 25 polls and ballots (apnews.com)",
+      "access": "free_limited",
+      "note": "ballot archive depth and bulk access unconfirmed"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.ap_voter_ballot_panel": {
    "label": "AP voter ballot panel: individual ballots and update rules",
@@ -2232,10 +3533,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "voter ballots by week",
-    "team results by week",
-    "voter ids"
-   ]
+    "weekly AP ballot rows (voter id, outlet, ranks 1-25, poll date)",
+    "game results (team, opponent, site, margin, date)",
+    "prior poll ranks and points"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "AP Top 25 polls and ballots (apnews.com)",
+      "access": "free_limited",
+      "note": "ballot archive depth and bulk access unconfirmed"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.final_ap_rank_mapping": {
    "label": "Mapping from tournament outcome and pre-tournament rank to final AP rank",
@@ -2250,17 +3567,35 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "final AP polls by year",
-    "round reached by team",
-    "pre-tournament AP rank and seed"
-   ]
+    "final AP poll rank by season",
+    "pre-tournament AP rank",
+    "seed",
+    "round reached",
+    "last-game margin"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "AP Top 25 polls and ballots (apnews.com)",
+      "access": "free_limited",
+      "note": "ballot archive depth and bulk access unconfirmed"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.kenpom_rank_projection": {
    "label": "Replication and projection of KenPom ratings to a timestamp",
    "category": "team_strength",
    "mechanism": "KenPom's rating is an opponent-adjusted efficiency margin computed from all completed games with venue and recency treatment, so the rank at a future time is a function of the results that will be counted before that time.",
    "rationale": "KXNCAAMBKENPOMRANK and KXNCAAMBKENPOMTOP settle on a snapshot list; the uncertainty is the future results and the rating algorithm, not human opinion, so a faithful replication (with game-by-game updates) is the only way to evaluate crowded ranks.",
-   "measurement": "Compute AdjO, AdjD and tempo by iterating opponent adjustment to convergence on all D1 games with venue factor 1.4 percent per side (approximate) and a decay weighting by game recency, calibrated so replicated AdjEM matches the KenPom value on historical snapshots with RMSE below 0.3 points; project to Mar 15 12:00 by simulating each remaining game (including conference tournaments) with the pairwise win and margin model, re-running the adjustment per simulated day, and recording rank distributions; as-of: simulation start date, cutoff time of the timestamp.",
+   "measurement": "Rebuild AdjO, AdjD, tempo from all D1 games before as-of t: per-game offensive and defensive efficiency (points per 100 possessions) regressed on opponent and team effects by iterating to convergence (tolerance 0.001 points), venue factor f_home as a free parameter estimated per season (prior 1.4 percent of efficiency per side), game weight exp(-days/H) with H fitted; calibrate (f_home, H, damping) to minimise RMSE of replicated AdjEM versus archived KenPom snapshots on prior 3 seasons (target < 0.3). Project: simulate each remaining game with the pairwise margin model, re-run the adjustment per simulated day, record rank distributions at the target timestamp.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Bart Torvik T-Rank (similar algorithm, free)",
@@ -2269,10 +3604,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "all D1 game results with venue",
-    "historical KenPom snapshots (paid) for calibration",
-    "remaining schedule with conference tournament brackets"
-   ]
+    "all D1 game results with sites and dates",
+    "daily KenPom AdjO, AdjD, tempo, rank snapshots",
+    "remaining schedule",
+    "pairwise win and margin model"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "KenPom (kenpom.com ratings, game logs, snapshots)",
+      "access": "paid",
+      "note": "subscription; terms restrict redistribution"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.award_selection_model": {
    "label": "Award selection model: candidate sets, team success dependence and co-recipient probability",
@@ -2288,10 +3645,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "historical award winners and finalists",
-    "player season statistics and team rank at vote time",
-    "Final Four box scores"
-   ]
+    "Final Four box scores by player",
+    "MOP winners 1990-2026",
+    "champion and finalists by year",
+    "award winner lists"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "cbb.stat_leader_race_model": {
    "label": "Leaderboard race model for per-game statistic leaders with postseason games and thresholds",
@@ -2306,11 +3684,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "current per-game averages and game logs",
-    "minimum qualification thresholds",
-    "remaining schedules",
-    "bracket advancement probabilities"
-   ]
+    "player per-game logs and averages",
+    "team schedule",
+    "availability probabilities",
+    "bracket_sim games projection"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.poll_calendar_and_protocol": {
    "label": "AP poll calendar and designation rules (number of polls, Preseason and Final labels, release timing)",
@@ -2325,8 +3723,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "poll release dates and labels by season"
-   ]
+    "poll dates by season, number of polls, final poll expected date"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "AP Top 25 polls and ballots (apnews.com)",
+      "access": "free_limited",
+      "note": "ballot archive depth and bulk access unconfirmed"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.award_candidate_profile": {
    "label": "Award candidate profile: production, team success and voter-criteria features by award type",
@@ -2342,10 +3756,38 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "award winners and finalists by award and season",
-    "player season statistics and advanced ratings",
-    "team results and ratings at voting close"
-   ]
+    "award winners and finalists by award, conference, season",
+    "player season stats and ratings as of ballot deadline",
+    "team record and rating",
+    "class and prior all-conference flags",
+    "watch-list membership"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Naismith, Wooden and conference award announcement pages",
+      "access": "free",
+      "note": "voting totals rarely published"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.d3_team_rating": {
    "label": "Division III team rating (margin-based, opponent- and venue-adjusted)",
@@ -2361,10 +3803,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "D3 game results: date, home team, away team, neutral flag, final score",
-    "prior-season final D3 ratings",
-    "D3 conference membership table"
-   ]
+    "D3 game results and scores by date",
+    "home flags",
+    "last-season final ratings"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "cbb.round_max_team_score": {
    "label": "Distribution of the highest team score in a tournament round, with tie mass",
@@ -2379,10 +3841,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "tournament bracket with round composition and game times",
-    "per-team adjusted offence, defence and tempo as of pricing",
-    "historical tournament team scores by round for calibration of the round-level shock"
-   ]
+    "round participants and team total model",
+    "tempo",
+    "adjusted offense and defense",
+    "simulation"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     },
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.secondary_postseason_field_model": {
    "label": "Selection into the NIT and College Basketball Crown fields for teams left out of the NCAA tournament",
@@ -2397,10 +3879,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per-season NIT and Crown slot rules and conference allocations",
-    "past NIT/Crown fields, seeds and declined invitations",
-    "end-of-season NET ranks of non-NCAA teams"
-   ]
+    "NIT and Crown field announcements and slot rules by season",
+    "NET archive",
+    "P(not in NCAA field)"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "NCAA.com NET rankings and team sheets (daily during season)",
+      "access": "free",
+      "note": "history of team sheets as published"
+     },
+     {
+      "name": "WarrenNolan.com NET, quadrant records, team sheets",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.wcbb_title_probability": {
    "label": "Women's Division I national title probability by team (for men's-and-women's combo contracts)",
@@ -2416,10 +3917,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "women's D1 game results and box scores (possessions)",
-    "women's NET rankings by date",
-    "women's tournament brackets, seeds and host sites"
-   ]
+    "women's game results with margins and sites",
+    "women's NET and seed history",
+    "bracket structure"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Her Hoop Stats / NCAA women's data",
+      "access": "free_limited",
+      "note": "free tier fields vary"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.in_season_event_format": {
    "label": "In-season multi-team event format, field and draw (e.g. Players Era, Maui, Battle 4 Atlantis)",
@@ -2434,11 +3956,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "event field, pools or bracket",
-    "event format and tiebreak rules",
-    "venue and dates",
-    "historical event results"
-   ]
+    "event rosters, brackets or pools, tiebreak rules, venue, dates",
+    "team ratings with posterior sd"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.co_champion_expected_share": {
    "label": "Expected 1/N share of a conference regular-season title",
@@ -2453,11 +3993,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "remaining conference schedule with sites",
-    "completed conference results",
-    "per-conference co-champion policy flag",
-    "historical counts of co-champions by league"
-   ]
+    "conference standings simulation draws",
+    "per-conference championship tie policy",
+    "current records",
+    "remaining schedule"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.conf_tiebreak_seeding_rules": {
    "label": "Conference tiebreak procedure used to seed the conference tournament",
@@ -2471,10 +4031,21 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per-conference tiebreak step lists by season",
-    "head-to-head results within the conference",
-    "NET rank by date"
-   ]
+    "per-conference per-season tiebreaker order",
+    "NET rank date rules",
+    "head-to-head and common-opponent definitions"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.bracket_seed_statistic_sim": {
    "label": "Per-simulation bracket seed statistics (upset counts, #k-seed counts by round, semifinal seed sum, maximum upset seed margin)",
@@ -2489,10 +4060,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "published bracket with seeds and First Four pairings",
-    "historical tournament game results with both seeds and round",
-    "team ratings with posterior sd at pricing"
-   ]
+    "bracket structure and seeds",
+    "team win-probability model outputs",
+    "historical seed-by-round results for calibration"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.coach_award_profile": {
    "label": "Coach-of-the-year candidate profile: over-performance versus preseason expectation",
@@ -2508,11 +4098,37 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "past COTY winners and finalists by year",
-    "preseason AP and conference polls",
-    "preseason projections and final records by team",
-    "coach tenure by team"
-   ]
+    "coach awards winners and finalists",
+    "preseason ratings/projected win%",
+    "weekly AP ranks",
+    "conference preseason polls",
+    "season simulation outputs"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Naismith, Wooden and conference award announcement pages",
+      "access": "free",
+      "note": "voting totals rarely published"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Conference websites and tournament handbooks (formats, tiebreakers, standings, awards)",
+      "access": "free",
+      "note": "per-conference formats, manual encoding"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.kenpom_adjem_gap_density": {
    "label": "KenPom AdjEM gap density around the target rank",
@@ -2527,11 +4143,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "daily AdjEM for all D1 teams",
-    "rank",
-    "games played",
-    "games remaining per team"
-   ]
+    "daily AdjEM table (all D1 teams) with timestamp",
+    "games left by team",
+    "per-game update variance",
+    "drift variance"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "KenPom (kenpom.com ratings, game logs, snapshots)",
+      "access": "paid",
+      "note": "subscription; terms restrict redistribution"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.kenpom_game_update_sensitivity": {
    "label": "Per-game AdjEM update sensitivity",
@@ -2547,11 +4184,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "daily AdjEM snapshots",
-    "game results and possessions",
-    "opponent AdjEM",
-    "location"
-   ]
+    "daily rating snapshot pairs",
+    "game results with adjusted margins",
+    "games played",
+    "opponent ratings and site"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "KenPom (kenpom.com ratings, game logs, snapshots)",
+      "access": "paid",
+      "note": "subscription; terms restrict redistribution"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.kenpom_snapshot_timing_rules": {
    "label": "KenPom snapshot timing and counting rules",
@@ -2567,10 +4225,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "page capture timestamps",
-    "game tip and end times",
-    "rank at each capture"
-   ]
+    "timestamped captures of the ratings page on the Monday after Selection Sunday",
+    "refresh and downtime times",
+    "Sunday final tip times"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     },
+     {
+      "name": "Internet Archive Wayback captures",
+      "access": "free_limited",
+      "note": "irregular capture times"
+     },
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.kenpom_prior_drift": {
    "label": "KenPom season-horizon rating drift and preseason-prior phase-out",
@@ -2586,12 +4264,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "daily AdjEM by team",
-    "preseason ratings",
-    "returning minutes and transfer minutes",
-    "three-point luck by team",
-    "games remaining"
-   ]
+    "daily rating snapshots over 5 seasons",
+    "games remaining",
+    "preseason prior",
+    "rating at Monday after Selection Sunday"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "KenPom (kenpom.com ratings, game logs, snapshots)",
+      "access": "paid",
+      "note": "subscription; terms restrict redistribution"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "cbb.strength_evolution_to_march"
+   }
   },
   "cbb.race_possession_alternation_model": {
    "label": "Possession-alternation first-passage model",
@@ -2607,11 +4309,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play with scoring sequence and possession flag",
-    "opening tip winner and jumper names",
-    "player heights",
-    "team opening-lineup points per possession"
-   ]
+    "play-by-play possession outcomes in opening segment",
+    "offensive-rebound and turnover rates",
+    "tip winner"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.race_n_threshold_scaling": {
    "label": "Race-N threshold scaling and win-link",
@@ -2627,10 +4349,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "time and score at each scoring event",
-    "team ratings snapshot",
-    "half indicator"
-   ]
+    "play-by-play time to reach N",
+    "race winner",
+    "AdjO and AdjD for both teams",
+    "team indicators"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.race_live_state": {
    "label": "Live race state: points to N, possession and clock",
@@ -2645,11 +4389,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "live play-by-play events with timestamps",
-    "score after each event",
-    "possession",
-    "quote timestamps"
-   ]
+    "live play-by-play score, clock, possession, fouls",
+    "on-floor units",
+    "capture latency"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.stat_leader_qualification_tracker": {
    "label": "NCAA minimum-qualification tracker for leaderboard eligibility",
@@ -2664,10 +4428,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "games played per player",
-    "team games played and scheduled",
-    "NCAA minimum rules by statistic"
-   ]
+    "games played",
+    "team games played",
+    "NCAA stat-specific minimums",
+    "postseason pmf"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.stat_leader_source_reconciliation": {
    "label": "Official stat feed reconciliation and update lag",
@@ -2684,11 +4469,35 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "final per-game stats by source",
-    "conference-office leaderboards and minimums",
-    "game inclusion lists by source",
-    "timestamp of last update"
-   ]
+    "per-game values for top-20 players by category on NCAA, conference, Sports-Reference and ESPN pages",
+    "minimum-games rule dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.leader_average_inertia": {
    "label": "Leaderboard average inertia and remaining-swing bound",
@@ -2703,10 +4512,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player game logs",
-    "team schedule",
-    "remaining games per team"
-   ]
+    "player game logs and season averages",
+    "games remaining",
+    "per-game sd"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "stats.ncaa.org / NCAA statistics site (box scores, leaderboards, schedules)",
+      "access": "free_scrape",
+      "note": "scrape terms unverified"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.team_postseason_games_projection": {
    "label": "Projected postseason games per team (conference tournament, NCAA, NIT, Crown, CBI, CIT)",
@@ -2722,11 +4547,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team ratings posterior",
-    "conference tournament formats and seeds",
-    "historical NIT/Crown/CBI/CIT fields",
-    "postseason results"
-   ]
+    "bracket_sim outputs",
+    "conference standings sim",
+    "auto-bid structure",
+    "NIT/Crown rules"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.coach_vacancy_search_state": {
    "label": "Coaching vacancy search state: opening date, decision-makers, search firm and interim arrangement",
@@ -2742,9 +4586,27 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "vacancy table: school, opening_date, cause, interim_coach, interim_span, announced_search_start, AD_name, AD_start_date, search_firm, board_meeting_dates",
-    "report log: timestamp, outlet, candidate, stage (contacted/interviewed/finalist/offer)"
-   ]
+    "vacancy date and cause",
+    "announced search start/rule",
+    "decision-maker and search firm announcements",
+    "report timestamps"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.coach_candidate_track_record": {
    "label": "Head-coach candidate track record, opponent-adjusted and resource-adjusted",
@@ -2760,17 +4622,39 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "coach career table: coach, school, season, role, W-L, tournament result",
-    "end-of-season adjusted efficiency margin by team-season",
-    "athletic department expenses by school-year"
-   ]
+    "coach tenures by team-season",
+    "end-of-season adjusted margin by year",
+    "NCAA tournament results",
+    "athletic budget by school"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "USA Today coach salary database / Knight Commission finance data / public records (FOIA)",
+      "access": "free_limited",
+      "note": "contracts disclosed late; buyouts often incomplete"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.candidate_program_ties": {
    "label": "Candidate ties to the programme, athletic director and conference region",
    "category": "player_role",
    "mechanism": "Hires disproportionately go to coaches with prior links: alumni, former assistants of the programme, previous hires of the same AD, coaches already in the region or recruiting footprint.",
    "rationale": "Ties lower information and negotiation costs and are a strong prior over candidate identity; they also explain why a less-accomplished candidate may beat a better record. Subtle: the AD's own career history (schools worked at, previous coaching hires) is often more predictive than the candidate's ties to the school itself.",
-   "measurement": "Binary and count features per candidate-school pair: alumnus (played/graduated), former staff member (years, role), previous hire or colleague of the current AD (matched through AD career history), same agent as other staff, head-coaching job within 500 miles or in the same conference footprint; computed from public biographies as of t.",
+   "measurement": "For each candidate-school pair at as-of t compute indicators: alumnus (played or graduated), former staff at school (years), shared past employer with the current AD (match on AD career history), head job within 500 miles (great-circle from campus coordinates) or in the same conference; tie_score = logit-weighted sum with weights fitted by regularized logistic regression of 'hired' on these indicators over the last 10 power-conference searches (candidate pool = publicly linked names), shrunk toward equal weights with weight n/(n+25). All biography facts must be dated before t; no price or market input.",
    "pregame_knowable": "yes",
    "free_sources": [
     "University staff biographies",
@@ -2779,17 +4663,39 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "coach biography: schools, roles, years",
-    "AD career history and list of prior coaching hires",
-    "agent representation where reported"
-   ]
+    "coach and AD biographies (alma mater, staff history by year)",
+    "school locations",
+    "conference membership",
+    "agent representation reports"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.program_hiring_resources": {
    "label": "Programme hiring resources: salary pool, buyout capacity, revenue-sharing and NIL budget",
    "category": "environment",
    "mechanism": "Whether a school can land a sitting head coach depends on salary it can offer, its ability to pay that coach's buyout, and the roster budget (revenue sharing and NIL collective) it can promise.",
    "rationale": "Since the 2025 House settlement, roster budget is a central selling point; a sitting coach with a large buyout is only reachable by schools willing to pay it. Subtle: the outgoing coach's own buyout or retirement terms consume the same budget and can push a school toward cheaper assistants.",
-   "measurement": "As of t: predecessor's salary and buyout owed (from public contract/FOIA records), reported maximum offer, each candidate's current salary and buyout amount with step-down dates, school athletic revenue (latest fiscal year), basketball share of revenue-sharing allocation where disclosed; express candidate reachability as offer_capacity / (candidate_salary + candidate_buyout).",
+   "measurement": "At as-of t: offer_capacity = max(predecessor total annual compensation, reported maximum offer if any report exists before t, else school's athletic revenue percentile mapped to the median head-coach salary of that percentile from the last 3 seasons of the USA Today salary database); candidate_cost = candidate current annual salary + candidate buyout owed at t (from step-down schedule; if unknown use contract-years-remaining x salary x 0.5 prior); reachability = offer_capacity / candidate_cost, capped at 3; missing fields flagged and filled with the percentile prior; every disclosure is dated and excluded if first reported after t.",
    "pregame_knowable": "partial",
    "free_sources": [
     "USA Today college basketball coach salary database",
@@ -2798,17 +4704,35 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "coach contract table: coach, salary, term, buyout schedule by date",
-    "school athletic revenue/expense by fiscal year",
-    "reported revenue-sharing and NIL budgets"
-   ]
+    "predecessor salary and buyout",
+    "reported offers",
+    "candidate salary and buyout",
+    "school revenue",
+    "revenue-sharing allocations"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "USA Today coach salary database / Knight Commission finance data / public records (FOIA)",
+      "access": "free_limited",
+      "note": "contracts disclosed late; buyouts often incomplete"
+     },
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.candidate_availability_calendar": {
    "label": "Candidate availability calendar: current-team season status, buyout step-downs and pro-league timing",
    "category": "schedule_context",
    "mechanism": "A candidate coaching a team still alive in the NCAA tournament, an NBA assistant in the playoffs, or one whose buyout drops on a set date is effectively unavailable until that event passes.",
    "rationale": "Searches either wait for a preferred candidate or move on; this changes both who is hired and when. Subtle: transfer-portal windows push schools to hire before the portal opens, which penalises candidates whose teams advance deep in March.",
-   "measurement": "Per candidate as of t: current team's elimination status and earliest elimination date (from bracket simulation), buyout step-down dates and amounts, NBA team playoff status for NBA assistants; per school: transfer-portal opening date and days remaining; feature = expected days until candidate is free versus expected days until school wants a hire.",
+   "measurement": "Per candidate c and as-of t: D_free(c) = days from t until the candidate's current team is eliminated (expected value and pmf from cbb.bracket_sim, 0 if season over; NBA assistants use playoff elimination) plus days to the next buyout step-down date that reduces the buyout below the school's reported budget (cbb.program_hiring_resources; infinity if no schedule is public). D_want(school) = days from t until the school's stated or historical-median hire date (from cbb.coach_vacancy_search_state). Feature = P(D_free(c) <= D_want) computed from the two pmfs assuming independence; every date and buyout figure is stamped with first public report time and excluded if reported after t.",
    "pregame_knowable": "partial",
    "free_sources": [
     "NCAA tournament bracket and results",
@@ -2817,10 +4741,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team elimination dates",
-    "buyout schedules with dates",
-    "transfer-portal calendar"
-   ]
+    "candidate current team, elimination date from bracket sim",
+    "buyout schedule and step-down dates",
+    "NBA playoff status",
+    "transfer portal window dates",
+    "vacancy date"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "USA Today coach salary database / Knight Commission finance data / public records (FOIA)",
+      "access": "free_limited",
+      "note": "contracts disclosed late; buyouts often incomplete"
+     },
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.coaching_search_report_ledger": {
    "label": "Timestamped coaching-search report ledger with source reliability and report-to-hire conversion",
@@ -2836,9 +4786,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "report log: ts, outlet, reporter, candidate, stage, link",
-    "hire outcomes per past search"
-   ]
+    "report ledger rows (UTC capture time, outlet, reporter, candidate, stage)",
+    "historical searches with outcome",
+    "outlet tier assignments"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.coach_hire_field_residual": {
    "label": "Residual probability mass for unlisted candidates and for no permanent hire by the cutoff",
@@ -2852,8 +4819,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per past search: opening date, candidate link dates, hire identity and date"
-   ]
+    "historical search timelines (opening date, linked names by date, hire, announcement date)",
+    "interim outcomes",
+    "incumbent departure hazard"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.candidate_eligibility_constraints": {
    "label": "Candidate eligibility constraints: NCAA show-cause orders, pending infractions and legal or conduct issues",
@@ -2868,9 +4857,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "infractions decisions: person, penalty, start/end dates",
-    "investigation news log"
-   ]
+    "NCAA infractions decisions (show-cause start, end, restrictions)",
+    "open case notices",
+    "investigation news with timestamps"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     },
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.interim_coach_season_audition": {
    "label": "Interim coach's in-season audition: results versus preseason expectation and interim-to-permanent base rate",
@@ -2887,10 +4893,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "interim coach table: school, season, coach, games_coached, named_permanent flag",
-    "game results with pregame fundamentals expected margin",
-    "preseason prior rating and final rating by team-season"
-   ]
+    "game results with expected margins",
+    "interim coach identity and tenure",
+    "preseason prior",
+    "outcome (named permanent) history"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.incumbent_coach_departure_hazard": {
    "label": "Incumbent head-coach departure hazard and succession arrangements",
@@ -2907,9 +4935,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "coach-season table: school, coach, age, contract_end, tenure, departure flag and cause",
-    "succession announcements with timestamps"
-   ]
+    "coach age, tenure, contract years remaining, results versus preseason, conference tournament results, retirement and health reports, succession plans"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "USA Today coach salary database / Knight Commission finance data / public records (FOIA)",
+      "access": "free_limited",
+      "note": "contracts disclosed late; buyouts often incomplete"
+     },
+     {
+      "name": "Wikipedia and university/conference press releases (hand-curated history)",
+      "access": "free",
+      "note": "manual curation, accuracy varies"
+     },
+     {
+      "name": "News and press-release archives (ESPN, CBS, The Athletic, local papers, athletics sites)",
+      "access": "free_limited",
+      "note": "paywalls, timestamps need verification"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.endgame_tie_decision_policy": {
    "label": "Coach end-game decision policy when trailing by 2 or 3 or leading by 3 in the final possessions",
@@ -2924,9 +4977,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play: game_id, period, clock, score, team, event type, shot value, foul flag",
-    "coach-season mapping"
-   ]
+    "play-by-play possessions with clock under 35 seconds, score margin, shot type, fouls",
+    "coach by team-season"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.ot_foul_carryover_depletion": {
    "label": "Player-foul and team-foul carryover into overtime and resulting lineup depletion",
@@ -2941,10 +5010,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play fouls with player id and period",
-    "box score minutes and fouls per player",
-    "OT period line scores"
-   ]
+    "OT player foul counts at end of regulation, team foul/bonus state, OT scoring",
+    "rule version by season"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.live_game_state_tie_path": {
    "label": "Live score, clock, period, possession and foul state for in-play overtime pricing",
@@ -2959,9 +5043,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "live play-by-play: timestamp, period, clock, score, possession, team fouls, player fouls",
-    "capture-time stamps to measure feed latency"
-   ]
+    "live play-by-play (period, clock, score, possession, fouls)",
+    "historical play-by-play state transitions",
+    "capture latency"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON (scoreboard, box score, play-by-play, news)",
+      "access": "free_scrape",
+      "note": "unofficial, undocumented schema; no SLA"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     },
+     {
+      "name": "own timestamped capture (scrapers, feeds)",
+      "access": "own_capture",
+      "note": "history exists only from capture start"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.player_game_exposure_tournament": {
    "label": "Expected tournament games per candidate player (field entry x team survival x availability)",
@@ -2976,10 +5082,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "bracket simulation output: team, round, probability",
-    "player-team roster mapping",
-    "availability status by date"
-   ]
+    "bracket simulation round probabilities",
+    "player availability probabilities",
+    "field-entry probabilities"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.player_scoring_tail_index": {
    "label": "Player single-game scoring right-tail index (probability of 40+ and 50+ point games)",
@@ -2995,10 +5120,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player game logs: minutes, FGA, 3PA, FTA, points",
-    "player usage and role",
-    "historical D1 30+ point games"
-   ]
+    "player game logs (minutes, FGA, FTA, points)",
+    "league tail frequencies of 35+, 40+"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.triple_double_joint_propensity": {
    "label": "Player per-game triple-double propensity across points, rebounds, assists, blocks and steals",
@@ -3014,9 +5159,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player box scores: points, rebounds, assists, blocks, steals, minutes",
-    "role classification"
-   ]
+    "player game box scores (points, rebounds, assists, steals, blocks, minutes)",
+    "residual correlations"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Bart Torvik (barttorvik.com T-Rank tables, game files, player tables, time machine)",
+      "access": "free_scrape",
+      "note": "scrape politely; time-machine history coverage varies"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.milestone_union_aggregation": {
    "label": "Any-player union over all tournament player-games with dependence",
@@ -3030,10 +5196,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "per-player per-game milestone probabilities",
-    "bracket simulation paths",
-    "game margin and OT simulation"
-   ]
+    "bracket simulation draws",
+    "player per-game stat models",
+    "minutes model",
+    "milestone thresholds"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "own computation / simulation from ratings and results",
+      "access": "derived"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     }
+    ],
+    "verified": false
+   }
   },
   "cbb.elimination_game_star_minutes": {
    "label": "Star minutes ceiling in single-elimination tournament games",
@@ -3048,10 +5230,27 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "tournament box scores with minutes",
-    "regular-season player minutes",
+    "tournament player box scores with minutes",
+    "regular-season minutes distribution",
+    "usage ranks",
     "final margins"
-   ]
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     }
+    ],
+    "verified": true
+   }
   },
   "cbb.tournament_field_milestone_base_rate": {
    "label": "Field-level tournament base rate of 50-point games and triple-doubles by era",
@@ -3067,9 +5266,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "tournament player-game box scores by year with minutes and the five stats",
-    "era table: shot-clock length, three-point distance, field size"
-   ]
+    "tournament player box scores 1985-2026 (points, rebounds, assists, blocks, steals)",
+    "games count by year"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NCAA.com announcements, selection principles and bracket pages",
+      "access": "free"
+     },
+     {
+      "name": "Sports-Reference CBB (box scores, schedules, game logs, polls, tournament history)",
+      "access": "free_limited",
+      "note": "strict rate limit"
+     },
+     {
+      "name": "hoopR / sportsdataverse (ESPN-derived men's CBB box scores and play-by-play)",
+      "access": "free",
+      "note": "inherits ESPN coverage gaps"
+     }
+    ],
+    "verified": true
+   }
   }
  },
  "blueprints": {

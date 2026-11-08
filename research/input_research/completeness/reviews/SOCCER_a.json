@@ -266,7 +266,7 @@
     "category": "distribution",
     "mechanism": "Teams differ in how often they draw a blank beyond what their mean chance quality implies.",
     "rationale": "A Poisson-from-xG model understates blank frequency for teams whose chance creation is concentrated in one striker or a few counters, and overstates it for diffuse attacks; BTTS-No is mostly the weaker side blanking, so this is the term that mis-prices the favourite-vs-low-block fixtures.",
-    "measurement": "Per team over the last 38 league matches (half-life ~19 matches): excess_FTS = observed share of matches with 0 goals minus mean over matches of exp(-lambda_match) where lambda_match is the opponent-adjusted non-penalty xG of that match; shrink to zero with k=15 matches; separate home/away; as-of = kickoff-1h. Use alongside the xG rating, never instead.",
+    "measurement": "For each of the team's last 38 league matches compute P0_m = product over its shots (including penalties) of (1 - xG_shot) using Understat shot xG (own goals excluded); excess_FTS = (share of matches with 0 goals scored) - mean of P0_m, weights half-life 19 matches; shrink toward 0 with weight n/(n+15); separate home/away values. Use alongside the xG rating, not instead. As-of kickoff-1h, prior matches only.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Understat match xG + scores (free)",
@@ -274,8 +274,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "match-level team xG and goals",
-     "starting XIs to flag focal-striker dependence"
+     "shot-level xG with penalty flag",
+     "match goals",
+     "starting XIs"
     ],
     "why": "BTTS-No wins are blanks by one side; excess zero mass is the direct driver and is not in any existing input.",
     "role": "primary"
@@ -1079,6 +1080,7 @@
     "registry_ids": [],
     "raw_data": [
      "fixture list with played flag",
+     "results",
      "points deductions log"
     ],
     "why": "The race outcome is a function of the gap relative to what remains, so this is the primary state variable.",
@@ -1136,8 +1138,8 @@
     "registry_ids": [],
     "raw_data": [
      "player international goals, assists, minutes",
-     "penalty duty flag",
-     "tournament bracket and team ratings"
+     "penalty duty",
+     "bracket and ratings"
     ],
     "why": "Prices exact equality of two players' tournament goals or goal contributions. The same joint draws give the two player legs (A>B, B>A) as well as the Tie leg.",
     "role": "primary"
@@ -1156,7 +1158,7 @@
     "registry_ids": [],
     "raw_data": [
      "prior duel kick-by-kick outcomes per contestant",
-     "event format rules (kicks, net size)"
+     "event format rules"
     ],
     "why": "Only usable input for the influencer penalty duel.",
     "role": "primary"
@@ -1176,8 +1178,7 @@
     "raw_data": [
      "group composition and fixture list",
      "tiebreak and best-third allocation tables",
-     "team rating posteriors",
-     "set definitions from contract text (confederation pathway, host list, previous winners)"
+     "team rating posteriors"
     ],
     "why": "KXWCTEAMH2H (including its same-stage leg) and KXWCBESTHOST ($1/N dead heat) are functions of the joint stage-reached vector of the compared teams, which group and bracket structure make dependent.",
     "role": "primary"
@@ -1878,7 +1879,8 @@
     "raw_data": [
      "draw bracket",
      "tie format",
-     "venue"
+     "venue",
+     "opponent ratings"
     ],
     "why": "Cup and tournament outrights are determined by path, which no existing input in the archetype captures.",
     "role": "primary"
@@ -1927,7 +1929,7 @@
     "category": "matchup",
     "mechanism": "Maps each league-phase finishing rank (or 9-24 playoff pairing) to the possible playoff, R16, quarter and semi opponents, bracket side and tie venues, so P(reach stage) is a product of path probabilities conditional on rank.",
     "rationale": "In the new UEFA format rank 1-8 avoid the playoff and sit on fixed bracket lines while 9-24 face a seeded two-leg playoff; the opponent a club can meet in the R16 depends on its finish, so the same strength gives different stage-reach probabilities by finish and stage-markets cannot be priced from a strength rating alone.",
-    "measurement": "For each simulated final rank, apply the published bracket lines and seeding rules to enumerate opponent sets; per tie compute P(advance) by two-leg aggregate simulation from the match-level goal model (home advantage in each leg, extra time and penalties tilted to the stronger side from historical shootout rates, to be estimated); multiply along the path; as-of after each draw.",
+    "measurement": "For each simulated league-phase rank, enumerate playoff, R16, QF, SF opponents from the published bracket lines and seeding rules (no away-goals rule). Each two-leg tie: simulate both legs from the Dixon-Coles lambdas with home advantage, ET if aggregate level (lambda*30/90*0.8), then penalties with p = 0.5 + 0.5*(skill_A - skill_B) where skill is the soc.penalty_shootout_skill n/(n+30)-shrunk value; final is single leg neutral. 20000 draws; P(reach stage) = product along path. As-of after each draw/matchday.",
     "pregame_knowable": "yes",
     "free_sources": [
      "UEFA regulations and draw procedure (free)",
@@ -1947,7 +1949,7 @@
     "category": "distribution",
     "mechanism": "Joint distribution of a club winning the league, domestic cup(s), Supercopa and the Champions League, driven by shared squad strength, a shared injury/fatigue shock and the schedule trade-off between competitions.",
     "rationale": "KXSOCCERTROPHIES counts trophies across La Liga, Copa del Rey, Supercopa de Espana and the Champions League, so its price is a sum of correlated Bernoulli events; treating them as independent misprices count thresholds, and the sign of the correlation is mixed (shared strength positive, fixture overload negative).",
-    "measurement": "Simulate the four competitions jointly with a common latent club strength draw and a shared availability shock (sample injury days from squad-level history); estimate the pairwise correlation of title indicators from simulated paths and compare with historical co-occurrence of league-plus-cup and league-plus-UCL doubles over 20 seasons (small sample, shrink toward independence with k=10 seasons). As-of after each round.",
+    "measurement": "Simulate the four competitions jointly: club strength s ~ N(rating, sd from soc.ratings_uncertainty) shared across competitions, plus a shared availability shock a ~ Beta fitted to the club's historical share of squad-minutes lost (Transfermarkt injury days), reducing attack/defence by 0.1*(a). Compute the pairwise correlation of title indicators from 20000 draws; compare to historical co-occurrence of league+cup and league+UCL doubles over 20 seasons and shrink the simulated correlation toward the historical frequency with weight 10/(10+n_seasons_with_data). As-of after each round.",
     "pregame_knowable": "partial",
     "free_sources": [
      "Wikipedia/RSSSF historical trophy tables (free_scrape)"
@@ -1955,7 +1957,8 @@
     "registry_ids": [],
     "raw_data": [
      "season trophy results by club",
-     "squad injury days"
+     "squad injury days",
+     "fixture calendar per competition"
     ],
     "why": "Provides the dependence structure the trophy-count series needs and which no independent per-competition probability can deliver.",
     "role": "secondary"
@@ -1975,8 +1978,7 @@
     "raw_data": [
      "group composition and fixture list",
      "tiebreak and best-third allocation tables",
-     "team rating posteriors",
-     "set definitions from contract text (confederation pathway, host list, previous winners)"
+     "team rating posteriors"
     ],
     "why": "Prices team-set unions, exact finishing orders and group outcomes that marginal title odds cannot.",
     "role": "primary"
@@ -3256,7 +3258,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "cup match results with stage, leg, ET/pens flags"
+     "cup match results with stage, leg, ET/pens flags",
+     "pre-match ratings"
     ],
     "why": "Directly sets the gate P(draw at 90) of the method path tree.",
     "role": "primary"
@@ -3274,7 +3277,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "knockout match results with ET/pens fields"
+     "knockout match results with ET/pens fields",
+     "pre-match rating gap"
     ],
     "why": "Calibrates every node of the Method path tree against history rather than an assumed 50%.",
     "role": "secondary"
@@ -3292,7 +3296,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "goal log with situation tag and minute"
+     "goal log with situation tag, minute and scorer team"
     ],
     "why": "Turns a lump first-goal hazard into route-specific intensities that respond to referee and set-piece news.",
     "role": "secondary"
@@ -3903,7 +3907,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "inter-division match results"
+     "inter-division match results with date and venue",
+     "club Elo history"
     ],
     "why": "Large cup mismatches are the main source of high spread and exact-score rungs and need explicit division bridging.",
     "role": "primary"
@@ -3932,14 +3937,15 @@
     "category": "distribution",
     "mechanism": "Excess or deficit of large margins compared with the independent-Poisson prediction.",
     "rationale": "At strikes 3.5-5.5 the model's tail fraction is wrong by tens of percent when game-state (garbage time, collapse) is ignored; calibrating on history is the only way to price the deep tail.",
-    "measurement": "Pool 10 seasons of matches; bin by pre-match expected goal difference; compute observed P(margin >= m) / model P(margin >= m) for m in {2,3,4,5} per league group; smoothed with isotonic regression and hierarchical shrinkage across leagues (k=100 matches per bin); output multiplicative tail correction factors.",
+    "measurement": "Define model P as the production Dixon-Coles/NB goal model refit on an expanding window using only matches before each match date. Pool 10 seasons per league group; bin by pre-match expected goal difference (deciles); per bin compute observed P(margin>=m)/model P(margin>=m) for m in {2,3,4,5}; isotonic-smooth across bins, shrink to pooled-league ratio with k=100 matches per bin; output multiplicative factors. As-of kickoff using only prior-season-fitted factors.",
     "pregame_knowable": "yes",
     "free_sources": [
      "football-data.co.uk (free)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "final scores by match"
+     "final scores",
+     "pre-match model expected goal difference per match"
     ],
     "why": "Mismatch-driven spreads depend more on tail calibration than on mean strength.",
     "role": "secondary"
@@ -4580,7 +4586,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "lineup snapshots",
+     "lineup snapshots with timestamps",
      "player minutes and injuries"
     ],
     "why": "Marks when lineup information is new relative to an expectation formed hours earlier; the outcome effect itself is carried by soc.xi_strength_delta.",
@@ -4591,7 +4597,7 @@
     "category": "environment",
     "mechanism": "Home altitude minus the visitor's mean altitude over recent matches, with recency of exposure.",
     "rationale": "Bolivia, Ecuador, Colombia and Mexico City host matches above 2,000-3,600 m; visiting teams from sea level lose 0.3-0.6 goals of expected margin, the effect is nonlinear in altitude and decays with acclimatisation days, and is outside the usual home-advantage parameter.",
-    "measurement": "alt_gap = altitude(venue) - weighted mean altitude of visitor's matches in the last 60 days (weights half-life 20 days), set to 0 below 500 m gap; effect = max(0, alt_gap - 500)/1000 as piecewise; fit beta on historical results with team home advantage included; separate for first and second half if data permits.",
+    "measurement": "gap_m = alt(venue) - A_vis, where A_vis = sum_k w_k*alt(venue_k)/sum_k w_k over the visitor's matches in the 60 days before kickoff (w_k=0.5^(days_ago/20)); if no match in window use altitude of the visitor's home venue. x = max(0, gap_m-500)/1000 (km above 500 m). Fit goal-difference ~ ... + beta*x (plus separate beta for 2H if minute data exist) on all matches since 2000 with team home-advantage and rating terms, ridge-shrink beta to 0 with k=50 matches above 500 m. As-of kickoff-1h; altitude values are static venue constants.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Open-Elevation / geonames (free)",
@@ -4599,8 +4605,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "venue coordinates and altitude",
-     "match history"
+     "venue lat/lon and elevation (m)",
+     "team match history with venue and date for last 60 days",
+     "team base altitude (home venue) for clubs"
     ],
     "why": "A first-order home advantage driver in the Bolivian, Ecuadorian and Colombian leagues in this ledger bucket.",
     "role": "secondary"
@@ -4610,7 +4617,7 @@
     "category": "motivation",
     "mechanism": "Competitive-intent indicator for friendlies and pre-season matches.",
     "rationale": "Club friendlies settle like league games but are played with rotated squads, 60-minute starters and mass substitutions, so ratings fitted to competitive matches overstate team quality and understate randomness.",
-    "measurement": "Binary and ordinal: match type (friendly/ pre-season/ derby friendly), days to season start, tournament context; estimate effect on |goal difference| and draw rate relative to league matches with team fixed effects over 8 seasons; shrink to competitive baseline with k=30 matches; apply a variance multiplier and a compressed rating gap.",
+    "measurement": "For international and club friendlies (martj42 dataset; club friendlies from worldfootball), regress |goal difference| and draw indicator on match-type dummy (friendly vs competitive), pre-match rating gap and team fixed effects over 8 seasons; the type coefficient is shrunk to 0 with k=30 friendly matches. Output variance multiplier v = observed Var(goal diff | friendly)/model variance and compressed gap g' = g*(1 - c) with c = fitted rating-gap slope ratio friendly/competitive (bounded 0.3-1). As-of prior matches only.",
     "pregame_knowable": "yes",
     "free_sources": [
      "football-data.co.uk (free_limited)",
@@ -4619,7 +4626,9 @@
     "registry_ids": [],
     "raw_data": [
      "friendly results",
-     "fixture type"
+     "fixture type",
+     "days to season start",
+     "squad lineup minutes"
     ],
     "why": "Friendlies appear in the ledger bucket (KXCLUBFGAME) with settlement identical to competitive matches but a distinct data-generating process.",
     "role": "context"
@@ -4637,8 +4646,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "competition rulebook fields: minutes, players_per_side, subs_rule, tie_procedure",
-     "match results: date, home, away, goals_home, goals_away"
+     "rulebook fields: minutes, players_per_side, subs_rule, tie_procedure",
+     "match results with goals"
     ],
     "why": "Sets the scoring environment and draw mass for GAME series that are not standard 11-a-side fixtures.",
     "role": "context"
@@ -5319,14 +5328,15 @@
     "category": "distribution",
     "mechanism": "Monte Carlo of ballots with a points scale, voter nationality bias and noise, giving winner and tie probabilities.",
     "rationale": "Close races among two or three candidates are decided by ballots drawn from a distribution; the probability of a tie and the payoff split depends on the scale, voter count and variance.",
-    "measurement": "Simulate N voters (about 100 for the men's award; the women's panel is smaller and its size is unverified) each drawing a top-10 ranking from a Plackett-Luce model with candidate utilities u_i + voter noise; points scale believed to be 15,12,10,8,7,6,5,4,3,1 for ten places (unverified); add a home-nation bias term b for voters from the candidate's country (b about 0.3 in utility); run 10k draws; report P(win), P(tie). Parameters fitted to the historical distribution of winning margins.",
+    "measurement": "Utilities u_i = log-scores from soc.award_vote_distribution (conditional logit, market-free features: production, trophies, tournament result) fitted on prior ceremonies only. Each of N voters draws a top-10 ordering from Plackett-Luce with utility u_i + b*home_nation(voter,candidate) + e (e~Gumbel); points 15,12,10,8,7,6,5,4,3,1; N as published for the award. b and the voter noise scale are fitted by maximum likelihood to historical vote totals (2019-2025 Ballon d'Or men's and women's) with ridge toward b=0. 20000 draws; report P(win) and P(tie).",
     "pregame_knowable": "yes",
     "free_sources": [
      "Historical vote tables (free_scrape)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "vote totals by candidate and voter lists"
+     "vote totals by candidate and voter lists",
+     "historical winning margins"
     ],
     "why": "Provides winner and tie probabilities and the 1/n split payoff that the contract specifies.",
     "role": "secondary"
@@ -5336,7 +5346,7 @@
     "category": "other",
     "mechanism": "Reliability-weighted indicator that the winner has been leaked ahead of the ceremony.",
     "rationale": "Previous awards have been leaked days ahead by outlets and club staff; a credible leak moves probability to near certainty and is the most informative late input, but a false leak is also possible.",
-    "measurement": "Event log of statements and reports about the winner with source tier (club/federation official, established journalist, aggregator), timestamp and content; estimate P(true | tier) from past award leaks with Beta prior (alpha=2,beta=1); update posterior odds by the likelihood ratio at each report; as-of strictly report time.",
+    "measurement": "Event log of each report (timestamp, source tier, named winner). Per tier t estimate hit rate h_t = P(report names the eventual winner) with Beta(2,1) prior updated on past leaks, and false-report rate f_t = 1-h_t over the same sample; LR_t = h_t/(f_t/(K-1)) with K candidates. Posterior log-odds for candidate c = prior log-odds + sum of log LR_t over independent reports (reports from the same upstream source counted once, total LR capped at 20). As-of strictly the report timestamp.",
     "pregame_knowable": "partial",
     "free_sources": [
      "Social media and news monitoring (own_capture)",
@@ -5344,7 +5354,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "timestamped news reports with source"
+     "timestamped news reports with source tier",
+     "past award leak outcomes"
     ],
     "why": "The decisive late-moving information for voted awards; absent from the existing list.",
     "role": "primary"
@@ -5381,8 +5392,7 @@
     "registry_ids": [],
     "raw_data": [
      "historical Ball winners with team placing and stats",
-     "player tournament goals, assists, minutes",
-     "tournament bracket simulation output"
+     "player tournament goals, assists, minutes"
     ],
     "why": "Prices World Cup Ball awards and the Golden Boot + Golden Ball combo.",
     "role": "primary"
@@ -6822,8 +6832,7 @@
     "raw_data": [
      "group composition and fixture list",
      "tiebreak and best-third allocation tables",
-     "team rating posteriors",
-     "set definitions from contract text (confederation pathway, host list, previous winners)"
+     "team rating posteriors"
     ],
     "why": "Prices stage-reach counts, maxima and $1/N dead heats over sets of teams (furthest-advancing confederation nation, debutant and host counts, non-top-10 semi-finalist) from the per-draw stage-reached vector; the same simulation already serves competition_winner_and_top_n.",
     "role": "primary"
@@ -7495,9 +7504,11 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "contract end date",
+     "contract end date snapshots",
      "release clause",
-     "renewal reports"
+     "wage bill share",
+     "renewal reports with timestamps",
+     "historical transfers"
     ],
     "why": "Directly drives KXLAMINEYAMAL-style leave-club contracts and next-club sets.",
     "role": "primary"
@@ -7534,7 +7545,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "manager appointments and exits with dates and results"
+     "manager appointments and exits with dates",
+     "results and expected points"
     ],
     "why": "Needed for KXPOCHETTINOOUT and Next Manager series with no existing input.",
     "role": "primary"
@@ -7562,7 +7574,7 @@
     "category": "other",
     "mechanism": "For each candidate destination club or league, whether it can afford the fee and wages, needs the position, offers the sporting project and is a stated or reported preference of the player; normalised across candidates and the no-change outcome.",
     "rationale": "KXJOINCLUB, KXJOINRONALDO, KXJOINSALAH, KXJOINMBAPPE, KXJOINSANE, KXJOINDAVID, KXMLSJOIN and KXJOINLEAGUE are multi-outcome which-club sets; seller-side hazard (contract expiry, window) says when a player moves but not where, and the where is decided by the buyer's financial room, positional need and the player's preference, none of which the seller-side inputs measure.",
-    "measurement": "Per candidate club c and player p at the as-of date: wage_room = club wage-bill ceiling (PSR/FFP or league cap headroom from latest published accounts, in euros) minus (p expected wage + amortised fee); need = 1 if the club's expected starter at p's position is rated below p by more than a threshold on the club squad ratings, else 0; route = league-level flag (Saudi Pro League, MLS designated player, Premier League); pref = indicator that a tier-1 source reported p-club interest within the last 30 days. Combine as a logistic score with a shrunk prior from past destination choices of comparable players (k=20 transfers), softmax-normalised over the candidate set plus a no-change outcome whose weight comes from the seller-side hazard.",
+    "measurement": "Per candidate club c: wage_room = max(0, 0.70*latest revenue - wage bill - player wage - fee/contract_years) in EUR (0.70 = UEFA squad-cost ratio; league cap headroom for MLS/Saudi); need = 1 if club's best player at the position has rating below the player's by >0.5 SD of the club's squad rating, else 0; pref = 1 if a tier-1 outlet reported the club's interest in the previous 30 days (timestamped). Fit a multinomial logit of historical destinations of comparable players (top-5-league, age band, 15 seasons) on (wage_room/wage, need, pref, same-league flag) with ridge penalty set by CV; softmax over candidates plus a no-move outcome weighted by the seller-side hazard. As-of report timestamp.",
     "pregame_knowable": "partial",
     "free_sources": [
      "Transfermarkt squad values and rumour tables (free_scrape)",
@@ -7573,7 +7585,8 @@
     "raw_data": [
      "club wage bills and accounts",
      "squad ratings by position",
-     "transfer reports by source tier"
+     "transfer reports by source tier with timestamps",
+     "historical destination choices"
     ],
     "why": "Supplies the destination model that the seller-side inputs lack for the which-club series and ensures the outcome set is normalised including no change.",
     "role": "secondary"
@@ -7592,7 +7605,7 @@
     "registry_ids": [],
     "raw_data": [
      "skills challenge format and entrants",
-     "past skills challenge results",
+     "past results",
      "player passing and shooting accuracy"
     ],
     "why": "Only input for the MLS skills-challenge winner series.",
@@ -8230,14 +8243,15 @@
     "category": "variance_luck",
     "mechanism": "Autocorrelation of match outcome residuals beyond ratings and strength drift.",
     "rationale": "If outcomes carry positive serial correlation after controlling for strength, runs are more likely than the independent calculation; if it is zero, ratings with drift suffice. Estimating it matters because the streak is a run statistic.",
-    "measurement": "Fit a state-space model: match residual e_t = result - expected from ratings; AR(1) coefficient phi estimated across all clubs in top-5 leagues over 10 seasons with club random effects and drift variance; report phi with interval; use phi to generate correlated Bernoulli via a latent Gaussian copula; as-of prior matches only.",
+    "measurement": "Residual e_t = (points won - expected points) where expected points come from pre-match club Elo (clubelo.com, value as of the day before kickoff) with home advantage; for each club-season, regress e_t on e_(t-1) controlling for expected points; estimate pooled AR(1) coefficient phi by mixed model with club random intercepts over top-5 leagues for 10 seasons, report cluster-bootstrap interval. Elo is already a form tracker, so phi is residual persistence only. Use phi in the copula only if its 95% interval excludes 0. As-of prior matches only.",
     "pregame_knowable": "yes",
     "free_sources": [
      "football-data.co.uk results (free)"
     ],
     "registry_ids": [],
     "raw_data": [
-     "match results for top leagues over 10 seasons"
+     "match results for top leagues over 10 seasons",
+     "pre-match ratings with timestamps"
     ],
     "why": "Positive serial correlation of match residuals beyond rating drift would widen the season points distribution and fatten the 15+ margin tail; if it is zero, ratings with drift suffice.",
     "role": "context"
@@ -8806,7 +8820,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "final scores and expected totals"
+     "final scores and pre-match expected totals"
     ],
     "why": "The sampled strikes of 5.5 to 7.5 make tail multipliers the first-order calibration term.",
     "role": "secondary"
@@ -8824,7 +8838,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "match scores and team style metrics"
+     "match scores",
+     "team PPDA and style metrics"
     ],
     "why": "Directly models correlation between the team counts that drives the tails of totals.",
     "role": "primary"
@@ -8843,7 +8858,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "player xG and xGA on/off, lineups"
+     "player xG and xGA on/off",
+     "lineups and minutes"
     ],
     "why": "Totals respond to the sum of attack and defence changes with different signs for each side.",
     "role": "primary"
@@ -9427,7 +9443,7 @@
     "category": "pace_volume",
     "mechanism": "Expected corners from the counts of blocked, saved-and-parried, and deflected attempts and crosses.",
     "rationale": "Corners are a by-product of how attacks end; two teams with equal shots differ in corners according to the share of blocked shots and crosses; shot-based expected corners provide a more accurate estimate than past corner counts.",
-    "measurement": "For each team over the last 25 matches (half-life 12): corners per blocked shot, per saved shot, per cross attempted; expected corners = sum over expected shots by type for this match (opponent block rate and own shot-type mix) times coefficients; shrink coefficients to league with k=40 attempts; as-of previous matches.",
+    "measurement": "Poisson regression of team corners per match on its saved-shot count and blocked-shot count (Understat result field) with opponent defence and home terms, trained on the last 3 seasons (match weights half-life 25 matches), coefficients ridge-shrunk toward league values with k=40 matches. Expected corners for the fixture = coefficients times expected saved/blocked shots from the soc.shots model (blocked share from the opponent's block rate). Crosses are included only if a paid feed is available. As-of kickoff-1h using prior matches.",
     "pregame_knowable": "yes",
     "free_sources": [
      "football-data.co.uk corners and shots (free)",
@@ -9435,9 +9451,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "shots by outcome",
-     "crosses",
-     "corners taken"
+     "shots with result (Blocked/Saved/Missed/Goal)",
+     "corners taken per team per match",
+     "crosses attempted (Opta only)"
     ],
     "why": "Moves from historic corner counts to a causal expectation based on how attacks end.",
     "role": "primary"
@@ -9454,7 +9470,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "corner events with minute and score state"
+     "corner events with minute",
+     "score state at event",
+     "pre-match favourite flag"
     ],
     "why": "Provides the dynamic structure behind team-corner thresholds that static team averages cannot.",
     "role": "primary"
@@ -9472,7 +9490,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "crosses and entries by zone"
+     "crosses and final-third entries by zone per match"
     ],
     "why": "Captures matchup in how teams attack, which total corner counts depend on.",
     "role": "secondary"
@@ -10091,7 +10109,10 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "lineups, substitutions with minute"
+     "lineups",
+     "substitutions with minute",
+     "injury flags",
+     "rest days"
     ],
     "why": "Embedded refund rule is peculiar to this contract and changes the correct probability for every non-starter.",
     "role": "primary"
@@ -10101,7 +10122,7 @@
     "category": "player_role",
     "mechanism": "Player's share of team assists and key passes split by route (set-piece delivery, crosses, through balls).",
     "rationale": "Assists are concentrated in a few creators and in the corner/free-kick taker, whose assist rate per 90 is 2-3 times that of a typical midfielder; the provider's definition of assist also matters.",
-    "measurement": "Over the last 40 matches (half-life 20): assists, key passes and xA per 90 split by set-piece vs open play; set-piece taker flags (corners, free kicks) from event data; expected assists = team expected goals × share of team goals assisted (about 70%) × player's share of assists (shrunk to position mean with k=10 matches); adjust for teammates' finishing (xG-to-goal conversion of recipients).",
+    "measurement": "Over the player's last 40 club matches (half-life 20): set-piece xA/90 and open-play xA/90 from Understat shots (situation in {FromCorner,SetPiece,DirectFreekick} vs OpenPlay, credited to the assisting player), each shrunk to position mean with k=900 minutes. Expected assists = player xA share of team xA (shrunk, k=10 matches) x team expected xG for this match x team assisted-goal ratio (league mean, estimated not fixed at 70%). Set-piece taker flag = taker of >=50% of team corners in the window. As-of kickoff-1h; recompute with confirmed XI.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Understat xA (free)",
@@ -10109,7 +10130,10 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "xA, key passes, set-piece taker by match"
+     "player xA, key passes, assists per match",
+     "shot assist-chain fields (lastAction, situation)",
+     "set-piece taker designation",
+     "minutes"
     ],
     "why": "Needed because assist props are driven by creators and set-piece takers, not by xG/90.",
     "role": "primary"
@@ -10127,7 +10151,8 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "goal events with minute and scorer"
+     "goal events with minute and scorer",
+     "lineups and substitution minutes"
     ],
     "why": "Provides coherent probabilities for the first-goal and first-goal-win contracts.",
     "role": "secondary"
@@ -10146,9 +10171,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "player international goals, xG, minutes, starts",
+     "player international goals, npxG proxy, minutes, starts",
      "penalty taker designation",
-     "group fixtures and team goal-rate estimates"
+     "fixtures and team lambda"
     ],
     "why": "Prices the team-first and country-first-in-tournament goalscorer series.",
     "role": "primary"
@@ -10723,7 +10748,7 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "two-provider shot counts for same matches"
+     "two-provider shot counts for the same matches"
     ],
     "why": "Label consistency is a prerequisite for calibration given no rules text exists.",
     "role": "context"

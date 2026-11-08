@@ -189,6 +189,23 @@ test.describe("catalog completeness gate", () => {
     for (const h of ["Contract", "Mechanism", "Audit of existing inputs", "New inputs discovered", "Required data", "Unresolved", "Independent review"]) await expect(cc.getByRole("heading", { name: new RegExp(h) }).first()).toBeVisible();
   });
 
+  test("shows the documented acceptance criteria, exact catalog totals and the verification record without claiming approval", async ({ page }) => {
+    const ac = page.getByTestId("acceptance");
+    await expect(ac).toBeVisible();
+    await expect(ac.getByText(/never approval/i).first()).toBeVisible();
+    await expect(ac.locator("table").first().locator("tbody tr")).toHaveCount(gate.acceptance.criteria.length);
+    await expect(ac.getByText(/Verification record/)).toBeVisible();
+    await expect(ac).toContainText(String(gate.acceptance.catalog_totals.TOTAL.inputs));
+  });
+
+  test("lists the new archetypes found by the series reconciliation", async ({ page }) => {
+    const cc = page.getByTestId("catalog-completeness");
+    const nu = gate.rows.filter(r => !r.registered).length;
+    expect(nu).toBeGreaterThanOrEqual(30);
+    await cc.getByRole("button", { name: "All statuses" }).click();
+    await expect(cc.getByText("unregistered contract type").first()).toBeVisible();
+  });
+
   test("no horizontal page overflow with the panel open", async ({ page }) => {
     const o = await measureOverflow(page);
     expect(o.pageOverflow ?? o.overflow ?? 0).toBeLessThanOrEqual(1);

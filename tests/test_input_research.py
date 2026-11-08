@@ -286,7 +286,7 @@ class PublishedArtifacts(unittest.TestCase):
             for a, rec in d["archetypes"].items():
                 for f in rec["families"]:
                     self.assertIn(a, d["families"][f]["archetypes"], f)
-        self.assertEqual((fam, inp, ix), (275, 1342, 679))     # documented totals (672 inputs at #53; +12 gap adjudication, +5 unregistered contract types = 691; +651 from the catalog-completeness review, completeness.merge_new_inputs); a catalog change must update these consciously
+        self.assertEqual((fam, inp, ix), (275, 1611, 1339))     # documented totals (672 inputs at #53; +12 gap adjudication, +5 unregistered contract types = 691; +920 from the catalog-completeness review via completeness.integrate; interactions 679 -> 1339 after merging the reviews' interactions); a catalog change must update these consciously
 
     def test_every_path_states_its_claim_boundary_and_never_implies_a_kalshi_edge(self):
         for d in self.docs.values():

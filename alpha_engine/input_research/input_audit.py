@@ -136,6 +136,43 @@ def apply() -> dict:
     return stats
 
 
+PATCH_FIELDS = ("label", "mechanism", "rationale", "measurement", "free_sources", "raw_data", "pregame_knowable", "registry_ids", "category")
+
+
+def apply_patches() -> dict:
+    """Catalog-definition corrections found while closing catalog blockers (input_patches/<SPORT>*.json = {input_id: {field: value}}). Applied to the catalog and mirrored into the review record that added the input."""
+    stats = {}
+    for s in SPORTS:
+        d = comp.CD / "input_patches"; patches: dict = {}
+        for f in sorted(d.glob(f"{s}*.json")) if d.exists() else []:
+            patches.update(rd(f).get("patches") or {})
+        if not patches:
+            continue
+        c = cat.load(s); n = 0
+        for iid, fields in patches.items():
+            if iid not in c["inputs"]:
+                raise ValueError(f"{s}: patch for unknown input {iid}")
+            for k, v in fields.items():
+                if k not in PATCH_FIELDS:
+                    raise ValueError(f"{s}:{iid}: field {k} not patchable")
+                if k in ("mechanism", "rationale", "measurement") and len(str(v)) < 60:
+                    raise ValueError(f"{s}:{iid}: {k} too thin")
+                if c["inputs"][iid].get(k) != v:
+                    c["inputs"][iid][k] = v; n += 1
+        (cat.CATALOG_DIR / f"{s}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False) + "\n")
+        for f in sorted((comp.CD / "reviews").glob(f"{s}*.json")):
+            dd = rd(f); ch = False
+            for rec in dd.values():
+                for iid, ni in (rec.get("new_inputs") or {}).items():
+                    for k, v in (patches.get(iid) or {}).items():
+                        if k in ni and ni[k] != v:
+                            ni[k] = v; ch = True
+            if ch:
+                f.write_text(json.dumps(dd, indent=1, ensure_ascii=False) + "\n")
+        stats[s] = {"patched_fields": n, "inputs": len(patches)}
+    return stats
+
+
 def summary() -> dict:
     mech = mechanical(); out = {"mechanical": mech["by_sport"], "audited": {}, "market_free": collections.Counter(), "verdicts": collections.Counter()}
     for s in SPORTS:

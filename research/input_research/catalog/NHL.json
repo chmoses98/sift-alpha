@@ -553,7 +553,7 @@
    "category": "player_role",
    "mechanism": "Offensive defencemen produce SOG and assists mainly via PP point shots and offensive-zone time, quite different from forwards' role.",
    "rationale": "D-man SOG distributions are strongly tied to PP time and offensive deployment, producing more variance than forwards. Subtle: injury to the PP quarterback pushes a second D-man into the role, and blocking/miss rates at the point make SOG/attempt lower.",
-   "measurement": "D-man SOG/60 by strength state with PP share; zone-start share; expected PP minutes; shrunk to D position mean.",
+   "measurement": "For each defenceman as of date t: SOG/60 and shot attempts/60 at 5v5 and 5v4 over the last 60 games (half-life 30 games) from games before t; PP TOI share = own PP TOI / team PP TOI over last 15 games; offensive-zone start share = OZ shifts starts / (OZ + DZ starts) at 5v5; expected PP minutes = team expected PP minutes (opp penalties drawn per game) x PP TOI share. Shrink each rate to the D-position league mean with prior weight 400 minutes (5v5) and 60 minutes (5v4). Output the four values plus posterior sd.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Natural Stat Trick (naturalstattrick.com team/player/line tables with score-and-venue adjustment)",
@@ -563,7 +563,34 @@
    "registry_ids": [
     "nhl.pp_role",
     "nhl.shot_rate"
-   ]
+   ],
+   "raw_data": [
+    "play-by-play shots by shooter, strength state, zone start, faceoff location",
+    "shift TOI by state",
+    "PP unit assignment",
+    "position"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.linemate_quality": {
    "label": "Linemate and centre quality (passing partners, finishing around the player)",
@@ -1005,7 +1032,7 @@
    "category": "availability",
    "mechanism": "Whether a player who does not play voids the market or settles as zero changes the effective probability of the contract.",
    "rationale": "Settlement wording on DNP or goalie not starting can turn pregame uncertainty into a void rather than a loss; combined with lineup timing (markets open before confirmation) this changes optimal pricing. Subtle: must be read per ticker; do not assume.",
-   "measurement": "Extract the DNP rule from rules text; model P(player plays) from lineup/injury news; compute EV under void vs zero settlement.",
+   "measurement": "Parse the contract rules_primary into dnp_rule in {void, zero, loss} and record rule vintage. P(play) = 1 - P(scratch or injury absence) from nhl.injuries_pit status (out/GTD/probable) mapped to historical rates by status (shrunk k=30 cases) and, on game day, from confirmed lineups; use only vintages before decision time. EV under void = P(yes | play), under zero/loss = P(play) x P(yes | play) (leg counts as not occurring). Output P(play), both EVs and the rule vintage.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Daily Faceoff (dailyfaceoff.com line combinations, projected/confirmed starting goalies)",
@@ -1014,7 +1041,32 @@
    "registry_ids": [
     "nhl.injuries_pit",
     "m.rules_text"
-   ]
+   ],
+   "raw_data": [
+    "rules text DNP clause (void_if_dnp)",
+    "lineup and injury vintages",
+    "historical scratch rates by player role"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi rules_primary text via API",
+      "access": "own_capture",
+      "note": "version and hash per market"
+     },
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.offfield_base_rate": {
    "label": "Reference-class base rate for off-ice/office markets",
@@ -1230,9 +1282,33 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "play-by-play events: period, clock, strength situationCode, goalie-in-net flag, goal events",
-    "coach by game"
-   ]
+    "play-by-play with situationCode and event times",
+    "coach tenure"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.ot_sudden_death_hazard_5v5": {
    "label": "[Playoff-only, dormant for KXNHLOT] 5v5 sudden-death overtime goal hazard (playoff OT)",
@@ -1248,9 +1324,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "playoff OT play-by-play: elapsed OT seconds, strength, goal time",
-    "team tied-state 5v5 xG rates"
-   ]
+    "playoff OT play-by-play with strength",
+    "tied 5v5 xG rates",
+    "rest"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.series_ot_count_dependence": {
    "label": "[Playoff-only, dormant until KXNHL2OT/KXNHLSERIESOT list markets] Within-series dependence of overtime occurrence",
@@ -1278,9 +1376,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "5v5 attempts and danger events by clock and score",
-    "standings points percentage by date"
-   ]
+    "5v5 attempts and high-danger by time and score",
+    "standings leverage"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.ratings_script_distribution": {
    "label": "Ratings-only pregame score-path distribution (lead/trail/tied time shares and entering-state matrix)",
@@ -1296,11 +1414,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game 5v5 and special-teams xGF/xGA per 60 with score and venue splits",
-    "goalie GSAx by game and shots faced",
-    "coach-specific goalie-pull times from play-by-play",
-    "period-by-period score history per game"
-   ]
+    "team xG ratings",
+    "goalie GSAx and starter probability",
+    "pull-time history",
+    "OT 3v3 rates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.settlement_goal_pmf": {
    "label": "Settlement-adjusted final-margin distribution (regulation, OT, shootout, empty net)",
@@ -1315,15 +1453,33 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "final and regulation scores, OT/SO flags, goal times, strength situationCode"
-   ]
+    "regulation score by game",
+    "pull times and EN goals",
+    "OT and SO outcomes",
+    "shootout talent"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.lineup_impact_delta": {
    "label": "Lineup impact delta from player value model (skater and goalie)",
    "category": "availability",
    "mechanism": "Converts who is in or out into a change in expected goal difference using per-player impact estimates.",
    "rationale": "Injury status flags tell who is missing but not what it costs; a top-pair defenceman, a first-line centre and a starting goalie have different values, and replacements play different minutes. The cost must be computed from minutes redistributed times impact difference.",
-   "measurement": "Estimate per-skater impact as regularised adjusted xG per 60 at 5v5 (ridge RAPM on shift-level data, 3-season window, half-life 1.5 seasons, shrink toward position mean) plus special-teams impact per PP/PK minute; for the projected lineup compute delta = sum_over_players(proj_TOI_new x impact_new) minus same for base lineup, restated as goals per 60 and then x 60/60 per game; for goalies use shrunk GSAx per 1000 shots (k=2000 shots) scaled by opponent shot volume. As-of rule: use lineups published by the team at the time of prediction; keep prior vintages.",
+   "measurement": "Skater impact I_s = ridge RAPM xG/60 at 5v5 (3 seasons, half-life 1.5 seasons, shrunk to position mean) plus PP/PK impact per special-teams minute. Lineup value V(L) = sum over skaters of proj TOI per game (hours) x I_s in each state + goalie term (GSAx per 1000 shots shrunk k=2000, x expected opponent shots faced /1000). Delta = V(published lineup) minus V(base lineup = last 10 games' modal lineup), in goals per game. Use only lineups published before the as-of time; store vintages.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Evolving-Hockey RAPM/WAR (paid)",
@@ -1332,8 +1488,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "shift-level data: player, start/end, strength, score; projected lineups; player ratings by season"
-   ]
+    "shift charts and play-by-play for RAPM",
+    "projected lineups with vintage",
+    "goalie shots faced and saves"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Evolving-Hockey RAPM/WAR",
+      "access": "paid"
+     },
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.prior_to_current_blend": {
    "label": "Preseason prior blend weight by games played",
@@ -1348,9 +1526,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game xG for/against by season",
-    "roster changes with dates"
-   ]
+    "prior-season ratings",
+    "roster moves with TOI",
+    "age",
+    "game results"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "CapWages",
+      "access": "free_limited"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.pp_termination_unit_split": {
    "label": "Power-play termination and unit-time split",
@@ -1365,8 +1568,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "penalty events (type, minutes), PP start/end, goals with strength state, shift data for unit membership"
-   ]
+    "play-by-play penalties and strength changes",
+    "PP shot and goal events",
+    "unit assignment by shift"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.pair_attempt_volume": {
    "label": "Pair attempt-volume composite (log-additive team tempo model)",
@@ -1381,8 +1602,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game attempts, minutes by strength, score state"
-   ]
+    "team-game 5v5 attempts and TOI",
+    "home flag",
+    "score state"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.pace"
+   }
   },
   "nhl.opp_sog_for_rate": {
    "label": "Opponent shots-on-goal-for rate by strength state, score adjusted",
@@ -1398,8 +1640,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game SOG by strength state and score state"
-   ]
+    "team-game SOG for and against by strength state",
+    "score differential bins",
+    "TOI by state"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.shots_against"
+   }
   },
   "nhl.goalie_minutes_in_net_dist": {
    "label": "Goalie minutes-in-net distribution (entry, pull and overtime)",
@@ -1414,8 +1682,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goalie-game: starter flag, TOI, shots faced, goals against, relief entry time, pull reason if recorded"
-   ]
+    "boxscore goalie TOI, goals allowed by period, pull events",
+    "starter confirmation"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.goalie_pull_risk"
+   }
   },
   "nhl.arena_sog_recording_factor": {
    "label": "Arena-level SOG recording factor",
@@ -1430,15 +1719,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "game-level SOG for each team with arena id"
-   ]
+    "game-level SOG per team with arena id and season",
+    "team-game identifiers"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.venue"
+   }
   },
   "nhl.ot_shot_exposure": {
    "label": "Overtime shot exposure given regulation tie probability",
    "category": "game_state",
    "mechanism": "Expected extra shots faced in overtime weighted by probability of a tie.",
    "rationale": "Overtime is a 3v3 period with high shot density that can add several shots to a goalie's count; its expected contribution is P(OT) times shots per OT period, which can push a goalie across a threshold. It enters only if the contract counts OT, which is not stated.",
-   "measurement": "Estimate team-pair P(regulation tie) from the tie model and shots on goal per 3v3 five-minute period from NHL play-by-play 2015-16 on (pooled mean and sd, team adjustments shrunk with k=200 overtime minutes); expected extra saves = P(tie) x shots_per_OT x (1 - OT goal prob); when playoff 5v5 OT applies use hazard-based shots per 20 minutes.",
+   "measurement": "E[saves by goalie G in OT] = P(tie after 60) x E[shots faced by G in OT | no earlier stop], with shots per 3v3 minute per team from 2015-16 on (pooled mean/sd, team adjustments shrunk k=200 OT minutes) and OT length = min(5, time to first goal) where the goal hazard per shot is 1-save probability of the goalies; estimate by simulation or closed form E[shots] = lambda_shots x E[min(T,5)]; shootout saves counted only if the contract counts shootout attempts. Playoff OT: 20-minute periods at 5v5 hazard.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NHL API play-by-play (OT events)",
@@ -1446,8 +1756,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "OT shot events with strength, team, goalie"
-   ]
+    "3v3 OT play-by-play shots and goals",
+    "regulation tie probability"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.period_entry_state_matrix": {
    "label": "Entering-period score-state distribution and state-conditional rates",
@@ -1462,8 +1789,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goals and shots by period with running score"
-   ]
+    "period-by-period goals and SOG",
+    "score state at period start",
+    "goalie pull events"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.period_penalty_intensity_balance": {
    "label": "Period-level penalty intensity and within-game balancing",
@@ -1479,8 +1824,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "penalty events with period, minute, team, referee crew"
-   ]
+    "penalty events with period and time",
+    "crew assignments",
+    "team penalty rates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.period_pair_count_model": {
    "label": "Period-level bivariate count model with cross-period dependence",
@@ -1495,15 +1858,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goals by team and period for every game"
-   ]
+    "team results by period",
+    "team strength and PP expectations"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.period_split"
+   }
   },
   "nhl.period_home_ice_split": {
    "label": "Home-ice and last-change effect by period (home flag, period-specific home goal share)",
    "category": "environment",
    "mechanism": "The home team gets last change at every stoppage and the home crowd and scorer effects are modest and constant in size, but their effect on a 20-minute winner or spread contract differs by period because deployment, score state and the second-period long change interact with the home bench position.",
    "rationale": "Period winner and spread contracts are team-versus-team, so a small constant home edge shifts every tie, win and rung probability and is not captured by team ratings alone. A single full-game home constant mis-scales the period effect: it is most visible in match-ups of the first period when coaches can pick the matchup, and it is compressed in the third by score effects. Reviewers noted no home input existed in this record.",
-   "measurement": "From team-period goal and xG data since 2015-16 fit goal differential per period = team strength difference + home indicator x period (three coefficients) with season fixed effects; shrink each period coefficient toward the pooled home edge with a prior of 25 percent of the pooled value variance, estimate on 5v5 xG and on goals separately, and refresh yearly. Treat last-change strength as a league-level effect only (no team-specific estimate, samples are too small). As-of: all games before the target date.",
+   "measurement": "From team-period goals and 5v5 xG since 2015-16 fit: goal differential in period p = b_s x (strength difference) + h_p x home + season FE. Shrink h_p to pooled home edge h with h_p ~ N(h, (0.5*|h|)^2) fitted by empirical Bayes; fit separately for goals and for 5v5 xG; refresh once per season from games dated before the target date. Last-change is not estimated team-by-team; report h_2 minus mean(h_1,h_3) as league-level long-change effect.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NHL API play-by-play and boxscore (api-web.nhle.com)",
@@ -1512,9 +1896,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game period scores and period xG with home/away flag",
-    "score and strength state by period"
-   ]
+    "team-period goals and 5v5 xG",
+    "home flag",
+    "strength estimates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.rest_fatigue_period_profile": {
    "label": "Rest and back-to-back fatigue profile by period (and its backup-goalie channel)",
@@ -1530,9 +1935,27 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team schedule with dates and venues",
-    "goalie of record per game and period xG/goals by team-period"
-   ]
+    "schedule with travel",
+    "period goals and xG",
+    "goalie of record",
+    "start forecast"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.ipp_by_state": {
    "label": "Individual points percentage by strength state (points per on-ice goal for)",
@@ -1547,8 +1970,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goal events with scorer, assist1, assist2, on-ice skaters by strength state"
-   ]
+    "goals with scorer and assists by strength state",
+    "on-ice goals-for for each skater",
+    "TOI by state"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.onice_xgf_per60": {
    "label": "On-ice expected goals for per 60 by strength state (RAPM-adjusted)",
@@ -1564,15 +2005,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "shift-level on-ice player sets with xG events"
-   ]
+    "shift charts",
+    "play-by-play with xG",
+    "zone starts and score state"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Evolving-Hockey RAPM/WAR",
+      "access": "paid"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.first_goal_scorer_share": {
    "label": "First-goal scorer share and team first-goal probability",
    "category": "distribution",
    "mechanism": "Probability that the player scores the game's first goal given team-level first-goal race and his share within the scoring line.",
    "rationale": "The first-goalscorer contract is a competing-risk race: either team scores first, and given that the scorer is drawn from the players on ice at that moment weighted by shot share. Early-game deployment and early power plays raise top-line and PP1 chances relative to full-game share.",
-   "measurement": "Estimate team first-goal probability from per-team scoring hazard h_team(t) in the first 20 minutes (opposing goalie adjusted); then P(player scores first | his team scores first) = early-minutes goal share of the player (goals in first 20 minutes of games where his team scored first, divided by team first goals, shrunk to ixG-based share with k=40). Combine P(player first goal) = P(team first) x share x P(regulation or OT goal occurs). Exclude shootout goals.",
+   "measurement": "P(player p scores team's first goal in game) = P(team scores first or at all) x s_p, where s_p = (first-goals by p over last 3 seasons, weighted 0.5/0.3/0.2) shrunk toward ixG share (p's ixG per game / sum of team skater ixG per game) with prior weight 40 team first goals. P(team scores first) from per-team hazard h(t) over 60 minutes (opposing starter GSAx adjusted) plus OT. Final: P(first goal of game) = P(team first) x s_p x 1[plays]; exclude shootout goals; settle on whichever of the game's goals comes first by clock. Use only games before as-of date.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NHL API play-by-play (first goals with scorer and time)",
@@ -1580,8 +2042,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "game first-goal event: scorer, time, team, strength"
-   ]
+    "play-by-play first goals with scorer and time",
+    "ixG per player",
+    "on-ice time by state",
+    "starting goalies"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.skater_en_usage": {
    "label": "Skater extra-attacker and empty-net usage share",
@@ -1596,8 +2076,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goalie-pulled intervals with on-ice skaters and goal credits"
-   ]
+    "6v5 intervals and goals",
+    "skater EN minutes"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.next_man_up_redistribution": {
    "label": "Next-man-up redistribution after lineup absences",
@@ -1613,8 +2110,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player-game TOI by state, lines, PP units, absence flags"
-   ]
+    "TOI by game, state, line and PP unit",
+    "game absence lists",
+    "rest and venue"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.early_window_goal_rate": {
    "label": "Early-window (first 10:00 of period one) team goal hazard for the pair",
@@ -1630,10 +2145,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goal and penalty events with period and elapsed time per game",
-    "strength state by minute of period one",
-    "starting goalie per game"
-   ]
+    "play-by-play events with time, strength, scorer",
+    "penalty events",
+    "confirmed starters",
+    "goalie GSAx"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.skater_ot_3v3_exposure": {
    "label": "Skater overtime 3v3 exposure and point rate",
@@ -1649,9 +2185,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "overtime shifts and events by player-game",
-    "regulation tie probabilities per game"
-   ]
+    "3v3 shifts and events",
+    "regulation tie probability"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.games_played_hazard": {
    "label": "Games-played hazard (injury, rest and load management)",
@@ -1667,8 +2219,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player-season games played, injury reports with dates, ages"
-   ]
+    "player-game logs and season GP",
+    "injury status vintages",
+    "age, position, injury counts"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.player_season_points_projection": {
    "label": "Player season points projection (rate x games-played distribution)",
@@ -1684,10 +2259,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player-game goals, assists, time on ice by strength state",
-    "on-ice goals-for per strength state",
-    "games-played and injury history per player-season"
-   ]
+    "points to date",
+    "on-ice goals-for rates",
+    "games played hazard",
+    "lineup/PP assignments"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.award_stats"
+   }
   },
   "nhl.sog_share_on_ice": {
    "label": "Skater share of team shots on goal while on ice, by strength state",
@@ -1702,8 +2303,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "shot events with shooter id, on-ice teammates, strength state"
-   ]
+    "shots on goal with shooter and on-ice skaters",
+    "TOI by state"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.shot_share_reallocation": {
    "label": "Shot-share reallocation within a line or power-play unit",
@@ -1718,8 +2340,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "unit membership by game, shot events by shooter, absence flags"
-   ]
+    "shift charts",
+    "play-by-play shots",
+    "lineup absences"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.pair_difference_distribution": {
    "label": "[Model output, not raw data] Pair difference distribution with tie mass by pair type and stat",
@@ -1735,8 +2379,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player-game stat lines for all pairs observed in the same game, with team and line info"
-   ]
+    "player-game logs for points, shots, saves",
+    "line and pairing membership"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.stat_dist"
+   }
   },
   "nhl.teammate_point_co_credit": {
    "label": "Teammate point co-credit rate",
@@ -1751,8 +2421,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goal events with scorer and assist ids by strength state"
-   ]
+    "goal events with scorer and assisters",
+    "pair TOI and line"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.goal_credit_allocation_kernel": {
    "label": "Goal-credit allocation kernel (probability each skater scores or assists on a team goal)",
@@ -1767,8 +2454,28 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goal events with on-ice skaters, scorer and assists, strength state"
-   ]
+    "goal events with scorer, assisters, on-ice skaters, strength state"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.lineup_scenario_tree": {
    "label": "Joint lineup scenario tree (goalies and key skaters)",
@@ -1784,8 +2491,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "lineup reports, goalie starts, injury statuses with timestamps"
-   ]
+    "goalie rotation history",
+    "injury report vintages",
+    "lineup confirmations"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Daily Faceoff (lines, projected goalies)",
+      "access": "free_scrape",
+      "note": "history only if captured live"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.copula_tail_dependence": {
    "label": "Tail dependence between leg pairs (copula parameters by pair type)",
@@ -1800,8 +2530,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "game-level outcomes for all legs: result, margin, total, player stats"
-   ]
+    "player-game and team-game logs: result, margin, total, SOG, points, saves",
+    "game dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.parlay_leg_void_payoff_map": {
    "label": "Parlay leg-void payoff map",
@@ -1815,8 +2566,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "rules_primary and rules_secondary per combo series with version"
-   ]
+    "rules_primary text per combo series",
+    "leg status vectors"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi rules_primary text via API",
+      "access": "own_capture",
+      "note": "version and hash per market"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "m.rules_text"
+   }
   },
   "nhl.leg_logical_relations": {
    "label": "Leg logical-relations map (implications, exclusions, shared ladders)",
@@ -1831,8 +2598,24 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "leg definitions with period, rung, stat and settlement rules"
-   ]
+    "rules_primary and rules_secondary per market",
+    "market ladder structure"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi rules_primary text via API",
+      "access": "own_capture",
+      "note": "version and hash per market"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.rating_posterior_uncertainty": {
    "label": "Team rating posterior uncertainty and in-season drift",
@@ -1847,8 +2630,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game goals, xG, score effects, date; preseason projections"
-   ]
+    "game xG and goals by team",
+    "schedule",
+    "preseason prior"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.loser_point_rate": {
    "label": "Loser-point and overtime-resolution rate by team",
@@ -1863,8 +2667,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game result type (REG/OT/SO), points awarded, regulation wins"
-   ]
+    "game results by RW/OTW/SOW/OTL",
+    "season standings"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.bracket_path_difficulty": {
    "label": "Playoff bracket path difficulty by seed and division",
@@ -1879,15 +2700,33 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "division membership, standings, format rules"
-   ]
+    "division and conference membership by season",
+    "standings with RW/ROW/points",
+    "remaining schedule",
+    "format rules text"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.cap_flexibility_deadline": {
    "label": "Cap flexibility and deadline additions capacity",
    "category": "availability",
    "mechanism": "Cap space, long-term injured reserve relief and tradable assets that allow a team to add or replace players before the deadline.",
    "rationale": "A team's rating at the playoffs differs from today's rating through deadline moves and injury replacement; teams with cap room and assets can improve, which shifts long-horizon probabilities and is partially public.",
-   "measurement": "From cap sites gather per team cap hit, projected deadline cap space (daily cap accrual x days remaining), LTIR usage, number of first-round picks and prospect capital (rank-based score from public prospect ratings); compute capacity = deadline space + LTIR relief; map to expected rating gain via historical deadline acquisitions of playoff contenders (average WAR added per cap dollar) with k=10 team-seasons; refresh weekly.",
+   "measurement": "At each date t before the trade deadline compute per team: deadline space = cap ceiling minus current cap hit plus LTIR relief, times (days remaining after deadline-eligible acquisition / 186 season days) as accrued-cap fraction; count of own first-round picks held in the next two drafts; capacity = accrued space. Calibrate on 2015-16 onward: regress the acquisition indicator (contending team adds a skater with 3-season RAPM xG/60 above team median) on capacity, picks held, and points pct rank; shrink coefficients to zero with ridge chosen by leave-one-season-out CV. Snapshot daily; use only data timestamped before t.",
    "pregame_knowable": "partial",
    "free_sources": [
     "PuckPedia",
@@ -1896,8 +2735,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team cap tables, LTIR status, pick inventory, trade logs"
-   ]
+    "team cap hit table with daily snapshots",
+    "LTIR and retained salary",
+    "draft pick inventory",
+    "trade log with deadline date and acquired player ratings"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "CapWages",
+      "access": "free_limited"
+     },
+     {
+      "name": "Own point-in-time capture",
+      "access": "own_capture",
+      "note": "must be logged live; no public history"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.series_goalie_volatility": {
    "label": "Series-level goaltending volatility beyond binomial",
@@ -1913,8 +2775,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goalie-game shots, goals, GSAx; series outcomes"
-   ]
+    "playoff goalie shots faced and saves by game",
+    "series results",
+    "GSAx by game"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.award_vote_share_model": {
    "label": "Award vote-share model (electorate-specific)",
@@ -1930,8 +2814,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "award voting results with candidates, vote points, season stats"
-   ]
+    "award finalists, winners and published vote points by season",
+    "season-to-date and final stat lines",
+    "team points pct"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.award_voting_rules"
+   }
   },
   "nhl.award_eligibility_tiebreak_map": {
    "label": "Award eligibility and tiebreak rules map",
@@ -1960,9 +2870,35 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "goalie-game shots faced, goals against, xG against, starter flag",
-    "team goalie rotation and schedule"
-   ]
+    "goalie GSAx and shots faced",
+    "goalie starts and team schedule",
+    "wins, SV%, shutouts",
+    "Vezina finalists"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.award_stats"
+   }
   },
   "nhl.rookie_role_pedigree": {
    "label": "Rookie role and pedigree for Calder candidates",
@@ -1978,17 +2914,39 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "prior-league player-season stats",
-    "draft slot and age",
-    "NHL player-game TOI by strength state"
-   ]
+    "prior-league stats",
+    "draft slot",
+    "NHL game logs",
+    "forward TOI share",
+    "PP unit"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.coach_expectation_delta": {
    "label": "Coach expectation delta (results versus preseason projection, year-over-year change)",
    "category": "motivation",
    "mechanism": "Difference between realised points percentage and the preseason-projected value, plus year-over-year change and coaching tenure flags.",
    "rationale": "The Jack Adams Award is voted on who coached best relative to expectations, so what matters is the surprise, not the level; a team that finished first as expected earns less credit than one that jumped from the bottom. The expectation must be formed before the season to avoid hindsight bias.",
-   "measurement": "Preseason projection P_exp = last two seasons' points percentage blend (0.6/0.4) adjusted by roster change impact and age; delta = realised points pct to date (or simulated final) minus P_exp, with standard error from remaining games; add change from last season, first-year-coach flag, injury games lost to key players, and goalie change flag. Fit a ranking model of historical winners/finalists on delta and these flags (20 seasons) and output candidate win probabilities with simulation draws for final points.",
+   "measurement": "P_exp = 0.6*points pct (season-1) + 0.4*points pct (season-2), plus nhl.prior_to_current_blend roster-change term (minutes-weighted 3-season RAPM of arrivals minus departures, per 82 games, converted at 0.015 pts pct per goal/60-game). Delta_t = points pct to date through games before as-of date t minus P_exp; SE = sqrt(p(1-p)/n_games_played). For rest of season add simulated points pct from team_season_points_distribution. Award model: conditional logit of Jack Adams winner among finalists (2005-06 onward) on delta, delta minus last season delta, first-year-coach flag; at most 3 covariates, ridge-shrunk. Use only games before t.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NHL standings API",
@@ -1997,8 +2955,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team season points pct, preseason projections, coach tenure, injury games lost"
-   ]
+    "team season points pct, last two seasons",
+    "roster arrivals and departures with TOI",
+    "coach start dates",
+    "man-games lost to key players",
+    "Jack Adams finalists and winners"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.draft_lottery_odds_by_standing": {
    "label": "Draft lottery odds by final standing and ownership",
@@ -2057,8 +3039,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player contracts with clauses and dates, league calendar"
-   ]
+    "contract table with clauses",
+    "transaction log",
+    "calendar dates"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "CapWages",
+      "access": "free_limited"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.suitor_cap_and_roster_fit": {
    "label": "Suitor cap space and roster-fit table",
@@ -2073,8 +3076,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team cap tables, roster depth by position"
-   ]
+    "team cap space at signing window",
+    "roster depth chart",
+    "star FA decisions"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "CapWages",
+      "access": "free_limited"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.expansion_governance_gates": {
    "label": "Expansion governance gates and readiness checklist",
@@ -2090,15 +3119,36 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "dated governance statements, meeting calendar, bid status"
-   ]
+    "Board of Governors meeting dates",
+    "press releases with timestamps",
+    "commissioner statements"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     },
+     {
+      "name": "Own point-in-time capture",
+      "access": "own_capture",
+      "note": "must be logged live; no public history"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.insider_report_credibility": {
    "label": "Insider report credibility and lag",
    "category": "other",
    "mechanism": "Reporter- and report-type-specific hit rate and lag between a report and the official announcement.",
    "rationale": "Reports of talks, offers or agreements differ in reliability; the contract only settles on official actions, so the hit rate and lag set how much a report should move the probability within the time window.",
-   "measurement": "Collect reports by named insiders on transactions for 5 seasons with report type (talks, close, agreed, official), then label outcomes (official within 7, 30, 90 days); compute per-reporter and per-type hit rate with Beta(2,2) prior and the distribution of lag; convert to likelihood ratio of a report for the contract's event within its window; store report timestamp and wording.",
+   "measurement": "Collect reports (reporter, timestamp, type in {talks, close, agreed, official}, player/club) for 5 seasons; for each report-type r and reporter j label y=1 if an official transaction matching it occurs within 7, 30 or 90 days. Precision_j,r = (hits+2)/(n+4) (Beta(2,2) prior). Likelihood ratio for a contract event E within its window = precision / base_rate(E class in window), base rate from nhl.offfield_base_rate; also store lag distribution (report to official). Use only reports timestamped before the as-of time.",
    "pregame_knowable": "partial",
    "free_sources": [
     "Public posts of NHL insiders (own capture)",
@@ -2106,8 +3156,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "dated insider reports with type and later official outcomes"
-   ]
+    "timestamped insider posts with type and wording",
+    "transaction official dates",
+    "event windows"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Own point-in-time capture",
+      "access": "own_capture",
+      "note": "must be logged live; no public history"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.reference_class_hazard": {
    "label": "Class-specific event hazard (player move by contract class, expansion by process stage, award by finalist)",
@@ -2123,10 +3190,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player transaction history with contract status at the time",
-    "league expansion process timeline",
-    "award finalists and winners by season"
-   ]
+    "transaction history",
+    "expansion process timeline",
+    "award finalist sets"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.offfield_base_rate"
+   }
   },
   "nhl.win_streak_extremum_dist": {
    "label": "[Simulation output, not raw data] Winning-streak extremum distribution (league-wide max run length)",
@@ -2141,15 +3232,37 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game results with date, win flag, OT/SO flag"
-   ]
+    "game results sequence",
+    "rating posterior",
+    "streak records"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.league_scoring_environment": {
    "label": "League scoring environment drift",
    "category": "environment",
    "mechanism": "Current-season league goals per game relative to the prior-season baseline, with shrinkage.",
    "rationale": "League scoring levels shift between seasons by a few percent (rules, enforcement, goalie equipment, shot quality), moving every player's goal expectation together; a 60-goal threshold is sensitive to a three percent level change.",
-   "measurement": "Compute league goals per team per game and PP opportunities per game to date; the season-end estimate is a precision-weighted average of the prior-season value (weight 0.6) and the to-date value with game-count weight n/(n+250); report the estimated multiplier and its sd (about 1.5 percent) and apply it as a common factor on all player and team scoring rates in simulation; refresh weekly.",
+   "measurement": "As of date t, n = number of team-games completed league-wide before t. Estimate G_hat = w x G_todate + (1-w) x G_prior_season, with w = n/(n+250), G = league goals per team per game (and likewise PP opportunities per game). Multiplier = G_hat / G_prior_season; its sd = sqrt(sd_todate^2 w^2 + sd_prior^2 (1-w)^2) with sd_prior=1.5 percent and sd_todate from the Poisson standard error. Refresh weekly from games dated before t.",
    "pregame_knowable": "yes",
    "free_sources": [
     "NHL standings API",
@@ -2157,8 +3270,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "league-wide goals, games and PP counts by season and date"
-   ]
+    "league goals per team-game by date",
+    "PP opportunities per game",
+    "prior-season totals"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.schedule_sequence_profile": {
    "label": "Schedule sequence profile (home stands, back-to-backs, opponent strength along the path)",
@@ -2174,10 +3305,28 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team schedule with dates, venues and opponents",
-    "team ratings by date",
-    "rest and travel distance per game"
-   ]
+    "remaining schedule with venues and rest",
+    "team ratings posterior"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.sos_remaining"
+   }
   },
   "nhl.team_season_points_distribution": {
    "label": "Team season points distribution (current points + remaining games with loser points)",
@@ -2193,17 +3342,42 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game results with regulation/OT/SO flags",
-    "team xG for and against by game",
-    "remaining schedule"
-   ]
+    "standings",
+    "remaining schedule",
+    "rating posterior",
+    "tie-break rules"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "DUPLICATE",
+    "duplicate_of": "nhl.season_sim_distribution"
+   }
   },
   "nhl.national_team_roster_strength": {
    "label": "National-team roster strength from NHL player values (best-on-best tournaments)",
    "category": "team_strength",
    "mechanism": "A national team's goal differential per game is the sum of its players' individual contributions weighted by expected ice time, plus its starting goalie's save quality.",
    "rationale": "Club ratings cannot be reused: national rosters mix players from many clubs, depth is much higher than an NHL team's, and the decisive differences are the top-pair defence and the starting goalie; injury withdrawals after roster announcement move strength materially.",
-   "measurement": "For each announced roster (as of the market timestamp): skater value = shrunk 3-season goals-above-replacement per 60 (or RAPM xGF-xGA per 60, k=1500 minutes shrinkage to positional mean), multiplied by projected TOI share from the announced lines (top-6 F ~17 min, D1 ~23 min); goalie value = 3-season GSAx per 60 shrunk with k=3000 shots; team value = sum skaters + expected starter value; convert to per-game goal differential with the club goal model; recompute on each withdrawal or replacement.",
+   "measurement": "For each announced roster as of the market timestamp: skater value = 3-season RAPM xG differential per 60 (5v5), shrunk toward position mean with prior weight 1,500 minutes; weight by tournament TOI per game (F lines 1-4: 18/16/13/9 min; D pairs 1-3: 23/19/15 min, special teams added from PP/PK unit RAPM). Goalie = 3-season GSAx per 60 shrunk with k=3,000 shots. Team value = sum, converted to expected goal differential per game via the club goal model; recompute on each withdrawal or replacement timestamp.",
    "pregame_knowable": "yes",
    "free_sources": [
     "Tournament roster announcements (NHL.com / national federations)",
@@ -2212,10 +3386,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "national roster lists with announcement and withdrawal dates",
-    "player GAR/RAPM or xGF/xGA on-ice per 60, TOI",
-    "goalie shots against and GSAx"
-   ]
+    "tournament rosters and lines",
+    "3-season player RAPM/GSAx",
+    "international TOI history"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.short_tournament_format_sim": {
    "label": "Short best-on-best tournament format simulation (round robin plus final)",
@@ -2230,9 +3428,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "tournament schedule, venues, points scheme, tiebreak order, OT/shootout format",
-    "completed game results"
-   ]
+    "tournament rules and schedule",
+    "game results so far",
+    "team roster strength"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.playoff_round_goal_leader_sim": {
    "label": "Playoff-round goal-leader simulation (series length x per-game goal rates, tie mass)",
@@ -2248,10 +3466,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "playoff and regular-season player shots, ixG, goals, TOI by state",
-    "series schedule and state",
-    "starting goalie per game"
-   ]
+    "player shot and goal data incl. playoffs",
+    "series state",
+    "TOI by state",
+    "goalie GSAx"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.retirement_hazard_profile": {
    "label": "Veteran retirement hazard by age, contract status, production and health",
@@ -2267,10 +3506,32 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "player age, contract expiry, career stats by season",
-    "retirement announcement dates",
-    "injury games missed"
-   ]
+    "player-season production and age",
+    "contract end",
+    "injury games missed",
+    "retirement announcements"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.gm_candidate_pool": {
    "label": "GM vacancy candidate pool and hiring-process stage",
@@ -2286,9 +3547,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "GM hire history with dates, prior roles and links",
-    "candidate lists and interview reports with timestamps"
-   ]
+    "vacancy date and hire date",
+    "candidate names from timestamped reports",
+    "executive history"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Own point-in-time capture",
+      "access": "own_capture",
+      "note": "must be logged live; no public history"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.draft_team_need_profile": {
    "label": "Club organisational need profile at the pick (positions, prospect pipeline depth, window)",
@@ -2304,10 +3590,34 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "club prospect pool table: player, position, age, draft slot",
-    "NHL roster and contract table",
-    "team standings points% by season"
-   ]
+    "prospect pools by position and age",
+    "contract expiry table",
+    "last-two-season points pct"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     },
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.draft_board_dispersion": {
    "label": "Cross-service disagreement on each prospect's rank",
@@ -2323,8 +3633,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "service ranks by prospect and publication date"
-   ]
+    "service ranks by prospect and publication date",
+    "Wayback capture timestamps"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL Central Scouting / TSN / McKenzie rankings archive",
+      "access": "free_scrape",
+      "note": "patchy before ~2012"
+     },
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.draft_pick_trade_hazard": {
    "label": "Probability a held pick changes club or slot before selection",
@@ -2341,9 +3668,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "pick transaction log with date, from-club, to-club, slot",
-    "GM tenure table"
-   ]
+    "draft-pick transaction history with date and slot",
+    "points pct rank at trade date",
+    "GM tenure"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "PuckPedia",
+      "access": "free_limited",
+      "note": "web tables, no bulk API; CapFriendly closed 2024"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.prospect_eligibility_medical_flags": {
    "label": "Prospect eligibility, signing-rights and medical availability flags",
@@ -2359,10 +3702,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "prospect birthdate and draft year",
-    "injury and games-missed log",
-    "combine report flags"
-   ]
+    "prospect birthdates",
+    "injury and games-missed share",
+    "combine medical reports",
+    "contract path"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.gm_draft_behavior_history": {
    "label": "General-manager and scouting-staff draft behaviour history",
@@ -2378,16 +3737,38 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "draft picks by club: slot, consensus rank",
-    "front-office staff tenure"
-   ]
+    "draft picks by slot with club and staff",
+    "consensus rank by prospect",
+    "GM and amateur scouting director tenures"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "NHL Central Scouting / TSN / McKenzie rankings archive",
+      "access": "free_scrape",
+      "note": "patchy before ~2012"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.draft_order_playoff_elimination": {
    "label": "Draft order of playoff clubs (slots 17-32) from round of elimination and regular-season points",
    "category": "schedule_context",
    "mechanism": "Assigns slots 17-32 to the 16 playoff clubs from how far each advanced and from regular-season points within groups, so it depends on playoff series outcomes.",
    "rationale": "Before the playoffs end, which club picks at 17-32 is uncertain; a prospect projected in the 20s is more likely to go to a club whose board or need suits him. Cup winner 32, finalist 31 and conference-final losers 29-30 are firm; the ordering of earlier losers (pure points vs division-winner adjustment) must be checked against the current rule (d5).",
-   "measurement": "Simulate the bracket from nhl.bracket_path_difficulty and per-series win probabilities from ratings with posterior uncertainty (10,000 paths); for each path apply the league's slot rule to produce a 17-32 order; report P(club holds slot k) for k=17..32. After each round, condition on eliminated clubs. As-of: the latest completed series.",
+   "measurement": "For each of 10,000 simulated playoff paths from nhl.bracket_path_difficulty with per-series win probabilities from the rating posterior: assign slots 17-24 to round-1 losers, 25-28 to round-2 losers, 29-30 to conference-final losers, 31 to the Cup runner-up, 32 to the Cup winner; inside each group rank by regular-season points (ties by the NHL draft tie-break: fewer regulation wins first). Output P(club holds slot k) for k=17..32. After each completed series fix the observed eliminations. As-of = last completed series, ratings before that timestamp.",
    "pregame_knowable": "partial",
    "free_sources": [
     "NHL.com playoff results and draft-order pages",
@@ -2395,10 +3776,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
+    "regular-season final standings and tie-breaks",
     "playoff series results by round",
-    "regular-season points by club",
-    "league draft-order rule text"
-   ]
+    "ownership table incl. traded picks"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.draft_remaining_board_state": {
    "label": "[Model state, joint simulation] Prospects still available at slot k given picks 1..k-1",
@@ -2412,10 +3813,31 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "full top-64 board by service and date",
-    "actual pick order by year",
-    "ownership by slot at draft time"
-   ]
+    "consensus ranks and dispersion",
+    "club-staff picks history",
+    "ownership and lottery results",
+    "production/combine residuals"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     },
+     {
+      "name": "NHL Central Scouting / TSN / McKenzie rankings archive",
+      "access": "free_scrape",
+      "note": "patchy before ~2012"
+     },
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.prospect_production_profile": {
    "label": "Prospect league-adjusted production and combine testing",
@@ -2431,10 +3853,25 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "prospect season stats by league",
-    "birthdate and position",
-    "combine testing results"
-   ]
+    "prospect league stats by age",
+    "NHLe translation data",
+    "combine results"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Elite Prospects",
+      "access": "free_limited",
+      "note": "free tier limited; full data paid"
+     },
+     {
+      "name": "NHL.com press releases, transactions, draft pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.series_game_count_pmf": {
    "label": "[Model output, not raw data] Joint series winner-by-length pmf (8 cells) from per-game probabilities and home-ice pattern",
@@ -2450,10 +3887,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "series results by year with game count",
-    "team ratings by date",
-    "home-ice sequence by round"
-   ]
+    "series schedule and results",
+    "team ratings posterior",
+    "goalie and injury states"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "Derived from other catalog inputs",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.series_state_scoring_shift": {
    "label": "Series-state effect on per-game goal rate (elimination, trailing team, game-7 intensity)",
@@ -2468,9 +3925,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "playoff game results with series score entering game",
-    "play-by-play with empty-net goals and goalie pull times"
-   ]
+    "playoff game totals with series score entering",
+    "team rating mean",
+    "venue"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.series_adjustment_regime": {
    "label": "Coaching adjustment and matchup learning across games in a series",
@@ -2485,10 +3959,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "playoff game results by game index",
-    "shift charts for line combinations, starters from boxscores",
-    "coach tenure"
-   ]
+    "playoff game goals by series and game index",
+    "coach tenures",
+    "goalie changes"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "nhl.series_game_dependence": {
    "label": "Within-series game-to-game dependence of results (sign and size)",
@@ -2503,9 +3997,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "playoff game results in order with series id",
-    "pre-series team ratings"
-   ]
+    "series game outcomes with order",
+    "pre-series ratings",
+    "home flag"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     }
+    ],
+    "verified": true
+   }
   },
   "nhl.series_state_win_prob_shift": {
    "label": "Series-state shift in per-game win probability (elimination, trailing 0-3 or 1-3, closeout games)",
@@ -2520,9 +4031,26 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "playoff game results with series score entering the game",
-    "pre-series ratings or point percentages"
-   ]
+    "playoff game results since 1987 with series state",
+    "pre-game rating log-odds",
+    "home flag"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Hockey-Reference",
+      "access": "free_scrape",
+      "note": "scrape within rate limits"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     }
+    ],
+    "verified": false
+   }
   },
   "nhl.series_pair_scoring_rate_uncertainty": {
    "label": "Shared posterior uncertainty in the pair's combined goal rate (attack plus defence sum) for one series",
@@ -2537,9 +4065,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "team-game goals and xG for and against by strength state",
-    "playoff game results with series id"
-   ]
+    "team game goals and xG",
+    "posterior draws from rating model",
+    "league scoring multiplier"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MoneyPuck data downloads (moneypuck.com/data.htm)",
+      "access": "free"
+     },
+     {
+      "name": "NHL web API (api-web.nhle.com play-by-play, boxscore, schedule, standings, shiftcharts)",
+      "access": "free",
+      "note": "unofficial but stable public JSON"
+     },
+     {
+      "name": "Natural Stat Trick",
+      "access": "free_scrape",
+      "note": "scrape; rate limits"
+     }
+    ],
+    "verified": true
+   }
   }
  },
  "blueprints": {

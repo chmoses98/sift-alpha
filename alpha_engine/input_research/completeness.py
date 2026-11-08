@@ -589,7 +589,7 @@ def acceptance(g: dict) -> dict:
         ("every in-scope series is assigned to an archetype that exists in the catalog", all(r["final"] in {k for k in {x["archetype"] for x in rows if x["sport"] == r["sport"]}} for r in in_scope), f"{len(in_scope)} in-scope series"),
         ("every review-added input is audited (definition, provenance, market-free class)", audited >= new_ids, f"{audited} audited of {new_ids} review-added inputs"),
         ("every declared gap is classified", ga["classified"] == ga["declared"] and ga["declared"] > 0, f"{ga['classified']} of {ga['declared']}"),
-        ("no declared gap is a catalog blocker", ga["by_class"].get("CATALOG_BLOCKER", 0) == 0 and ga["classified"] > 0, f"{ga['by_class'].get('CATALOG_BLOCKER', 0)} catalog blockers"),
+        ("no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids)", ga["blockers_open"] == 0 and ga["classified"] > 0, f"{ga['blockers_open']} open of {ga['by_class'].get('CATALOG_BLOCKER', 0)} catalog blockers ({ga['blockers_resolved']} resolved)"),
     ]
     return {"criteria": [{"criterion": a, "pass": b, "detail": c} for a, b, c in crit], "meets_criteria": all(b for _, b, _ in crit),
             "note": "Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.",

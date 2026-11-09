@@ -34,6 +34,11 @@ def new_input_ids(sport: str) -> set[str]:
     return out
 
 
+def missing_audit_ids() -> dict[str, list[str]]:
+    """Exact check: review-added input ids that have NO audit entry. (The acceptance gate used to compare counts, which passed while 24 ids were missing.)"""
+    return {s: sorted(i for i in new_input_ids(s) if i not in load_audit(s)) for s in SPORTS}
+
+
 def mechanical() -> dict:
     res = {"schema_version": "input-audit-mechanical-1.0", "by_sport": {}, "inputs": {}}
     for s in SPORTS:

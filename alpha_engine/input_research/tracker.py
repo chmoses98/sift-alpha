@@ -101,8 +101,8 @@ def _data_foundation_md(p: dict) -> list[str]:
     if lk:
         t = lk["totals"]
         L += [f"**Baseline guard.** The approved catalog (`{lk['approved_commit'][:7]}`) is content-pinned (`baseline_lock.json`: {t['inputs']} inputs, {t['archetypes']} archetypes, {t['declared_gaps']} declared gaps) and regeneration is verified byte-for-byte (`python -m alpha_engine.input_research.regenerate --check`). "
-              f"{len(lk['repairs_since_approved_commit'])} repairs sit on top of the approved commit (two stale audit flags/verdicts, one input patch, the explicit baseline overlay). "
-              f"Open non-gating discrepancy: {lk['known_discrepancies'][0]['count']} review-added inputs have no audit entry although the gate's count comparison passes.", ""]
+              f"{len(lk['repairs_since_approved_commit'])} repairs sit on top of the approved commit (stale audit flags/verdicts, one input patch, the explicit baseline overlay, and an independent audit of the 24 review-added inputs that had no audit entry, which also made the gate compare exact input ids). "
+              + ("Previously open discrepancy (24 unaudited review-added inputs): **resolved**, 953 of 953 ids audited; 7 measurement corrections and 15 WEAK/REMOVE_CANDIDATE flags recorded in the lock." if str(lk['known_discrepancies'][0].get('severity', '')).startswith('RESOLVED') else f"Open non-gating discrepancy: {lk['known_discrepancies'][0]['count']} review-added inputs have no audit entry."), ""]
     return L
 
 

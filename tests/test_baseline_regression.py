@@ -73,6 +73,28 @@ class AuditFlags(unittest.TestCase):
         self.assertEqual([e for e in ia.validate("MLB", ia.load_audit("MLB")) if "mlb.award_narrative" in e], [], "the reconciliation entry must satisfy the audit schema")
 
 
+class ExactAuditGate(unittest.TestCase):
+    def test_every_review_added_input_id_has_an_audit_entry(self):
+        self.assertEqual({k: v for k, v in ia.missing_audit_ids().items() if v}, {})
+
+    def test_the_gate_compares_ids_not_counts(self):
+        src = Path(comp.__file__).read_text()
+        self.assertIn("missing_audit_ids", src); self.assertNotIn("audited >= new_ids", src)
+        crit = [c for c in comp.rd(comp.CD / "gate.json")["acceptance"]["criteria"] if "exact ids" in c["criterion"]]
+        self.assertEqual(len(crit), 1); self.assertTrue(crit[0]["pass"]); self.assertIn("953 of 953", crit[0]["detail"])
+
+    def test_surplus_audit_entries_for_other_inputs_cannot_mask_a_missing_id(self):
+        # a sport with MORE audit entries than review-added inputs must still be reported if one specific id lacks an entry
+        s = "NBA"; audit = ia.load_audit(s); new = ia.new_input_ids(s)
+        victim = sorted(new)[0]; trimmed = {k: v for k, v in audit.items() if k != victim}
+        self.assertGreaterEqual(len(trimmed), len(new), "premise: entry count still exceeds the review-added count")
+        self.assertIn(victim, [i for i in new if i not in trimmed])
+
+    def test_the_24_corrections_are_recorded_in_the_lock(self):
+        r = [x for x in BL.load()["repairs_since_approved_commit"] if x["id"] == "audit-of-24-unaudited-review-added-inputs"][0]
+        self.assertEqual(len(r["per_input"]), 24); self.assertEqual(sum(1 for x in r["per_input"] if x["measurement_corrected"]), 7)
+
+
 class Overlay(unittest.TestCase):
     def _cat(self):
         return {"inputs": {"i1": {"label": "a"}}, "blueprints": {}, "archetypes": {"x": {"inputs": [{"id": "i1", "why": "w", "role": "primary"}], "interactions": []}}, "unregistered_archetypes": {}}

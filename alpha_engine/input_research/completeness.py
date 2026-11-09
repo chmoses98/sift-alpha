@@ -627,13 +627,14 @@ def acceptance(g: dict) -> dict:
     in_scope = [r for r in asg if r["scope"] == "IN_SCOPE"]
     new_ids = sum(input_audit.mechanical()["by_sport"][s]["new"] for s in SPORTS)
     audited = sum(ia["audited"].values())
+    missing_ids = sorted(f"{sp}:{i}" for sp, v in input_audit.missing_audit_ids().items() for i in v)
     mf = ia["market_free"]
     detached = sum(len(detached_references(cat.load(sp))) for sp in SPORTS)
     crit = [
         ("every archetype passes the structural gate and independent review with no open blocker/major finding and a second verification", all(r["status"] == "READY_FOR_USER_APPROVAL" for r in rows), f"{sum(1 for r in rows if r['status'] == 'READY_FOR_USER_APPROVAL')} of {len(rows)}"),
         ("every ledger series has exactly one final assignment (reconciles exactly)", len(asg) == len(led) and len({r["ticker"] for r in asg}) == len(led), f"{len(asg)} assigned of {len(led)} ledger series"),
         ("every in-scope series is assigned to an archetype that exists in the catalog", all(r["final"] in {k for k in {x["archetype"] for x in rows if x["sport"] == r["sport"]}} for r in in_scope), f"{len(in_scope)} in-scope series"),
-        ("every review-added input is audited (definition, provenance, market-free class)", audited >= new_ids, f"{audited} audited of {new_ids} review-added inputs"),
+        ("every review-added input id has an audit entry (exact ids, not counts)", not missing_ids, f"{new_ids - len(missing_ids)} of {new_ids} review-added input ids audited ({audited} audit entries in all, which also cover pre-existing inputs)" + (f"; MISSING: {missing_ids[:12]}" if missing_ids else "")),
         ("every declared gap is classified", ga["classified"] == ga["declared"] and ga["declared"] > 0, f"{ga['classified']} of {ga['declared']}"),
         ("no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids)", ga["blockers_open"] == 0 and ga["classified"] > 0, f"{ga['blockers_open']} open of {ga['by_class'].get('CATALOG_BLOCKER', 0)} catalog blockers ({ga['blockers_resolved']} resolved)"),
         ("no interaction, non-linearity or mechanism stage names an input its archetype does not carry (detached-input references)", detached == 0, f"{detached} detached references"),

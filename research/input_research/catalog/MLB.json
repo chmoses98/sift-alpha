@@ -6920,7 +6920,7 @@
    "category": "matchup",
    "mechanism": "A pitcher's strikeout ability is fixed by the physical quality of his pitches (velocity, movement, extension, release) long before his observed K% stabilises, so a pitch-quality grade and a projection prior carry the information when observed samples are short or obsolete.",
    "rationale": "Observed K% needs several hundred batters faced to stabilise, and the 120-BF half-life used for k_rates throws away the history that would help; after an arsenal change (new pitch, velocity jump), an injury return or a debut, the observed rate measures a pitcher who no longer exists. Pitch-shape grades react within one or two starts and projections encode minor-league and aging information, so the prior matters most exactly on the rungs where markets misprice rookies and retooled starters.",
-   "measurement": "prior_K = w * projK + (1 - w) * stuffK, where projK = mean of the latest Steamer and ZiPS K% (rest-of-season if published, else preseason) at the as-of date, and stuffK = league K% + beta * (usage-weighted pitch-model whiff grade - league mean), with the per-pitch whiff grade a logistic model on release speed, induced vertical and horizontal break, spin rate, extension, release height and arm angle, and speed/movement differences to the primary fastball, fitted on 2021-2025 Statcast pitches; beta fitted by regressing pitcher-season K% on the grade (min 150 BF). w = 0.5 by default, 0.3 when the pitcher's last-3-start arsenal differs from his prior season (new pitch type with >= 10% usage or fastball velocity change >= 1.5 mph). Posterior K% = (BF_eff * obsK + 150 * prior_K) / (BF_eff + 150), with BF_eff = BF since the arsenal change at full weight plus earlier BF at weight 0.25; rookies with < 100 MLB BF use projK from MiLB-translated projections. As-of: projections and pitches dated before the game; units K per batter faced.",
+   "measurement": "prior_K = w*projK + (1-w)*stuffK; projK = mean of latest Steamer and ZiPS K% captured with its publish_date at or before the as-of date (own snapshots only; no back-fill). stuffK = league K% + beta*(usage-weighted whiff grade - league mean); the whiff-grade logistic model (release speed, IVB, HB, spin, extension, release height, arm angle, deltas to primary fastball) and beta are refit walk-forward: for games in season S use only pitches and seasons < S. w fitted by minimising held-out K% log loss in 2023-2025, default 0.5 and 0.3 on arsenal change. Posterior K% = (BF_eff*obsK + 150*prior_K)/(BF_eff+150), BF_eff = BF since change + 0.25*earlier BF. Units: K per BF.",
    "pregame_knowable": "yes",
    "free_sources": [
     "FanGraphs projections (Steamer, ZiPS) and pitch-model leaderboards (Stuff+, Pitching+)",
@@ -6928,9 +6928,30 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "projection snapshots: pitcher_id, system, K%, BF, publish_date",
+    "projection snapshots (own capture): pitcher_id, system, K%, BF, publish_date",
     "statcast pitches: pitcher_id, pitch_type, release_speed, pfx_x, pfx_z, release_extension, release_pos_z, release_spin_rate, arm_angle, description, game_date"
-   ]
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "Baseball Savant Statcast CSV",
+      "access": "free_scrape",
+      "note": "probe mlb_savant_csv was POLICY_DENIED from the audit environment"
+     },
+     {
+      "name": "FanGraphs (projections, leaderboards)",
+      "access": "free_scrape",
+      "note": "probe 'fangraphs' was POLICY_DENIED; terms limit scraping"
+     },
+     {
+      "name": "pybaseball Statcast wrapper",
+      "access": "free_scrape",
+      "note": "same upstream as Savant"
+     }
+    ],
+    "verified": false
+   }
   },
   "mlb.opposing_probable_starter_vintage": {
    "label": "Opposing probable starter identity, throwing hand and announcement timestamp, with the probability the listed starter changes",
@@ -6945,9 +6966,29 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "probable-pitcher snapshots: game_pk, team_id, pitcher_id, pitch_hand, first_seen_ts, change_ts",
+    "probable-pitcher snapshots (own capture): game_pk, team_id, pitcher_id, pitch_hand (from /people), first_seen_ts, change_ts",
     "lineup history: game_pk, batter_id, started_flag, opposing_starter_hand"
-   ]
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MLB Stats API schedule hydrate=probablePitcher,lineups plus /people for pitchHand",
+      "access": "free",
+      "note": "probe mlb_statsapi_sched REACHABLE; snapshot history is own_capture only"
+     },
+     {
+      "name": "Retrosheet game logs",
+      "access": "free",
+      "note": "probe retrosheet POLICY_DENIED; use Stats API boxscores instead"
+     }
+    ],
+    "verified": true
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "mlb.award_electorate_procedure": {
    "label": "Award electorate and ballot procedure by award (who votes, ballot depth and points, vote timing, fan-vote component, public ballots)",
@@ -6969,14 +7010,34 @@
    "registry_ids": [],
    "raw_data": [
     "award procedure table: award, league, season, electorate_class, n_voters, ballot_places, points_vector, vote_deadline, fan_vote_flag, public_ballots_flag, source_url"
-   ]
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "BBWAA and MLB.com award announcements (manual transcription)",
+      "access": "free",
+      "note": "no committed probe in data_foundation for bbwaa.com/mlb.com award pages; catalog says pages were unreachable"
+     },
+     {
+      "name": "SABR Defensive Index page",
+      "access": "free",
+      "note": "no probe"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "mlb.award_fan_vote_popularity": {
    "label": "Fan-vote popularity of a candidate for awards with a fan ballot (Hank Aaron Award)",
    "category": "motivation",
    "mechanism": "Where fans vote, a candidate's popularity and market size add support beyond the offensive production a panel weighs, so the winner can differ from the statistical leader.",
    "rationale": "The Hank Aaron Award combines a Hall of Fame panel with an online MLB.com fan vote, so a large-market or widely followed slugger gains share that a production model does not see; the relative weight of the two components is not published, so popularity must be estimated from outcomes. The All-Star fan ballot published by MLB is the only public, dated measure of the same fan population's preferences.",
-   "measurement": "pop_i = log(All-Star Phase 1 fan votes of player i in the same season, from MLB's published leader updates; 0 for players not listed, with a not-listed flag) + log(team metro population) as a second term. Winner model over the club-nominee finalist set: P(i) = softmax(a1*OPS+_z + a2*HR_z + a3*pop_i + a4*team_playoff_flag), z-scores within league among finalists at the end of the regular season; fit a1-a4 by conditional logit on 2014-2025 winners per league with ridge shrinkage toward a1 = production-only fit (penalty 3 seasons). Units: probability; as-of end of the regular season (voting runs through the postseason, so later fan activity is unobserved).",
+   "measurement": "pop_i = log(V_i) where V_i = published Phase 1 fan votes of player i in the same season; if i is not on the published leader list set V_i = the lowest published total of his league-position list (censoring floor) and not_listed=1. Second term m_i = log(team metro/CMA population, latest census, millions). Model: P(i)=softmax(a1*OPS+_z + a2*HR_z + a3*pop_z + a4*m_z + a5*not_listed + a6*playoff) over club-nominee finalists, z within league-season, conditional logit on 2014-2025, ridge toward the production-only fit with penalty 3 seasons and a3,a4 shrunk hardest. As-of end of the regular season.",
    "pregame_knowable": "partial",
    "free_sources": [
     "MLB.com All-Star ballot leader announcements (Phase 1 vote updates)",
@@ -6985,17 +7046,38 @@
    ],
    "registry_ids": [],
    "raw_data": [
-    "All-Star phase-1 vote totals by player and season",
+    "All-Star phase-1 fan vote totals by player and season (leader lists only, with the lowest published total per league/position)",
     "Hank Aaron finalists and winners by league and season",
-    "team metro population"
-   ]
+    "team metro population (Census MSA, fixed definition)"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MLB.com All-Star ballot leader releases",
+      "access": "free",
+      "note": "no committed probe; historical per-player Phase 1 completeness unverified"
+     },
+     {
+      "name": "US Census MSA population",
+      "access": "free",
+      "note": "public; mapping of Toronto to Canadian CMA needed"
+     },
+     {
+      "name": "Baseball-Reference",
+      "access": "free_scrape",
+      "note": "terms of use limit bulk scraping; no committed probe"
+     }
+    ],
+    "verified": false
+   }
   },
   "mlb.executive_award_team_improvement": {
    "label": "Executive of the Year signal: team improvement versus prior season and projection, payroll efficiency and value of the executive's acquisitions, judged by club executives before the postseason",
    "category": "motivation",
    "mechanism": "Club executives vote before the postseason for the front office that most improved its club relative to expectations and resources, so the signal is the team's regular-season surprise, cost efficiency and the visible results of recent trades and signings.",
    "rationale": "MLB's Executive of the Year is voted by the 30 clubs before the postseason (winners since 2018 include Beane, Antonetti, Elias and Arnold twice), with no public ballots, so BBWAA-style ballot models and fan inputs do not apply and the manager score is the wrong object; small-revenue clubs that outperform projections dominate the history.",
-   "measurement": "For each club's top baseball-operations executive at season end: x1 = regular-season wins - prior-season wins; x2 = wins - preseason projected wins (mean of ZiPS and PECOTA team projections published before opening day); x3 = playoff-berth flag; x4 = z-score of wins per $10M of opening-day payroll; x5 = fWAR produced this season by players acquired by trade or free agency in the prior 12 months minus fWAR of players traded away in that period. P(i) = softmax(b * x) over the 30 executives, b fitted by conditional logit on 2018-2025 winners with ridge shrinkage (penalty 3 seasons) because only 8 winners exist. Units: probability; as-of the last day of the regular season (votes are cast before the postseason, so postseason results are excluded).",
+   "measurement": "For each club's top baseball-operations executive at season end: x1 = wins minus prior-season wins; x2 = wins minus FanGraphs preseason projected wins (ZiPS-based Depth Charts snapshot frozen before opening day; PECOTA dropped as paywalled); x3 = playoff flag; x4 = z-score within league-season of wins per $10M opening-day payroll (Cot's); x5 = fWAR accrued with the acquiring club, from acquisition date to season end, by players acquired by trade or FA in the prior 12 months, minus fWAR those traded-away players accrued for their new clubs after the trade. P(i)=softmax(b*x), conditional logit on 2018-2025 winners, ridge penalty 3 seasons. As-of last regular-season day.",
    "pregame_knowable": "partial",
    "free_sources": [
     "MLB.com Executive of the Year announcements (mlb.com/awards/executive-of-the-year)",
@@ -7005,10 +7087,31 @@
    "registry_ids": [],
    "raw_data": [
     "team standings by season",
-    "preseason team projections by system and publish date",
+    "preseason team projections (ZiPS or FanGraphs Depth Charts) snapshot dated before opening day",
     "opening-day payroll by club",
-    "transaction log with player fWAR before and after"
-   ]
+    "transaction log with player fWAR on each club"
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "FanGraphs preseason projected standings",
+      "access": "free_scrape",
+      "note": "historical vintage must be own-captured or Wayback; probe fangraphs POLICY_DENIED"
+     },
+     {
+      "name": "Cot's Baseball Contracts / Spotrac payroll",
+      "access": "free_scrape",
+      "note": "listed in sources.json but no probe for payroll"
+     },
+     {
+      "name": "MLB Stats API (statsapi.mlb.com schedule, game feed, transactions)",
+      "access": "free",
+      "note": "probes mlb_statsapi_sched/feed/trans REACHABLE (data_foundation/probes.json)"
+     }
+    ],
+    "verified": false
+   }
   },
   "mlb.leaguewide_rare_game_event_hazard": {
    "label": "League-wide single-game rare-event hazard over the remaining season and playoffs (individual no-hitter, perfect game, 4+ HR game, 20+ K game, 2+ grand slams in a game, 500+ ft Statcast home run)",
@@ -7086,7 +7189,32 @@
     "postseason roster submissions: club, round, player_id, submitted_ts",
     "injury replacement transactions: removed player, added player, ts",
     "end-of-season active roster and injured list"
-   ]
+   ],
+   "market_free": "yes",
+   "provenance": {
+    "sources": [
+     {
+      "name": "MLB Stats API transactions",
+      "access": "free",
+      "note": "probe mlb_statsapi_trans REACHABLE, but postseason roster-submission coverage not shown"
+     },
+     {
+      "name": "Baseball-Reference",
+      "access": "free_scrape",
+      "note": "terms of use limit bulk scraping; no committed probe"
+     },
+     {
+      "name": "MLB.com postseason roster announcements",
+      "access": "free",
+      "note": "manual; no probe"
+     }
+    ],
+    "verified": false
+   },
+   "audit_flag": {
+    "verdict": "WEAK",
+    "duplicate_of": null
+   }
   },
   "mlb.hr_distance_tail_exceedance": {
    "label": "Home-run distance tail: per-home-run probability of a Statcast-measured projected distance of 500 feet or more, by hitter power, park altitude and conditions",
@@ -7232,7 +7360,7 @@
    "category": "player_role",
    "mechanism": "The Reliever of the Year awards are decided by the usage and results of relievers in high-leverage roles, which generic WAR and counting stats do not capture, so a reliever-specific production vector (saves, leverage index, win probability added, innings) is the input to the finalist-set model.",
    "rationale": "A reliever pitches 60-75 innings, so WAR is small and noisy, while closers collect saves and high-leverage innings that the electorate can see. Earlier research notes in this catalog say the retired-reliever panel weighs saves and leverage innings; that weighting is not published and is treated as an unverified hypothesis to be estimated from winner and finalist history, not assumed. Which award settles the Kalshi 'Reliever of the Year' series (MLB's panel award or the BBWAA Relief Pitcher of the Year introduced in 2026) is itself unknown from the contract text, so each award gets its own fit and no mixture weight is asserted.",
-   "measurement": "Candidate pool per league and season: relievers (at least 50 percent of appearances in relief) with at least 40 IP. Features at the regular-season end: x1 = fWAR z-score within the pool, x2 = saves, x3 = average leverage index when entering (gmLI), x4 = innings pitched in high-leverage situations (LI >= 1.5, from play-by-play), x5 = win probability added (WPA), x6 = K-BB% and FIP- in relief, x7 = ERA. Winner model per award: P(i) = softmax(b * x_i) over the candidate pool (finalist set where announced), b fitted by conditional logit on that award's own winner history with ridge shrinkage toward zero on every term except x1 (penalty equal to 3 seasons) because only about 10 winners per league exist; the starting year of the MLB panel award's history is unverified. The BBWAA Relief Pitcher of the Year has a single season of history, so no coefficients are fitted for it until more winners exist; its candidate distribution is reported only as the same softmax on x1 with wide uncertainty and labelled uncalibrated. Output: one probability vector per award, never pooled with the BBWAA MVP/Cy Young model or with each other. Units: probability; as-of the last regular-season day (votes precede the postseason for the panel award per earlier notes, unverified for the new BBWAA award).",
+   "measurement": "Pool per league-season: relievers with >=50% appearances in relief and >=40 IP. Features at last regular-season day: x1 = fWAR z within pool, x2 = saves, x3 = gmLI (average LI at entry, computed from a published base-out-inning-score leverage table applied to Stats API play-by-play, or FanGraphs gmLI), x4 = IP with LI>=1.5, x5 = WPA, x6 = FIP- in relief. ERA and K-BB% are dropped (collinear with x1/x6). P(i)=softmax(b*x) per award on its own winner history, ridge penalty 3 seasons toward zero except x1; BBWAA Relief award has only the x1 softmax, labelled uncalibrated. As-of last regular-season day.",
    "pregame_knowable": "partial",
    "free_sources": [
     "FanGraphs reliever leaderboards (fWAR, gmLI, WPA, shutdowns, FIP-)",
@@ -7242,26 +7370,26 @@
    "registry_ids": [],
    "raw_data": [
     "season reliever table: IP, saves, gmLI, WPA, fWAR, FIP-, K-BB%",
-    "play-by-play with leverage index per PA for high-leverage innings",
+    "play-by-play with own-derived leverage index per PA (base-out-inning-score LI table)",
     "Reliever of the Year winners and finalists by league and season, by awarding body"
    ],
    "market_free": "yes",
    "provenance": {
     "sources": [
      {
-      "name": "FanGraphs (leaderboards, ZiPS/Steamer ROS and depth charts)",
+      "name": "FanGraphs (projections, leaderboards)",
       "access": "free_scrape",
-      "note": "reliever WAR, gmLI and WPA are public season leaderboards"
+      "note": "probe 'fangraphs' was POLICY_DENIED; terms limit scraping"
      },
      {
-      "name": "Baseball-Reference (awards, drafts, box scores, splits)",
+      "name": "Baseball-Reference",
       "access": "free_scrape",
-      "note": "terms of use limit bulk scraping"
+      "note": "terms of use limit bulk scraping; no committed probe"
      },
      {
-      "name": "MLB Stats API (statsapi.mlb.com schedule, game feed, boxscore, transactions)",
+      "name": "MLB Stats API play-by-play (gamefeed)",
       "access": "free",
-      "note": "unofficial but stable public JSON; leverage computed from play-by-play"
+      "note": "probe mlb_statsapi_feed REACHABLE; leverage index is own derivation"
      }
     ],
     "verified": false

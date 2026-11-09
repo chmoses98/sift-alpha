@@ -1,10 +1,10 @@
 {
  "unreg:season_stat_feats": {
-  "reviewer": "author-zblk-MLB (Claude agent, not a human expert)",
+  "reviewer": "author-zblk-MLB (Claude agent, not a human expert); fix round 2026-11-09",
   "review_date": "2026-11-09",
   "catalog_entry": {
    "label": "MLB season feats (no-hitter, perfect game, 20-win season, 20-K game, 500-ft HR, 4-HR game, grand-slam game, 50/50)",
-   "blueprint": "season_stat",
+   "blueprint": "leaders",
    "contract_types": [
     "Season stat feat events",
     "Individual pitcher no-hitter",
@@ -113,26 +113,45 @@
      "id": "m.rules_text",
      "why": "The exact event wording (any pitcher versus any hitter, regular season versus playoffs, no-hitter definition) differs by event and decides what counts.",
      "role": "primary"
+    },
+    {
+     "id": "mlb.season_feat_ledger_state",
+     "why": "Feats-to-date ledger: which of the eight events have already occurred in 2026, with candidate counts for the wins and 50/50 races and team games remaining, as of the market timestamp.",
+     "role": "primary"
+    },
+    {
+     "id": "mlb.rule_regime",
+     "why": "Ball, pitch clock and rule regime shift strikeout, home-run and starter-length rates between seasons, and so every per-game feat rate.",
+     "role": "secondary"
     }
    ],
    "interactions": [
     {
      "inputs": [
-      "mlb.leaguewide_rare_game_event_hazard",
+      "mlb.k_rates",
       "mlb.sp_hook_hazard_curve"
      ],
-     "hypothesis": "Shorter starter outings lower no-hitter, perfect-game and 20-strikeout hazards together, because one pitcher needs the full distance.",
-     "form": "conditional",
-     "how_to_test": "Regress league-season counts of complete-game no-hitters and 20-K games on mean starter outs per start."
+     "hypothesis": "Twenty strikeouts need both a very high strikeout rate per batter and enough batters faced, so the pitcher-level probability is the product of rate and depth; a pitcher with a high strikeout rate who is pulled early, or a deep pitcher with an ordinary rate, contributes little, and the two factors are estimated from different data.",
+     "form": "multiplicative",
+     "how_to_test": "Across starts since 1990, compare the observed frequency of 15+ strikeout games by cells of pitcher K% and batters faced against the product of the two marginal rates."
     },
     {
      "inputs": [
       "mlb.bases_loaded_pa_opportunity",
       "mlb.hitter_hr_profile"
      ],
-     "hypothesis": "Two grand slams in a game need two bases-loaded plate appearances and two home runs, so opportunity and conversion multiply.",
+     "hypothesis": "Two grand slams in one game require two bases-loaded plate appearances and two home runs, so the probability is roughly the product of opportunity and conversion squared; a high-power hitter batting behind weak on-base hitters has little opportunity and a mid-power cleanup hitter in a high-scoring game has more.",
      "form": "multiplicative",
-     "how_to_test": "Split historical hitter-games by count of bases-loaded PA and compare observed GS counts with the product model."
+     "how_to_test": "Bucket historical hitter-games by number of bases-loaded plate appearances (0, 1, 2+) and compare the observed count of 2+ GS games with the product of opportunity and per-hitter conversion."
+    },
+    {
+     "inputs": [
+      "mlb.hr_distance_tail_exceedance",
+      "mlb.hr_environment"
+     ],
+     "hypothesis": "The distance input carries altitude and temperature but not the wind component; a wind blowing out adds distance on top of altitude and exit velocity, and the tail beyond 500 feet is convex in the total shift, so a tailwind at a high-altitude park for a hitter with an extreme exit-velocity ceiling multiplies the chance more than the sum of the separate effects.",
+     "form": "convex",
+     "how_to_test": "Compare the share of home runs beyond 450 feet by wind-out component within park-altitude and exit-velocity-tier cells, and test whether the odds ratio of the wind term grows with altitude."
     },
     {
      "inputs": [
@@ -140,14 +159,14 @@
       "mlb.pitcher_rotation_slot_and_rest",
       "mlb.injuries_pit"
      ],
-     "hypothesis": "The 20-win race is a threshold: once a candidate's wins to date plus remaining starts fall below 20 the probability is exactly zero regardless of quality.",
+     "hypothesis": "A candidate with W0 wins and n starts left can only reach 20 if W0 + n >= 20, and realistically if the needed win rate is attainable; late in the season the probability drops to zero in steps as candidates are eliminated, and an injury or skipped start removes starts in one jump.",
      "form": "threshold",
-     "how_to_test": "Replay past seasons by date and test that candidates with no feasible path never reach 20."
+     "how_to_test": "Replay 2015-2025 seasons date by date and check that the model's P(any >= 20) is zero for dates when no candidate satisfies W0 + remaining starts >= 20."
     }
    ]
   },
   "contract": {
-   "settlement_definition": "KXMLBSTAT lists eight non-velocity events (Kalshi events API, retrieved 2026-11-09, saved in evidence_zblk/MLB_kxmlbstat_events.json; this wording was NOT part of the sampled rules file). Single-game feats settle YES if any pitcher records a perfect game or a no hitter, any pitcher records 20+ strikeouts in a game, any hitter records 4+ home runs in a game, 2+ grand slams in a game, or a 500+ foot home run '(per Statcast measurement)', in any game during the 2026 season (regular season and playoffs). Season thresholds settle YES if any pitcher records 20+ wins, or any hitter records 50+ home runs and 50+ steals, across all games of the 2026 regular season only. The only rules text sampled for KXMLBSTAT is the velocity event 'If any pitcher records a 107+ MPH Pitch in any game during the 2026 Pro Baseball season (regular season and playoffs)', which uses the same any-player union and season-plus-playoffs window as the single-game feats; for the other events the one-sentence wording above is all that was retrieved, and rules_secondary is only the generic disclaimer. Not defined anywhere: what counts as a no-hitter (combined, nine innings, shortened games), rounding of the Statcast distance, treatment of suspended games and the scoring authority. The event title 'Individual Pitcher No Hitter' suggests a combined no-hitter does not count, but that is a title inference, not a rule. The listing shows three velocity events (105+, 106+, 107+) that the series assignment routes to the velocity archetype; the 105+ event returned no market object.",
+   "settlement_definition": "KXMLBSTAT lists eight non-velocity events (Kalshi events API, retrieved 2026-11-09, saved in evidence_zblk/MLB_kxmlbstat_events.json; this wording was NOT part of the sampled rules file). Single-game feats settle YES if any pitcher records a perfect game or a no hitter, any pitcher records 20+ strikeouts in a game, any hitter records 4+ home runs in a game, 2+ grand slams in a game, or a 500+ foot home run '(per Statcast measurement)', in any game during the 2026 season (regular season and playoffs). Season thresholds settle YES if any pitcher records 20+ wins, or any hitter records 50+ home runs and 50+ steals, across all games of the 2026 regular season only. The only rules text sampled for KXMLBSTAT is the velocity event 'If any pitcher records a 107+ MPH Pitch in any game during the 2026 Pro Baseball season (regular season and playoffs)', which uses the same any-player union and season-plus-playoffs window as the single-game feats; for the other events the one-sentence wording above is all that was retrieved, and rules_secondary is only the generic disclaimer. Not defined anywhere: what counts as a no-hitter (combined, nine innings, shortened games), rounding of the Statcast distance, treatment of suspended games and the scoring authority. The event title says 'Individual Pitcher No Hitter' while the rule says 'any pitcher records a no hitter'; the two disagree, so whether a combined no-hitter counts is an unresolved reading and both readings are carried as branches (sstat_no_hitter_definition). Each market carries can_close_early true with early_close_condition 'This market will close and expire after the event occurs'; the 20-win and 50/50 markets closed 2026-09-28 and the other six on 2026-10-29 (close_time in the API object), all expecting expiration 2026-12-01. The listing shows three velocity events (105+, 106+, 107+) that the series assignment routes to the velocity archetype; the 105+ event returned no market object.",
    "rules_verification": "PARTIALLY_VERIFIED",
    "rules_evidence": [
     {
@@ -159,16 +178,17 @@
    "variants_and_edge_cases": [
     "Single-game feats (perfect game, no hitter, 20+ strikeouts, 4+ HR, 2+ grand slams, 500+ ft HR) count regular season and playoffs, whereas the 20-win and 50/50 events count the regular season only (per the one-sentence API wording), so playoff exposure matters for six events and not for two.",
     "All eight events are any-pitcher or any-hitter unions with a custom (not floor) strike construction; the probability is dominated by the league environment, and a feat that has already happened makes the market a pure settlement question.",
-    "'No hitter' versus 'Individual Pitcher No Hitter': the event title says individual, the rules text says 'any pitcher records a no hitter'; whether a combined no-hitter counts, and whether the game must go nine innings, is not stated (sstat_rules_not_sampled).",
+    "'No hitter' versus 'Individual Pitcher No Hitter': the event title says individual, the rules text says 'any pitcher records a no hitter'; whether a combined no-hitter counts, and whether the game must go nine innings, is not stated, so both readings are carried and the market is not priced on an individual-only assumption (sstat_no_hitter_definition). Nesting: a perfect game is also a no-hitter, so P(perfect game) <= P(individual no-hitter) <= P(no-hitter under any reading).",
     "'500+ foot home run (per Statcast measurement)' ties settlement to the tracked projected distance; rounding at exactly 500 and home runs without a recorded distance are not addressed.",
     "KXMLBSTAT-26P105 is listed as an event but no market object was retrievable; the three velocity events (105+, 106+, 107+) are routed to pitch_velocity_extremes by event_routing and are not modelled here.",
-    "The 50/50 event requires 50+ home runs and 50+ steals by the same hitter in the same regular season; the 20-win event requires 20 wins by one pitcher; neither allows aggregation across players."
+    "The 50/50 event requires 50+ home runs and 50+ steals by the same hitter in the same regular season; the 20-win event requires 20 wins by one pitcher; neither allows aggregation across players.",
+    "Market lifecycle (API object, retrieved 2026-11-09): can_close_early true with early_close_condition 'This market will close and expire after the event occurs'; the markets opened in February and March except the 106+ and 107+ velocity pair (2026-06-27), so the as-of state is mid-season in several snapshots and the feats-to-date ledger is the starting state."
    ],
    "settlement_data_source": "Not named in the rules text. The Kalshi events API lists settlement_sources ESPN, 'the Governing League' (mlb.com) and Fox Sports for each event (event metadata, not the rules); Statcast is named only for the 500-foot event.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "The eight non-velocity KXMLBSTAT events are not one process. Six are single-game feats counted anywhere in baseball: an individual no-hitter, a perfect game, a 20-strikeout game, a four-home-run game, a two-grand-slam game and a 500-foot home run. For each, the chance the feat happens in the rest of the season is one minus the exponential of minus the sum, over remaining team-games (about 4,860 in a 162-game schedule across 2,430 games, plus the playoff games each club is expected to play), of a small per-game rate. That rate has its own chain: starter length and strikeout rate for 20 strikeouts, starter length, contact allowed, defence and scoring decisions for no-hitters and perfect games, per-PA home-run propensity, lineup slot and bases-loaded opportunities for multi-homer and multi-grand-slam games, and the tail of home-run distance for the 500-foot drive. Two events are individual accumulation races: any pitcher reaching 20 regular-season wins (wins to date plus remaining starts times a per-start win probability, a union over a handful of candidates) and any hitter reaching 50 home runs and 50 steals (remaining plate appearances times power and speed rates with an injury hazard). Because these are 'any player' unions, the probability is dominated by the league environment rather than any named star, a feat already recorded settles Yes immediately, and probability collapses toward zero when the season or the race path closes. The sampled rules text covers only the velocity events; the settlement of every event here rests on a one-sentence API wording whose finer definitions are not available, and this record states that explicitly.",
+   "summary": "The eight non-velocity KXMLBSTAT events are not one process. Six are single-game feats counted anywhere in baseball: a no-hitter (individual or combined: the rule says 'any pitcher', the title says individual, so both readings are carried), a perfect game, a 20-strikeout game, a four-home-run game, a two-grand-slam game and a 500-foot home run. For each, the chance the feat happens in the rest of the season is one minus the exponential of minus the sum, over remaining team-games (about 4,860 in a 162-game schedule across 2,430 games, plus the playoff games each club is expected to play), of a small per-game rate. That rate has its own chain: starter length and strikeout rate for 20 strikeouts, starter length, contact allowed, defence and scoring decisions for no-hitters and perfect games, per-PA home-run propensity, lineup slot and bases-loaded opportunities for multi-homer and multi-grand-slam games, and the tail of home-run distance for the 500-foot drive. Two events are individual accumulation races: any pitcher reaching 20 regular-season wins (wins to date plus remaining starts times a per-start win probability, a union over a handful of candidates) and any hitter reaching 50 home runs and 50 steals (remaining plate appearances times power and speed rates with an injury hazard). Because these are 'any player' unions, the probability is dominated by the league environment rather than any named star, a feat already recorded settles Yes immediately, and probability collapses toward zero when the season or the race path closes. The sampled rules text covers only the velocity events; the settlement of every event here rests on a one-sentence API wording whose finer definitions are not available, and this record states that explicitly.",
    "stages": [
     {
      "id": "s1",
@@ -179,7 +199,8 @@
      ],
      "input_ids": [
       "m.rules_text",
-      "mlb.official_scorer_hit_error_tendency"
+      "mlb.official_scorer_hit_error_tendency",
+      "mlb.season_feat_ledger_state"
      ],
      "description": "Each KXMLBSTAT event has its own one-sentence rule (fetched from the Kalshi events API on 2026-11-09, not part of the sampled rules file): the single-game feats and the 500-foot drive count the regular season and playoffs, while the 20-win and 50/50 events count the regular season only; 'any pitcher' or 'any hitter' makes each a union over the league. What is not defined is the feat itself: whether a combined no-hitter counts (the event title says individual), whether a perfect game or no-hitter needs nine innings, how a Statcast distance is rounded, and who rules on hit-versus-error. The official scorer's rulings and later scoring changes therefore sit inside the settlement.",
      "distribution": "Categorical window and definition choice per event; the scoring decision is a rare binary on the last hit or error of a no-hit bid."
@@ -196,7 +217,8 @@
       "mlb.leaguewide_rare_game_event_hazard",
       "mlb.bracket_path_enumeration",
       "mlb.rule_regime",
-      "mlb.wins_to_date_and_games_remaining"
+      "mlb.wins_to_date_and_games_remaining",
+      "mlb.season_feat_ledger_state"
      ],
      "description": "For each single-game feat the probability of at least one occurrence from the as-of date is 1 - exp(-sum of per-game rates over remaining team-games). The rate depends on the season's league strikeout rate, home-run rate and starter length, fitted on 1990-2025 league-season counts (500-foot drives only in the Statcast era), and on regime changes such as the ball, pitch clock and rule set. Playoff games add exposure weighted by each club's chance of playing them. An event that has already occurred is certain; the market is then only a rules and settlement question.",
      "distribution": "Poisson count of feats over remaining games; very small rates give near-linear growth in games, larger rates (an individual no-hitter) saturate by season end; the total is censored at the first occurrence."
@@ -215,8 +237,8 @@
       "mlb.contact_defense",
       "mlb.official_scorer_hit_error_tendency"
      ],
-     "description": "An individual no-hitter needs one starter to survive roughly 27 outs without a hit, so it is gated by the exit hazard (how often a starter is allowed to go the distance), by contact allowed and defence behind him, and by official scoring of close plays. A perfect game adds no walks, hit batters or errors. A 20-strikeout game needs a pitcher with an elite strikeout rate facing a high-whiff lineup and staying in for nine innings or more. All three live in the extreme right tail of starter innings, which has shortened in recent seasons.",
-     "distribution": "Compound of a very thin tail of nine-inning starts and a per-out survival probability; geometric-like decay in outs recorded, so each additional out multiplies the rate by a factor well below one."
+     "description": "An individual-reading no-hitter needs one starter to survive roughly 27 outs without a hit (a combined no-hitter, which may also count, needs only that the staff allows no hit), so it is gated by the exit hazard (how often a starter is allowed to go the distance), by contact allowed and defence behind him, and by official scoring of close plays. A perfect game adds no walks, hit batters or errors. A 20-strikeout game needs a pitcher with an elite strikeout rate facing a high-whiff lineup and staying in for nine innings or more. All three live in the extreme right tail of starter innings, which has shortened in recent seasons.",
+     "distribution": "Compound of a very thin tail of nine-inning starts and a per-out survival probability; geometric-like decay in outs recorded for the individual reading (each additional out multiplies the rate by a factor below one, to be fitted); the combined reading has a thicker tail."
     },
     {
      "id": "s4",
@@ -252,7 +274,7 @@
       "mlb.hitter_speed",
       "mlb.sb_opportunity_conversion"
      ],
-     "description": "Twenty wins is a union over starters with wins to date W0, remaining starts n and a per-start win probability that combines the chance of five or more innings (starter exit hazard) with the team's lead at exit and bullpen holds; most candidates are eliminated by arithmetic once n times the achievable win rate falls short. Fifty home runs and fifty steals is a joint threshold for a rare power-speed hitter: remaining plate appearances come from games left, lineup slot and health, home runs and steals each follow shrunk rates and are coupled by a copula. Both races are regular-season only, so playoff games add nothing.",
+     "description": "Twenty wins is a union over starters with wins to date W0, remaining starts n and a per-start win probability that combines the chance of five or more innings (starter exit hazard) with the team's lead at exit and bullpen holds; most candidates are eliminated by arithmetic once n times the achievable win rate falls short. Fifty home runs and fifty steals is a joint threshold for a rare power-speed hitter: remaining plate appearances come from games left, lineup slot and health, home runs and steals each follow shrunk rates and are coupled by a copula. Both races are regular-season only, so playoff games add nothing. Both races are any-player unions: P(any) = 1 - prod over candidate pitchers (or hitters) still arithmetically alive of (1 - p_candidate), so the number of live candidates matters as much as the best candidate's probability.",
      "distribution": "Binomial-sum (Poisson-binomial) of remaining wins with an absorbing zero once the path closes; for 50/50, a negative-binomial pair coupled by a copula with a health-driven random exposure."
     }
    ],
@@ -316,9 +338,10 @@
      "input_ids": [
       "mlb.wins_to_date_and_games_remaining",
       "mlb.bracket_path_enumeration",
-      "mlb.sp_hook_hazard_curve"
+      "mlb.sp_hook_hazard_curve",
+      "mlb.season_feat_ledger_state"
      ],
-     "note": "Remaining team-games, playoff games and outs per start set exposure."
+     "note": "Remaining team-games, playoff games and outs per start set exposure. The feats-to-date ledger gives the already-recorded events and the games played and remaining by regular season and playoffs."
     },
     "efficiency_conversion": {
      "status": "COVERED",
@@ -336,7 +359,7 @@
       "mlb.any_pitcher_season_wins_threshold",
       "mlb.hr_distance_tail_exceedance"
      ],
-     "note": "Poisson, binomial-sum and tail distributions of rare events and of two accumulation races."
+     "note": "Poisson, binomial-sum and tail distributions of rare events and of two accumulation races. The any-player union across live candidates is in the race inputs."
     },
     "situational_schedule_motivation": {
      "status": "COVERED",
@@ -471,6 +494,27 @@
     ],
     "why": "KXMLBSTAT-265050-AH asks whether any hitter reaches 50 home runs and 50 steals in the regular season, a joint power-speed threshold.",
     "role": "secondary"
+   },
+   "mlb.season_feat_ledger_state": {
+    "label": "Season feats-to-date ledger: which KXMLBSTAT events have already occurred, candidate counts for the 20-win and 50/50 races, and team games remaining at the market timestamp",
+    "category": "game_state",
+    "mechanism": "Every KXMLBSTAT event settles Yes the moment the feat occurs and the markets close on occurrence, so the starting state of the hazard is what has already happened this season, not a forecast.",
+    "rationale": "The Kalshi markets for the six events that opened in February and March (and the 106+/107+ pair that opened 2026-06-27) were live while the season was in progress, so at any as-of date part of the season's feats are already known. A feat already recorded makes the market a pure settlement question, a feat not yet recorded leaves a hazard over only the games remaining, and for the 20-win and 50/50 races the counts to date and candidates still arithmetically alive are the state of the race.",
+    "measurement": "From game logs and play-by-play for the current season build, for each event: occurred flag with game_pk, date and player (individual no-hitter, combined no-hitter, perfect game, 20+ strikeout game, 4+ HR game, 2+ grand-slam game, 500+ ft home run with its hit_distance_sc), and for the two races the table of pitchers with wins W0 and starts to date and hitters with HR_0 and SB_0, with candidates dropped when W0 + remaining starts < 20 or when either 50 threshold is arithmetically unreachable. Store regular-season and playoff team-games played and remaining separately (playoff games remaining from mlb.bracket_path_enumeration) because the 20-win and 50/50 events count the regular season only. Keep both no-hitter readings (individual, combined) as separate flags. Units: flags and counts. As-of: after every game; scoring changes after a game are re-pulled (lag to be set by an observed revision study).",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "MLB Stats API game logs and play-by-play (free)",
+     "Baseball Savant Statcast hit_distance_sc (free; coverage SOURCE_UNVERIFIED)",
+     "Baseball-Reference no-hitter and perfect-game lists for cross-check (free)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "game-level pitcher lines (outs, hits, walks, strikeouts) and hitter home-run and grand-slam counts for the current season",
+     "season-to-date wins, starts, home runs and steals by player",
+     "regular-season and playoff team-games played and remaining"
+    ],
+    "why": "Supplies the starting state that the hazard and race inputs need and that the sampled market lifecycle makes decisive (markets close and expire after the event occurs).",
+    "role": "primary"
    }
   },
   "input_audit": {
@@ -529,17 +573,69 @@
    "m.rules_text": {
     "verdict": "KEEP_PRIMARY",
     "reason": "Event wording differs (regular season only versus including playoffs; any pitcher versus any hitter) and is the only definition of the feat available; it is a settlement input, not a market price."
+   },
+   "mlb.leader_race": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Season-to-date leaderboards supply the counts to date for the 20-win and 50/50 races; the feats-to-date ledger is the contract-specific version, so this is context."
+   },
+   "mlb.stat_qualification_rules": {
+    "verdict": "IRRELEVANT",
+    "reason": "Rate-stat qualification (PA or IP per team game) does not enter any of these counting events; no KXMLBSTAT event is a rate leader."
+   },
+   "mlb.hitter_quality": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "General hitter talent is subsumed by the home-run profile and the joint power-speed engine for the 50/50 and multi-homer events."
+   },
+   "mlb.sp_quality": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Starter talent supports the per-start win probability and the no-hit and strikeout feats but is carried through k_rates, contact_defense and the exit hazard; context only."
+   },
+   "mlb.expected_pa": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Plate appearances per game by slot feed the per-hitter-game feat probabilities; the PA count is already inside the bottom-up inputs."
+   },
+   "mlb.hrfb_regression": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "HR/FB regression tempers lucky home-run paces in the 50-home-run half and in multi-homer rates; context to the joint engine's shrinkage."
+   },
+   "mlb.leaguewide_rare_game_event_hazard": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "After this round the input is the league-count cross-check and no-hit/perfect-game/20-K engine: its 500-ft GPD and bottom-up 4-HR and grand-slam terms are removed (they duplicate mlb.hr_distance_tail_exceedance, mlb.hitter_hr_profile and mlb.bases_loaded_pa_opportunity) and the no-hitter reading is branched."
+   },
+   "mlb.rule_regime": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Ball and rule regime shift per-game strikeout, home-run and starter-length rates between seasons; relevant to every per-game feat rate."
+   },
+   "mlb.season_feat_ledger_state": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Starting state of every event hazard and of the two races; new input defined in this record."
+   },
+   "mlb.hr_distance_tail_exceedance": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Dedicated tail input for the 500-foot event; supersedes the generic hazard's distance term."
+   },
+   "mlb.bases_loaded_pa_opportunity": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Dedicated opportunity input for the grand-slam event; supersedes the generic hazard's bottom-up check."
+   },
+   "mlb.any_pitcher_season_wins_threshold": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Engine for the 20-win race; independence across pitchers is a simplification."
+   },
+   "mlb.joint_season_hr_sb_distribution": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Engine for the 50/50 race; the any-hitter union over live candidates is now written into the definition and the previous '50 HR and 40 SB' mechanism text is corrected."
    }
   },
   "interactions": [
    {
     "inputs": [
-     "mlb.leaguewide_rare_game_event_hazard",
+     "mlb.k_rates",
      "mlb.sp_hook_hazard_curve"
     ],
-    "form": "conditional",
-    "mechanism": "A single pitcher needs close to a full game for a no-hitter, a perfect game or 20 strikeouts, so the league's shift toward shorter outings lowers all three hazards at once while barely touching home-run feats; fitting them on separate rate regressions overstates how independent they are.",
-    "how_to_test": "Regress league-season counts of complete-game no-hitters and 20-strikeout games on mean starter outs per start and on league K%, then check that the residuals of the two series are positively correlated across 1990-2025."
+    "form": "multiplicative",
+    "mechanism": "Twenty strikeouts need both a very high strikeout rate per batter and enough batters faced, so the pitcher-level probability is the product of rate and depth; a pitcher with a high strikeout rate who is pulled early, or a deep pitcher with an ordinary rate, contributes little, and the two factors are estimated from different data.",
+    "how_to_test": "Across starts since 1990, compare the observed frequency of 15+ strikeout games by cells of pitcher K% and batters faced against the product of the two marginal rates."
    },
    {
     "inputs": [
@@ -556,8 +652,8 @@
      "mlb.hr_environment"
     ],
     "form": "convex",
-    "mechanism": "Projected distance grows with air density, temperature and tailwind, and the tail probability beyond 500 feet is convex in those shifts; a high-altitude park on a warm day with wind out can multiply the per-home-run chance several times over a neutral park.",
-    "how_to_test": "Compare the share of home runs beyond 450 feet by park altitude, temperature bucket and wind component, and test whether the odds ratio grows faster than the mean-distance shift."
+    "mechanism": "The distance input carries altitude and temperature but not the wind component; a wind blowing out adds distance on top of altitude and exit velocity, and the tail beyond 500 feet is convex in the total shift, so a tailwind at a high-altitude park for a hitter with an extreme exit-velocity ceiling multiplies the chance more than the sum of the separate effects.",
+    "how_to_test": "Compare the share of home runs beyond 450 feet by wind-out component within park-altitude and exit-velocity-tier cells, and test whether the odds ratio of the wind term grows with altitude."
    },
    {
     "inputs": [
@@ -572,11 +668,12 @@
    {
     "inputs": [
      "mlb.joint_season_hr_sb_distribution",
-     "mlb.injuries_pit"
+     "mlb.injuries_pit",
+     "mlb.season_feat_ledger_state"
     ],
     "form": "joint-distribution",
-    "mechanism": "50/50 requires both counts to reach 50, and an injury lowers both through the shared plate-appearance exposure, so the joint probability is far below the product of the marginal probabilities when health is uncertain and closer to it when health is known; a hitter on pace for only one half is not a partial candidate.",
-    "how_to_test": "Simulate the joint distribution with and without a shared health hazard and compare the calibration of both against realised power-speed seasons by date."
+    "mechanism": "50/50 requires both counts to reach 50 for the same hitter, and an injury lowers both through the shared plate-appearance exposure, so the joint probability is far below the product of the marginals when health is uncertain; the any-hitter union then adds the few candidates that the ledger still lists as alive, and a hitter on pace for only one half is not a partial candidate.",
+    "how_to_test": "Simulate the joint distribution with and without a shared health hazard, take the union over the ledger's live candidates, and compare calibration with realised power-speed seasons by date."
    },
    {
     "inputs": [
@@ -634,7 +731,9 @@
      "mlb.leaguewide_rare_game_event_hazard",
      "mlb.bases_loaded_pa_opportunity",
      "mlb.sp_hook_hazard_curve",
-     "mlb.k_rates"
+     "mlb.k_rates",
+     "mlb.contact_defense",
+     "mlb.season_feat_ledger_state"
     ]
    },
    {
@@ -666,7 +765,8 @@
     "feeds_inputs": [
      "mlb.hr_distance_tail_exceedance",
      "mlb.hitter_hr_profile",
-     "mlb.hr_environment"
+     "mlb.hr_environment",
+     "mlb.season_feat_ledger_state"
     ]
    },
    {
@@ -704,13 +804,14 @@
     ]
    },
    {
-    "dataset": "Official scoring rulings and Kalshi event wording",
+    "dataset": "Official scoring rulings and Kalshi event wording and lifecycle",
     "grain": "one row per ruling and one per KXMLBSTAT event",
     "fields": [
      "hit/error ruling and any later change",
      "event title and rules text",
      "settlement sources listed on the event",
-     "strike period"
+     "can_close_early and early_close_condition",
+     "open and close times"
     ],
     "timestamp_requirement": "Versioned at issuance; rulings as of game end and after any appeal.",
     "history_needed": "Since launch for wording; 5 seasons for scoring tendencies.",
@@ -728,11 +829,35 @@
     ],
     "feeds_inputs": [
      "m.rules_text",
-     "mlb.official_scorer_hit_error_tendency",
-     "mlb.contact_defense",
+     "mlb.official_scorer_hit_error_tendency"
+    ]
+   },
+   {
+    "dataset": "Playoff participation, bracket and rule-regime state",
+    "grain": "one row per club-day and per season",
+    "fields": [
+     "club playoff-qualification and round-advancement probabilities",
+     "playoff team-games remaining",
+     "ball, pitch-clock and rule regime flags"
+    ],
+    "timestamp_requirement": "Daily as-of; regime flags fixed per season.",
+    "history_needed": "Current season plus 10 postseasons for path calibration.",
+    "candidate_sources": [
+     {
+      "name": "MLB Stats API standings, schedule and transactions",
+      "access": "free",
+      "note": "Standings and games played"
+     },
+     {
+      "name": "Own bracket simulation",
+      "access": "derived",
+      "note": "Path probabilities from team-strength posteriors"
+     }
+    ],
+    "feeds_inputs": [
      "mlb.bracket_path_enumeration",
      "mlb.rule_regime",
-     "mlb.hr_environment"
+     "mlb.wins_to_date_and_games_remaining"
     ]
    }
   ],
@@ -741,8 +866,8 @@
     "id": "sstat_rules_not_sampled",
     "type": "CONTRACT_AMBIGUOUS",
     "category": "settlement_contract",
-    "description": "The sampled rules file holds only KXMLBSTAT-26P107-AP (a velocity event). For the eight non-velocity events the only wording available is the one-sentence rules_primary fetched from the Kalshi events API on 2026-11-09 (see evidence_zblk/MLB_kxmlbstat_events.json); rules_secondary is the generic disclaimer. No text defines a no-hitter (combined, nine-inning requirement, shortened games), perfect game, rounding of the Statcast distance, or the treatment of suspended games, and the event titles ('Individual Pitcher No Hitter') are the only hint that combined no-hitters may not count.",
-    "what_would_resolve": "Kalshi rules_secondary or a settlement note for each event defining the feat, the distance rounding and the source; settled examples of a combined no-hitter or a shortened game."
+    "description": "The sampled rules file holds only KXMLBSTAT-26P107-AP (a velocity event). For the eight non-velocity events the only wording available is the one-sentence rules_primary fetched from the Kalshi events API on 2026-11-09 (see evidence_zblk/MLB_kxmlbstat_events.json); rules_secondary is the generic disclaimer. No text defines a perfect game or the distance rounding, and the treatment of suspended games and the scoring authority are not stated.",
+    "what_would_resolve": "Kalshi rules_secondary or a settlement note for each event defining the feat, the distance rounding and the source; settled examples of a shortened game or a Statcast distance reading near 500 feet."
    },
    {
     "id": "sstat_p105_unretrievable",
@@ -770,11 +895,18 @@
     "type": "OTHER",
     "description": "The KXMLBSTAT event list verified on 2026-11-09 has 11 events; other events may be added in later seasons and 2025 or earlier KXMLBSTAT variants were not listed, so this record covers only the eight non-velocity events seen (and the three velocity events are routed away).",
     "what_would_resolve": "Re-list the series each season and route new events to the velocity archetype or this one by mechanism."
+   },
+   {
+    "id": "sstat_no_hitter_definition",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "The no-hitter market rule says 'any pitcher records a no hitter in any game' while the event title says 'Individual Pitcher No Hitter', so whether a combined no-hitter (several pitchers, no hit allowed) counts is not settled by the text; nor is whether a shortened game or a game of fewer than nine innings qualifies. Combined no-hitters are a material share of recent no-hitters (share not measured here), so the required history and the rate change by reading.",
+    "what_would_resolve": "Kalshi rules_secondary or a settled example involving a combined no-hitter; until then the hazard input keeps individual and combined branches."
    }
   ]
  },
  "unreg:player_home_run_exposure": {
-  "reviewer": "author-zblk-MLB (Claude agent, not a human expert)",
+  "reviewer": "author-zblk-MLB (Claude agent, not a human expert); fix round 2026-11-09",
   "review_date": "2026-11-09",
   "catalog_entry": {
    "label": "MLB named-hitter home-run exposure over a series or date window",
@@ -875,6 +1007,11 @@
      "id": "m.rules_text",
      "why": "Series and window boundaries, home runs counted (inside-the-park, extra innings) and the lack of a start gate come from the wording.",
      "role": "primary"
+    },
+    {
+     "id": "mlb.bracket_path_enumeration",
+     "why": "Series participation, round length and the playoff games distribution depend on which clubs advance; the playoff-games distribution input is computed from the bracket paths.",
+     "role": "secondary"
     }
    ],
    "interactions": [
@@ -947,16 +1084,17 @@
    ],
    "variants_and_edge_cases": [
     "Series market (KXMLBSERIESHR) is a count over a random number of games with a ladder of strikes (the sample is the 2+ rung via floor_strike 1.5 and strike_type greater), while the window market (KXMLBNEXTHR) is a one-or-more event over a fixed calendar window; the first is convex in exposure for higher rungs, the second saturates for healthy power hitters.",
-    "Neither text addresses a hitter who is injured, benched, traded, or removed from the series roster; the sampled secondary text of KXMLBNEXTHR resolves No if no home run is recorded, so missed games simply remove exposure.",
+    "Neither text addresses a hitter who is injured, benched, traded, or removed from the series roster. The sampled KXMLBNEXTHR secondary text resolves No if no home run is recorded; for KXMLBSERIESHR the text only counts total home runs, so a 2+ rung fails arithmetically for a player who misses the series but whether a missed series is void is not stated.",
     "KXMLBNEXTHR says 'in an MLB game' without naming the regular season, so postseason games inside a window that extends into October are not clearly included or excluded; the sampled window ends Aug 1, 2026.",
     "KXMLBSERIESHR names the matchup in the title ('Tampa Bay vs Milwaukee Championship Series'); a series that is not played with those two clubs or is shortened would leave the rule unclear (not addressed in the text).",
-    "Inside-the-park home runs and extra-inning home runs count for the series market; a suspended or postponed game finished later is not addressed."
+    "Inside-the-park home runs and extra-inning home runs count for the series market; a suspended or postponed game finished later is not addressed.",
+    "The sampled KXMLBNEXTHR window (after May 26, before Aug 1, 2026) contains the All-Star break and the All-Star Game; the sibling KXMLBSTATCOUNT rule explicitly excludes the All-Star Game and postseason but this text is silent, so whether All-Star Game home runs count is unresolved, and the boundary dates (time zone of 'after May 26' and 'before Aug 1', games on those dates) are not defined (hrx_window_boundaries)."
    ],
    "settlement_data_source": "Official MLB box scores and play-by-play (home runs per player per game); the sampled text names only 'the Governing League'.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "A named hitter's home-run count across a playoff series or inside a date window is a sum over his plate appearances of an event with a small per-PA probability, so the number of plate appearances is the first thing to model and the per-PA probability the second. For a series, exposure is the random number of games (four to seven in a best-of-seven, three to five in the shorter rounds), whether the hitter starts each game, how many plate appearances he gets, and the quality of the pitchers he faces in each game: starters set by the rotation after off days, then relievers after the starter exits. For a date window, exposure is every team game between the dates, with off days, doubleheaders, injuries and role changes, and the probability of at least one home run saturates for healthy regulars so that the uncertainty becomes the health state. The per-PA probability is the hitter's power (barrels, fly-ball and pull-air rate, maximum exit velocity) regressed toward the league and adjusted for the pitcher's HR vulnerability by batter hand, park HR factor, wind and temperature. Counts of 2+ or more are convex in exposure, so series length and benching move them more than proportionally. Settlement follows official scoring of home runs, including inside-the-park and extra-inning home runs. Neither sampled text defines what happens if the player is injured or benched, so exposure simply disappears and the market resolves No.",
+   "summary": "A named hitter's home-run count across a playoff series or inside a date window is a sum over his plate appearances of an event with a small per-PA probability, so the number of plate appearances is the first thing to model and the per-PA probability the second. For a series, exposure is the random number of games (four to seven in a best-of-seven, three to five in the shorter rounds), whether the hitter starts each game, how many plate appearances he gets, and the quality of the pitchers he faces in each game: starters set by the rotation after off days, then relievers after the starter exits. For a date window, exposure is every team game between the dates, with off days, doubleheaders, injuries and role changes, and the probability of at least one home run saturates for healthy regulars so that the uncertainty becomes the health state. The per-PA probability is the hitter's power (barrels, fly-ball and pull-air rate, maximum exit velocity) regressed toward the league and adjusted for the pitcher's HR vulnerability by batter hand, park HR factor, wind and temperature. Counts of 2+ or more are convex in exposure, so series length and benching move them more than proportionally. Settlement follows official scoring of home runs, including inside-the-park and extra-inning home runs. Neither sampled text defines what happens if the player is injured or benched, so exposure simply disappears: a 2+ rung then fails arithmetically, while whether a missed series or window is void is not stated.",
    "stages": [
     {
      "id": "s1",
@@ -969,7 +1107,8 @@
       "m.rules_text",
       "mlb.series_length_distribution",
       "mlb.window_exposure_schedule",
-      "mlb.series_per_game_win_prob_vector"
+      "mlb.series_per_game_win_prob_vector",
+      "mlb.bracket_path_enumeration"
      ],
      "description": "Reading the wording fixes the exposure frame before anything else: one named playoff series of random length (the two clubs' per-game win probabilities decide whether it ends in four, five, six or seven games) or a calendar window of scheduled team games with off days and doubleheaders (KXMLBNEXTHR counts any MLB game between two dates). The rules do not define a start gate, so every plate appearance in the frame counts, and the number of games must be modelled as a distribution rather than a constant.",
      "distribution": "Series length is a discrete distribution on 4-7 games with probability mass shifting to longer series for evenly matched clubs; window length is deterministic apart from postponements and doubleheaders."
@@ -1074,9 +1213,9 @@
      "note": "Injury as an absorbing state and the return timeline."
     },
     "coaching_scheme": {
-     "status": "NOT_APPLICABLE",
+     "status": "GAP",
      "input_ids": [],
-     "note": "Manager tactics act through lineup choice, platoons and removal of the hitter, which are carried by the playing-time and late-replacement inputs; no separate scheme input is needed at first order."
+     "note": "Managers can pitch around or intentionally walk a known power hitter and set the lineup and platoon; lineup and platoon choices are carried by playing_time_role, but no input measures postseason pitching-around or intentional-walk rates, so the category is a declared gap (hrx_pitch_around_postseason)."
     },
     "environment": {
      "status": "COVERED",
@@ -1099,7 +1238,8 @@
       "mlb.series_length_distribution",
       "mlb.window_exposure_schedule",
       "mlb.expected_pa",
-      "mlb.playoff_games_pa_distribution"
+      "mlb.playoff_games_pa_distribution",
+      "mlb.bracket_path_enumeration"
      ],
      "note": "Games in the series or window and PAs per game."
     },
@@ -1251,11 +1391,11 @@
    },
    "mlb.series_hr_exposure": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "The series-total engine (games x start probability x per-game HR rate) is the right object for KXMLBSERIESHR; its fixed start probabilities (everyday 0.95, platoon 0.55) are crude and should be replaced by the playing-time input."
+    "reason": "Series-total engine is the right object for KXMLBSERIESHR; its fixed start probabilities (0.95 and 0.55) were unsourced and are patched to role-estimated starts, leaving the constants only as flagged placeholders."
    },
    "mlb.window_exposure_schedule": {
     "verdict": "KEEP_PRIMARY",
-    "reason": "The window engine (one minus the product of per-game miss probabilities with an injury hazard) is the right object for KXMLBNEXTHR; its use of a clinched-rest factor applies only to regular-season windows."
+    "reason": "The window engine had defined P(at least one) from participation only (a probability of playing, not of homering); the definition is patched to multiply participation by a per-game event probability q_g built from per-PA home-run probability and expected PA, and to drop pitcher-only wording for this market."
    },
    "mlb.rehab_progression_stage": {
     "verdict": "KEEP_SECONDARY",
@@ -1263,7 +1403,43 @@
    },
    "mlb.playoff_games_pa_distribution": {
     "verdict": "KEEP_SECONDARY",
-    "reason": "Distribution of games and plate appearances for a named player is the exposure input for series markets; its original use was playoff-leader markets so the definition must be read as conditional on the series."
+    "reason": "Distribution of games and plate appearances for a named player is the exposure input for series markets; its original use was playoff-leader markets, and its measurement depends on bracket paths, which this record now carries through mlb.bracket_path_enumeration."
+   },
+   "mlb.bracket_path_enumeration": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Bracket paths decide whether the hitter's club plays the series at all and how many games remain; the playoff-games distribution input depends on it."
+   },
+   "mlb.bat_tracking": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Bat speed and squared-up rate refine the power profile but are second order to barrels and exit velocity for a short exposure."
+   },
+   "mlb.wind_vector_park": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Wind relative to park orientation refines the environment term; carried inside the HR-environment input."
+   },
+   "mlb.air_density": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Air density refines carry; secondary to park factor and wind for series and window totals."
+   },
+   "mlb.platoon": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Handedness splits decide a platoon hitter's starts and the per-PA rate against left- and right-handed starters across the series."
+   },
+   "mlb.batter_vs_pitch": {
+    "verdict": "WEAK",
+    "reason": "Pitch-type matchup splits are noisy over a few plate appearances; useful only as a heavily shrunk adjustment."
+   },
+   "mlb.hrfb_regression": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Regresses observed HR/FB toward talent so that a hot recent window does not inflate the per-PA rate; used in the park-weather interaction."
+   },
+   "mlb.lineup_pit": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Confirmed batting orders update start probability and slot on the day; exposure over many games is driven by role and injury."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Cross-rung consistency of the exchange ladder is a market-derived benchmark, not an input to the home-run count; useful only for checking monotonicity of model output."
    }
   },
   "interactions": [
@@ -1509,18 +1685,25 @@
    {
     "id": "hrx_pitch_around_postseason",
     "type": "MECHANISM_UNCERTAIN",
-    "category": "opponent_matchup",
+    "category": "coaching_scheme",
     "description": "Opposing managers may pitch around or intentionally walk a known power hitter in high-leverage postseason situations, which would lower plate appearances that end in a swing; the effect size in playoff series is unmeasured here and no input in this record isolates it.",
     "what_would_resolve": "Estimate intentional-walk and non-swing rates for top power hitters in postseason versus regular-season games and add them to the per-PA model."
+   },
+   {
+    "id": "hrx_window_boundaries",
+    "type": "CONTRACT_AMBIGUOUS",
+    "category": "settlement_contract",
+    "description": "The sampled KXMLBNEXTHR window runs after May 26 and before Aug 1, 2026, which contains the All-Star break and the All-Star Game; the related KXMLBSTATCOUNT rule excludes the All-Star Game but this text does not, and the boundary dates (time zone, games played on May 26 or Aug 1) are not defined.",
+    "what_would_resolve": "Kalshi rules_secondary or a settled example showing whether All-Star Game home runs and games on the boundary dates count."
    }
   ]
  },
  "unreg:pitcher_scoreless_innings_streak": {
-  "reviewer": "author-zblk-MLB (Claude agent, not a human expert)",
+  "reviewer": "author-zblk-MLB (Claude agent, not a human expert); fix round 2026-11-09",
   "review_date": "2026-11-09",
   "catalog_entry": {
    "label": "MLB pitcher consecutive scoreless innings streak",
-   "blueprint": "player_pitch",
+   "blueprint": "pitcher_er",
    "contract_types": [
     "Pitcher scoreless-innings streak"
    ],
@@ -1680,14 +1863,14 @@
     "Rungs are nested thresholds on one streak (the sample is the 70+ rung, floor_strike 70, strike_type greater_or_equal); a rung settles YES the moment it is reached and every higher rung settles No when the streak breaks, so the ladder is monotone and correlated with the streak state.",
     "The text does not say whether the streak counts only starts or also relief outs, whether the streak breaks on an unearned run, or on a run charged to the pitcher for an inherited runner who scores after he leaves; these definitions change per-inning survival materially.",
     "The window ends when the regular season concludes: the streak cannot be extended in the postseason, so remaining regular-season starts (a starter makes roughly 30 starts in a full season, so only a few remain late in the year) bound the maximum attainable length.",
-    "A pitcher placed on the injured list is not addressed; a streak does not break just from missing starts, so a long absence reduces the outs available rather than ending the streak, and a return before the season ends can resume it.",
+    "A pitcher placed on the injured list is not addressed by the text; inferred, not stated: missing starts reduces the outs available rather than ending the streak, and a return before the season ends could resume it. This reading is declared unresolved (sis_postseason_and_injury).",
     "Only one rung (70+) and one pitcher (Sanchez, streak start Apr 30, 2026) were sampled; other pitchers and start dates may use the same wording but the count to date is as-of state."
    ],
    "settlement_data_source": "Official MLB box scores and play-by-play (runs charged, outs recorded); the sampled text names only 'the Governing League' and does not define run charging.",
    "series_mapping_issues": []
   },
   "mechanism": {
-   "summary": "A scoreless-innings streak target of N innings from a stated start is a survival problem over outs. Reaching N needs 3N consecutive outs with no run scoring, so the probability is the product, across the outs still required, of per-out survival; because runs come in clusters (baserunners then hits and home runs) the per-inning scoreless probability is the natural unit, around 0.75 to 0.85 for the best starters and well below that on average, so even a 100-percent-healthy ace has a probability that decays geometrically with the remaining gap. The streak-start state matters: the as-of cumulative total since the start date, whether the streak is alive, and how the contract counts runs (earned versus unearned, inherited runners) set the gap that remains. Three exposure constraints bound the attainable length: the number of starts left before the regular season ends (rotation slot, rest, skipped starts, an injury), the innings per start (exit hazard, the manager's willingness to pull a streaking starter or pitch him deep), and run prevention in each start (opponent lineup, park, defence and sequencing luck). Luck is the central modelling hazard: long streaks are selected on low BABIP, high strand rate and few home runs, all of which regress, so the survival model must regress the pitcher's observed rates harder when he is already on a streak. The streak ends at the first run, and rungs above the current length settle No at that moment while the rung just reached settles Yes at once.",
+   "summary": "A scoreless-innings streak target of N innings from a stated start is a survival problem over outs. Reaching N needs 3N consecutive outs with no run scoring, so the probability is the product, across the outs still required, of per-out survival; because runs come in clusters (baserunners then hits and home runs) the per-inning scoreless probability is the natural unit, assumed here to be roughly 0.75 to 0.85 for the best starters and lower on average (both figures are modelling assumptions to be fitted, not sourced), so even a 100-percent-healthy ace has a probability that decays geometrically with the remaining gap. The streak-start state matters: the as-of cumulative total since the start date, whether the streak is alive, and how the contract counts runs (earned versus unearned, inherited runners) set the gap that remains. Three exposure constraints bound the attainable length: the number of starts left before the regular season ends (rotation slot, rest, skipped starts, an injury), the innings per start (exit hazard, the manager's willingness to pull a streaking starter or pitch him deep), and run prevention in each start (opponent lineup, park, defence and sequencing luck). Luck is the central modelling hazard: long streaks are selected on low BABIP, high strand rate and few home runs, all of which regress, so the survival model must regress the pitcher's observed rates harder when he is already on a streak. The streak ends at the first run, and rungs above the current length settle No at that moment while the rung just reached settles Yes at once.",
    "stages": [
     {
      "id": "s1",
@@ -1735,10 +1918,13 @@
       "mlb.contact_defense",
       "mlb.baserunner_to_run_conversion",
       "mlb.scoreless_streak_survival",
-      "mlb.hrfb_regression"
+      "mlb.hrfb_regression",
+      "mlb.park",
+      "mlb.weather_pit",
+      "mlb.pitcher_hr_vulnerability"
      ],
      "description": "For each upcoming start the per-inning scoreless probability is built from a base-out state chain: the pitcher's strikeout, walk and home-run rates regressed to talent, the opposing lineup's out-rate, park run environment, defence behind him, and the conversion of runners to runs. The chain gives the probability of getting three outs before a run for each inning and, compounded over innings and starts, the survival curve. Home runs are the most damaging single event because they score regardless of baserunners.",
-     "distribution": "Per-inning scoreless probability around 0.7-0.85 for good starters; geometric-like decay in innings, with variance from sequencing clusters rather than independent outs."
+     "distribution": "Per-inning scoreless probability assumed around 0.7-0.85 for good starters (assumption, to be fitted); geometric-like decay in innings, with variance from sequencing clusters rather than independent outs."
     },
     {
      "id": "s4",
@@ -1811,10 +1997,12 @@
     "environment": {
      "status": "COVERED",
      "input_ids": [
+      "mlb.park",
+      "mlb.weather_pit",
       "mlb.contact_defense",
       "mlb.hrfb_regression"
      ],
-     "note": "Park and defence environment enter the per-inning probability through the contact and HR terms."
+     "note": "Park run environment, game weather, defence and the home-run term enter the per-inning probability."
     },
     "game_context_script": {
      "status": "COVERED",
@@ -1975,6 +2163,46 @@
    "mlb.scoreless_streak_survival": {
     "verdict": "KEEP_PRIMARY",
     "reason": "The survival engine over outs is the right object; its shrinkage constants and selection-on-luck treatment are open (sis_streak_persistence)."
+   },
+   "mlb.sp_workload": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Expected outs per start; superseded for this archetype by the shared exit-hazard curve, so context."
+   },
+   "mlb.leash": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Hook tendency is a component of the shared exit hazard; here it matters through a manager's willingness to protect a streaking pitcher."
+   },
+   "mlb.team_wrc_vs_hand": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Opposing lineup offence by handedness supports the out-rate profile of each upcoming opponent."
+   },
+   "mlb.lineup_pit": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Confirmed lineups sharpen the opponent profile for the next start only."
+   },
+   "mlb.pitcher_hr_vulnerability": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "HR/FB and barrels allowed set the home-run component of the per-inning run probability."
+   },
+   "mlb.umpire": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Zone effects shift walk and strikeout rates slightly; no first-order effect on a multi-start streak."
+   },
+   "mlb.bullpen": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Reliever quality decides whether runners left by the starter score and are charged to him."
+   },
+   "mlb.park": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Park run and home-run environment of each upcoming start enters the per-inning scoreless probability."
+   },
+   "mlb.weather_pit": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Game-time weather scales run and home-run environment for each start."
+   },
+   "m.ladder_structure": {
+    "verdict": "BENCHMARK_ONLY",
+    "reason": "Cross-rung price consistency is a market benchmark, not an input to the streak survival."
    }
   },
   "interactions": [
@@ -2033,7 +2261,7 @@
    {
     "input_id": "mlb.scoreless_streak_survival",
     "shape": "exponential decay in outs needed",
-    "why": "Each inning survives with probability q, so P(reach N) is about q to the power of the innings needed; a change in q from 0.78 to 0.82 nearly doubles the chance of a ten-inning gap."
+    "why": "Each inning survives with probability q, so P(reach N) is about q to the power of the innings needed; a change in q from 0.78 to 0.82 multiplies the chance of a ten-inning gap by (0.82/0.78)^10, about 1.65, and the relative effect grows with the length of the gap."
    },
    {
     "input_id": "mlb.pitcher_rotation_slot_and_rest",
@@ -2060,18 +2288,18 @@
      "date",
      "scoring changes"
     ],
-    "timestamp_requirement": "As-of after each start; again after the scoring-correction window.",
+    "timestamp_requirement": "As-of after each start; re-pulled after a lag set by an observed revision study of scoring changes (no source for an official correction window was found).",
     "history_needed": "5 seasons for per-inning scoreless rates; all long streaks since 1990 for validation.",
     "candidate_sources": [
      {
-      "name": "Baseball Savant / MLB Stats API play-by-play",
+      "name": "MLB Stats API play-by-play and game logs",
       "access": "free",
-      "note": "Event-level data"
+      "note": "Outs and runs per plate appearance; whether earned-run and inherited-runner attribution fields are exposed is SOURCE_UNVERIFIED"
      },
      {
-      "name": "Retrosheet",
+      "name": "Retrosheet event files",
       "access": "free",
-      "note": "Historical streak validation"
+      "note": "Historical event-level data including runner responsibility; streak validation"
      }
     ],
     "feeds_inputs": [
@@ -2190,6 +2418,13 @@
     "category": "game_context_script",
     "description": "The cumulative outs since the stated start date (Apr 30, 2026) must be reconstructed from play-by-play, and whether the exchange's own count matches the reconstruction (partial innings, relief outs) cannot be verified from the sampled text alone; only one pitcher's streak was sampled.",
     "what_would_resolve": "Compare reconstructed streak totals against the exchange's displayed or settled value for several pitchers and dates."
+   },
+   {
+    "id": "sis_scoring_source_and_window",
+    "type": "SOURCE_UNVERIFIED",
+    "category": "settlement_contract",
+    "description": "The ledger needs earned/unearned and inherited-runner run attribution per plate appearance, and later official scoring changes; no source was checked here for which public feed exposes these fields (MLB Stats API and Retrosheet are expected, Baseball Savant event data is not known to carry run charging) and no source states an official scoring-correction window, so the re-pull lag is undetermined.",
+    "what_would_resolve": "Inspect an MLB Stats API play-by-play response and a Retrosheet event file for run-responsibility fields, and measure the delay and frequency of post-game scoring changes over a season."
    }
   ]
  }

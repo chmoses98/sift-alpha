@@ -122,6 +122,11 @@
      "id": "nfl.period_drive_scoring_rates",
      "why": "Opponent-adjusted per-drive TD and FG rates by period, so the generator uses period-specific scoring for the 10-12 drives of a game and not only early-game rates.",
      "role": "secondary"
+    },
+    {
+     "id": "nfl.drives",
+     "role": "secondary",
+     "why": "Expected drives per team set the number of possessions in the simulated path and feed the market-free score-state input; without it the possession count is undefined."
     }
    ],
    "interactions": [
@@ -238,7 +243,8 @@
       "nfl.period_drive_scoring_rates",
       "nfl.scoring_event_point_values",
       "nfl.non_offensive_scoring_rate",
-      "nfl.script"
+      "nfl.script",
+      "nfl.drives"
      ]
     },
     {
@@ -359,7 +365,8 @@
      "status": "COVERED",
      "input_ids": [
       "nfl.score_path_sequence_sim",
-      "nfl.script"
+      "nfl.script",
+      "nfl.drives"
      ],
      "note": "Possessions per game bound the number of scores; the simulator draws drives per team (script is own-model-margin context)."
     },
@@ -524,6 +531,10 @@
    "nfl.period_drive_scoring_rates": {
     "verdict": "KEEP_SECONDARY",
     "reason": "Provides opponent adjustment beyond the early drives."
+   },
+   "nfl.drives": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Possessions per game bound the number of scores and so the lead-change and largest-lead tails; attached because the score-state input reads it."
    }
   },
   "interactions": [
@@ -645,7 +656,8 @@
      "nfl.ot_ending_hazard",
      "nfl.qb_blowout_pull_hazard",
      "nfl.in_game_exit_risk",
-     "nfl.market_free_score_state_blowout_mass"
+     "nfl.market_free_score_state_blowout_mass",
+     "nfl.drives"
     ]
    },
    {
@@ -737,7 +749,7 @@
    {
     "id": "u5",
     "type": "INPUT_DEFINITION_UNCERTAIN",
-    "description": "The market-free score-state and blowout-mass input (nfl.market_free_score_state_blowout_mass) is defined but not calibrated: whether its simulated 14+ point fourth-quarter lead and 21+ point margin frequencies reproduce the empirical frequencies by expected-margin bin, and the size of the state-conditional response curves, are not yet known. nfl.garbage_time remains spread/total-derived and is kept only as a benchmark; nfl.script was re-based on own-model margins.",
+    "description": "The market-free score-state and blowout-mass input (nfl.market_free_score_state_blowout_mass) is defined but not calibrated: whether its simulated 14+ point fourth-quarter lead and 21+ point margin frequencies reproduce the empirical frequencies by expected-margin bin, and the size of the state-conditional response curves, are not yet known. nfl.garbage_time remains spread/total-derived and is kept only as a benchmark; nfl.script was re-based on own-model margins. (Type stays INPUT_DEFINITION_UNCERTAIN in the record because the input's calibration is its definition's open part; the gap classification entry is EMPIRICAL_QUESTION because the catalog now names the input and only calibration is open.)",
     "what_would_resolve": "Compare simulated and empirical frequencies of 14+ point fourth-quarter leads and 21+ margins by own-model expected-margin bin on 2012-2025 games, once experiments are permitted.",
     "category": "game_context_script"
    }
@@ -2352,7 +2364,7 @@
     {
      "id": "s3",
      "name": "Per-game interception hazard",
-     "description": "For one game the expected interception count is the opposing dropbacks (opposing plays from the pace and total-plays models times the opposing dropback rate from PROE) times the league interception rate per dropback times two ratio multipliers: the named team's defensive multiplier (quarterback-adjusted, from its defensive personnel, coverage scheme and past takeaways) and the opposing quarterback's multiplier (net of defences faced). Pressure and trailing script for the opponent raise it and wind lowers it. Per-attempt rates regress strongly to the mean, so the hazard varies in a narrow band. The per-game probability of at least one is one minus the exponential of minus the expected count under a Poisson reading; overdispersion is handled in stage s4.",
+     "description": "For one game the expected interception count is the opposing dropbacks (opposing plays from the pace and total-plays models times the opposing dropback rate from PROE) times the league interception rate per dropback times two ratio multipliers: the named team's defensive multiplier (quarterback-adjusted base from nfl.opp_def_int_propensity, adjusted for defensive-back availability and coverage-scheme changes through nfl.def_personnel and nfl.coverage_scheme, which measure availability and scheme and not ball skills) and the opposing quarterback's multiplier (net of defences faced). Pressure and trailing script for the opponent raise it and wind lowers it. Per-attempt rates regress strongly to the mean, so the hazard varies in a narrow band. The per-game probability of at least one is one minus the exponential of minus the expected count under a Poisson reading; overdispersion is handled in stage s4.",
      "distribution": "Per-game count approximately Poisson with a small mean; the per-game probability of at least one is an unsourced placeholder to be computed from play-by-play",
      "categories": [
       "efficiency_conversion",
@@ -2386,7 +2398,9 @@
      "input_ids": [
       "nfl.window_hazard_survival_with_game_correlation",
       "nfl.turnovers",
-      "nfl.int_rate"
+      "nfl.int_rate",
+      "nfl.def_personnel",
+      "nfl.coverage_scheme"
      ]
     },
     {
@@ -2534,7 +2548,7 @@
     "category": "distribution",
     "mechanism": "Turns per-game event hazards into the probability of at least one event over each nested window of a rung ladder as one minus the expected product of per-game zero-event probabilities, averaging over shared uncertainty (the team's defensive quality, scheme changes, quarterback injuries) that links the games.",
     "rationale": "Multiplying independent per-game probabilities overstates how fast the probability of at least one event approaches one when the games share a common unknown such as the defence's true rate; the shared factor fattens the no-event tail, which is exactly the part of the distribution that prices a Yes contract near the top.",
-    "measurement": "Per game g for team t: expected event count lambda_g = D_g x p0 x m_def(t) x m_qb(q_g), where D_g = expected opposing dropbacks (opposing plays from nfl.pace and nfl.total_plays_state_model times the opposing dropback rate from nfl.proe), p0 = league interceptions per dropback, m_def(t) = the named team's defensive interception multiplier relative to the league (a ratio, not a rate), taken from nfl.opp_def_int_propensity, which is already adjusted for the quality of quarterbacks faced, and m_qb(q_g) = the opposing quarterback's multiplier relative to the league (a ratio) from nfl.int_rate, estimated net of the defences he has faced; the two multipliers are ratios so that no per-attempt rate is multiplied by another and the quarterback is not counted twice (if m_def were not quarterback-adjusted it must not be combined with m_qb). The team's takeaway rate uses the interception flag only (fumble recoveries excluded); nfl.turnovers is a regression benchmark, not the rate. Draw a shared log-multiplier u_t ~ Normal(0, tau^2) for the defence (tau to be fitted from between-season variation of team interception rates after shrinkage) and draw each game's opposing starter from its as-of distribution. Survival to the end of rung W: S(W) = E[ product over games with week < W of exp(-lambda_g exp(u_t)) ]; compute every rung from the same draws so S(W) is non-increasing in W and P(at least one by W) = 1 - S(W) is monotone across the nested rungs. Report with and without the shared factor. As-of issuance timestamp and recomputed after each game.",
+    "measurement": "Per game g for team t: expected event count lambda_g = D_g x p0 x m_def(t) x m_qb(q_g), where D_g = expected opposing dropbacks (opposing plays from nfl.pace and nfl.total_plays_state_model times the opposing dropback rate; nfl.proe is a pass-rate-over-expected input whose pass-attempt versus dropback definition is not verified, so the dropback rate must be re-measured as qb_dropback per play, sacks and scrambles included, and p0 is defined per qb_dropback to match), p0 = league interceptions per dropback, m_def(t) = the named team's defensive interception multiplier relative to the league (a ratio, not a rate): a base multiplier from nfl.opp_def_int_propensity (already adjusted for the quality of quarterbacks faced) times an availability-and-scheme adjustment A(t) as of T, where A(t) is estimated by regressing past team interception multipliers on the snap-weighted availability of cornerbacks and safeties from nfl.def_personnel (injury and absence vintages) and on the change in man/zone and single-high/two-high shell rates from nfl.coverage_scheme versus the base period (these inputs measure availability and scheme, not ball skills, so ball-skill differences enter only through the team's own past takeaways), and m_qb(q_g) = the opposing quarterback's multiplier relative to the league (a ratio) from nfl.int_rate, estimated net of the defences he has faced; the two multipliers are ratios so that no per-attempt rate is multiplied by another and the quarterback is not counted twice (if m_def were not quarterback-adjusted it must not be combined with m_qb). The team's takeaway rate uses the interception flag only (fumble recoveries excluded); nfl.turnovers is a regression benchmark, not the rate. Draw a shared log-multiplier u_t ~ Normal(0, tau^2) for the defence (tau to be fitted from between-season variation of team interception rates after shrinkage) and draw each game's opposing starter from its as-of distribution. Survival to the end of rung W: S(W) = E[ product over games with week < W of exp(-lambda_g exp(u_t)) ]; compute every rung from the same draws so S(W) is non-increasing in W and P(at least one by W) = 1 - S(W) is monotone across the nested rungs. Report with and without the shared factor. As-of issuance timestamp and recomputed after each game.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nflverse play-by-play and schedules"
@@ -2544,7 +2558,8 @@
      "per-team-game defensive interceptions (interception flag) and opposing dropbacks",
      "per-quarterback interception rates relative to league",
      "schedule window table and rung ladder from nfl.team_window_game_exposure",
-     "opposing plays and dropback rates from pace and PROE inputs"
+     "opposing plays and dropback rates from pace and PROE inputs",
+     "defensive-back participation and injury vintages by team-week; coverage-shell rates by team-season"
     ],
     "why": "Provides the aggregation rule for an at-least-once window event including the cross-game dependence, which no per-game input supplies.",
     "role": "primary"
@@ -2735,7 +2750,9 @@
      "nfl.pass_rush",
      "nfl.turnovers",
      "nfl.pace",
-     "nfl.window_hazard_survival_with_game_correlation"
+     "nfl.window_hazard_survival_with_game_correlation",
+     "nfl.proe",
+     "nfl.total_plays_state_model"
     ]
    },
    {
@@ -2801,6 +2818,37 @@
     "feeds_inputs": [
      "m.rules_text"
     ]
+   },
+   {
+    "dataset": "Defensive participation, injury vintages and coverage-shell rates",
+    "grain": "team-game (defensive snaps by player) and team-season (shell rates)",
+    "fields": [
+     "defense_players_on_field",
+     "player_position",
+     "injury_status_vintage",
+     "snap_count",
+     "man_zone_rate",
+     "single_high_rate",
+     "blitz_rate"
+    ],
+    "timestamp_requirement": "Injury status as of the as-of time T and each later re-run; shell rates from completed games",
+    "history_needed": "2016-2025 (participation data reported from 2016 and charting from later seasons; coverage not verified here)",
+    "candidate_sources": [
+     {
+      "name": "nflverse pbp_participation and injuries tables",
+      "access": "free",
+      "note": "participation and injury vintages; availability by season not verified here"
+     },
+     {
+      "name": "FTN charting via nflverse",
+      "access": "free_limited",
+      "note": "man/zone and shell flags, reported to start in recent seasons (unverified)"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.def_personnel",
+     "nfl.coverage_scheme"
+    ]
    }
   ],
   "unresolved": [
@@ -2830,6 +2878,13 @@
     "description": "The rung ladder (before Week 2, 4, 6, 8, 12, 14, 16 and 'anytime'), the windows of 1 to about 17 games, the pre-Week-1 issuance date of the nine sampled markets and the named settlement sources were reported by reviewers from Kalshi API metadata and are not in the sampled rules text; the interception base rates, the backup-quarterback effect and the starter vintages were not checked either.",
     "what_would_resolve": "Read the Kalshi series metadata and the nine market listings directly, and compute per-game interception rates and starter vintages from nflverse tables.",
     "category": "settlement_contract"
+   },
+   {
+    "id": "u5",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "The dropback rate behind opposing dropbacks is taken from a pass-rate-over-expected input whose definition (pass attempts versus qb_dropback, treatment of sacks and scrambles) is not verified, and the regression of team interception multipliers on defensive-back availability and shell changes has no fitted form or evidence that the effect is detectable.",
+    "what_would_resolve": "Re-measure the dropback rate as qb_dropback per play from play-by-play and test whether availability and shell variables explain between-season changes in team interception rates.",
+    "category": "pace_volume"
    }
   ],
   "resolved_by": "NEXTINT re-filed to its own archetype (NFL round 3)"

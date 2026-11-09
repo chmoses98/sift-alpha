@@ -27,7 +27,7 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 | every ledger series has exactly one final assignment (reconciles exactly) | PASS | 4156 assigned of 4156 ledger series |
 | every in-scope series is assigned to an archetype that exists in the catalog | PASS | 2610 in-scope series |
 | every review-added input is audited (definition, provenance, market-free class) | PASS | 1004 audited of 952 review-added inputs |
-| every declared gap is classified | PASS | 1029 of 1029 |
+| every declared gap is classified | PASS | 1030 of 1030 |
 | no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids) | **NOT MET** | 1 open of 65 catalog blockers (64 resolved) |
 | no interaction, non-linearity or mechanism stage names an input its archetype does not carry (detached-input references) | PASS | 0 detached references |
 
@@ -52,14 +52,14 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 * Post-reconcile audit of edited records: {'CORRECTED': 96, 'OK': 48, 'issues': 268} (reconciled archetypes: 144).
 
 ### Gap classification (every declared `unresolved` entry)
-1029 of 1029 classified: {'CATALOG_BLOCKER': 65, 'DATA_SOURCE_LIMITATION': 265, 'EMPIRICAL_QUESTION': 237, 'FUTURE_DATA_COLLECTION': 89, 'UNVERIFIABLE_CONTRACT': 373}.
+1030 of 1030 classified: {'CATALOG_BLOCKER': 65, 'DATA_SOURCE_LIMITATION': 265, 'EMPIRICAL_QUESTION': 237, 'FUTURE_DATA_COLLECTION': 89, 'UNVERIFIABLE_CONTRACT': 374}.
 
 | Sport | Declared | Catalog blocker | Unverifiable contract | Data-source limitation | Future data collection |
 |---|---|---|---|---|---|
 | CBB | 100 | 4 | 33 | 27 | 11 |
 | CFB | 91 | 4 | 28 | 23 | 7 |
 | MLB | 159 | 15 | 67 | 37 | 19 |
-| NBA | 183 | 18 | 58 | 36 | 8 |
+| NBA | 184 | 18 | 59 | 36 | 8 |
 | NFL | 181 | 10 | 59 | 49 | 16 |
 | NHL | 92 | 3 | 29 | 28 | 7 |
 | SOCCER | 154 | 9 | 72 | 36 | 13 |
@@ -144,7 +144,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | NBA | summer_league_games | ready for your approval | 8 (8) | 8 | 7 | 11 | 6/3 | 6 | 5 | verified from rules text | CLEAR (0) |
 | NBA | player_escalator_payout | ready for your approval | 2 (2) | 5 | 8 | 13 | 5/4 | 4 | 5 | partially verified | CLEAR (0) |
 | NBA | unreg:team_and_player_counting_specials | ready for your approval | 1 (1) | 5 | 11 | 22 | 5/2 | 4 | 5 | verified from rules text | CLEAR (0) |
-| NBA | unreg:all_star_weekend_events | ready for your approval | 3 (3) | 6 | 10 | 29 | 7/4 | 6 | 12 | partially verified | CLEAR (0) |
+| NBA | unreg:all_star_weekend_events | ready for your approval | 3 (3) | 6 | 10 | 29 | 7/4 | 6 | 13 | partially verified | CLEAR (0) |
 | NBA | unreg:series_cumulative_points | ready for your approval | 2 (2) | 6 | 7 | 37 | 7/4 | 7 | 6 | partially verified | CLEAR (0) |
 | NBA | unreg:all_star_exhibition_games | ready for your approval | 3 (3) | 6 | 6 | 17 | 6/3 | 4 | 5 | partially verified | CLEAR (0) |
 | NBA | unreg:all_star_game_mvp | ready for your approval | 1 (1) | 6 | 3 | 21 | 5/3 | 3 | 5 | partially verified | CLEAR (0) |

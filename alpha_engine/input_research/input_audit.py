@@ -136,7 +136,7 @@ def apply() -> dict:
     return stats
 
 
-PATCH_FIELDS = ("label", "mechanism", "rationale", "measurement", "free_sources", "raw_data", "pregame_knowable", "registry_ids", "category")
+PATCH_FIELDS = ("label", "mechanism", "rationale", "measurement", "free_sources", "raw_data", "pregame_knowable", "registry_ids", "category", "provenance")
 
 
 def apply_patches() -> dict:
@@ -157,6 +157,8 @@ def apply_patches() -> dict:
                     raise ValueError(f"{s}:{iid}: field {k} not patchable")
                 if k in ("mechanism", "rationale", "measurement") and len(str(v)) < 60:
                     raise ValueError(f"{s}:{iid}: {k} too thin")
+                if k == "provenance" and (not (v or {}).get("sources") or any(x.get("access") not in comp.ACCESS for x in v["sources"]) or v.get("verified") not in (True, False)):
+                    raise ValueError(f"{s}:{iid}: provenance needs sources [{{name,access}}] and verified true|false")
                 if c["inputs"][iid].get(k) != v:
                     c["inputs"][iid][k] = v; n += 1
         (cat.CATALOG_DIR / f"{s}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False) + "\n")

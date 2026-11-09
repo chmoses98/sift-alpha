@@ -22,6 +22,24 @@ def first_record():
     return None
 
 
+_TC = unittest.TestCase()
+
+
+def _assert_approval_is_scoped_and_not_expert_verification(a):
+    """The owner approved the catalog BLUEPRINT as a research baseline on 2026-11-09. That is the only thing the record may say."""
+    _TC.assertTrue(a["approved"])
+    _TC.assertEqual(a["scope"], "CATALOG_BLUEPRINT_AS_RESEARCH_BASELINE")
+    _TC.assertTrue(a["approved_by"])
+    _TC.assertTrue(a["approved_commit"].startswith("50dc65e"))
+    _TC.assertIs(a["human_expert_verified"], False)
+    text = " ".join(a["does_not_assert"]).lower()
+    for must in ("human domain-expert verification", "declared gaps", "data readiness", "predictive readiness", "place bets"):
+        _TC.assertIn(must, text)
+    _TC.assertEqual(a["preserved_at_approval"]["declared_gaps"], 1030)
+    _TC.assertEqual(a["preserved_at_approval"]["inputs"], 1649)
+    _TC.assertEqual(a["preserved_at_approval"]["archetypes"], 170)
+
+
 class PauseGuard(unittest.TestCase):
     def test_predictive_experiments_are_paused_and_entry_points_refuse(self):
         self.assertTrue(phase.predictive_paused())
@@ -45,7 +63,7 @@ class GateIsNotSelfCertifying(unittest.TestCase):
     def test_gate_ceiling_and_no_code_written_approval(self):
         g = C.compute_gate()
         self.assertEqual(g["totals"]["archetypes"], sum(len(C.arch_keys(cat.load(s))) for s in C.SPORTS))
-        self.assertFalse(g["approval"]["approved"])
+        _assert_approval_is_scoped_and_not_expert_verification(g["approval"])
         self.assertFalse((C.CD / "approval.json").exists() and C.rd(C.CD / "approval.json").get("approved") and not C.rd(C.CD / "approval.json").get("approved_by"))
         self.assertNotIn("COMPLETE", "|".join(C.STATUSES).replace("INCOMPLETE", ""))
         src = Path(C.__file__).read_text()
@@ -233,7 +251,7 @@ class CatalogIntegration(unittest.TestCase):
     def test_acceptance_never_claims_approval_and_reports_exact_counts(self):
         g = C.rd(C.CD / "gate.json")
         ac = g["acceptance"]
-        self.assertFalse(g["approval"]["approved"])
+        _assert_approval_is_scoped_and_not_expert_verification(g["approval"])
         self.assertIn("never approval", ac["note"].lower())
         self.assertEqual(ac["catalog_totals"]["TOTAL"]["inputs"], sum(len(cat.load(s)["inputs"]) for s in C.SPORTS))
         self.assertEqual(g["totals"]["archetypes"], sum(len(C.arch_keys(cat.load(s))) for s in C.SPORTS))

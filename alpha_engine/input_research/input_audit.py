@@ -120,6 +120,8 @@ def apply() -> dict:
                 r["market_note"] = a["market_note"]
             if a.get("verdict") in ("DUPLICATE", "WEAK", "REMOVE_CANDIDATE"):
                 r["audit_flag"] = {"verdict": a["verdict"], "duplicate_of": a.get("duplicate_of")}
+            else:
+                r.pop("audit_flag", None)   # the audit layer is the source of truth: a later OK/FIXED verdict supersedes an earlier flag (a stale flag used to survive regeneration)
         (cat.CATALOG_DIR / f"{s}.json").write_text(json.dumps(c, indent=1, ensure_ascii=False) + "\n")
         for f in sorted((comp.CD / "reviews").glob(f"{s}*.json")):
             d = rd(f); ch = False

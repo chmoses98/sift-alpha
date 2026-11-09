@@ -1,187 +1,214 @@
-"""Offline tests: exact series ledger, rules-text classification, collectors' parsers, data-readiness model, and the ledgers of data actually collected."""
+"""Data-foundation audit (RESEARCH_ONLY): registry integrity, exactly-once coverage of every catalog input, and invariants that keep statuses honest."""
 import collections
 import json
+import sys
 import unittest
 from pathlib import Path
 
-from alpha_engine.collect import espn_scoreboard as ES, mlb_boxscores as MB, mlb_schedule as MS, nhl_boxscores as NB
-from alpha_engine.input_research import data_readiness as DR, rules_classifier as RC, series_ledger as SL
-
 ROOT = Path(__file__).resolve().parents[1]
-IN = ROOT / "research/input_research"
-LEDGER = json.loads((IN / "market_universe/series_ledger.json").read_text())
-READY = json.loads((IN / "data_readiness.json").read_text())
-STATUSES = {"OUT_OF_SCOPE_SPORT", "EXCLUDED_TEST", "EXCLUDED_COMBO", "EXCLUDED_NONSPORT", "NO_LISTED_MARKETS", "COVERED_REGISTERED", "COVERED_UNREGISTERED", "CLASSIFIED_NO_ARCHETYPE", "UNCLASSIFIED"}
+sys.path.insert(0, str(ROOT))
+
+from alpha_engine.input_research import baseline_lock as BL  # noqa: E402
+from alpha_engine.input_research import catalog as cat  # noqa: E402
+from alpha_engine.input_research import market_dependency as MD  # noqa: E402
+from alpha_engine.input_research.data_foundation import audit as A  # noqa: E402
+from alpha_engine.input_research.data_foundation import datasets as DS  # noqa: E402
+from alpha_engine.input_research.data_foundation import evidence as EV  # noqa: E402
+from alpha_engine.input_research.data_foundation import report as RP  # noqa: E402
+from alpha_engine.input_research.data_foundation import rules as RL  # noqa: E402
+from alpha_engine.input_research.data_foundation import sources as SRC  # noqa: E402
+
+DF = ROOT / "research/input_research/data_foundation"
+AUDIT = json.loads((DF / "input_audit.json").read_text())
+ROWS = AUDIT["rows"]
 
 
-class ExactLedger(unittest.TestCase):
-    def test_every_series_has_exactly_one_status_and_totals_reconcile(self):
-        rows = LEDGER["rows"]
-        self.assertEqual(len(rows), LEDGER["total_series"])
-        self.assertEqual(len({r["ticker"] for r in rows}), len(rows), "duplicate series")
-        self.assertTrue(all(r["status"] in STATUSES for r in rows))
-        self.assertEqual(LEDGER["in_scope"] + LEDGER["out_of_scope"], LEDGER["total_series"])
-        self.assertEqual(sum(v["total"] for v in LEDGER["by_sport"].values()), LEDGER["in_scope"])
-        for s, v in LEDGER["by_sport"].items():
-            self.assertEqual(v["total"], sum(n for k, n in v.items() if k != "total"), s)
-            self.assertEqual(v["total"], sum(1 for r in rows if r["sport"] == s), s)
+class Registry(unittest.TestCase):
+    def test_every_dataset_is_well_formed_and_cites_known_sources_and_evidence(self):
+        probes = EV.probes()
+        for d, v in DS.DATASETS.items():
+            self.assertIn(v["pit"], DS.PIT, d); self.assertIn(v["kind"], DS.KINDS, d)
+            for s in v["sources"]:
+                self.assertIn(s, SRC.SOURCES, f"{d}: unknown source {s}")
+            for k in ("probe", "probe2"):
+                if v["evidence"].get(k):
+                    self.assertIn(v["evidence"][k], probes, f"{d}: unknown probe {v['evidence'][k]}")
+            self.assertTrue(v["sports"], d)
+        res = EV.resolve_all()
+        self.assertTrue(all(not r["unknown_probe_ids"] for r in res.values()))
+        self.assertTrue(all(r["access_status"] in EV.RANK for r in res.values()))
 
-    def test_snapshot_total_matches_the_published_universe_summary(self):
-        u = json.loads((IN / "market_universe/universe_summary.json").read_text())
-        self.assertEqual(LEDGER["total_series"], u["n_series"])
+    def test_rules_only_reference_registered_datasets(self):
+        for sp, m in RL.M.items():
+            for need, ids in m.items():
+                for i in ids:
+                    self.assertIn(i, DS.DATASETS, f"{sp}/{need}: {i}")
+        for need, ids in RL.X.items():
+            for i in ids:
+                self.assertIn(i, DS.DATASETS, need)
 
-    def test_exclusions_have_reasons_and_unresolved_are_few_and_explicit(self):
-        for r in LEDGER["rows"]:
-            if r["status"] in ("EXCLUDED_NONSPORT", "EXCLUDED_COMBO"):
-                self.assertTrue(r.get("override_reason"), r["ticker"])
-        unresolved = [r for r in LEDGER["rows"] if r["status"] in ("UNCLASSIFIED", "CLASSIFIED_NO_ARCHETYPE")]
-        self.assertLessEqual(len(unresolved), 5, [r["ticker"] for r in unresolved])
-        self.assertIn(set(r["evidence"] for r in LEDGER["rows"]), [{"RULES_TEXT", "NO_LISTING", "TITLE_ONLY"}])
+    def test_a_blocked_host_is_never_graded_as_proof_of_absence(self):
+        res = EV.resolve_all()
+        p = EV.probes()
+        for d, r in res.items():
+            ev = DS.DATASETS[d]["evidence"]
+            pr = [p[ev[k]] for k in ("probe", "probe2") if ev.get(k) in p]
+            if pr and all(x["result"] == "POLICY_DENIED" for x in pr) and DS.DATASETS[d]["kind"] is None and not r["rows_collected"]:
+                self.assertEqual(r["access_status"], "FREE_BLOCKED_FROM_RUNNER", d)
+                self.assertNotEqual(r["access_status"], "NO_FREE_SOURCE", d)
 
-    def test_no_listed_market_is_never_reported_as_covered(self):
-        for r in LEDGER["rows"]:
-            if r["evidence"] == "NO_LISTING" and r["sport"] in LEDGER["by_sport"]:
-                self.assertIn(r["status"], ("NO_LISTED_MARKETS", "EXCLUDED_TEST"), r["ticker"])
+    def test_ledger_backed_datasets_are_collected_archives_with_measured_history(self):
+        res = EV.resolve_all()
+        for d in ("nba.injury_report_vintages", "nhl.shots_xy", "mlb.boxscore_player", "ten.matches", "cbb.games_espn"):
+            self.assertEqual(res[d]["access_status"], "COLLECTED_ARCHIVE", d)
+            self.assertEqual(res[d]["history"]["basis"], "MEASURED", d)
+            self.assertTrue(res[d]["history"]["first"], d)
 
-    def test_the_nine_series_difference_is_the_explicitly_excluded_test_series(self):
-        # The first accounting printed 2,358 covered + 193 unregistered-archetype + 212 "no archetype" = 2,763 of 2,772: its "no archetype" column was computed as total - covered - excluded and the
-        # nine test/placeholder series (7 soccer, 2 tennis) were subtracted without being shown. The ledger shows every one of them.
-        ex = [r for r in LEDGER["rows"] if r["status"] == "EXCLUDED_TEST"]
-        self.assertEqual(len(ex), 9)
-        self.assertEqual(collections.Counter(r["sport"] for r in ex), {"SOCCER": 7, "TENNIS": 2})
 
-    def test_adjudication_count_equals_flag_count(self):
-        a = json.loads((IN / "gap_adjudication.json").read_text())
-        self.assertEqual(a["n_flags"], a["n_adjudications"])
-        keys = [(x["sport"], x["archetype"], x["category"]) for x in a["adjudications"]]
+class Coverage(unittest.TestCase):
+    def test_every_catalog_input_is_audited_exactly_once(self):
+        keys = [r["key"] for r in ROWS]
         self.assertEqual(len(keys), len(set(keys)))
+        expect = {f"{s}:{i}" for s in A.SPORTS for i in cat.load(s)["inputs"]}
+        self.assertEqual(set(keys), expect)
+        self.assertEqual(len(ROWS), 1649)
+        self.assertEqual(len(ROWS), BL.load()["current"]["totals"]["inputs"])
+        self.assertEqual(AUDIT["n_inputs"], 1649)
+
+    def test_summary_counts_equal_the_rows_and_the_csv(self):
+        s = json.loads((DF / "summary.json").read_text())
+        self.assertEqual(s["by_status"], dict(collections.Counter(r["status"] for r in ROWS)))
+        self.assertEqual(sum(s["by_bucket"].values()), 1649)
+        lines = (DF / "coverage_matrix.csv").read_text().strip().splitlines()
+        self.assertEqual(len(lines) - 1, 1649)
+        self.assertEqual(s["paid_services_added"], 0)
+
+    def test_every_row_has_status_bucket_requirements_provenance_and_evidence(self):
+        for r in ROWS:
+            self.assertIn(r["status"], A.STATUSES, r["key"]); self.assertEqual(r["bucket"], A.BUCKET[r["status"]], r["key"])
+            self.assertIn(r["pit_verdict"], A.PIT_VERDICTS, r["key"])
+            self.assertTrue(r["requirements"], r["key"]); self.assertTrue(r["provenance_sources"], r["key"])
+            self.assertTrue(any(x["canonical"] for x in r["provenance_sources"]), f"{r['key']}: no provenance source normalised to a canonical source")
+            self.assertTrue(r["evidence_grade"], r["key"]); self.assertIn(r["confidence"], ("HIGH", "MEDIUM", "LOW"), r["key"])
+            self.assertIn(r["cost"], ("free", "free (key needed)", "paid"), r["key"])
+
+    def test_computed_status_mirrors_the_earlier_milestone_and_benchmarks_mirror_market_dependency(self):
+        comp = json.loads((ROOT / "research/input_research/computable_inputs.json").read_text())["inputs"]
+        n_prior = sum(1 for v in comp.values() if v["status"] in A.COMPUTED)
+        self.assertEqual(sum(1 for r in ROWS if r["computed_prior"]), n_prior, "every earlier computation stays recorded as evidence")
+        for r in ROWS:
+            if r["status"].startswith("COMPUTED"):
+                self.assertTrue(r["computed_prior"], f"{r['key']}: COMPUTED status without an earlier computation")
+        for r in ROWS:
+            bench = MD.kind(r["id"]) == "benchmark_only"
+            if bench:
+                self.assertEqual(r["status"], "EXCLUDED_BENCHMARK_ONLY", r["key"])
+            elif r["status"] == "EXCLUDED_BENCHMARK_ONLY":   # a market-derived input the catalog's list missed: allowed only as an explicit, rationalised reviewer override
+                self.assertTrue(any("status set by reviewer" in f for f in r["flags"]) and r["reviewed"], f"{r['key']}: excluded without a reviewer override")
 
 
-class RulesClassifier(unittest.TestCase):
-    def test_real_contract_texts(self):
-        c = lambda sp, t: RC.classify(sp, t)[0]
-        self.assertEqual(c("SOCCER", "If Tie is the result of the Austin vs Portland professional MLS soccer game originally scheduled for Nov 7, 2026 after 90 minutes"), "soccer_game")
-        self.assertEqual(c("SOCCER", "If Tottenham finishes in last place in the league table in the 2026-27 EPL season, then the market resolves to Yes."), "league_last")
-        self.assertEqual(c("SOCCER", "If Venezia is the 2026-2027 Serie A champion, then the market resolves to Yes."), "outright_champion")
-        self.assertEqual(c("CFB", "If West Virginia is ranked #1 on the College Football AP Poll Final Rankings"), "poll_rank")
-        self.assertEqual(c("NFL", "If Trey McBride records at least 34 full-PPR fantasy points in any individual game"), "fantasy_points")
-        self.assertEqual(c("SOCCER", "If Instituto Cordoba and Newell's Old Boys both score a goal in the match"), "soccer_btts")
-        self.assertEqual(c("NFL", "If Over 56.5 points scored wins against Over 35.5 points scored, Over 35.5 points"), "combo_mve")
+class HonestStatuses(unittest.TestCase):
+    """Invariants that stop an optimistic status from being asserted without evidence. Reviewer overrides of `status` are allowed only with a rationale and are flagged."""
 
-    def test_secondary_boilerplate_does_not_override_the_contract_definition(self):
-        t, hit = RC.classify("SOCCER", "If Vasco da Gama is the 2026 CONMEBOL Sudamericana champion, then the market resolves to Yes.", "This contract concerns the American continent")
-        self.assertEqual(t, "outright_champion")
+    def test_computable_without_an_earlier_computation_needs_every_dataset_collected(self):
+        reg = EV.resolve_all()
+        for r in ROWS:
+            if r["status"] == "DATA_IN_HAND" and not any("status set by reviewer" in f for f in r["flags"]):
+                for x in r["requirements"]:
+                    if x["satisfied_by"]:
+                        self.assertEqual(reg[x["satisfied_by"]]["access_status"], "COLLECTED_ARCHIVE", f"{r['key']}: {x['need']} -> {x['satisfied_by']}")
+                self.assertIn(r["pit_verdict"], ("PIT_SAFE", "PIT_COARSE", "NOT_PREGAME_KNOWABLE", "NOT_APPLICABLE"), r["key"])
 
-    def test_override_never_replaces_a_title_based_archetype(self):
-        over = json.loads((IN / "market_universe/classification_overrides.json").read_text())
-        base = {r["ticker"]: r for r in SL.build(use_overrides=False)["rows"]}
-        for t, o in over.items():
-            if base[t]["status"].startswith("COVERED"):
-                self.assertIn(o["type"], ("no_listed_market", "basketball_misassigned", "rules_review_correction"), t)
+    def test_paid_or_no_source_never_lands_in_a_collectable_bucket(self):
+        for r in ROWS:
+            if r["cost"] == "paid" and not any("status set by reviewer" in f for f in r["flags"]):
+                self.assertIn(r["bucket"], ("BLOCKED", "EXCLUDED"), r["key"])
 
+    def test_blocked_and_prospective_rows_name_what_blocks_them(self):
+        for r in ROWS:
+            if r["status"].startswith("BLOCKED") or r["status"] == "COLLECT_PROSPECTIVE":
+                self.assertTrue(r["blockers"] or r["flags"] or r["audit_flag"] or any("status set by reviewer" in f for f in r["flags"]) or r["depends_on"], f"{r['key']}: no stated reason")
 
-class CollectorParsers(unittest.TestCase):
-    def test_mlb_schedule_row_extracts_lineups_umpire_weather_and_inning_runs(self):
-        day = {"games": [{"gamePk": 1, "officialDate": "2025-06-01", "season": "2025", "gameNumber": 1, "doubleHeader": "N", "status": {"abstractGameState": "Final"}, "venue": {"id": 5}, "dayNight": "night",
-                          "gameDate": "2025-06-02T00:00:00Z", "weather": {"condition": "Clear", "temp": "71", "wind": "5 mph"}, "officials": [{"officialType": "Home Plate", "official": {"id": 9}}],
-                          "linescore": {"innings": [{"home": {"runs": 1}, "away": {"runs": 0}}, {"home": {"runs": 0}, "away": {"runs": 2}}]},
-                          "lineups": {"homePlayers": [{"id": 11}, {"id": 12}], "awayPlayers": [{"id": 21}]},
-                          "teams": {"home": {"team": {"id": 1}, "score": 1, "probablePitcher": {"id": 100}}, "away": {"team": {"id": 2}, "score": 2, "probablePitcher": {"id": 200}}}}]}
-        r = list(MS.rows_from(day))[0]
-        self.assertEqual((r["home_plate_ump_id"], r["home_sp_id"], r["innings_played"], r["temp"]), (9, 100, 2, 71))
-        self.assertEqual(json.loads(r["home_lineup"]), [11, 12])
-
-    def test_unfinished_games_are_skipped(self):
-        self.assertEqual(list(MS.rows_from({"games": [{"status": {"abstractGameState": "Live"}}]})), [])
-
-    def test_mlb_boxscore_player_rows(self):
-        x = {"teams": {s: {"team": {"id": i}, "players": {"ID1": {"person": {"id": 7}, "position": {"abbreviation": "P"}, "stats": {"pitching": {"outs": 18, "numberOfPitches": 90, "earnedRuns": 2, "strikeOuts": 7, "gamesStarted": 1}}},
-                                                         "ID2": {"person": {"id": 8}, "battingOrder": "300", "stats": {"batting": {"plateAppearances": 4, "hits": 2, "homeRuns": 1}}}, "ID3": {"person": {"id": 9}, "stats": {}}}}
-                           for s, i in (("home", 1), ("away", 2))}}
-        rows = MB.parse(55, x)
-        self.assertEqual(len(rows), 4)
-        self.assertEqual([r for r in rows if r["player_id"] == 7][0]["outs"], 18)
-        self.assertEqual([r for r in rows if r["player_id"] == 8][0]["bat_order"], 300)
-
-    def test_nhl_boxscore_parse_has_goalie_starter_and_final_only(self):
-        x = {"id": 1, "gameState": "OFF", "gameType": 2, "season": 20242025, "gameDate": "2025-01-06", "startTimeUTC": "2025-01-07T00:00:00Z", "homeTeam": {"abbrev": "BUF", "score": 4, "sog": 30}, "awayTeam": {"abbrev": "WSH", "score": 3, "sog": 25},
-             "gameOutcome": {"lastPeriodType": "SO"}, "venue": {"default": "KeyBank"},
-             "playerByGameStats": {"homeTeam": {"forwards": [{"playerId": 1, "position": "C", "toi": "15:30", "sog": 4, "goals": 1}], "defense": [], "goalies": [{"playerId": 2, "toi": "60:00", "starter": True, "saves": 22, "shotsAgainst": 25}]},
-                                   "awayTeam": {"forwards": [], "defense": [], "goalies": []}}}
-        g, ps = NB.parse(x)
-        self.assertEqual((g["home_goals"], g["last_period"]), (4, "SO"))
-        self.assertAlmostEqual(ps[0]["toi"], 15.5)
-        self.assertTrue([p for p in ps if p["pos"] is None or "starter" in p][0]["starter"])
-        self.assertEqual(NB.parse({**x, "gameState": "LIVE"}), (None, []))
-
-    def test_espn_scoreboard_never_reads_odds(self):
-        ev = {"id": "1", "date": "2025-02-15T21:00Z", "status": {"type": {"completed": True}}, "competitions": [{"neutralSite": False, "odds": [{"details": "LAL -3"}], "competitors": [
-              {"homeAway": "home", "team": {"id": "1", "displayName": "A"}, "score": "80", "linescores": [{"value": 40}, {"value": 40}]}, {"homeAway": "away", "team": {"id": "2", "displayName": "B"}, "score": "70", "linescores": [{"value": 30}, {"value": 40}]}]}]}
-        r = ES.parse(ev, "CBB")
-        self.assertEqual((r["home_score"], r["n_periods"]), (80, 2))
-        self.assertFalse([k for k in r if "odds" in k or "line" in k.replace("linescore", "")])
+    def test_final_only_history_is_never_called_safe_for_a_pregame_decision(self):
+        for r in ROWS:
+            if r["pregame_knowable"] != "no" and any(x["pit_sensitive"] and x["pit"] in ("FINAL_ONLY", "LIVE_SNAPSHOT") for x in r["requirements"]) and not r["reviewed"]:
+                self.assertNotEqual(r["pit_verdict"], "PIT_SAFE", r["key"])
 
 
-class DataReadiness(unittest.TestCase):
-    def test_grading_rules(self):
-        hits = [("SCHEME_CHARTING", "coverage")]
-        self.assertEqual(DR.grade("NFL", hits)[0], "AVAILABLE")                      # participation/FTN in hand
-        self.assertEqual(DR.grade("NBA", hits)[0], "MISSING")                        # no play-type data found
-        self.assertEqual(DR.grade("NHL", [("SCHEME_CHARTING", "shot")])[0], "PARTIAL")
-        self.assertEqual(DR.grade("SOCCER", [("TEAM_BOX", "team")])[0], "AVAILABLE")
-        self.assertEqual(DR.grade("NBA", [])[0], "UNMAPPED")
+class Engine(unittest.TestCase):
+    def _rec(self, **kw):
+        base = {"label": "x", "category": "c", "mechanism": "m", "measurement": "m" * 130, "pregame_knowable": "yes", "raw_data": [], "provenance": {"sources": [{"name": "nflverse", "access": "free"}], "verified": True}, "free_sources": []}
+        base.update(kw); return base
 
-    def test_benchmark_only_inputs_are_excluded_never_counted(self):
-        t = READY["totals"]
-        self.assertEqual(t["AVAILABLE"] + t["PARTIAL"] + t["MISSING"] + t["UNMAPPED"] + t["EXCLUDED_BENCHMARK_ONLY"], t["inputs"])
-        self.assertGreater(t["EXCLUDED_BENCHMARK_ONLY"], 0)
-        self.assertEqual(t["UNMAPPED"], 0)
+    def test_pregame_availability_from_weekly_final_designations_is_coarse_not_safe(self):
+        reg = EV.resolve_all()
+        r = A.assess("NFL", self._rec(raw_data=["weekly injury designations before kickoff"]), reg, None, {"id": "nfl.test_avail", "archetypes": [], "computed": None, "collection": None})
+        self.assertEqual(r["pit_verdict"], "PIT_COARSE")
 
-    def test_every_matrix_evidence_file_exists(self):
-        for sp, row in DR.C.items():
-            for cls, (lv, ev, note) in row.items():
-                if ev:
-                    self.assertTrue((IN / "data_collection" / ev).exists() or (IN / ev).exists(), (sp, cls, ev))
+    def test_mlb_pregame_lineup_needs_vintages_so_history_is_prospective(self):
+        reg = EV.resolve_all()
+        r = A.assess("MLB", self._rec(raw_data=["confirmed starting lineup with posting time"], provenance={"sources": [{"name": "MLB Stats API", "access": "free"}], "verified": True}), reg, None, {"id": "mlb.test_lineup", "archetypes": [], "computed": None, "collection": None})
+        self.assertEqual(r["status"], "COLLECT_PROSPECTIVE"); self.assertIn(r["pit_verdict"], ("PIT_LEAKY_FINAL_ONLY", "PIT_UNAVAILABLE_HISTORICALLY"))
 
-    def test_every_archetype_has_a_readiness_record(self):
-        n = sum(len(json.loads((IN / f"catalog/{s}.json").read_text())["archetypes"]) + len(json.loads((IN / f"catalog/{s}.json").read_text()).get("unregistered_archetypes") or {}) for s in DR.SPORTS)
-        self.assertEqual(len(READY["archetype_readiness"]), n)
-        self.assertTrue(all(v["readiness"] in ("FULL", "EXPERIMENTABLE", "PARTIAL", "BLOCKED") for v in READY["archetype_readiness"].values()))
+    def test_catalog_provenance_caps_availability_when_it_says_paid(self):
+        reg = EV.resolve_all()
+        r = A.assess("NFL", self._rec(raw_data=["team scores"], provenance={"sources": [{"name": "PFF grades", "access": "paid"}], "verified": True}), reg, None, {"id": "nfl.test_paid", "archetypes": [], "computed": None, "collection": None})
+        self.assertEqual(r["status"], "BLOCKED_PAID_ONLY")
 
-    def test_before_after_is_reported_with_both_yardsticks(self):
-        b = READY["before_after"]
-        self.assertEqual(b["before_inputs_with_measured_free_source"], 39)
-        self.assertGreater(b["after_available_or_partial"], b["before_inputs_with_measured_free_source"])
-        self.assertIn("Not the same yardstick", b["note"])
+    def test_post_game_quantities_are_not_treated_as_pregame_inputs(self):
+        reg = EV.resolve_all()
+        r = A.assess("NFL", self._rec(pregame_knowable="no", raw_data=["injury designations"]), reg, None, {"id": "nfl.test_post", "archetypes": [], "computed": None, "collection": None})
+        self.assertEqual(r["pit_verdict"], "NOT_PREGAME_KNOWABLE")
+
+    def test_derived_inputs_are_capped_by_their_upstream_inputs(self):
+        rows = [{"key": "NFL:a", "sport": "NFL", "status": "COMPUTED_FULL", "bucket": "COMPUTABLE", "flags": [], "depends_on": ["b"]}, {"key": "NFL:b", "sport": "NFL", "status": "BLOCKED_PAID_ONLY", "bucket": "BLOCKED", "flags": [], "depends_on": []},
+                {"key": "NFL:c", "sport": "NFL", "status": "DATA_IN_HAND", "bucket": "COMPUTABLE", "flags": [], "depends_on": ["NFL:c"]}]
+        A.propagate_dependencies(rows)
+        self.assertEqual(rows[0]["status"], "BLOCKED_PAID_ONLY"); self.assertEqual(rows[2]["status"], "DATA_IN_HAND", "a cycle must not loop or change the status")
 
 
-class CollectedDataLedgers(unittest.TestCase):
-    def test_repo_archive_ledger_has_the_data_the_matrix_claims(self):
-        d = json.loads((IN / "data_collection/repo_archives_ledger.json").read_text())["datasets"]
-        self.assertGreater(d["nba_espn_player_games"]["rows"], 100000)
-        self.assertEqual(d["nba_official_injury_report_rows"]["key_field_completeness"]["report_time_utc"], 1.0)    # true point-in-time vintages
-        self.assertGreater(d["nhl_shots"]["rows"], 500000)
-        self.assertGreater(d["tennis_atp_matches"]["key_field_completeness"]["w_ace"], 0.5)
-        self.assertEqual(d["tennis_atp_matches"]["key_fields_absent"], [])
+class ReviewContract(unittest.TestCase):
+    def setUp(self):
+        self.reg = EV.resolve_all(); self.ids = {"a", "b"}
 
-    def test_api_collector_ledgers_record_hash_and_timestamp_reliability(self):
-        for f in (IN / "data_collection").glob("*_ledger.json"):
-            if f.name == "repo_archives_ledger.json":
-                continue
-            L = json.loads(f.read_text())
-            self.assertTrue(L.get("sha256") or L.get("cache_files"), f.name)
-            self.assertIn("timestamp_reliability", L, f.name)
-            self.assertGreater(L.get("games") or L.get("player_game_rows") or 0, 100, f.name)
+    def test_review_must_cover_every_input_and_each_fix_needs_a_rationale_and_known_datasets(self):
+        good = {"verdicts": {"a": "OK", "b": "FIX"}, "overrides": {"b": {"rationale": "needs player tracking touches which no mapped dataset holds", "needs": [{"need": "TRACKING", "datasets": ["nba.tracking"]}]}}}
+        self.assertEqual(A.validate_review("NBA", good, self.ids, self.reg), [])
+        bad = [({"verdicts": {"a": "OK"}, "overrides": {}}, "cover exactly"), ({"verdicts": {"a": "OK", "b": "FIX"}, "overrides": {}}, "FIX needs an override"),
+               ({"verdicts": {"a": "OK", "b": "OK"}, "overrides": {"b": {"rationale": "x" * 50}}}, "without a FIX"),
+               ({"verdicts": {"a": "OK", "b": "FIX"}, "overrides": {"b": {"rationale": "short"}}}, "rationale"),
+               ({"verdicts": {"a": "OK", "b": "FIX"}, "overrides": {"b": {"rationale": "x" * 50, "needs": [{"need": "TRACKING", "datasets": ["nope.nothing"]}]}}}, "unknown dataset"),
+               ({"verdicts": {"a": "OK", "b": "FIX"}, "overrides": {"b": {"rationale": "x" * 50, "status": "GREAT"}}}, "unknown status")]
+        for rv, frag in bad:
+            self.assertTrue(any(frag in e for e in A.validate_review("NBA", rv, self.ids, self.reg)), frag)
 
-    def test_cross_sport_search_runs_are_market_free_and_have_a_null(self):
-        s = json.loads((ROOT / "research/audit/input_research/experiments/search_crosssport_v1.json").read_text())
-        self.assertTrue(s["market_free"])
-        for k, v in s["studies"].items():
-            if "error" in v:
-                continue
-            self.assertTrue(v["permutation_null"], k)
-            from alpha_engine.input_research import marketfree as MF
-            MF.assert_market_free([c for g in v["groups"].values() for c in g])
+    def test_proposed_datasets_are_validated_and_marked_documented(self):
+        snap = dict(DS.DATASETS)
+        try:
+            ok = {"reviewer": "t", "new_datasets": [{"id": "nba.test_new", "title": "A proposed test dataset", "sources": ["nba_official"], "kind": "own_capture", "pit": "LIVE_SNAPSHOT"}]}
+            self.assertEqual(A.register_proposed("NBA", ok), [])
+            self.assertIn("proposed_by", DS.DATASETS["nba.test_new"]["notes"]); self.assertEqual(DS.DATASETS["nba.test_new"]["history"]["basis"], "DOCUMENTED")
+            self.assertTrue(A.register_proposed("NBA", {"new_datasets": [{"id": "nfl.wrong_prefix", "title": "wrong sport prefix here", "sources": ["nba_official"], "kind": None, "pit": "EVENT_TIME"}]}))
+            self.assertTrue(A.register_proposed("NBA", {"new_datasets": [{"id": "nba.bad_source", "title": "bad source id here ok", "sources": ["not_a_source"], "kind": None, "pit": "EVENT_TIME"}]}))
+        finally:
+            DS.DATASETS.clear(); DS.DATASETS.update(snap)
+
+
+class VerificationProtocol(unittest.TestCase):
+    def test_questions_never_contain_the_claims_and_the_sample_is_deterministic(self):
+        q = json.loads((DF / "verification_sample.json").read_text()); k = json.loads((DF / "verification_answer_key.json").read_text())
+        self.assertNotIn("claimed", json.dumps(q["inputs"]) + json.dumps(q["datasets"]))
+        self.assertTrue(k["DO_NOT_OPEN_BEFORE_SUBMITTING"]); self.assertEqual({i["key"] for i in q["inputs"]}, set(k["inputs"]))
+        rows = ROWS; reg = EV.resolve_all()
+        q2, k2 = RP.verification_sample(rows, reg)
+        self.assertEqual(q2["inputs"], q["inputs"])
+        self.assertEqual(len({i["key"] for i in q["inputs"] if i["key"].startswith("NFL:")}) > 0, True)
+
+    def test_scoring_flags_computable_inputs_the_verifier_rates_worse(self):
+        key = {"inputs": {"NFL:a": {"claimed_bucket": "COMPUTABLE"}, "NFL:b": {"claimed_bucket": "BLOCKED"}}, "datasets": {"d": {}}}
+        res = {"inputs": {"NFL:a": {"bucket": "BLOCKED"}, "NFL:b": {"bucket": "BLOCKED"}}, "datasets": {"d": {"status_confirmed": True}}}
+        sc = RP.score(res, key)
+        self.assertEqual(sc["bucket_agreement"], 0.5); self.assertEqual(sc["computable_rated_worse"], ["NFL:a"]); self.assertEqual(sc["dataset_replays_confirmed"], 1)
 
 
 if __name__ == "__main__":

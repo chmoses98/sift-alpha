@@ -23,4 +23,4 @@ def predictive_paused() -> bool:
 def assert_predictive_allowed(name: str) -> None:
     if predictive_paused():
         raise SystemExit(f"{name}: predictive experimentation is PAUSED (phase {state()['current_phase']}). "
-                         "Catalog completeness is the sole active research priority; see research/input_research/phase_control.json.")
+                         "Resuming needs an independently verified data-readiness assessment plus an explicit human edit of research/input_research/phase_control.json.")

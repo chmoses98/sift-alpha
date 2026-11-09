@@ -49,8 +49,12 @@ def compute() -> dict:
     cs = rd(IN / "computable_summary.json")
     ss = rd(IR / "scaled_search_summary.json")
     comp_f = IN / "completeness/summary.json"
+    df_f = IN / "data_foundation/summary.json"
+    lock_f = IN / "baseline_lock.json"
     return {"schema_version": "tracker-2.1", "status": "RESEARCH_ONLY", "phase": rd(IN / "phase_control.json"),
             "completeness": rd(comp_f) if comp_f.exists() else None,
+            "data_foundation": rd(df_f) if df_f.exists() else None,
+            "baseline_lock": ({k: rd(lock_f)[k] for k in ("approved_commit", "repairs_since_approved_commit", "known_discrepancies")} | {"totals": rd(lock_f)["current"]["totals"]}) if lock_f.exists() else None,
             "computable_inputs": {"n_inputs": cs["n_inputs"], "n_non_market": cs["n_non_market"], "verified_computed": cs["verified_computed"], "verified_by_level": cs["verified_by_level"], "totals": cs["totals"], "by_sport": cs["by_sport"], "blocker_classes": cs["blocker_classes"], "verification": cs["verification"]},
             "scaled_search": {"totals": ss["totals"], "ledger": ss["ledger"], "multiple_testing": ss["multiple_testing"], "rows": [r for r in ss["rows"] if r["status"] == "TESTED"], "not_tested": [r for r in ss["rows"] if r["status"] != "TESTED"]},
             "catalog": {"by_sport": cat_rows, "inputs_total": sum(r["inputs"] for r in cat_rows.values()), "archetypes_total": sum(r["archetypes"] for r in cat_rows.values()),
@@ -80,17 +84,40 @@ SHORT = {"NOT_STARTED": "not started", "STRUCTURE_INCOMPLETE": "structure incomp
          "INDEPENDENT_REVIEW_OPEN_FINDINGS": "independent review: open findings", "REVERIFICATION_PENDING": "awaiting second verification", "READY_FOR_USER_APPROVAL": "ready for your approval"}
 
 
+def _data_foundation_md(p: dict) -> list[str]:
+    d, lk = p.get("data_foundation"), p.get("baseline_lock")
+    if not d:
+        return []
+    n = d["n_inputs"]; b = d["by_bucket"]
+    L = ["## Data foundation (ACTIVE PRIORITY): raw-data audit of every catalog input",
+         f"**{n} inputs audited across the eight sports** for exact raw-data requirements, real source availability, provenance, history, freshness, cost, missingness and point-in-time computability. "
+         f"**Computable {b.get('COMPUTABLE', 0)} · requires collection {b.get('REQUIRES_COLLECTION', 0)} · blocked {b.get('BLOCKED', 0)} · excluded as market-derived {b.get('EXCLUDED', 0)}.** "
+         f"Per-input reviewer verdicts recorded for {d['reviewed_inputs']} of {n} inputs. {d['verification_note']} Paid services added: {d['paid_services_added']}. Full report: `docs/DATA_FOUNDATION.md`; per-input rows and `coverage_matrix.csv` under `research/input_research/data_foundation/`.", "",
+         "| Sport | Computable | Requires collection | Blocked | Excluded (market-derived) |", "|---|---|---|---|---|"]
+    for s_, v in d["by_sport_bucket"].items():
+        L.append(f"| {s_} | {v.get('COMPUTABLE', 0)} | {v.get('REQUIRES_COLLECTION', 0)} | {v.get('BLOCKED', 0)} | {v.get('EXCLUDED', 0)} |")
+    L += ["", "Status: " + ", ".join(f"{k} {v}" for k, v in sorted(d["by_status"].items(), key=lambda kv: -kv[1])) + ".",
+          "Top free collection priorities (dataset: inputs it limits): " + ", ".join(f"`{x['dataset']}` {x['inputs_limited_by_it']}" for x in d["collection_priorities"][:8]) + ".", ""]
+    if lk:
+        t = lk["totals"]
+        L += [f"**Baseline guard.** The approved catalog (`{lk['approved_commit'][:7]}`) is content-pinned (`baseline_lock.json`: {t['inputs']} inputs, {t['archetypes']} archetypes, {t['declared_gaps']} declared gaps) and regeneration is verified byte-for-byte (`python -m alpha_engine.input_research.regenerate --check`). "
+              f"{len(lk['repairs_since_approved_commit'])} repairs sit on top of the approved commit (two stale audit flags/verdicts, one input patch, the explicit baseline overlay). "
+              f"Open non-gating discrepancy: {lk['known_discrepancies'][0]['count']} review-added inputs have no audit entry although the gate's count comparison passes.", ""]
+    return L
+
+
 def _completeness_md(p: dict) -> list[str]:
     ph, g = p["phase"], p.get("completeness")
-    L = ["> **PHASE: CATALOG COMPLETENESS. Predictive experimentation is PAUSED** (" + ph["predictive_experiments"]["state"] + "; `research/input_research/phase_control.json`). "
+    L = ["> **PHASE: " + str(ph["current_phase"]).replace("_", " ") + ". Predictive experimentation is PAUSED** (" + ph["predictive_experiments"]["state"] + "; `research/input_research/phase_control.json`). "
          "Every predictive result in this tracker (combination search, benchmarks, weights) is **PRELIMINARY**, preserved from PR #60 / #62 and not being expanded. "
          "Nothing here authorises orders, spending, deployments or merges. RESEARCH_ONLY.", ""]
+    L += _data_foundation_md(p)
     if not g:
         return L + ["## Catalog completeness gate", "Not yet generated (`python -m alpha_engine.input_research.completeness`).", ""]
     t = g["totals"]
-    L += ["## Catalog completeness gate (the sole active research priority)",
+    L += ["## Catalog completeness gate (baseline approved as a blueprint only; the active priority is the data foundation)",
           f"{t['archetypes']} market archetypes (registered + unregistered contract types) across the eight sports. **{t['READY_FOR_USER_APPROVAL']} have reached the code's ceiling (ready for your approval); none is declared complete, and the catalog is only complete if the acceptance criteria below are all met and you approve.** "
-          f"Approval recorded: **{'YES' if g['approval'].get('approved') else 'NO'}**. A populated list or a passing automated check is necessary, never sufficient; the ceiling the code can award is *ready for your approval*.", "",
+          f"Approval recorded: **{'YES' if g['approval'].get('approved') else 'NO'}**" + (f" (scope `{g['approval'].get('scope')}`, commit `{str(g['approval'].get('approved_commit'))[:7]}`, {g['approval'].get('approval_date')}): the owner accepted the catalog **blueprint** as the research baseline. **This is not human expert verification** (human_expert_verified = {g['approval'].get('human_expert_verified')}; every review was done by Claude agents), not data readiness, not predictive readiness, and not authorization to place bets. All declared gaps stay open." if g['approval'].get('approved') else "") + " A populated list or a passing automated check is necessary, never sufficient; the ceiling the code can award is *ready for your approval*.", "",
           "Acceptance criteria (all must hold per archetype): " + "; ".join(g["criteria"]) + ".", "",
           "| Sport | Archetypes | Not started | Structure incomplete | Authored, awaiting independent review | Independent review: open findings | Awaiting second verification | Ready for your approval | Inputs in catalog |", "|---|---|---|---|---|---|---|---|---|"]
     L += [f"| {s_} | {v['archetypes']} | {v['NOT_STARTED']} | {v['STRUCTURE_INCOMPLETE']} | {v['AUTHORED_NOT_INDEPENDENTLY_REVIEWED']} | {v['INDEPENDENT_REVIEW_OPEN_FINDINGS']} | {v['REVERIFICATION_PENDING']} | {v['READY_FOR_USER_APPROVAL']} | {v['inputs']} |" for s_, v in g["by_sport"].items()]

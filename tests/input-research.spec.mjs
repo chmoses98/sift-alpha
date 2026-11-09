@@ -173,7 +173,7 @@ test.describe("catalog completeness gate", () => {
     await expect(cc).toBeVisible();
     await expect(page.getByTestId("pause-banner")).toContainText("PAUSED");
     await expect(cc.getByText(/none declared complete/i)).toBeVisible();
-    await expect(cc.getByText(/Approval recorded:/)).toContainText("no");
+    await expect(cc.getByTestId("approval-line")).toContainText("not human expert verification");
     expect(await cc.innerText()).not.toMatch(/\bcatalog is complete\b|\bfully complete\b/i);
   });
 

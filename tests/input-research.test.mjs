@@ -48,7 +48,7 @@ test("every family, input and interaction is reachable in the published data (27
     ix += Object.values(d.archetypes).reduce((a, x) => a + x.interactions.length, 0) + Object.values(d.blueprints).reduce((a, x) => a + x.interactions.length, 0);
     for (const b of Object.values(d.blueprints)) assert.ok(b.families.length > 0);
   }
-  assert.deepEqual([fam, inp, ix], [275, 1640, 1351]);
+  assert.deepEqual([fam, inp, ix], [275, 1639, 1351]);
 });
 test("every path states a claim boundary that mentions Kalshi, and headline models are strict-pregame", () => {
   for (const d of Object.values(docs)) for (const p of Object.values(d.paths)) {

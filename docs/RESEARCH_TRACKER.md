@@ -13,7 +13,7 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 |---|---|---|---|---|---|---|---|---|
 | CBB | 18 | 0 | 0 | 0 | 0 | 0 | 18 | 184 |
 | CFB | 16 | 0 | 0 | 0 | 0 | 0 | 16 | 163 |
-| MLB | 26 | 0 | 0 | 0 | 0 | 0 | 26 | 250 |
+| MLB | 26 | 0 | 0 | 0 | 0 | 0 | 26 | 251 |
 | NBA | 31 | 0 | 0 | 0 | 0 | 0 | 31 | 279 |
 | NFL | 28 | 0 | 0 | 0 | 0 | 0 | 28 | 294 |
 | NHL | 15 | 0 | 0 | 0 | 0 | 0 | 15 | 155 |
@@ -26,25 +26,25 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 | every archetype passes the structural gate and independent review with no open blocker/major finding and a second verification | PASS | 170 of 170 |
 | every ledger series has exactly one final assignment (reconciles exactly) | PASS | 4156 assigned of 4156 ledger series |
 | every in-scope series is assigned to an archetype that exists in the catalog | PASS | 2610 in-scope series |
-| every review-added input is audited (definition, provenance, market-free class) | PASS | 1004 audited of 952 review-added inputs |
+| every review-added input is audited (definition, provenance, market-free class) | PASS | 1004 audited of 953 review-added inputs |
 | every declared gap is classified | PASS | 1030 of 1030 |
-| no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids) | **NOT MET** | 1 open of 65 catalog blockers (64 resolved) |
+| no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids) | PASS | 0 open of 65 catalog blockers (65 resolved) |
 | no interaction, non-linearity or mechanism stage names an input its archetype does not carry (detached-input references) | PASS | 0 detached references |
 
-**All documented criteria met: no.** Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.
+**All documented criteria met: yes.** Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.
 
 ### Authoritative catalog totals (after integrating every review)
 | Sport | Inputs | Registered archetypes | Unregistered / new archetypes | Interactions (archetype + blueprint) | Non-linearities | Inputs with raw-data definition |
 |---|---|---|---|---|---|---|
 | CBB | 184 | 11 | 7 | 179 + 18 = 197 | 57 | 113 |
 | CFB | 163 | 9 | 7 | 135 + 18 = 153 | 50 | 92 |
-| MLB | 250 | 17 | 9 | 238 + 51 = 289 | 95 | 163 |
+| MLB | 251 | 17 | 9 | 238 + 51 = 289 | 95 | 164 |
 | NBA | 279 | 26 | 5 | 279 + 48 = 327 | 109 | 206 |
 | NFL | 294 | 17 | 11 | 249 + 37 = 286 | 103 | 199 |
 | NHL | 155 | 12 | 3 | 142 + 36 = 178 | 48 | 78 |
 | SOCCER | 180 | 13 | 10 | 199 + 27 = 226 | 62 | 99 |
 | TENNIS | 143 | 13 | 0 | 106 + 30 = 136 | 39 | 84 |
-| TOTAL | 1648 | 118 | 52 | 1527 + 265 = 1792 | 563 | 1034 |
+| TOTAL | 1649 | 118 | 52 | 1527 + 265 = 1792 | 563 | 1035 |
 
 ### Verification record (agents, not human experts)
 * Independent reviews: {'PASS_WITH_OPEN_GAPS': 56, 'REVISE': 114, 'findings_BLOCKER': 6, 'findings_MAJOR': 298, 'findings_MINOR': 598, 'findings_SOURCE_UNVERIFIED': 19}. Finding resolutions: {'DEFERRED_TO_UNRESOLVED': 176, 'OPEN': 4, 'RESOLVED': 741}.
@@ -73,33 +73,33 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 
 | Sport | Archetype | Status | Live series (rules read) | Stages | New | Audit | Ix/NL | Data | Open | Rules | Ind (open findings) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| NFL | qb_passing_yards | ready for your approval | 6 (6) | 8 | 6 | 33 | 8/4 | 4 | 6 | partially verified | CLEAR (0) |
-| NFL | qb_passing_tds_and_ints | ready for your approval | 4 (3) | 7 | 8 | 22 | 5/4 | 5 | 4 | partially verified | CLEAR (0) |
+| NFL | qb_passing_yards | ready for your approval | 6 (6) | 8 | 6 | 34 | 8/4 | 4 | 6 | partially verified | CLEAR (0) |
+| NFL | qb_passing_tds_and_ints | ready for your approval | 4 (3) | 7 | 8 | 23 | 5/4 | 5 | 4 | partially verified | CLEAR (0) |
 | NFL | rushing_yards | ready for your approval | 8 (8) | 8 | 5 | 22 | 7/4 | 4 | 8 | partially verified | CLEAR (0) |
-| NFL | receiving_yards_and_receptions | ready for your approval | 12 (11) | 8 | 5 | 27 | 6/5 | 4 | 7 | partially verified | CLEAR (0) |
-| NFL | anytime_first_td_scorer | ready for your approval | 7 (7) | 6 | 8 | 31 | 5/3 | 5 | 7 | partially verified | CLEAR (0) |
+| NFL | receiving_yards_and_receptions | ready for your approval | 12 (11) | 8 | 5 | 30 | 6/5 | 4 | 7 | partially verified | CLEAR (0) |
+| NFL | anytime_first_td_scorer | ready for your approval | 7 (7) | 6 | 8 | 32 | 5/3 | 5 | 7 | partially verified | CLEAR (0) |
 | NFL | game_moneyline_spread | ready for your approval | 6 (4) | 7 | 8 | 26 | 5/3 | 6 | 5 | partially verified | CLEAR (0) |
-| NFL | game_total | ready for your approval | 3 (3) | 7 | 4 | 38 | 6/4 | 6 | 5 | partially verified | CLEAR (0) |
-| NFL | team_total | ready for your approval | 1 (1) | 7 | 7 | 22 | 6/4 | 4 | 6 | partially verified | CLEAR (0) |
-| NFL | first_half_and_quarter_totals | ready for your approval | 34 (34) | 7 | 8 | 21 | 6/3 | 5 | 8 | partially verified | CLEAR (0) |
+| NFL | game_total | ready for your approval | 3 (3) | 7 | 4 | 39 | 6/4 | 6 | 5 | partially verified | CLEAR (0) |
+| NFL | team_total | ready for your approval | 1 (1) | 7 | 7 | 23 | 6/4 | 4 | 6 | partially verified | CLEAR (0) |
+| NFL | first_half_and_quarter_totals | ready for your approval | 34 (34) | 7 | 8 | 22 | 6/3 | 5 | 8 | partially verified | CLEAR (0) |
 | NFL | player_availability | ready for your approval | 8 (7) | 9 | 11 | 14 | 6/4 | 6 | 6 | partially verified | CLEAR (0) |
 | NFL | season_win_totals_and_futures | ready for your approval | 98 (98) | 8 | 7 | 21 | 6/4 | 4 | 7 | partially verified | CLEAR (0) |
 | NFL | season_awards | ready for your approval | 27 (21) | 10 | 12 | 15 | 7/4 | 6 | 11 | partially verified | CLEAR (0) |
-| NFL | game_events | ready for your approval | 7 (7) | 6 | 7 | 24 | 6/3 | 4 | 6 | partially verified | CLEAR (0) |
+| NFL | game_events | ready for your approval | 7 (7) | 6 | 7 | 25 | 6/3 | 4 | 6 | partially verified | CLEAR (0) |
 | NFL | first_score_team_time_race | ready for your approval | 3 (3) | 6 | 5 | 15 | 5/3 | 5 | 6 | partially verified | CLEAR (0) |
 | NFL | season_player_stats_and_leaders | ready for your approval | 22 (19) | 9 | 8 | 17 | 8/4 | 4 | 8 | partially verified | CLEAR (0) |
 | NFL | off_field_events | ready for your approval | 14 (13) | 9 | 13 | 15 | 6/3 | 8 | 5 | partially verified | CLEAR (0) |
 | NFL | combos_and_parlays | ready for your approval | 6 (6) | 8 | 10 | 18 | 7/3 | 7 | 6 | partially verified | CLEAR (0) |
-| NFL | unreg:team_and_event_counting_specials | ready for your approval | 6 (6) | 6 | 5 | 28 | 5/4 | 2 | 7 | verified from rules text | CLEAR (0) |
-| NFL | unreg:fantasy_points_markets | ready for your approval | 12 (12) | 11 | 8 | 36 | 8/4 | 6 | 6 | partially verified | CLEAR (0) |
+| NFL | unreg:team_and_event_counting_specials | ready for your approval | 6 (6) | 6 | 5 | 29 | 5/4 | 2 | 7 | partially verified | CLEAR (0) |
+| NFL | unreg:fantasy_points_markets | ready for your approval | 12 (12) | 11 | 8 | 40 | 8/4 | 6 | 6 | partially verified | CLEAR (0) |
 | NFL | unreg:extreme_play_length | ready for your approval | 5 (5) | 7 | 11 | 26 | 8/5 | 5 | 7 | partially verified | CLEAR (0) |
 | NFL | unreg:nfl_draft_selection | ready for your approval | 25 (23) | 7 | 11 | 16 | 7/4 | 4 | 10 | partially verified | CLEAR (0) |
 | NFL | unreg:super_bowl_mvp | ready for your approval | 4 (2) | 6 | 6 | 23 | 6/4 | 5 | 7 | partially verified | CLEAR (0) |
-| NFL | unreg:combine_testing_results | ready for your approval | 2 (2) | 6 | 8 | 6 | 5/3 | 4 | 6 | partially verified | CLEAR (0) |
-| NFL | unreg:slate_extremes | ready for your approval | 5 (5) | 8 | 9 | 25 | 7/5 | 5 | 5 | partially verified | CLEAR (0) |
+| NFL | unreg:combine_testing_results | ready for your approval | 2 (2) | 7 | 8 | 6 | 5/3 | 4 | 6 | partially verified | CLEAR (0) |
+| NFL | unreg:slate_extremes | ready for your approval | 5 (5) | 8 | 9 | 26 | 7/5 | 5 | 5 | partially verified | CLEAR (0) |
 | NFL | unreg:score_path_functionals | ready for your approval | 3 (3) | 5 | 2 | 22 | 5/3 | 3 | 5 | partially verified | CLEAR (0) |
 | NFL | unreg:rare_play_call_events | ready for your approval | 2 (2) | 6 | 2 | 17 | 4/3 | 3 | 7 | partially verified | CLEAR (0) |
-| NFL | unreg:league_tie_and_long_kick_counts | ready for your approval | 3 (3) | 5 | 2 | 15 | 4/3 | 3 | 5 | verified from rules text | CLEAR (0) |
+| NFL | unreg:league_tie_and_long_kick_counts | ready for your approval | 3 (3) | 5 | 2 | 16 | 4/3 | 3 | 5 | partially verified | CLEAR (0) |
 | NFL | unreg:team_window_event_hazards | ready for your approval | 1 (1) | 5 | 2 | 18 | 6/3 | 4 | 5 | partially verified | CLEAR (0) |
 | CFB | game_moneyline_spread | ready for your approval | 5 (5) | 7 | 6 | 38 | 6/3 | 5 | 6 | partially verified | CLEAR (0) |
 | CFB | game_total | ready for your approval | 2 (2) | 6 | 5 | 31 | 5/3 | 6 | 6 | partially verified | CLEAR (0) |
@@ -112,7 +112,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | CFB | season_futures | ready for your approval | 54 (48) | 9 | 11 | 22 | 6/3 | 5 | 11 | partially verified | CLEAR (0) |
 | CFB | unreg:awards_and_honors | ready for your approval | 7 (7) | 5 | 5 | 10 | 5/3 | 4 | 6 | verified from rules text | CLEAR (0) |
 | CFB | unreg:polls_and_cfp_rankings | ready for your approval | 6 (6) | 6 | 7 | 11 | 5/3 | 3 | 5 | verified from rules text | CLEAR (0) |
-| CFB | unreg:team_event_counting_specials | ready for your approval | 7 (7) | 5 | 6 | 15 | 5/3 | 3 | 6 | verified from rules text | CLEAR (0) |
+| CFB | unreg:team_event_counting_specials | ready for your approval | 7 (7) | 5 | 6 | 16 | 5/3 | 3 | 6 | verified from rules text | CLEAR (0) |
 | CFB | unreg:coaching_and_governance_events | ready for your approval | 8 (8) | 5 | 7 | 10 | 6/3 | 5 | 7 | verified from rules text | CLEAR (0) |
 | CFB | unreg:half_full_double_result | ready for your approval | 1 (1) | 5 | 2 | 33 | 5/3 | 5 | 6 | partially verified | CLEAR (0) |
 | CFB | unreg:multi_leg_parlay_packs | ready for your approval | 4 (4) | 4 | 2 | 25 | 5/2 | 7 | 4 | partially verified | CLEAR (0) |
@@ -139,7 +139,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | NBA | season_futures_team | ready for your approval | 32 (31) | 7 | 9 | 25 | 8/3 | 4 | 6 | partially verified | CLEAR (0) |
 | NBA | series_and_cup | ready for your approval | 24 (23) | 5 | 10 | 19 | 8/3 | 4 | 7 | partially verified | CLEAR (0) |
 | NBA | season_stat_markets | ready for your approval | 12 (10) | 7 | 14 | 13 | 8/5 | 5 | 6 | partially verified | CLEAR (0) |
-| NBA | awards_draft | ready for your approval | 65 (60) | 9 | 20 | 15 | 6/4 | 9 | 8 | partially verified | CLEAR (0) |
+| NBA | awards_draft | ready for your approval | 65 (60) | 9 | 20 | 17 | 6/4 | 9 | 8 | partially verified | CLEAR (0) |
 | NBA | off_court_events | ready for your approval | 16 (16) | 7 | 13 | 13 | 8/4 | 8 | 7 | verified from rules text | CLEAR (0) |
 | NBA | summer_league_games | ready for your approval | 8 (8) | 8 | 7 | 11 | 6/3 | 6 | 5 | verified from rules text | CLEAR (0) |
 | NBA | player_escalator_payout | ready for your approval | 2 (2) | 5 | 8 | 13 | 5/4 | 4 | 5 | partially verified | CLEAR (0) |
@@ -174,7 +174,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | NHL | period_markets | ready for your approval | 10 (9) | 5 | 7 | 16 | 5/3 | 4 | 7 | partially verified | CLEAR (0) |
 | NHL | game_events | ready for your approval | 4 (4) | 5 | 5 | 21 | 5/4 | 4 | 6 | partially verified | CLEAR (0) |
 | NHL | season_futures | ready for your approval | 14 (14) | 6 | 10 | 23 | 7/3 | 6 | 11 | partially verified | CLEAR (0) |
-| NHL | season_awards_and_stats | ready for your approval | 10 (9) | 7 | 6 | 23 | 6/3 | 5 | 8 | partially verified | CLEAR (0) |
+| NHL | season_awards_and_stats | ready for your approval | 10 (9) | 7 | 6 | 24 | 6/3 | 5 | 8 | partially verified | CLEAR (0) |
 | NHL | player_h2h | ready for your approval | 0 (0) | 4 | 7 | 15 | 5/3 | 4 | 6 | no live series | CLEAR (0) |
 | NHL | parlay_combo | ready for your approval | 0 (0) | 4 | 6 | 12 | 6/3 | 4 | 5 | no live series | CLEAR (0) |
 | NHL | offfield_markets | ready for your approval | 4 (4) | 4 | 7 | 11 | 5/3 | 5 | 7 | verified from rules text | CLEAR (0) |
@@ -184,7 +184,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | MLB | pitcher_strikeouts | ready for your approval | 1 (1) | 5 | 6 | 27 | 6/4 | 6 | 9 | verified from rules text | CLEAR (0) |
 | MLB | pitcher_outs | ready for your approval | 1 (1) | 5 | 6 | 20 | 6/4 | 4 | 6 | verified from rules text | CLEAR (0) |
 | MLB | pitcher_earned_runs_hits_walks | ready for your approval | 3 (3) | 5 | 6 | 21 | 5/4 | 4 | 5 | verified from rules text | CLEAR (0) |
-| MLB | hitter_hits_and_total_bases | ready for your approval | 3 (3) | 5 | 4 | 22 | 6/4 | 4 | 6 | verified from rules text | CLEAR (0) |
+| MLB | hitter_hits_and_total_bases | ready for your approval | 3 (3) | 5 | 4 | 24 | 7/4 | 4 | 6 | verified from rules text | CLEAR (0) |
 | MLB | hitter_home_runs | ready for your approval | 1 (1) | 5 | 6 | 18 | 6/4 | 4 | 5 | verified from rules text | CLEAR (0) |
 | MLB | hitter_rbis_runs_sb | ready for your approval | 2 (2) | 5 | 4 | 17 | 5/4 | 4 | 4 | verified from rules text | CLEAR (0) |
 | MLB | game_moneyline | ready for your approval | 3 (3) | 6 | 5 | 26 | 6/4 | 5 | 5 | verified from rules text | CLEAR (0) |
@@ -193,7 +193,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | MLB | first5_markets | ready for your approval | 5 (5) | 6 | 5 | 18 | 6/4 | 5 | 5 | verified from rules text | CLEAR (0) |
 | MLB | extras_and_delay | ready for your approval | 2 (2) | 5 | 4 | 13 | 5/4 | 3 | 5 | verified from rules text | CLEAR (0) |
 | MLB | season_futures | ready for your approval | 55 (54) | 6 | 13 | 16 | 8/5 | 5 | 8 | partially verified | CLEAR (0) |
-| MLB | season_leaders_and_awards | ready for your approval | 31 (31) | 9 | 15 | 19 | 9/4 | 6 | 8 | verified from rules text | CLEAR (0) |
+| MLB | season_leaders_and_awards | ready for your approval | 31 (31) | 9 | 16 | 19 | 10/4 | 7 | 8 | verified from rules text | CLEAR (0) |
 | MLB | player_participation | ready for your approval | 5 (3) | 7 | 9 | 13 | 8/4 | 5 | 9 | partially verified | CLEAR (0) |
 | MLB | announcer_mentions | ready for your approval | 0 (0) | 5 | 4 | 10 | 5/4 | 4 | 4 | no live series | CLEAR (0) |
 | MLB | transactions | ready for your approval | 4 (3) | 7 | 9 | 10 | 7/4 | 5 | 6 | partially verified | CLEAR (0) |
@@ -210,10 +210,10 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | SOCCER | match_result_3way | ready for your approval | 156 (143) | 7 | 4 | 24 | 6/3 | 6 | 5 | partially verified | CLEAR (0) |
 | SOCCER | total_goals | ready for your approval | 198 (155) | 5 | 3 | 24 | 6/3 | 3 | 7 | partially verified | CLEAR (0) |
 | SOCCER | handicap_and_exact_score | ready for your approval | 180 (156) | 6 | 4 | 19 | 5/3 | 4 | 6 | partially verified | CLEAR (0) |
-| SOCCER | btts_and_clean_sheet | ready for your approval | 203 (185) | 6 | 3 | 23 | 7/3 | 8 | 7 | partially verified | CLEAR (0) |
+| SOCCER | btts_and_clean_sheet | ready for your approval | 203 (185) | 6 | 3 | 24 | 7/3 | 8 | 7 | partially verified | CLEAR (0) |
 | SOCCER | first_half_and_period | ready for your approval | 216 (177) | 5 | 3 | 17 | 6/3 | 6 | 7 | partially verified | CLEAR (0) |
 | SOCCER | competition_winner_and_top_n | ready for your approval | 108 (99) | 8 | 6 | 23 | 5/3 | 4 | 10 | partially verified | CLEAR (0) |
-| SOCCER | relegation_qualification_advancement | ready for your approval | 176 (91) | 7 | 5 | 21 | 8/3 | 4 | 9 | partially verified | CLEAR (0) |
+| SOCCER | relegation_qualification_advancement | ready for your approval | 176 (91) | 7 | 5 | 22 | 8/3 | 5 | 9 | partially verified | CLEAR (0) |
 | SOCCER | player_season_leader_and_awards | ready for your approval | 20 (20) | 7 | 4 | 18 | 5/3 | 5 | 6 | partially verified | CLEAR (0) |
 | SOCCER | first_to_score_event | ready for your approval | 32 (23) | 4 | 2 | 16 | 5/2 | 6 | 9 | partially verified | CLEAR (0) |
 | SOCCER | team_points_and_margin | ready for your approval | 11 (11) | 7 | 1 | 22 | 6/2 | 4 | 5 | partially verified | CLEAR (0) |
@@ -260,7 +260,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 Series whose classification rests on the title only, and series that list no market, are **explicitly unresolved**, not complete. Per-archetype detail (mechanism stages, inputs, formulas, interactions, raw data, gaps, independent findings): `research/input_research/completeness/` and the dashboard Catalog completeness panel.
 
 ## P0 candidate-input catalog
-1648 candidate inputs, 118 registered-market archetypes and 52 archetypes for listed-but-unregistered contract types. **Not claimed complete**: a populated list is not evidence of completeness.
+1649 candidate inputs, 118 registered-market archetypes and 52 archetypes for listed-but-unregistered contract types. **Not claimed complete**: a populated list is not evidence of completeness.
 
 | Sport | Inputs | Archetypes | Unregistered archetypes | Interactions |
 |---|---|---|---|---|
@@ -269,7 +269,7 @@ Series whose classification rests on the title only, and series that list no mar
 | NBA | 279 | 26 | 5 | 327 |
 | CBB | 184 | 11 | 7 | 197 |
 | NHL | 155 | 12 | 3 | 178 |
-| MLB | 250 | 17 | 9 | 289 |
+| MLB | 251 | 17 | 9 | 289 |
 | SOCCER | 180 | 13 | 10 | 226 |
 | TENNIS | 143 | 13 | 0 | 136 |
 
@@ -292,20 +292,20 @@ Mechanism checklist: 85 (archetype, category) flags, every one adjudicated (0 un
 Evidence behind the classification: {'NO_LISTING': 300, 'RULES_TEXT': 420, 'TITLE_ONLY': 2051} series (RULES_TEXT = a sampled market's actual contract rules were read; TITLE_ONLY = classified from title/ticker, rules not yet read; NO_LISTING = series lists no market).
 
 ## Verified computable inputs (milestone 2; replaces the keyword-based readiness estimate below)
-**210 of 1577 non-market candidate inputs are computed from real raw rows and verified** (full definition 63, partial 120, proxy 27); 71 are market-derived and excluded. Verification: point-in-time perturbation (future outcomes + own-game outcomes randomised, earlier/own-row features must be bit-identical) + non-constant + coverage; never keyword matching.
+**210 of 1578 non-market candidate inputs are computed from real raw rows and verified** (full definition 63, partial 120, proxy 27); 71 are market-derived and excluded. Verification: point-in-time perturbation (future outcomes + own-game outcomes randomised, earlier/own-row features must be bit-identical) + non-constant + coverage; never keyword matching.
 
 | Sport | Computed (verified) | Built, not pregame-eligible / unverified / failed | Not computed | Market-derived |
 |---|---|---|---|---|
 | CBB | 19 | 0 | 155 | 10 |
 | CFB | 13 | 0 | 141 | 9 |
-| MLB | 27 | 2 | 214 | 7 |
+| MLB | 27 | 2 | 215 | 7 |
 | NBA | 32 | 0 | 237 | 10 |
 | NFL | 31 | 1 | 253 | 9 |
 | NHL | 32 | 0 | 116 | 7 |
 | SOCCER | 21 | 0 | 149 | 10 |
 | TENNIS | 35 | 0 | 99 | 9 |
 
-Raw data classes that block the not-computed inputs (count of inputs): builder_not_written 1097, news_offfield 103, scheme_charting 60, tracking 55, availability_pit 33, player_box 27, award_voting 25, event_data 23, lineup_stints 18, officials 15. Per-input status, coverage, history and what is missing: `research/input_research/computable_inputs.json` (dashboard: Verified computable inputs).
+Raw data classes that block the not-computed inputs (count of inputs): builder_not_written 1098, news_offfield 103, scheme_charting 60, tracking 55, availability_pit 33, player_box 27, award_voting 25, event_data 23, lineup_stints 18, officials 15. Per-input status, coverage, history and what is missing: `research/input_research/computable_inputs.json` (dashboard: Verified computable inputs).
 
 ## Scaled market-free combination testing (milestone 2) — PRELIMINARY, PAUSED
 32 markets tested across the eight sports on verified inputs only; **36,242 configuration x block records logged** (3,788 unique market-configurations; ledger schema identical to PR #59, whose 13,362 experiments are read from its branch, not copied). Verdicts: {'VALIDATED': 29, 'SUGGESTIVE': 0, 'NOT_VALIDATED': 3, 'NO_GAIN': 0}. Multiple testing: permutation null (2 reps through the identical nested procedure), cluster-bootstrap p per market, Holm across ALL tested markets, halves and block-positivity required, real gain must exceed 2x the null gain.
@@ -350,17 +350,17 @@ Raw data classes that block the not-computed inputs (count of inputs): builder_n
 71 catalog inputs are benchmark-only (price/line-derived), 30 need a market-free rebuild before use, 17 mention prices incidentally. `marketfree.assert_market_free` rejects market columns in primary models.
 
 ## P1 data readiness
-Before this round: 39 of 1648 inputs had a free source MEASURED reachable and populated (`source_verification.json`). Hosts blocked from the research runner: https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, https://fbref.com, https://tennisabstract.com, https://www.baseball-reference.com, https://www.pro-football-reference.com, https://www.tennis-data.co.uk/2025/2025.xlsx.
+Before this round: 39 of 1649 inputs had a free source MEASURED reachable and populated (`source_verification.json`). Hosts blocked from the research runner: https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, https://fbref.com, https://tennisabstract.com, https://www.baseball-reference.com, https://www.pro-football-reference.com, https://www.tennis-data.co.uk/2025/2025.xlsx.
 
-After (raw-data-class model, `data_readiness.json`, an estimate from keyword rules, SUPERSEDED by the verified-computable table above): 334 inputs AVAILABLE, 271 PARTIAL, 972 MISSING, 71 excluded as benchmark-only (of 1648).
+After (raw-data-class model, `data_readiness.json`, an estimate from keyword rules, SUPERSEDED by the verified-computable table above): 334 inputs AVAILABLE, 271 PARTIAL, 973 MISSING, 71 excluded as benchmark-only (of 1649).
 
 | Sport | Available | Partial | Missing | Benchmark-only | Archetype readiness |
 |---|---|---|---|---|---|
 | CBB | 29 | 16 | 129 | 10 | BLOCKED 17, EXPERIMENTABLE 1 |
 | CFB | 28 | 21 | 105 | 9 | BLOCKED 12, PARTIAL 3, EXPERIMENTABLE 1 |
-| MLB | 37 | 86 | 120 | 7 | BLOCKED 8, PARTIAL 18 |
+| MLB | 37 | 86 | 121 | 7 | BLOCKED 8, PARTIAL 18 |
 | NBA | 51 | 25 | 193 | 10 | BLOCKED 25, PARTIAL 4, EXPERIMENTABLE 2 |
-| NFL | 87 | 68 | 130 | 9 | PARTIAL 10, BLOCKED 6, EXPERIMENTABLE 7, FULL 5 |
+| NFL | 87 | 68 | 130 | 9 | PARTIAL 10, BLOCKED 6, EXPERIMENTABLE 8, FULL 4 |
 | NHL | 31 | 37 | 80 | 7 | BLOCKED 7, PARTIAL 8 |
 | SOCCER | 35 | 5 | 130 | 10 | BLOCKED 18, EXPERIMENTABLE 5 |
 | TENNIS | 36 | 13 | 85 | 9 | BLOCKED 11, EXPERIMENTABLE 2 |

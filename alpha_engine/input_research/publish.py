@@ -275,13 +275,13 @@ def build_sport(sport: str, paths: dict, ver: dict, vintage: dict) -> dict:
         pids = path_for_arch.get(a, [])
         archetypes[a] = {"label": rec["label"], "blueprint": rec["blueprint"], "families": rec["families"], "target": rec["target"], "mechanism": rec["mechanism"],
                          "inputs": [input_card(i["id"], i.get("role"), i.get("why"), a) for i in rec["inputs"]],
-                         "interactions": [{"inputs": ix["inputs"], "hypothesis": ix["hypothesis"]} for ix in rec["interactions"]], "paths": pids,
+                         "interactions": [{"inputs": ix["inputs"], "hypothesis": ix["hypothesis"]} for ix in rec["interactions"]], "blueprint_exclusions": rec.get("blueprint_exclusions") or [], "paths": pids,
                          "level": max([paths[p]["level"] for p in pids], key=LEVELS.index) if pids else LEVELS[0]}
     unregistered = {}
     for a, rec in (cat.get("unregistered_archetypes") or {}).items():
         unregistered[a] = {"label": rec["label"], "blueprint": rec["blueprint"], "contract_types": rec["contract_types"], "target": rec["target"], "mechanism": rec["mechanism"],
                            "inputs": [input_card(i["id"], i.get("role"), i.get("why"), None) for i in rec["inputs"]],
-                           "interactions": [{"inputs": ix["inputs"], "hypothesis": ix["hypothesis"]} for ix in rec["interactions"]], "level": LEVELS[0]}
+                           "interactions": [{"inputs": ix["inputs"], "hypothesis": ix["hypothesis"]} for ix in rec["interactions"]], "blueprint_exclusions": rec.get("blueprint_exclusions") or [], "level": LEVELS[0]}
     blueprints = {}
     for b, rec in cat["blueprints"].items():
         blueprints[b] = {"mechanism": rec["mechanism"], "target": rec["target"], "families": reg.get(b, []),

@@ -455,9 +455,9 @@ def archetype_patches(sport: str) -> dict:
     d = CD / "archetype_patches"
     for f in sorted(d.glob(f"{sport}*.json")) if d.exists() else []:
         for k, v in (rd(f).get("patches") or {}).items():
-            cur = out.setdefault(k, {"detach": [], "roles": {}, "attach": [], "drop_interactions": [], "drop_nonlinearities": []})
+            cur = out.setdefault(k, {"detach": [], "roles": {}, "attach": [], "drop_interactions": [], "drop_nonlinearities": [], "blueprint_exclusions": []})
             cur["detach"] += v.get("detach") or []; cur["roles"].update(v.get("roles") or {}); cur["attach"] += v.get("attach") or []
-            cur["drop_interactions"] += v.get("drop_interactions") or []; cur["drop_nonlinearities"] += v.get("drop_nonlinearities") or []
+            cur["drop_interactions"] += v.get("drop_interactions") or []; cur["drop_nonlinearities"] += v.get("drop_nonlinearities") or []; cur["blueprint_exclusions"] += v.get("blueprint_exclusions") or []
             for fld in ("label", "target", "contract_types", "mechanism", "blueprint"):
                 if fld in v:
                     cur[fld] = v[fld]

@@ -117,7 +117,8 @@ export function InputResearch() {
         {bp && <details className="ir-fine"><summary><b>Parent blueprint "{rec.blueprint}"</b>: {bp.inputs.length} candidate inputs and {bp.interactions.length} interactions hypothesised for the whole class of markets (hypotheses only)</summary>
           <p>{bp.mechanism}</p>
           <ul>{bp.inputs.map(i => <li key={i.id}><b>{defs[i.id]?.label || i.id}</b> ({i.role || "–"}): {i.why}</li>)}</ul>
-          <ul>{bp.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul></details>}
+          <ul>{bp.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul>
+          {arch && arch.blueprint_exclusions && arch.blueprint_exclusions.length > 0 && <p data-testid="blueprint-exclusions"><b>Parent-blueprint interactions that do NOT apply to this archetype ({arch.blueprint_exclusions.length}):</b> {arch.blueprint_exclusions.map(x => x.inputs.join(" × ") + " (" + x.reason + ")").join("; ")}</p>}</details>}
         {arch && <><h4>Interactions hypothesised ({arch.interactions.length})</h4><ul className="ir-fine">{arch.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul></>}
         <h4>Gaps and what Alpha should research next</h4>
         <ul className="ir-fine">

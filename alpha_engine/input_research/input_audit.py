@@ -207,6 +207,12 @@ def apply_archetype_patches() -> dict:
                         i["role"] = role; n["roles"] += 1
             for drop in v.get("drop_interactions") or []:   # interactions that rest on an input the archetype no longer carries (matched by sorted input set)
                 before = len(a["interactions"]); a["interactions"] = [x for x in a["interactions"] if sorted(x["inputs"]) != sorted(drop)]; n["interactions_dropped"] += before - len(a["interactions"])
+            if v.get("blueprint_exclusions"):   # inherited blueprint interactions that do not apply to this archetype: [{inputs:[..], reason:>=40 chars}], matched against the blueprint's own interactions
+                bpx = {tuple(sorted(x["inputs"])) for x in c["blueprints"][a["blueprint"]]["interactions"]}
+                for ex in v["blueprint_exclusions"]:
+                    if tuple(sorted(ex.get("inputs") or [])) not in bpx or len(str(ex.get("reason", ""))) < 40:
+                        raise ValueError(f"{s}:{k}: bad blueprint exclusion {ex}")
+                a["blueprint_exclusions"] = [{"inputs": ex["inputs"], "reason": ex["reason"]} for ex in v["blueprint_exclusions"]]; n["blueprint_exclusions"] += len(a["blueprint_exclusions"])
             for iid in v.get("drop_nonlinearities") or []:
                 before = len(a.get("nonlinearities") or []); a["nonlinearities"] = [x for x in a.get("nonlinearities") or [] if x.get("input_id") != iid]; n["nonlinearities_dropped"] += before - len(a["nonlinearities"])
             for x in v["attach"]:

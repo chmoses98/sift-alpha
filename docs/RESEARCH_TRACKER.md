@@ -27,7 +27,7 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 | every ledger series has exactly one final assignment (reconciles exactly) | PASS | 4156 assigned of 4156 ledger series |
 | every in-scope series is assigned to an archetype that exists in the catalog | PASS | 2610 in-scope series |
 | every review-added input is audited (definition, provenance, market-free class) | PASS | 986 audited of 943 review-added inputs |
-| every declared gap is classified | PASS | 968 of 968 |
+| every declared gap is classified | PASS | 969 of 969 |
 | no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids) | **NOT MET** | 8 open of 65 catalog blockers (57 resolved) |
 
 **All documented criteria met: no.** Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.
@@ -38,12 +38,12 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 | CBB | 184 | 11 | 7 | 179 + 18 = 197 | 57 | 113 |
 | CFB | 163 | 9 | 7 | 139 + 18 = 157 | 50 | 92 |
 | MLB | 246 | 17 | 6 | 228 + 51 = 279 | 87 | 159 |
-| NBA | 277 | 26 | 3 | 280 + 48 = 328 | 104 | 204 |
+| NBA | 277 | 26 | 3 | 283 + 48 = 331 | 105 | 204 |
 | NFL | 288 | 17 | 7 | 238 + 37 = 275 | 91 | 193 |
 | NHL | 155 | 12 | 3 | 142 + 36 = 178 | 48 | 78 |
 | SOCCER | 180 | 13 | 10 | 204 + 27 = 231 | 62 | 99 |
 | TENNIS | 143 | 13 | 0 | 106 + 30 = 136 | 39 | 84 |
-| TOTAL | 1636 | 118 | 43 | 1516 + 265 = 1781 | 538 | 1022 |
+| TOTAL | 1636 | 118 | 43 | 1519 + 265 = 1784 | 539 | 1022 |
 
 ### Verification record (agents, not human experts)
 * Independent reviews: {'PASS_WITH_OPEN_GAPS': 53, 'REVISE': 108, 'findings_BLOCKER': 7, 'findings_MAJOR': 294, 'findings_MINOR': 587, 'findings_SOURCE_UNVERIFIED': 4}. Finding resolutions: {'DEFERRED_TO_UNRESOLVED': 191, 'RESOLVED': 701}.
@@ -51,14 +51,14 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 * Post-reconcile audit of edited records: {'CORRECTED': 103, 'OK': 28, 'issues': 223} (reconciled archetypes: 131).
 
 ### Gap classification (every declared `unresolved` entry)
-968 of 968 classified: {'CATALOG_BLOCKER': 65, 'DATA_SOURCE_LIMITATION': 252, 'EMPIRICAL_QUESTION': 215, 'FUTURE_DATA_COLLECTION': 84, 'UNVERIFIABLE_CONTRACT': 352}.
+969 of 969 classified: {'CATALOG_BLOCKER': 65, 'DATA_SOURCE_LIMITATION': 252, 'EMPIRICAL_QUESTION': 215, 'FUTURE_DATA_COLLECTION': 84, 'UNVERIFIABLE_CONTRACT': 353}.
 
 | Sport | Declared | Catalog blocker | Unverifiable contract | Data-source limitation | Future data collection |
 |---|---|---|---|---|---|
 | CBB | 100 | 4 | 33 | 27 | 11 |
 | CFB | 91 | 4 | 28 | 23 | 7 |
 | MLB | 140 | 15 | 61 | 34 | 15 |
-| NBA | 170 | 18 | 54 | 31 | 8 |
+| NBA | 171 | 18 | 55 | 31 | 8 |
 | NFL | 156 | 10 | 52 | 44 | 15 |
 | NHL | 92 | 3 | 29 | 28 | 7 |
 | SOCCER | 150 | 9 | 68 | 36 | 13 |
@@ -139,7 +139,7 @@ Stages = mechanism stages; New = inputs discovered by this review; Audit = exist
 | NBA | summer_league_games | ready for your approval | 8 (8) | 8 | 7 | 11 | 6/3 | 6 | 5 | verified from rules text | CLEAR (0) |
 | NBA | player_escalator_payout | ready for your approval | 2 (2) | 5 | 8 | 13 | 5/4 | 4 | 5 | partially verified | CLEAR (0) |
 | NBA | unreg:team_and_player_counting_specials | ready for your approval | 1 (1) | 5 | 11 | 20 | 5/2 | 4 | 5 | verified from rules text | CLEAR (0) |
-| NBA | unreg:all_star_weekend_events | ready for your approval | 7 (7) | 9 | 17 | 16 | 9/5 | 7 | 10 | partially verified | CLEAR (0) |
+| NBA | unreg:all_star_weekend_events | ready for your approval | 7 (7) | 9 | 17 | 16 | 12/6 | 7 | 11 | partially verified | CLEAR (0) |
 | NBA | unreg:series_cumulative_points | ready for your approval | 2 (2) | 6 | 7 | 37 | 7/4 | 7 | 6 | partially verified | CLEAR (0) |
 | CBB | game_moneyline_spread | ready for your approval | 5 (5) | 6 | 7 | 33 | 5/3 | 5 | 6 | verified from rules text | CLEAR (0) |
 | CBB | game_total | ready for your approval | 1 (1) | 6 | 5 | 25 | 5/3 | 4 | 5 | verified from rules text | CLEAR (0) |
@@ -256,7 +256,7 @@ Series whose classification rests on the title only, and series that list no mar
 |---|---|---|---|---|
 | NFL | 288 | 17 | 7 | 275 |
 | CFB | 163 | 9 | 7 | 157 |
-| NBA | 277 | 26 | 3 | 328 |
+| NBA | 277 | 26 | 3 | 331 |
 | CBB | 184 | 11 | 7 | 197 |
 | NHL | 155 | 12 | 3 | 178 |
 | MLB | 246 | 17 | 6 | 279 |

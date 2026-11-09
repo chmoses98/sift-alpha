@@ -192,7 +192,7 @@ def assess(sport: str, rec: dict, reg: dict, review: dict | None, extra: dict) -
         if pitv in ("PIT_LEAKY_FINAL_ONLY", "PIT_UNAVAILABLE_HISTORICALLY") and status in ("DATA_IN_HAND", "COLLECT_FREE_MEASURED", "COLLECT_FREE_UNVERIFIED"):
             status = "COLLECT_PROSPECTIVE"; flags.append("point-in-time: only final/as-played or live-snapshot values exist historically; genuine pregame history needs vintage capture")
     # review override of the final status (rationale validated; measured registry facts are never edited)
-    if review and review.get("status"):
+    if review and review.get("status") and not bench:   # a market-derived benchmark input stays excluded whatever a reviewer says
         flags.append(f"status set by reviewer from {status} to {review['status']}"); status = review["status"]
     if review and review.get("pit"):
         pitv = review["pit"]

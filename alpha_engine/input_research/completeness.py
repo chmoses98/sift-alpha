@@ -102,7 +102,7 @@ def ledger_by_archetype() -> dict[tuple[str, str], list[dict]]:
             r = {**r, "routed_away_events": sorted(routing)}
         out[(r["sport"], r["archetype"])].append(r)
         for target in sorted(set(routing.values())):   # the routed events are also live series of the archetype that models them (marked: only these events)
-            out[(r["sport"], target)].append({**r, "archetype": target, "routed_events": sorted(e for e, t in routing.items() if t == target), "routed_from": a["final"]})
+            out[(r["sport"], target)].append({**{k: v for k, v in r.items() if k != "routed_away_events"}, "archetype": target, "routed_events": sorted(e for e, t in routing.items() if t == target), "routed_from": a["final"]})
     return out
 
 

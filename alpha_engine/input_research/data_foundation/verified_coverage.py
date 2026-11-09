@@ -56,6 +56,55 @@ def load_replays() -> dict:
     return {f.stem: rd(f) for f in sorted((VD / "replay").glob("*.json"))} if (VD / "replay").exists() else {}
 
 
+def load_ext_replays() -> dict:
+    """Replays of builders added AFTER the earlier milestone (replay_ext.py / replay_generic.py): the input was REQUIRES_COLLECTION in the draft audit and is promoted only by passing these.
+    Several files per sport are merged (input ids are unique); a duplicate id across files is an error, never a silent overwrite."""
+    d = VD / "replay_ext"; out: dict = {}
+    for f in (sorted(d.glob("*.json")) if d.exists() else []):
+        r = rd(f); sp = r["sport"]; cur = out.setdefault(sp, {"sport": sp, "kind": "replay_ext", "raw_rows": {}, "inputs": {}, "files": []})
+        dup = set(cur["inputs"]) & set(r["inputs"])
+        if dup: raise ValueError(f"duplicate extension replay ids {sorted(dup)} in {f.name}")
+        cur["inputs"].update(r["inputs"]); cur["raw_rows"][f.stem] = r.get("raw_rows"); cur["files"].append(f.name)
+    return out
+
+
+def load_independent() -> dict:
+    """Blind independent re-implementation verdicts per input and column (verification/independent/*.json). Agent verification, never human."""
+    d = VD / "independent"; out: dict = {}
+    for f in (sorted(d.glob("*.json")) if d.exists() else []):
+        for iid, v in rd(f)["inputs"].items():
+            out.setdefault(iid, {}).update(v["columns"])
+    return out
+
+
+def independent_gate(row: dict, cols: list[str], ind: dict) -> tuple[str | None, dict]:
+    """None = passes; otherwise the status to use. Fail closed: every column of the input needs a MATCH from a blind re-implementation."""
+    rec = ind.get(row["id"]); ev = {"independent": {}}
+    if not rec:
+        return "REQUIRES_COLLECTION", {"replayed_without_independent_verification": True}
+    verd = {c: (rec.get(c) or {}).get("verdict", "MISSING") for c in cols}; ev["independent"] = verd
+    if any(v == "MISMATCH" for v in verd.values()):
+        return "DOWNGRADED_BY_VERIFIER", ev
+    if any(v != "MATCH" for v in verd.values()):
+        return "REQUIRES_COLLECTION", {**ev, "replayed_without_independent_verification": True}
+    return None, ev
+
+
+# PIT tests that MUST be present and ok for an extension replay (fail closed: a missing test is a failure, not a pass).
+REQUIRED_PIT_CHECKS = {"*": ("pit_check_perturbation_not_vacuous",), "nfl.injuries_pit": ("pit_check_perturbation_not_vacuous", "pit_check_post_kickoff_injuries")}
+
+
+def pit_check_failures(iid: str, t: dict) -> list[str]:
+    need = REQUIRED_PIT_CHECKS.get(iid, REQUIRED_PIT_CHECKS["*"])
+    bad = [n for n in need if n not in t]                                   # absent required check
+    bad += [n for n in t if n.startswith("pit_check") and not (isinstance(t[n], dict) and t[n].get("ok") is True)]
+    for k in ("determinism", "own_game"):
+        if not (isinstance(t.get(k), dict) and t[k].get("ok") is True): bad.append(k)
+    for k in ("truncation", "perturbation"):
+        if not t.get(k) or not all(isinstance(x, dict) and x.get("ok") is True for x in t[k]): bad.append(k)   # no cuts at all also fails
+    return sorted(set(bad))
+
+
 def provenance_check(sp: str, rp: dict) -> dict:
     """Re-collected raw data vs the committed ledger of the earlier collection (same source, later retrieval: the replay may hold MORE rows, never materially fewer)."""
     led = LEDGER.get(sp)
@@ -74,6 +123,10 @@ def assess_computed(row: dict, rp: dict | None, prov: dict | None) -> tuple[str,
         return "CLAIMED_NOT_REPLAYED", {"why": "raw data for this sport could not be re-collected in this session (or the replay has not run): the earlier computation is an unverified claim"}
     r = rp["inputs"][row["id"]]; t = r["tests"]; ev = {"replay": {}}
     det = t["determinism"]["ok"]
+    pit_bad = pit_check_failures(row["id"], t) if r.get("kind", rp.get("kind")) == "replay_ext" or any(k.startswith("pit_check") for k in t) else []
+    if pit_bad:
+        ev["replay"] = {"pit_checks_failed_or_missing": pit_bad}
+        return "REPLAY_FAILED", ev
     trunc_bad = [x for x in t.get("truncation", []) if not x["ok"]]; pert_bad = [x for x in t.get("perturbation", []) if not x["ok"]]
     own = t.get("own_game", {}); vint = {k: v for k, v in (t.get("vintage_dependence") or {}).items() if v}
     role = {k: x["bad_columns"] for k, x in (t.get("role_fields_own_date") or {}).items() if x["bad_columns"]}
@@ -98,7 +151,7 @@ def assess_computed(row: dict, rp: dict | None, prov: dict | None) -> tuple[str,
         caveat.append("depends on as-played / retrieval-time raw fields " + ", ".join(sorted(vint)) + ": not a pregame vintage")
     if own_fail and not vint:
         return "REPLAY_FAILED", ev
-    if row["computed_prior"]["pit_class"] == "final_postgame":
+    if (row.get("computed_prior") or {}).get("pit_class") == "final_postgame":
         caveat.append("spec is post-game only")
     if caveat:
         ev["caveats"] = caveat
@@ -183,7 +236,7 @@ def load_blocked() -> dict:
 
 def build(write: bool = True) -> dict:
     rows = rd(DF / "input_audit.json")["rows"]
-    replays = load_replays(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
+    replays = load_replays(); exts = load_ext_replays(); ind = load_independent(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
     prov = {sp: provenance_check(sp, rp) for sp, rp in replays.items()}
     out = []
     for r in rows:
@@ -213,6 +266,13 @@ def build(write: bool = True) -> dict:
             vs, ev = combine_blocked(blk.get(r["key"]), blkp.get(r["key"]))
         else:
             vs = "REQUIRES_COLLECTION"
+        if vs == "REQUIRES_COLLECTION" and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
+            vs, ev = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})
+            if vs.startswith("VERIFIED"):
+                gate, gev = independent_gate(r, exts[sp]["inputs"][r["id"]]["columns"], ind)
+                ev.update(gev)
+                if gate: vs = gate
+            ev["promoted_from"] = "REQUIRES_COLLECTION"
         if r["computed_prior"] and not r["status"].startswith("COMPUTED") and r["status"] != "EXCLUDED_BENCHMARK_ONLY":
             ps, pe = assess_computed(r, replays.get(sp), prov.get(sp))   # the earlier milestone computed it but a reviewer/dependency later demoted it: keep what the replay found
             ev = {**ev, "earlier_computation_replay_status": ps, "earlier_computation_replay": pe}

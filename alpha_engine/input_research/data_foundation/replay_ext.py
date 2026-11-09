@@ -102,6 +102,11 @@ def run(inj_dir, snap_dir, players, games, quick=False) -> dict:
     pre = ((mm["_mod"] <= mm["kickoff"]) & (mm["season"] == 2023)).to_numpy(); r5 = {**raw, "injuries": _perm(raw["injuries"].assign(team=inj["team"]), pre, ["report_status"], np.random.default_rng(606))}
     mv = X.compute(r5)["team"]
     res["nfl.injuries_pit"]["tests"]["pit_check_perturbation_not_vacuous"] = {"n_rows": int(pre.sum()), "columns_that_moved": [c for c in X.specs()[0].columns if not _same(base[c].fillna(-1), mv[c].fillna(-1))], "ok": any(not _same(base[c].fillna(-1), mv[c].fillna(-1)) for c in X.specs()[0].columns)}
+    # snaps non-vacuity: scramble the snap shares of ONE mid season's games; later rows (which are built from them) must move, else the perturbation tests above prove nothing
+    sd = raw["snaps"].game_id.isin(set(base.loc[base.season == 2019, "game_id"])).to_numpy()
+    r6 = {**raw, "snaps": _perm(raw["snaps"], sd, ["offense_pct", "defense_pct", "offense_snaps"], np.random.default_rng(707))}; mv2 = X.compute(r6)["team"]; sp = X.specs()[1]
+    moved = [c for c in sp.columns if not _same(base[c].fillna(-1), mv2[c].fillna(-1))]
+    res["nfl.snaps"]["tests"]["pit_check_perturbation_not_vacuous"] = {"n_rows": int(sd.sum()), "columns_that_moved": moved, "ok": len(moved) == len(sp.columns)}
     return {"sport": "NFL", "kind": "replay_ext", "seconds": round(time.time() - t0), "quick": quick, "raw_rows": {k: int(len(v)) for k, v in raw.items()}, "inputs": res}
 
 

@@ -15,6 +15,8 @@ from alpha_engine.input_research.data_foundation import verified_coverage as VC 
 DF = ROOT / "research/input_research/data_foundation"
 V = json.loads((DF / "verified_coverage.json").read_text())
 ROWS = V["rows"]; REPLAYS = VC.load_replays()
+for _sp, _e in VC.load_ext_replays().items():       # extension replays (builders added later) count as replays too, under the same tests plus the fail-closed pit_check/independent gates
+    REPLAYS.setdefault(_sp, {"inputs": {}})["inputs"].update(_e["inputs"])
 
 
 def _tests(**kw):

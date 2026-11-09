@@ -12,16 +12,16 @@ Every figure below comes from committed verification evidence under `research/in
 
 | Verified bucket | Inputs | Meaning |
 |---|---|---|
-| Verified Computable | 121 | replayed on re-collected data with every point-in-time test passed (VERIFIED_FULL / PARTIAL / PROXY), or a blind verifier confirmed it from real columns (DATA_IN_HAND_CONFIRMED) |
+| Verified Computable | 139 | replayed on re-collected data with every point-in-time test passed (VERIFIED_FULL / PARTIAL / PROXY), or a blind verifier confirmed it from real columns (DATA_IN_HAND_CONFIRMED) |
 | Computable With Caveat | 2 | replayed, but depends on as-played / retrieval-time fields or schedule structure: not clean point-in-time |
-| Claimed Unverified | 152 | claimed computable but NOT replayed or checked against real rows in this phase (raw data not re-collectable here, or only a schema was checked) |
+| Claimed Unverified | 134 | claimed computable but NOT replayed or checked against real rows in this phase (raw data not re-collectable here, or only a schema was checked) |
 | Not Computable As Claimed | 34 | a replay or a blind verifier showed the claim fails |
 | Requires Collection | 1116 | free source exists; pull/encode, or capture prospectively (see the plan below) |
 | Blocked | 28 | blind re-verification agreed that no usable free source exists |
 | Blocked Contested | 115 | drafted BLOCKED, but the blind verifier found a free path: unresolved (partly a scraping-policy question) |
 | Excluded | 81 | market-derived benchmark inputs |
 
-Total 1649 inputs. At the unreviewed-by-verifiers draft, **309** inputs were called potentially computable; **121** are verified computable now.
+Total 1649 inputs. At the unreviewed-by-verifiers draft, **309** inputs were called potentially computable; **139** are verified computable now.
 
 ### Verified status by sport
 
@@ -32,10 +32,10 @@ Total 1649 inputs. At the unreviewed-by-verifiers draft, **309** inputs were cal
 | NBA | 0 | 0 | 0 | 0 | 0 | 31 | 46 | 0 | 18 | 158 | 1 | 14 | 11 |
 | CBB | 1 | 6 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 134 | 5 | 25 | 11 |
 | NHL | 0 | 0 | 0 | 0 | 0 | 32 | 25 | 0 | 6 | 83 | 0 | 2 | 7 |
-| MLB | 0 | 0 | 0 | 1 | 0 | 18 | 0 | 0 | 1 | 222 | 0 | 1 | 8 |
+| MLB | 2 | 14 | 2 | 1 | 0 | 0 | 0 | 0 | 1 | 222 | 0 | 1 | 8 |
 | SOCCER | 6 | 6 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 83 | 7 | 65 | 11 |
 | TENNIS | 15 | 18 | 2 | 26 | 0 | 0 | 0 | 0 | 4 | 55 | 8 | 6 | 9 |
-| **all** | **35** | **47** | **12** | **27** | **2** | **81** | **71** | **0** | **34** | **1116** | **28** | **115** | **81** |
+| **all** | **37** | **61** | **14** | **27** | **2** | **63** | **71** | **0** | **34** | **1116** | **28** | **115** | **81** |
 
 ### Feature replay (previously computed inputs, re-collected raw data, independent tests)
 
@@ -48,7 +48,7 @@ Tests that do **not** reuse the earlier run's seeds, cut dates or protected-colu
 | NBA | **not replayed** | | | | | | | raw repo access denied this session |
 | CBB | 20 (full: 3 truncation cuts, 3 perturbations) | 20 | 20 | 20 | 20 | 2 | 31039 | ok (ledger espn_cbb_ledger.json: 31039 rows at the earlier colle) |
 | NHL | **not replayed** | | | | | | | raw repo access denied this session |
-| MLB | **not replayed** | | | | | | | replay not completed |
+| MLB | 29 (full: 3 truncation cuts, 3 perturbations) | 29 | 29 | 29 | 28 | 2 | 25202 | ok (ledger mlb_schedule_ledger.json: 25202 rows at the earlier c) |
 | SOCCER | 21 (full: 3 truncation cuts, 3 perturbations) | 21 | 18 | 21 | 21 | 0 | 19763 | ok (no ledger for this source: re-collected rows exist and the s) |
 | TENNIS | 35 (quick: 1 truncation cut, 1 perturbation) | 35 | 35 | 35 | 35 | 0 | 79019 | ok (ledger repo_archives_ledger.json: 79019 rows at the earlier ) |
 
@@ -58,6 +58,8 @@ Tests that do **not** reuse the earlier run's seeds, cut dates or protected-colu
 * `CBB:cbb.popularity_bias`: depends on as-played fields raw.home_rank, raw.away_rank
 * `CFB:cfb.polls`: depends on as-played fields raw.home_rank, raw.away_rank
 * `CFB:cfb.motivation`: depends on as-played fields raw.home_rank, raw.away_rank
+* `MLB:mlb.weather_pit`: own-game@2024-07-30: ['temp']; depends on as-played fields schedule.weather_condition, schedule.temp, schedule.wind
+* `MLB:mlb.umpire`: depends on as-played fields schedule.home_plate_ump_id
 * `NFL:nfl.weather_pit`: own-game@2018-10-28: ['temp_f', 'wind_mph']; depends on as-played fields games.temp, games.wind
 * `SOCCER:soc.motivation`: truncation@2021-08-14: ['games_left_pre']
 * `SOCCER:soc.stakes_leverage`: truncation@2021-08-14: ['games_left_pre']

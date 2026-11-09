@@ -10,6 +10,7 @@ Version-controlled so a worker session never depends on a long, drifting prompt.
 ## Refresh firing (daily, single writer)
 1. Run in the BACKGROUND with `timeout=3500000`: `bash scripts/prospective/bootstrap.sh refresh`. Wait for it to exit.
 2. Reply with only its single `REFRESH …` line. Do NOT retry (the lease makes a re-run safe but the run id already identifies the firing).
+3. `REFRESH ok … published_verified=True` is printed ONLY when the remote branch was fetched back and every attempted publication matches the local bytes (blob-for-blob). `REFRESH failed … reasons=[…]` (exit 2) means something was not published or not verified; relay the line unchanged, never rerun to "fix" it.
 
 ## Hard limits
 - Never modify files outside what the script writes; never touch `research/`, model configs, ledgers, `LEASE.json` or `RELEASE.json`.

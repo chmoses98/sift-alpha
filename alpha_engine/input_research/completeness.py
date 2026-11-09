@@ -449,11 +449,37 @@ def archetype_patches(sport: str) -> dict:
     d = CD / "archetype_patches"
     for f in sorted(d.glob(f"{sport}*.json")) if d.exists() else []:
         for k, v in (rd(f).get("patches") or {}).items():
-            cur = out.setdefault(k, {"detach": [], "roles": {}, "attach": []})
+            cur = out.setdefault(k, {"detach": [], "roles": {}, "attach": [], "drop_interactions": [], "drop_nonlinearities": []})
             cur["detach"] += v.get("detach") or []; cur["roles"].update(v.get("roles") or {}); cur["attach"] += v.get("attach") or []
+            cur["drop_interactions"] += v.get("drop_interactions") or []; cur["drop_nonlinearities"] += v.get("drop_nonlinearities") or []
             for fld in ("label", "target", "contract_types", "mechanism"):
                 if fld in v:
                     cur[fld] = v[fld]
+    return out
+
+
+def detached_references(c: dict) -> list[dict]:
+    """Every place an archetype's own interaction, non-linearity or mechanism stage names an input that the archetype does not carry (attached or inherited from its blueprint), that
+    does not exist in the catalog, or that is retired. These are the 'detached-input' defects: the record asserts a mechanism that its input list cannot supply."""
+    out = []
+    for k in arch_keys(c):
+        a = arch_entry(c, k)
+        ok = {i["id"] for i in a["inputs"]} | {i["id"] for i in c["blueprints"][a["blueprint"]]["inputs"]}
+
+        def chk(where, ids):
+            for i in ids:
+                if i not in c["inputs"]:
+                    out.append({"archetype": k, "where": where, "input": i, "problem": "unknown input"})
+                elif c["inputs"][i].get("retired"):
+                    out.append({"archetype": k, "where": where, "input": i, "problem": "retired input"})
+                elif i not in ok:
+                    out.append({"archetype": k, "where": where, "input": i, "problem": "not attached to archetype"})
+        for n, ix in enumerate(a.get("interactions") or []):
+            chk(f"interaction[{n}]", ix.get("inputs") or [])
+        for n, nl in enumerate(a.get("nonlinearities") or []):
+            chk(f"nonlinearity[{n}]", [nl.get("input_id")])
+        for st in (a.get("mechanism_review") or {}).get("stages") or []:
+            chk(f"stage {st.get('id')}", st.get("input_ids") or [])
     return out
 
 
@@ -596,6 +622,7 @@ def acceptance(g: dict) -> dict:
     new_ids = sum(input_audit.mechanical()["by_sport"][s]["new"] for s in SPORTS)
     audited = sum(ia["audited"].values())
     mf = ia["market_free"]
+    detached = sum(len(detached_references(cat.load(sp))) for sp in SPORTS)
     crit = [
         ("every archetype passes the structural gate and independent review with no open blocker/major finding and a second verification", all(r["status"] == "READY_FOR_USER_APPROVAL" for r in rows), f"{sum(1 for r in rows if r['status'] == 'READY_FOR_USER_APPROVAL')} of {len(rows)}"),
         ("every ledger series has exactly one final assignment (reconciles exactly)", len(asg) == len(led) and len({r["ticker"] for r in asg}) == len(led), f"{len(asg)} assigned of {len(led)} ledger series"),
@@ -603,6 +630,7 @@ def acceptance(g: dict) -> dict:
         ("every review-added input is audited (definition, provenance, market-free class)", audited >= new_ids, f"{audited} audited of {new_ids} review-added inputs"),
         ("every declared gap is classified", ga["classified"] == ga["declared"] and ga["declared"] > 0, f"{ga['classified']} of {ga['declared']}"),
         ("no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids)", ga["blockers_open"] == 0 and ga["classified"] > 0, f"{ga['blockers_open']} open of {ga['by_class'].get('CATALOG_BLOCKER', 0)} catalog blockers ({ga['blockers_resolved']} resolved)"),
+        ("no interaction, non-linearity or mechanism stage names an input its archetype does not carry (detached-input references)", detached == 0, f"{detached} detached references"),
     ]
     return {"criteria": [{"criterion": a, "pass": b, "detail": c} for a, b, c in crit], "meets_criteria": all(b for _, b, _ in crit),
             "note": "Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.",

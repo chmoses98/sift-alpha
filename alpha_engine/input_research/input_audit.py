@@ -201,6 +201,10 @@ def apply_archetype_patches() -> dict:
                 for i in a["inputs"]:
                     if i["id"] == iid and i["role"] != role:
                         i["role"] = role; n["roles"] += 1
+            for drop in v.get("drop_interactions") or []:   # interactions that rest on an input the archetype no longer carries (matched by sorted input set)
+                before = len(a["interactions"]); a["interactions"] = [x for x in a["interactions"] if sorted(x["inputs"]) != sorted(drop)]; n["interactions_dropped"] += before - len(a["interactions"])
+            for iid in v.get("drop_nonlinearities") or []:
+                before = len(a.get("nonlinearities") or []); a["nonlinearities"] = [x for x in a.get("nonlinearities") or [] if x.get("input_id") != iid]; n["nonlinearities_dropped"] += before - len(a["nonlinearities"])
             for x in v["attach"]:
                 if x["id"] not in c["inputs"] or len(str(x.get("why", ""))) < 30 or x.get("role") not in ("primary", "secondary", "context"):
                     raise ValueError(f"{s}:{k}: bad attach {x}")

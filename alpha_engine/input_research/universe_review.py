@@ -283,6 +283,8 @@ def apply() -> dict:
             f = o["final"]
             row = {"ticker": t, "sport": r["sport"], "title": r["title"], "ledger_archetype": r["archetype"], "final": f, "scope": "OUT_OF_SCOPE" if f.startswith(OOS) else "IN_SCOPE", "basis": o["basis"], "confidence": o["confidence"],
                    "origin": "reviewed" if f != r["archetype"] else "reviewed_confirmed", "by_template": bool(o.get("rest"))}
+            if o.get("event_routing"):   # a series whose events split across mechanisms: the series has ONE primary archetype, the routed events are listed explicitly
+                row["event_routing"] = o["event_routing"]
         else:
             ledger_arch = r["archetype"]
             row = {"ticker": t, "sport": r["sport"], "title": r["title"], "ledger_archetype": ledger_arch, "final": ledger_arch, "scope": "IN_SCOPE" if r["status"].startswith(("COVERED", "CLASSIFIED")) else ("NO_LISTED_MARKETS" if r["status"] == "NO_LISTED_MARKETS" else "EXCLUDED"),

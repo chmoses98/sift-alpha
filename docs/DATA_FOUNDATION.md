@@ -77,7 +77,7 @@ Tests that do **not** reuse the earlier run's seeds, cut dates or protected-colu
 | NHL | 32 (full: 3 truncation cuts, 3 perturbations) | 32 | 32 | 32 | 32 | 0 | 23344 | ok (ledger repo_archives_ledger.json: 23344 rows at the earlier ) |
 | MLB | 29 (full: 3 truncation cuts, 3 perturbations) | 29 | 29 | 29 | 28 | 2 | 25202 | ok (ledger mlb_schedule_ledger.json: 25202 rows at the earlier c) |
 | SOCCER | 21 (full: 3 truncation cuts, 3 perturbations) | 21 | 18 | 21 | 21 | 0 | 19763 | ok (no ledger for this source: re-collected rows exist and the s) |
-| TENNIS | 35 (quick: 1 truncation cut, 1 perturbation) | 35 | 35 | 35 | 35 | 0 | 79019 | ok (ledger repo_archives_ledger.json: 79019 rows at the earlier ) |
+| TENNIS | 35 (full: 3 truncation cuts, 3 perturbations) | 35 | 35 | 35 | 35 | 0 | 79019 | ok (ledger repo_archives_ledger.json: 79019 rows at the earlier ) |
 
 **Failed or caveated replay checks (all of them):**
 

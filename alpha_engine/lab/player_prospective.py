@@ -145,9 +145,8 @@ def run_predict(data_dir, work, out_lab, out_dir, gt_path, now: pd.Timestamp, bo
     pred = predict_contracts(u, builder, pools, av, pg, players, gt, inj, out_lab, season)
     last = {}
     path = out_dir / "predictions.jsonl"
-    if path.exists():
-        for l in path.read_text().splitlines():
-            r = json.loads(l); last[r["ticker"]] = r
+    for r in PP.read_ledger(path):
+        last[r["ticker"]] = r
     n = 0
     for r in pred.dropna(subset=["model_p"]).itertuples():
         g = now_ko.loc[r.game_id]; ko = PP.kickoff_utc(type("G", (), {"gameday": g["gameday"], "gametime": g["gametime"]}))

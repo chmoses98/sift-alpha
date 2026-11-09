@@ -6,7 +6,7 @@ Safety properties, all enforced in code (and tested):
   * quotes come ONLY from the verified collector (capture_ingest); a run that was never captured is a reported gap, not a reconstruction
   * publishing is append-only: every ledger already on the data branch must be a byte-prefix of the new file, else nothing is pushed"""
 from __future__ import annotations
-import hashlib, json, os, shutil, subprocess, tempfile
+import hashlib, json, os, shutil, subprocess, tempfile, time
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -138,8 +138,8 @@ def _push_one(repo: Path, files: dict[str, bytes], message: str, branch: str, re
         if not _run(wt, "status", "--porcelain").stdout.strip():
             return {"pushed": False, "unchanged": True}
         _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", commit_message(message, meta))
-        ok = _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False).returncode == 0
-        return {"pushed": ok, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip() if ok else None, "raced": not ok}
+        pr = _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False); ok = pr.returncode == 0
+        return {"pushed": ok, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip() if ok else None, "raced": not ok, **({} if ok else {"error": ((pr.stderr or "") + (pr.stdout or "")).strip()[-400:]})}
     finally:
         _run(repo, "worktree", "remove", "--force", str(tmp / "wt"), check=False); shutil.rmtree(tmp, ignore_errors=True)
 
@@ -189,23 +189,72 @@ def _run(cwd, *a, check=True):
     return subprocess.run(["git", "-C", str(cwd), *a], check=check, capture_output=True, text=True)
 
 
+import re
+_SEG = re.compile(r"^(predictions|quotes|observations)(\.\d{4})?\.jsonl$")
+
+
 def fetch_branch_files(repo: Path, branch: str, rel: str, dest: Path) -> list[str]:
-    """Copy ledgers already published on the data branch into dest (so the cycle continues the SAME chain).  Returns the file names found."""
+    """Copy ledgers already published on the data branch into dest (so the cycle continues the SAME chain), INCLUDING every size-bounded segment (quotes.0001.jsonl ...).  Returns the names found."""
     got = []
     if _run(repo, "fetch", "--depth=1", "origin", branch, check=False).returncode != 0:
         return got
-    for f in LEDGERS + ("FREEZE.json", "FREEZE_DIGEST.json"):
+    ls = subprocess.run(["git", "-C", str(repo), "ls-tree", "--name-only", "FETCH_HEAD", f"{rel}/"], capture_output=True, text=True)
+    names = [Path(x).name for x in ls.stdout.split()] if ls.returncode == 0 else []
+    for f in [n for n in names if _SEG.match(n)] + ["FREEZE.json", "FREEZE_DIGEST.json"]:
         r = subprocess.run(["git", "-C", str(repo), "show", f"FETCH_HEAD:{rel}/{f}"], capture_output=True)
         if r.returncode == 0:
             Path(dest).mkdir(parents=True, exist_ok=True); (Path(dest) / f).write_bytes(r.stdout); got.append(f)
     return got
 
 
+AUX_FILES = ("FREEZE.json", "FREEZE_DIGEST.json", "REPORT.json", "decision_audit.json", "alerts.json")
+
+
+def ledger_files(out: Path) -> dict[str, Path]:
+    """Every file of every logical ledger in `out` (all segments), name -> path."""
+    out = Path(out); files = {}
+    for base in LEDGERS:
+        for sp in PP.segment_paths(out / base):
+            files[sp.name] = sp
+    return files
+
+
+def verify_remote(repo: Path, expected: dict[str, Path], rel: str, branch: str = BRANCH, remote: str = "origin") -> dict:
+    """Fail-closed proof of publication: fetch the REMOTE branch head and compare the git blob id of every expected file with the local file's.  Equal blob ids = equal bytes.  A failed fetch,
+    a missing file or a differing blob is `verified: False` -- a successful `git push` exit code alone is never accepted as evidence."""
+    r = _run(repo, "fetch", "--depth=1", remote, branch, check=False)
+    if r.returncode != 0:
+        return {"verified": False, "error": "remote fetch failed: " + (r.stderr or "")[-200:], "files": len(expected)}
+    head = _run(repo, "rev-parse", "FETCH_HEAD").stdout.strip(); bad = []
+    for name, path in sorted(expected.items()):
+        want = _run(repo, "hash-object", str(path)).stdout.strip()
+        got = _run(repo, "rev-parse", f"FETCH_HEAD:{rel}/{name}", check=False)
+        if got.returncode != 0:
+            bad.append({"file": name, "problem": "missing on remote"})
+        elif got.stdout.strip() != want:
+            bad.append({"file": name, "problem": "differs from local"})
+    return {"verified": not bad, "remote_head": head, "files": len(expected), "mismatches": bad[:10]}
+
+
 def publish(repo: Path, out: Path, rel: str = "nfl_totals_v1", branch: str = BRANCH, remote: str = "origin", message: str = "prospective cycle", meta: dict | None = None, holder: str | None = None) -> dict:
-    """Append-only push of the out/ ledgers to `branch`.  Guard: every file already on the branch must be a byte-prefix of the local file.  Non-force; retried on a race."""
+    """Append-only push of the out/ ledgers (every segment) to `branch`, then PROOF that the remote contains exactly those bytes.
+    Guards (all fail closed, none push): lease; every file already on the branch must be a byte-prefix of its local twin; no segment may exist only on the branch; no file may exceed
+    MAX_PUBLISH_FILE_BYTES (GitHub rejects >100 MiB).  Result: pushed / unchanged AND verified; a rejected push reports git's own error text.  Non-force; retried on a race."""
     out = Path(out)
     if holder is not None and not lease_ok(repo, holder, remote=remote, branch=branch):
-        return {"pushed": False, "error": "ledger publication refused: this run does not hold the single-writer lease"}
+        return {"pushed": False, "verified": False, "error": "ledger publication refused: this run does not hold the single-writer lease"}
+    try:
+        local = ledger_files(out)
+    except PP.LedgerLayoutError as e:
+        return {"pushed": False, "verified": False, "error": f"ledger layout violation: {e}"}
+    big = {n: p.stat().st_size for n, p in local.items() if p.stat().st_size > PP.MAX_PUBLISH_FILE_BYTES}
+    if big:
+        return {"pushed": False, "verified": False, "error": f"OVERSIZE_FILE: {big} exceeds {PP.MAX_PUBLISH_FILE_BYTES} bytes; refusing to push (repartition the ledger)"}
+    expected = dict(local)
+    for f in AUX_FILES:
+        if (out / f).exists():
+            expected[f] = out / f
+    last_err = ""
     for attempt in range(4):
         tmp = Path(tempfile.mkdtemp())
         try:
@@ -217,29 +266,68 @@ def publish(repo: Path, out: Path, rel: str = "nfl_totals_v1", branch: str = BRA
                 _run(repo, "worktree", "add", "-f", "--detach", str(tmp / "wt"), "HEAD"); wt = tmp / "wt"
                 _run(wt, "checkout", "--orphan", branch); _run(wt, "rm", "-rf", "--quiet", ".", check=False)
             wt = tmp / "wt"; dst = wt / rel; dst.mkdir(parents=True, exist_ok=True)
-            for f in LEDGERS:
-                new = out / f
-                if not new.exists():
-                    continue
-                old = dst / f
-                if old.exists():
-                    b = old.read_bytes()
-                    if not new.read_bytes().startswith(b):
-                        return {"pushed": False, "error": f"append-only violation: {f} on {branch} is not a prefix of the local ledger"}
+            remote_segs = {q.name for q in dst.iterdir() if q.is_file() and _SEG.match(q.name)}
+            missing = sorted(remote_segs - set(local))
+            if missing:
+                return {"pushed": False, "verified": False, "error": f"append-only violation: segment(s) {missing} are on {branch} but absent from the local ledger"}
+            for name, new in local.items():
+                old = dst / name
+                if old.exists() and not _is_prefix(old, new):
+                    return {"pushed": False, "verified": False, "error": f"append-only violation: {name} on {branch} is not a prefix of the local ledger"}
                 shutil.copyfile(new, old)
-            for f in ("FREEZE.json", "FREEZE_DIGEST.json", "REPORT.json", "decision_audit.json", "alerts.json"):
+            for f in AUX_FILES:
                 if (out / f).exists():
                     shutil.copyfile(out / f, dst / f)
             _run(wt, "add", "-A")
             if not _run(wt, "status", "--porcelain").stdout.strip():
-                return {"pushed": False, "unchanged": True}
+                v = verify_remote(repo, expected, rel, branch, remote)
+                return {"pushed": False, "unchanged": True, **v}
             _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", commit_message(message, meta))
+            commit = _run(wt, "rev-parse", "HEAD").stdout.strip()
             r = _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False)
             if r.returncode == 0:
-                return {"pushed": True, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip(), "attempt": attempt + 1}
+                v = verify_remote(repo, expected, rel, branch, remote)
+                return {"pushed": True, "commit": commit, "attempt": attempt + 1, **v}
+            last_err = ((r.stderr or "") + (r.stdout or "")).strip()[-600:]
+            if any(m in last_err for m in ("GH001", "exceeds", "file size limit", "Large files")):
+                return {"pushed": False, "verified": False, "error": "push REJECTED by the remote: " + last_err}           # a size-limit rejection is deterministic: retrying cannot heal it
+            time.sleep(0.4 * (attempt + 1))                                                                                 # a race (non-fast-forward, ref lock, transient fetch error): back off and retry on a fresh head
         finally:
             _run(repo, "worktree", "remove", "--force", str(tmp / "wt"), check=False); shutil.rmtree(tmp, ignore_errors=True)
-    return {"pushed": False, "error": "push failed after retries (non-fast-forward race or network)"}
+    return {"pushed": False, "verified": False, "error": "push failed after retries (non-fast-forward race or network): " + last_err}
+
+
+def _is_prefix(old: Path, new: Path, chunk: int = 1 << 20) -> bool:
+    """True iff the bytes of `old` are a prefix of `new` (streamed; ledgers are large)."""
+    if old.stat().st_size > new.stat().st_size:
+        return False
+    with open(old, "rb") as a, open(new, "rb") as b:
+        while True:
+            x = a.read(chunk)
+            if not x:
+                return True
+            if b.read(len(x)) != x:
+                return False
+
+
+def publication_status(steps: dict) -> tuple[bool, list[str]]:
+    """The ONLY definition of a successful refresh publication: every publication the run attempted is verified on the remote.  Returns (ok, reasons)."""
+    reasons = []
+
+    def good(r):
+        return isinstance(r, dict) and bool(r.get("verified")) and (bool(r.get("pushed")) or bool(r.get("unchanged")))
+    t = steps.get("publish_totals")
+    if not good(t):
+        reasons.append("publish_totals:" + ("not attempted" if t is None else (str(t.get("error") or ("unverified: " + str(t.get("mismatches") or t.get("pushed"))))[:160])))
+    if "publish_player" in steps and not good(steps["publish_player"]):
+        pp = steps["publish_player"]; reasons.append("publish_player:" + str(pp.get("error") or ("unverified: " + str(pp.get("mismatches"))))[:160])
+    pl = steps.get("player_predict")
+    if isinstance(pl, dict) and pl.get("error"):
+        reasons.append("player_refresh:" + str(pl["error"])[:120])
+    sc = steps.get("settle_capture") or {}
+    if sc.get("publish") and not (sc["publish"].get("pushed") or sc["publish"].get("unchanged")):
+        reasons.append("settlement_publish:" + str(sc["publish"].get("error") or "not pushed")[:120])
+    return (not reasons), reasons
 
 
 def run_player_report(player_dir: Path, quotes_dir: Path, data_dir: Path, now: pd.Timestamp | None = None, season: int = 2026) -> dict:
@@ -302,11 +390,13 @@ def publish_captures(repo: Path, stage: Path, branch: str = BRANCH, remote: str 
                 return {"pushed": False, "unchanged": True}
             _run(wt, "add", "-A")
             _run(wt, "-c", "user.name=prospective-bot", "-c", "user.email=prospective-bot@users.noreply.github.com", "commit", "-qm", commit_message(f"{message} (+{added})", meta))
-            if _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False).returncode == 0:
+            pr = _run(wt, "push", remote, f"HEAD:refs/heads/{branch}", check=False)
+            if pr.returncode == 0:
                 return {"pushed": True, "added": added, "commit": _run(wt, "rev-parse", "HEAD").stdout.strip(), "attempt": attempt + 1}
+            last_err = ((pr.stderr or "") + (pr.stdout or "")).strip()[-300:]
         finally:
             _run(repo, "worktree", "remove", "--force", str(tmp / "wt"), check=False); shutil.rmtree(tmp, ignore_errors=True)
-    return {"pushed": False, "error": "push failed after retries"}
+    return {"pushed": False, "error": "push failed after retries: " + locals().get("last_err", "")}
 
 
 def fetch_branch_tree(repo: Path, branch: str, rel: str, dest: Path, remote: str = "origin") -> int:
@@ -363,14 +453,15 @@ def _refresh_locked(repo, work, data_dir, player, now, season, run_id, meta, out
     out["steps"]["shard_ingest"] = CW.ingest_shards(shards, pv, games, now=now)
     sstage = work / "settle_stage"; sh = CW.capture_settled(lambda: pd.Timestamp.now(tz="UTC"))
     CW.write_shard(sstage, sh, kind="settlements")
-    out["steps"]["settle_capture"] = {"markets": sum(b["n"] for b in sh["books"].values()), "failures": sh["failures"], "published": publish_captures(repo, sstage, message="settlement evidence", meta=meta).get("pushed")}
+    out["steps"]["settle_capture"] = {"markets": sum(b["n"] for b in sh["books"].values()), "failures": sh["failures"]}
+    sp = publish_captures(repo, sstage, message="settlement evidence", meta=meta); out["steps"]["settle_capture"]["publish"] = sp; out["steps"]["settle_capture"]["published"] = bool(sp.get("pushed"))
     fetch_branch_tree(repo, BRANCH, "settlements", work / "settle_tree")
     xr, xconf = CW.load_exchange_results(work / "settle_tree"); out["steps"]["exchange_results"] = {"tickers": len(xr), "conflicts": len(xconf)}
     rep = run_cycle(data_dir, None, pv, work / "cyc", now=now, download=False, pins=PINS, exchange_results=xr)
     out["cycle"] = {k: rep.get(k) for k in ("steps", "counts", "eligible_decision_games", "aborted", "accounting")}
     out["steps"]["cycle"] = out["cycle"]
     heartbeats = [json.loads(f.read_text()) for f in sorted(hbs_dir.rglob("*.json"))] if hbs_dir.exists() else []
-    obs = [json.loads(l) for l in (pv / "observations.jsonl").read_text().splitlines()] if (pv / "observations.jsonl").exists() else []
+    obs = CI._read(pv / "observations.jsonl")
     first = json.loads((pv / "FREEZE.json").read_text())["frozen_utc"]
     ko = CW.kickoffs(games, season); cov = CW.coverage_matrix(ko[ko > pd.Timestamp(first)], obs) if len(ko) else None
     extra = []

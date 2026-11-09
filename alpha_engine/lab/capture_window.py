@@ -259,4 +259,4 @@ def ingest_shards(shards_dir: Path, out_dir: Path, games: pd.DataFrame, now: pd.
 
 
 def PP_read(path):
-    return [json.loads(l) for l in Path(path).read_text().splitlines()] if Path(path).exists() else []
+    return PP.read_ledger(path)

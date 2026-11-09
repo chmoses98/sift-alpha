@@ -41,11 +41,58 @@ def _h(rec: dict) -> str:
     return hashlib.sha256(json.dumps({k: v for k, v in rec.items() if k != "hash"}, sort_keys=True, default=str).encode()).hexdigest()
 
 
+# ------------------------------------------------------------------ size-bounded, hash-chain-continuing ledger segments
+# GitHub rejects any file over 100 MiB, and the quote ledger grows ~35 MB per cycle.  A logical ledger `quotes.jsonl` is therefore stored as an ordered list of SEGMENT files:
+#     quotes.jsonl   (segment 0: the legacy file, kept byte-for-byte)   quotes.0001.jsonl   quotes.0002.jsonl ...
+# Rules (deterministic; a pure function of the record sequence): a record goes to the LAST segment unless that would push it past MAX_SEGMENT_BYTES, in which case a NEW segment is opened;
+# the first record of a segment carries `prev` = the hash of the last record of the previous segment, so ONE chain spans all segments.  A sealed segment is never modified again, so the
+# append-only publication guard (every published file is a byte-prefix of its local twin) holds per segment.  Segment 0 may already exceed the bound (grandfathered legacy file): it is
+# simply never extended.  The record JSON and hash definition are unchanged.
+MAX_SEGMENT_BYTES = 50_000_000
+MAX_PUBLISH_FILE_BYTES = 95_000_000        # hard ceiling checked before any push (GitHub's limit is 100 MiB = 104,857,600)
+
+
+class LedgerLayoutError(RuntimeError):
+    pass
+
+
+def segment_path(base: Path, i: int) -> Path:
+    base = Path(base)
+    return base if i == 0 else base.with_name(f"{base.stem}.{i:04d}{base.suffix}")
+
+
+def segment_paths(base: Path) -> list[Path]:
+    """Existing segments of the logical ledger `base`, in order.  A gap (e.g. 0002 without 0001) or a segment without segment 0 is a layout violation, never silently skipped."""
+    base = Path(base); out = []; i = 0
+    while segment_path(base, i).exists():
+        out.append(segment_path(base, i)); i += 1
+    j = i + 1
+    while j < i + 50:                                  # look a little further for orphans so a hole is detected
+        if segment_path(base, j).exists():
+            raise LedgerLayoutError(f"{base.name}: segment {j:04d} exists but segment {i:04d} is missing")
+        j += 1
+    return out
+
+
+def iter_lines(base: Path):
+    for sp in segment_paths(base):
+        with open(sp, "rb") as f:
+            for l in f:
+                l = l.strip()
+                if l:
+                    yield l.decode()
+
+
+def read_ledger(base: Path) -> list[dict]:
+    """All records of the logical ledger (all segments, in chain order).  For a path that is not segmented this is just that file."""
+    return [json.loads(l) for l in iter_lines(base)]
+
+
 _TAIL: dict = {}
 
 
-def _tail_hash(path: Path) -> str:
-    """Hash of the last record, read from the end of the file (O(1) per append); cached per path and re-validated against file size."""
+def _tail_hash_file(path: Path) -> str:
+    """Hash of the last record of ONE segment file, read from its end (O(1) per append); cached per path and re-validated against file size."""
     path = Path(path)
     if not path.exists() or not path.stat().st_size:
         return ""
@@ -59,30 +106,81 @@ def _tail_hash(path: Path) -> str:
     return h
 
 
-def append(path: Path, rec: dict) -> dict:
-    """Chained append, safe against concurrent writers (exclusive flock around read-tail + write)."""
+def _tail_hash(base: Path) -> str:
+    for sp in reversed(segment_paths(base)):
+        h = _tail_hash_file(sp)
+        if h:
+            return h
+    return ""
+
+
+def append(path: Path, rec: dict, max_bytes: int | None = None) -> dict:
+    """Chained append, safe against concurrent writers (exclusive flock on segment 0 around read-tail + write), rotating to a new segment when the size bound would be exceeded."""
     import fcntl
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a+b") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+    limit = MAX_SEGMENT_BYTES if max_bytes is None else max_bytes
+    with open(path, "a+b") as lock:                                       # segment 0 doubles as the lock file (created empty if the ledger is new)
+        fcntl.flock(lock, fcntl.LOCK_EX)
         try:
+            segs = segment_paths(path)
             prev = _tail_hash(path)
             rec = dict(rec, prev=prev); rec["hash"] = _h(rec)
-            f.write((json.dumps(rec, sort_keys=True, default=str) + "\n").encode()); f.flush()
-            _TAIL[str(path)] = (path.stat().st_size, rec["hash"])
+            line = (json.dumps(rec, sort_keys=True, default=str) + "\n").encode()
+            tgt = segs[-1] if segs else path
+            if tgt.stat().st_size and tgt.stat().st_size + len(line) > limit:
+                tgt = segment_path(path, len(segs))                       # open the next segment; the chain continues through `prev`
+            with open(tgt, "ab") as f:
+                f.write(line); f.flush()
+            _TAIL[str(tgt)] = (tgt.stat().st_size, rec["hash"])
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            fcntl.flock(lock, fcntl.LOCK_UN)
     return rec
 
 
 def verify_chain(path: Path) -> dict:
+    """Verify ONE chain across all segments.  Reports the first bad record (1-based over the whole logical ledger) and the segment it is in."""
     prev, n = "", 0
-    for i, l in enumerate(Path(path).read_text().splitlines()):
-        r = json.loads(l); n += 1
-        if r.get("prev") != prev or _h(r) != r["hash"]:
-            return {"ok": False, "first_bad_line": i + 1, "records": n}
-        prev = r["hash"]
-    return {"ok": True, "records": n}
+    segs = segment_paths(path)
+    for si, sp in enumerate(segs):
+        with open(sp, "rb") as f:
+            for l in f:
+                l = l.strip()
+                if not l:
+                    continue
+                r = json.loads(l); n += 1
+                if r.get("prev") != prev or _h(r) != r["hash"]:
+                    return {"ok": False, "first_bad_line": n, "records": n, "segment": sp.name, "segments": len(segs)}
+                prev = r["hash"]
+    return {"ok": True, "records": n, "segments": len(segs)}
+
+
+def repartition(path: Path, max_bytes: int | None = None, keep_bytes: int = 0) -> dict:
+    """MIGRATION of a legacy single file (or an oversized segment) into size-bounded segments, preserving every record byte-for-byte, the order and the chain.  The first `keep_bytes`
+    bytes (e.g. what is already published) stay in the SAME file, so the published file remains a byte-prefix of its local twin; the remainder is split at record boundaries.
+    Idempotent: a ledger that already satisfies the bound is left untouched.  Segments must be the last ones in the logical ledger (only the tail segment is rewritten)."""
+    path = Path(path); limit = MAX_SEGMENT_BYTES if max_bytes is None else max_bytes
+    segs = segment_paths(path)
+    if not segs:
+        return {"changed": False, "segments": 0}
+    last = segs[-1]; idx = len(segs) - 1
+    data = last.read_bytes()
+    if len(data) <= max(limit, keep_bytes):
+        return {"changed": False, "segments": len(segs)}
+    lines = data.splitlines(keepends=True)
+    chunks, cur, size = [], [], 0
+    first_cap = max(limit, keep_bytes)
+    for l in lines:
+        cap = first_cap if not chunks else limit
+        if cur and size + len(l) > cap:
+            chunks.append(b"".join(cur)); cur, size = [], 0
+        cur.append(l); size += len(l)
+    if cur:
+        chunks.append(b"".join(cur))
+    assert b"".join(chunks) == data
+    for k, ch in enumerate(chunks):
+        target = segment_path(path, idx + k); tmp = target.with_name(target.name + ".tmp"); tmp.write_bytes(ch); os.replace(tmp, target)
+    _TAIL.clear()
+    return {"changed": True, "segments": len(segs) - 1 + len(chunks), "split_into": len(chunks)}
 
 
 # ------------------------------------------------------------------ predictions
@@ -93,9 +191,8 @@ def kickoff_utc(g) -> pd.Timestamp:
 def predict(P: pd.DataFrame, games: pd.DataFrame, now: pd.Timestamp, path: Path, data_sha: str) -> int:
     """P: GameLab.final_predictions(total, FROZEN, last=2026).  Appends one record per not-yet-started 2026 game that has no record yet."""
     last: dict = {}
-    if Path(path).exists():
-        for l in Path(path).read_text().splitlines():
-            r = json.loads(l); last[r["game_id"]] = r
+    for r in read_ledger(path):
+        last[r["game_id"]] = r
     g = games.set_index("game_id")
     n = 0
     for r in P[P["season"] == 2026].itertuples():
@@ -161,12 +258,9 @@ def _last_state(out_dir: Path) -> dict:
     k = str(Path(out_dir) / "quotes.jsonl")
     if k not in _LAST:
         st = {}
-        f = Path(out_dir) / "quotes.jsonl"
-        if f.exists():
-            for l in f.read_text().splitlines():
-                r = json.loads(l)
-                if r.get("source") == SOURCE_FALLBACK:
-                    st[r["ticker"]] = (r["bid"], r["ask"], r.get("status"), r.get("bid_size"), r.get("ask_size"), r.get("last_price"))
+        for r in read_ledger(Path(out_dir) / "quotes.jsonl"):                  # all segments, in chain order
+            if r.get("source") == SOURCE_FALLBACK:
+                st[r["ticker"]] = (r["bid"], r["ask"], r.get("status"), r.get("bid_size"), r.get("ask_size"), r.get("last_price"))
         _LAST[k] = st
     return _LAST[k]
 

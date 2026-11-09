@@ -14,6 +14,9 @@ def _t(x):
     return pd.Timestamp(x)
 
 
+REFRESH_STALE_H = 30.0
+
+
 def evaluate(heartbeats: list[dict], observations: list[dict], ingest: dict | None, now, coverage: pd.DataFrame | None = None, since=None, extra: list[dict] | None = None) -> list[dict]:
     now = _t(now); out: list[dict] = list(extra or [])
     allcap = [h for h in heartbeats if h.get("role") == "capture"]
@@ -21,6 +24,15 @@ def evaluate(heartbeats: list[dict], observations: list[dict], ingest: dict | No
     for h in allcap:                                                   # a start heartbeat with no final one, long after the run should have ended
         if h.get("status") == "started" and h["run_id"] not in ended and (now - _t(h["started_utc"])).total_seconds() / 60 > float(h.get("span_min") or 57) + 15:
             out.append({"severity": "HIGH", "code": "RUN_UNFINISHED", "detail": f"{h['run_id']} started {h['started_utc']} but never published a final heartbeat (killed or crashed)"})
+    ref = sorted((h for h in heartbeats if h.get("role") == "refresh"), key=lambda h: h["started_utc"])
+    if ref:                                                            # the LATEST refresh must have published and verified; a refresh older than REFRESH_STALE_H is itself an alert
+        last = ref[-1]
+        if last.get("status") == "failed" or last.get("publication_verified") is False:
+            out.append({"severity": "HIGH", "code": "REFRESH_UNPUBLISHED", "detail": f"{last['run_id']}: status={last.get('status')} reasons={(last.get('publication') or {}).get('reasons')}"})
+        okish = [h for h in ref if h.get("status") == "ok" and h.get("publication_verified") is not False]
+        age_h = (now - _t(okish[-1]["started_utc"])).total_seconds() / 3600 if okish else None
+        if age_h is None or age_h > REFRESH_STALE_H:
+            out.append({"severity": "HIGH", "code": "REFRESH_STALE", "detail": f"last successful refresh {'never' if age_h is None else f'{age_h:.0f} h ago'} (limit {REFRESH_STALE_H:.0f} h)"})
     cap = sorted((h for h in allcap if h.get("status") != "started"), key=lambda h: h["started_utc"])
     if since is not None:
         cap = [h for h in cap if _t(h["started_utc"]) >= _t(since)]

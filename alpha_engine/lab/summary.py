@@ -21,8 +21,9 @@ def build(lab: Path, prospective: Path) -> dict:
                      "n_after": a["n"], "games_after": a["games"], "gain_after": a["logloss_gain"]["mean"], "ci_after": a["logloss_gain"]["ci"], "verdict": verdict(a["logloss_gain"]),
                      "mean_model_p": a["mean_model_p"], "mean_market_mid": a["mean_mid"], "base_rate": a["base_rate"]})
     rep = json.load(open(prospective / "REPORT.json")) if (prospective / "REPORT.json").exists() else {}
-    pred = [json.loads(l) for l in open(prospective / "predictions.jsonl")] if (prospective / "predictions.jsonl").exists() else []
-    quo = sum(1 for _ in open(prospective / "quotes.jsonl")) if (prospective / "quotes.jsonl").exists() else 0
+    from . import prospective as PPL                                            # segment-aware: a ledger may be quotes.jsonl + quotes.0001.jsonl ...
+    pred = PPL.read_ledger(prospective / "predictions.jsonl")
+    quo = sum(1 for _ in PPL.iter_lines(prospective / "quotes.jsonl"))
     return {"mode": "RESEARCH_ONLY", "claim_boundary": "Model-vs-market log-loss on the 2025 season (already examined; not an untouched holdout). No family shows a model advantage over Kalshi prices; nothing here is an after-fee edge.",
             "families": sorted(rows, key=lambda r: r["family"]),
             "player_bias": json.load(open(lab / "player_bias_audit.json")) if (lab / "player_bias_audit.json").exists() else None,

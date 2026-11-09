@@ -58,7 +58,8 @@ class DirSource:
 
 
 def _read(path: Path) -> list[dict]:
-    return [json.loads(l) for l in Path(path).read_text().splitlines()] if Path(path).exists() else []
+    """Records of a (possibly segmented) ledger: quotes.jsonl + quotes.0001.jsonl ... in chain order; a plain file is just that file."""
+    return PP.read_ledger(path)
 
 
 def ingest(src, out_dir: Path, series=TOTAL_SERIES, since_run: str | None = None) -> dict:

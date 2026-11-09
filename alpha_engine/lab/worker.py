@@ -88,14 +88,26 @@ def refresh(repo: Path, work: Path, data_dir: Path) -> tuple[dict, int]:
     from . import prospective_cycle as PC
     started = pd.Timestamp.now(tz="UTC"); run_id = f"refresh-{started.strftime('%Y%m%dT%H%M%SZ')}"
     rep = PC.run_refresh(repo, work, data_dir, run_id=run_id)
+    steps = rep.get("steps") or {}
+    # FAIL CLOSED: `ok` only if the run was not aborted/blocked AND every publication it attempted was verified on the remote (blob-for-blob), not merely exit code 0 from `git push`.
+    pub_ok, reasons = PC.publication_status(steps) if not (rep.get("aborted") or rep.get("lease_busy")) else (False, [])
+    if rep.get("aborted"):
+        reasons = ["aborted"]
+    elif rep.get("lease_busy"):
+        reasons = ["lease_busy"]
+    status = "ok" if pub_ok else "failed"
+    pt = steps.get("publish_totals") or {}
+    pub = {"verified": bool(pub_ok), "reasons": reasons, "remote_head": pt.get("remote_head"), "totals_commit": pt.get("commit"), "files_verified": pt.get("files"),
+           "lease_released": bool((steps.get("lease_release") or {}).get("released"))}
     hb = {"kind": "heartbeat", "role": "refresh", "run_id": run_id, "started_utc": started.isoformat(), "ended_utc": pd.Timestamp.now(tz="UTC").isoformat(), "code_sha": PC.code_sha(repo),
-          "versions": _versions(), "status": "failed" if rep.get("aborted") or rep.get("lease_busy") else "ok", "alerts": rep.get("alert_summary")}
+          "versions": _versions(), "status": status, "publication_verified": bool(pub_ok), "publication": pub, "alerts": rep.get("alert_summary")}
     stage = Path(work) / "hb_stage"; write_heartbeat(stage, hb)
-    PC.publish_captures(repo, stage, message="heartbeat", meta={"writer-run": run_id, "role": "refresh-heartbeat", "code": hb["code_sha"][:12]})
+    hp = PC.publish_captures(repo, stage, message="heartbeat", meta={"writer-run": run_id, "role": "refresh-heartbeat", "code": hb["code_sha"][:12]})
     s = rep.get("alert_summary") or {}
-    line = (f"REFRESH {hb['status']} run={run_id} aborted={bool(rep.get('aborted'))} lease_busy={bool(rep.get('lease_busy'))} alerts_high={s.get('high')} warn={s.get('warn')} codes={s.get('codes')} "
-            f"eligible_T-6h_settled={((rep.get('cycle') or {}).get('eligible_decision_games') or {}).get('T-6h_settled')}")
-    return {"line": line, "report": rep, "heartbeat": hb}, (0 if hb["status"] == "ok" else 2)
+    line = (f"REFRESH {status} run={run_id} aborted={bool(rep.get('aborted'))} lease_busy={bool(rep.get('lease_busy'))} alerts_high={s.get('high')} warn={s.get('warn')} codes={s.get('codes')} "
+            f"eligible_T-6h_settled={((rep.get('cycle') or {}).get('eligible_decision_games') or {}).get('T-6h_settled')} published_verified={pub_ok} "
+            f"remote_head={(pt.get('remote_head') or 'none')[:10]} heartbeat={'pushed' if hp.get('pushed') else 'NOT_PUBLISHED'}" + (f" reasons={reasons}" if reasons else ""))
+    return {"line": line, "report": rep, "heartbeat": hb}, (0 if status == "ok" else 2)
 
 
 def main(argv=None):

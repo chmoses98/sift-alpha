@@ -1,0 +1,1842 @@
+{
+ "unreg:score_path_functionals": {
+  "reviewer": "author-blk2-NFL (Claude agent)",
+  "review_date": "2026-11-09",
+  "catalog_entry": {
+   "label": "NFL score-path functionals (largest lead, lead changes, comebacks)",
+   "blueprint": "game_event",
+   "contract_types": [
+    "Largest lead",
+    "Lead changes",
+    "Comeback"
+   ],
+   "target": "Whether the path of the score in one game (largest lead, count of lead changes, a comeback of N or more points) reaches a threshold.",
+   "mechanism": "The outcome is a functional of the whole sequence of scores, not of final totals. A possession-by-possession process (drive outcomes, point values, non-offensive scores, end-of-half clock behaviour) generates the margin path; the largest lead is its running absolute maximum, a lead change is a sign change of the margin caused by a score by the team that was tied or trailing (the opening score excluded), and a 24-point comeback is the eventual winner's running minimum reaching -24. Each depends on expected margin, path volatility and score-state-dependent coaching, so a final-margin distribution alone cannot price them.",
+   "inputs": [
+    {
+     "id": "nfl.score_path_sequence_sim",
+     "why": "The only input that turns team rates into a drive-by-drive score sequence, which is what a running-maximum lead, a count of sign changes and a 24-point deficit all need.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.own_team_rating_market_free",
+     "why": "Supplies the market-free pregame team strength gap that sets the expected margin around which the path wanders, and the comeback-probability asymmetry between favourite and underdog.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.heteroskedastic_margin_sd",
+     "why": "Gives the conditional spread of the final margin given model mean and total, which scales the volatility of the path and the heaviness of the lead tail.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.drive_outcome_by_index",
+     "why": "Per-drive touchdown/field-goal/punt/turnover probabilities by drive index and start field position feed the possession generator and the early-game lead formation.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.scoring_event_point_values",
+     "why": "Point values of a score (6+1, 6+2, 6+0, 3, 2) decide whether a lead of 7 versus 8 occurs, so band edges such as '7 to 10' depend on the extra-point and two-point policy.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.non_offensive_scoring_rate",
+     "why": "Defensive and special-teams scores add 6- to 8-point jumps with no possession alternation; they create abrupt lead changes and deep deficits.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.halftime_state_conditional_scoring",
+     "why": "Second-half scoring conditional on the halftime margin tells how a deficit decays or grows, the mechanism that either allows or kills a 24-point comeback.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.two_minute_tempo",
+     "why": "Two-minute drill scoring and timeouts create the late lead changes and tying drives at the end of each half.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.fourth_down_fg_decision_rate",
+     "why": "Go-for-it and kick decisions when trailing late change both the chance of the deficit shrinking and which score types occur.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.deep_tail_margin_model",
+     "why": "Fits the blowout tail above 21 points, the region where largest-lead bands beyond 17 and the 24-point deficit set up.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.late_tie_game_management",
+     "why": "Kneel-downs, kick-to-tie and go-for-two policies late in tight games decide whether a lead change occurs or the game stays level.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.garbage_time",
+     "why": "Probability mass of a 14+ point fourth-quarter lead, the state in which the leading team runs the clock and the lead stops changing.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.qb",
+     "why": "Starter status changes team strength by several points and widens the margin spread; a backup quarterback shifts both the expected lead and the variance.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.script",
+     "why": "Pass-rate and pace conditional on lead or trail feed back into drive counts, shortening a game when a leader runs and lengthening it when a trailing team hurries.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.weather_pit",
+     "why": "Wind and cold lower scoring and passing, reducing the number of scores and hence lead changes and the speed of separation.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "nfl.score_path_sequence_sim",
+      "nfl.heteroskedastic_margin_sd"
+     ],
+     "hypothesis": "A lopsided expected margin produces a large largest lead and few lead changes while a coin-flip game with a high total produces many lead changes and a small largest lead; the two contracts are negatively dependent through the margin and the volatility together, so pricing them from separate marginals misstates joint exposure.",
+     "form": "joint-distribution",
+     "how_to_test": "Cross-tabulate realised lead changes against largest-lead bands within expected-margin bins in 2012-2025 games and compare with the simulator's joint output."
+    },
+    {
+     "inputs": [
+      "nfl.halftime_state_conditional_scoring",
+      "nfl.fourth_down_fg_decision_rate"
+     ],
+     "hypothesis": "A deficit of 17+ at the half is recovered only if the trailing coach goes for fourth downs and two-point tries and the leader's scoring slows; second-half scoring by the trailing side rises with deficit while the aggressive-coach effect matters most between 14 and 24 points, so the comeback curve depends on the coach's policy beyond team strength.",
+     "form": "conditional",
+     "how_to_test": "Regress second-half points of the trailing team on halftime deficit bins interacted with the coach's fourth-down go rate, using 2012-2025 games with a deficit of at least 14 at the half."
+    },
+    {
+     "inputs": [
+      "nfl.non_offensive_scoring_rate",
+      "nfl.garbage_time"
+     ],
+     "hypothesis": "One defensive touchdown moves the margin by 6 to 8 points at once; in a game already past a two-score lead it can restore a game that blowout script had settled, so lead-change and comeback odds rise discontinuously when a non-offensive score arrives against a leading team that is running out the clock.",
+     "form": "threshold",
+     "how_to_test": "Compare lead-change counts and comeback frequency in games with and without a defensive or special-teams score while the lead was 14 or more."
+    },
+    {
+     "inputs": [
+      "nfl.two_minute_tempo",
+      "nfl.late_tie_game_management"
+     ],
+     "hypothesis": "At the end of a half the game switches from clock-managed play to a hurry-up regime in which a trailing team can score twice quickly and a tied team can kneel; lead changes concentrate in these windows, and the regime is entered only when the score is within one possession.",
+     "form": "regime-switch",
+     "how_to_test": "Count lead changes by game-clock window and margin state in 2012-2025 play-by-play and test whether the last two minutes of each half hold a disproportionate share."
+    },
+    {
+     "inputs": [
+      "nfl.qb",
+      "nfl.own_team_rating_market_free"
+     ],
+     "hypothesis": "A backup quarterback lowers the rating of one team and raises the volatility of the path; the comeback probability then depends on whether the weaker side is the one that trails, so the same rating gap gives a different comeback tail when the weak team is the underdog with a backup than when the favourite has one.",
+     "form": "conditional",
+     "how_to_test": "Stratify comeback and largest-lead outcomes by backup-quarterback flag and favourite/underdog role in 2012-2025 games."
+    }
+   ]
+  },
+  "contract": {
+   "settlement_definition": "Three series, all sampled for the Seattle vs New England game 'originally scheduled for Feb 8, 2026'. KXNFLLARGELEAD settles Yes when the largest lead held by either team at any time falls in the stated band ('between 7 to 10 points', floor_strike 7, strike_type between). KXNFLLEADCHANGE settles Yes when the combined count of lead changes is at least 8; per the secondary text a lead change is a team, trailing or tied, scoring to take the lead, and the first score does not count. KXNFLCOMEBACK settles Yes only if either team trails by at least 24 at any point and then wins the game; a tie or loss does not count. No sampled text for these series mentions overtime, ties after overtime, postponement, or a data source; the rules_secondary of LARGELEAD and the 'originally scheduled' wording give no postponement rule, so those items are unresolved, not inferred.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "rules_evidence": [
+    {
+     "ticker": "KXNFLLEADCHANGE",
+     "quote": "A lead change in football occurs when one team, trailing or tied, scores to take a lead over the opposing team. The first score of the game does not count as a lead change.",
+     "establishes": "Lead changes count only scores that move a team from tied or trailing into the lead, excluding the opening score, so a count of 8 needs at least nine lead-taking scores in the whole sequence and 0-0 to first lead never counts."
+    },
+    {
+     "ticker": "KXNFLCOMEBACK",
+     "quote": "Seattle or New England must trail by at least the specified point threshold at any point in the game and go on to win the game for this market to resolve to Yes.",
+     "establishes": "The comeback is a running-minimum event for the eventual winner: a 24-point deficit at any time followed by a win; a tie or loss never resolves Yes however large the recovery."
+    },
+    {
+     "ticker": "KXNFLLARGELEAD",
+     "quote": "If the teams in the game have a largest lead of between 7 to 10 points",
+     "establishes": "Settles on the single largest lead either team held at any time, as a band; the strike_type is 'between' with floor_strike 7, so inclusivity of the 10 end and treatment of an overtime lead are not stated."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "KXNFLLARGELEAD is a band ('between 7 to 10 points'); whether both ends are inclusive and whether a lead established only in overtime counts are not stated; the band sits on lattice atoms (7, 8, 9, 10), so inclusivity changes the price materially.",
+    "KXNFLLEADCHANGE counts a lead change only when a team 'trailing or tied' scores to take a lead; the first score of the game does not count, so a game that goes 7-0 then 7-7 then 14-7 has one lead change (the 14-7 score), not three.",
+    "KXNFLCOMEBACK requires trailing by the threshold 'at any point in the game' and winning; a game that ends tied (regular-season overtime tie) cannot resolve Yes, and the deficit must be a point-margin deficit of the eventual winner.",
+    "None of the three sampled texts states an overtime, postponement or abandonment rule or a source of truth; every sample is a finalized historical market for the Feb 8, 2026 game, so live-listing text for regular-season games may differ (CONTRACT_AMBIGUOUS, u1)."
+   ],
+   "settlement_data_source": "Not named in the three sampled texts; the official league scoring summary and play-by-play are implied for the score sequence but unstated.",
+   "series_mapping_issues": []
+  },
+  "mechanism": {
+   "summary": "These contracts settle on functionals of the score path, so the object to model is the time-ordered list of scores, not the final score. The chain starts with a pregame margin and volatility (team strength gap, expected total, quarterback and weather shocks), generates possession-by-possession scores with point packages and a rare non-offensive scoring process, reads the largest lead, lead-change count and 24-point deficit off the path, adds the feedback that makes trailing teams gamble and leading teams run the clock, and finishes with end-of-regulation behaviour and the unstated overtime treatment. The three series respond to the same inputs with different signs: a larger expected margin raises the largest lead and lowers the lead-change count, while a high total and a small spread raise lead changes; a 24-point comeback needs a strong side that falls far behind and then recovers, a rare tail of the volatility and coach-policy mixture.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Pregame margin and volatility: the box the path lives in",
+     "description": "Before any score, the model needs the expected margin from market-free team ratings, the expected total (how many scoring chances there are), and the conditional spread of the final margin. A quarterback change, wind or a dome shifts both the mean gap and the volatility. The expected margin sets the typical size of the largest lead; the spread sets how heavy the lead tail is and how often a weak side can be 24 down yet win. These three quantities are the same for all three series but enter them with opposite signs: a bigger gap lengthens the largest lead and shortens the lead-change count.",
+     "distribution": "Margin approximately mixture-normal with sd 12-14 and heavier tails when a backup quarterback or severe weather is present; total points 40-50 with right skew",
+     "categories": [
+      "talent_strength",
+      "availability_news",
+      "environment"
+     ],
+     "input_ids": [
+      "nfl.own_team_rating_market_free",
+      "nfl.heteroskedastic_margin_sd",
+      "nfl.qb",
+      "nfl.weather_pit"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Possession-by-possession score generator",
+     "description": "Each team's possessions are generated in alternation starting from the opening kick; each drive ends in touchdown, field goal, punt, turnover, safety or end of half with probabilities by drive index and start field position, and each score carries its point package (extra point, two-point try, no try after a missed kick). Defensive and special-teams scores are added as a separate rare jump process that does not need possession alternation. The output is a time-ordered list of scores, which is the object the three contracts are defined on, so a final score alone cannot reproduce lead changes or largest lead.",
+     "distribution": "Drives per team 10-12; each drive scores with probability around 0.35-0.45; point increments lattice {2,3,6,7,8} with atoms; scoring events are positively dependent through pace and weather",
+     "categories": [
+      "game_context_script",
+      "efficiency_conversion",
+      "pace_volume"
+     ],
+     "input_ids": [
+      "nfl.score_path_sequence_sim",
+      "nfl.drive_outcome_by_index",
+      "nfl.scoring_event_point_values",
+      "nfl.non_offensive_scoring_rate",
+      "nfl.script"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Running functionals of the margin path",
+     "description": "From the simulated score list the three settlement quantities are read off directly. The largest lead is the maximum over time of the absolute margin; a lead change is counted whenever a scoring team moves from tied or trailing to ahead, except the first score of the game; a comeback win is the winning team's minimum margin being at most -24. Because these are path statistics, two simulated games with the same final score can resolve differently. The simulator must therefore be calibrated against the empirical joint distribution of largest lead, lead changes and final margin, not only against final margins.",
+     "distribution": "Largest lead right-skewed with lumps at 3, 7, 8, 10, 14; lead changes overdispersed count mostly 0-4 with a thin tail; 24-point comeback win a rare Bernoulli with probability well under one percent per game (to recount from play-by-play)",
+     "categories": [
+      "distribution_variance",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nfl.score_path_sequence_sim",
+      "nfl.heteroskedastic_margin_sd",
+      "nfl.deep_tail_margin_model",
+      "nfl.garbage_time"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Score-state feedback: leaders run, trailers gamble",
+     "description": "Behaviour changes with the score. A team with a large lead runs the ball and shortens the game, which caps further lead changes and freezes the largest lead; a trailing team passes more, goes for fourth downs and two-point tries and hurries, which raises its scoring rate but also its turnover rate. The quarterback may be pulled in a blowout, which changes a comeback's feasibility late. These responses make the path non-Markov in the margin alone and are coach and quarterback specific, so second-half scoring must be conditioned on halftime margin and on the coach's go-for-it policy.",
+     "distribution": "Second-half scoring of the trailing side rises with deficit then plateaus; leader scoring falls with lead; mixture of two regimes (within one possession and out of reach)",
+     "categories": [
+      "coaching_scheme",
+      "game_context_script"
+     ],
+     "input_ids": [
+      "nfl.halftime_state_conditional_scoring",
+      "nfl.fourth_down_fg_decision_rate",
+      "nfl.two_minute_tempo",
+      "nfl.garbage_time",
+      "nfl.script"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "End of regulation, ties and overtime",
+     "description": "Late in close games the possessing team may kneel, kick to tie or try for the lead, and the rules for ties and overtime decide whether the path continues. Lead-change and comeback counts could be changed by an overtime score, but the sampled rules for these three series say nothing about overtime, so the model must carry both readings (regulation only versus full game) and report both until Kalshi text settles it. A game ending level cannot resolve a comeback Yes. Lead changes in overtime count as lead changes only if the settlement counts the whole game.",
+     "distribution": "Probability of ending regulation level about 6-7 percent (to recompute); overtime adds 0-3 scores; reading choice moves lead-change probabilities by a few percentage points in close games",
+     "categories": [
+      "game_context_script",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nfl.late_tie_game_management",
+      "nfl.two_minute_tempo",
+      "nfl.drive_outcome_by_index",
+      "m.rules_text"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.own_team_rating_market_free",
+      "nfl.score_path_sequence_sim"
+     ],
+     "note": "Expected margin from market-free ratings sets the lead scale and the favourite/underdog asymmetry of comebacks."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.drive_outcome_by_index"
+     ],
+     "note": "Drive outcome rates are opponent adjusted per drive index and start position; no separate matchup input exists for path functionals."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb"
+     ],
+     "note": "Quarterback identity and backup flag shift expected margin and volatility; other personnel enter through the team rating."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb"
+     ],
+     "note": "Starting-quarterback status at kickoff is the dominant availability shock; in-game quarterback exit is treated in the blowout-pull input referenced by s4 only through nfl.garbage_time."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.fourth_down_fg_decision_rate",
+      "nfl.late_tie_game_management",
+      "nfl.halftime_state_conditional_scoring"
+     ],
+     "note": "Go-for-it, two-point and kick-to-tie policies decide how a deficit is converted into scores and whether lead changes occur late."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.weather_pit"
+     ],
+     "note": "Wind, cold and precipitation reduce scoring volume and so the number of scores available for lead changes."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.script",
+      "nfl.garbage_time",
+      "nfl.two_minute_tempo"
+     ],
+     "note": "Score-state-dependent pace and pass rate feed possession counts and the end-of-half scoring windows."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.script",
+      "nfl.score_path_sequence_sim"
+     ],
+     "note": "Possessions per game bound the number of scores; the simulator draws drives per team from pace and script."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.drive_outcome_by_index",
+      "nfl.scoring_event_point_values",
+      "nfl.non_offensive_scoring_rate"
+     ],
+     "note": "Per-drive scoring rates and the point package of each score (extra point, two-point, defensive scores) define the lattice of the path."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.heteroskedastic_margin_sd",
+      "nfl.deep_tail_margin_model",
+      "nfl.score_path_sequence_sim"
+     ],
+     "note": "Conditional margin variance and the blowout tail determine largest-lead tails and 24-point deficits."
+    },
+    "situational_schedule_motivation": {
+     "status": "GAP",
+     "input_ids": [],
+     "note": "No input measures playoff or must-win stakes effects on trailing-team aggression and leader conservatism; the sampled markets are all for a championship game, where those rates may differ from the regular season."
+    },
+    "officiating_rules": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Penalties and replay change drive outcomes only through the per-drive scoring rates already modelled; no officiating rule alters how lead, lead change or comeback is defined in the sampled texts."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text"
+     ],
+     "note": "Band inclusivity, first-score exclusion for lead changes and the win requirement for comebacks come from the sampled rules text; overtime and postponement are unstated."
+    }
+   }
+  },
+  "new_inputs": {
+   "nfl.score_path_sequence_sim": {
+    "label": "Drive-sequence score-path simulation: largest lead, lead changes and comeback events",
+    "category": "distribution",
+    "mechanism": "Simulates the alternating drive sequence of both teams with per-drive outcomes and point values, recording the full in-game margin path so path functionals (maximum lead, lead changes, minimum margin of the eventual winner) can be read.",
+    "rationale": "Final-score models cannot price path contracts: two games with the same final margin can have zero or eight lead changes. The path depends on drive-outcome probabilities by team, on the alternation of possessions, on state-dependent play calling (trailing teams pass and go for it, leaders run clock) and on point values (7, 3, 8, 6, 2), so a simulation that conditions each drive on the current score state is required.",
+    "measurement": "For each game: possessions alternate starting from the coin-toss winner; drive outcome multinomial (TD, FG, turnover, punt, safety, end of half) from team offence vs opposing defence rates (nfl.drive_outcome_by_index style, opponent-adjusted, last 16 games with half-life 8, shrink k=150 drives) modified by score state (lead or trail by 0-8, 9-16, 17+) and time remaining using 2012-2025 state multipliers; points per TD from nfl.scoring_event_point_values; 20,000 simulated games; outputs per game: distribution of max |margin|, number of lead changes (excluding first score), P(eventual winner trailed by >=24), calibrated against 2012-2025 realised frequencies by own-rating expected-margin and expected-total bucket (nfl.own_rating_game_state_prior; no sportsbook spread or total). As-of kickoff.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play (drive results, score by play)",
+     "nflverse schedules"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, drive, drive_result, posteam, total_home_score, total_away_score, game_seconds_remaining",
+     "schedules: final scores, overtime flag"
+    ],
+    "why": "Supplies KXNFLLARGELEAD, KXNFLLEADCHANGE and KXNFLCOMEBACK, which no final-margin or count input can price.",
+    "role": "primary"
+   }
+  },
+  "input_audit": {
+   "nfl.own_team_rating_market_free": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Expected margin is the first-order driver of largest lead and of who can come back; a market-free rating is required so the model is not anchored on prices."
+   },
+   "nfl.heteroskedastic_margin_sd": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Path volatility is not constant: backup quarterback, wind and dome change the margin spread, which moves largest-lead bands more than the mean does."
+   },
+   "nfl.drive_outcome_by_index": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Scripted opening drives and start-position effects shape the first lead, which decides whether the first score counts as a lead change and how fast the path can separate."
+   },
+   "nfl.scoring_event_point_values": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The largest-lead band contract is sensitive to lattice masses at 7, 8, 9 and 10, which are products of scoring packages."
+   },
+   "nfl.non_offensive_scoring_rate": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Pick-sixes and kick returns break the drive-by-drive alternation, so the sequence simulator needs a separate rare jump process."
+   },
+   "nfl.halftime_state_conditional_scoring": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Comeback and late lead-change counts hinge on score-state-conditional scoring; the conditional curve is estimated from halftime margin bins."
+   },
+   "nfl.two_minute_tempo": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "A large share of lead changes occurs in the last two minutes of a half, so end-of-half tempo is part of the count mechanism."
+   },
+   "nfl.fourth_down_fg_decision_rate": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Trailing-team decisions turn a deficit into a comeback only when the coach goes for touchdowns and two-point tries; this policy is coach specific."
+   },
+   "nfl.deep_tail_margin_model": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The generalized-Pareto tail of margins is the reference against which the path simulator's deep deficits are calibrated."
+   },
+   "nfl.late_tie_game_management": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "A lead change needs a scoring team to move from tied or trailing to ahead; late-game management decides whether such a score is attempted."
+   },
+   "nfl.garbage_time": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Blowout mass bounds lead changes (few) and raises largest lead; it was attached to the mixed archetype for largest-lead markets and is detached from the counting specials."
+   },
+   "nfl.qb": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Quarterback availability is the largest single pregame shock to the expected margin and to path volatility."
+   },
+   "nfl.script": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Script is an input to possession counts per game, which bound the number of scores and therefore of possible lead changes."
+   },
+   "nfl.weather_pit": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Weather works through score volume; it matters mostly for lead-change counts, which need many scores."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.score_path_sequence_sim",
+     "nfl.heteroskedastic_margin_sd"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A lopsided expected margin produces a large largest lead and few lead changes while a coin-flip game with a high total produces many lead changes and a small largest lead; the two contracts are negatively dependent through the margin and the volatility together, so pricing them from separate marginals misstates joint exposure.",
+    "how_to_test": "Cross-tabulate realised lead changes against largest-lead bands within expected-margin bins in 2012-2025 games and compare with the simulator's joint output."
+   },
+   {
+    "inputs": [
+     "nfl.halftime_state_conditional_scoring",
+     "nfl.fourth_down_fg_decision_rate"
+    ],
+    "form": "conditional",
+    "mechanism": "A deficit of 17+ at the half is recovered only if the trailing coach goes for fourth downs and two-point tries and the leader's scoring slows; second-half scoring by the trailing side rises with deficit while the aggressive-coach effect matters most between 14 and 24 points, so the comeback curve depends on the coach's policy beyond team strength.",
+    "how_to_test": "Regress second-half points of the trailing team on halftime deficit bins interacted with the coach's fourth-down go rate, using 2012-2025 games with a deficit of at least 14 at the half."
+   },
+   {
+    "inputs": [
+     "nfl.non_offensive_scoring_rate",
+     "nfl.garbage_time"
+    ],
+    "form": "threshold",
+    "mechanism": "One defensive touchdown moves the margin by 6 to 8 points at once; in a game already past a two-score lead it can restore a game that blowout script had settled, so lead-change and comeback odds rise discontinuously when a non-offensive score arrives against a leading team that is running out the clock.",
+    "how_to_test": "Compare lead-change counts and comeback frequency in games with and without a defensive or special-teams score while the lead was 14 or more."
+   },
+   {
+    "inputs": [
+     "nfl.two_minute_tempo",
+     "nfl.late_tie_game_management"
+    ],
+    "form": "regime-switch",
+    "mechanism": "At the end of a half the game switches from clock-managed play to a hurry-up regime in which a trailing team can score twice quickly and a tied team can kneel; lead changes concentrate in these windows, and the regime is entered only when the score is within one possession.",
+    "how_to_test": "Count lead changes by game-clock window and margin state in 2012-2025 play-by-play and test whether the last two minutes of each half hold a disproportionate share."
+   },
+   {
+    "inputs": [
+     "nfl.qb",
+     "nfl.own_team_rating_market_free"
+    ],
+    "form": "conditional",
+    "mechanism": "A backup quarterback lowers the rating of one team and raises the volatility of the path; the comeback probability then depends on whether the weaker side is the one that trails, so the same rating gap gives a different comeback tail when the weak team is the underdog with a backup than when the favourite has one.",
+    "how_to_test": "Stratify comeback and largest-lead outcomes by backup-quarterback flag and favourite/underdog role in 2012-2025 games."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.score_path_sequence_sim",
+    "shape": "approximately geometric decay in the required deficit for a comeback win",
+    "why": "The chance that the eventual winner has trailed by at least d points falls roughly by a constant factor with each additional scoring unit of deficit, so the 24-point comeback tail is extremely sensitive to the strength gap and to scoring volatility and cannot be linearly extrapolated from 14- or 17-point comebacks."
+   },
+   {
+    "input_id": "nfl.scoring_event_point_values",
+    "shape": "lumpy lattice masses at multiples of 3, 6, 7 and 8",
+    "why": "The largest-lead distribution has atoms at football scoring combinations, so a band such as 7 to 10 captures several of these atoms and shifts sharply with small changes in extra-point or two-point rates rather than varying smoothly with the mean margin."
+   },
+   {
+    "input_id": "nfl.halftime_state_conditional_scoring",
+    "shape": "saturating: trailing teams' second-half scoring rises with deficit and then plateaus once the game is out of reach",
+    "why": "Beyond roughly three possessions of deficit the trailing team's scoring stops rising because clock and opponent strategy limit it, which bounds the comeback probability above the value a linear script response would give."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Play-by-play scoring sequence with score and clock",
+    "grain": "play and scoring event",
+    "fields": [
+     "game_id",
+     "posteam",
+     "defteam",
+     "qtr",
+     "game_seconds_remaining",
+     "total_home_score",
+     "total_away_score",
+     "score_differential",
+     "touchdown",
+     "field_goal_result",
+     "safety",
+     "two_point_attempt",
+     "two_point_conv_result",
+     "extra_point_result",
+     "drive",
+     "fixed_drive_result",
+     "td_team"
+    ],
+    "timestamp_requirement": "Only completed games before the forecast time; pregame priors are fitted as-of kickoff with no in-game leakage",
+    "history_needed": "2000-2025 for tail frequencies (largest lead, lead changes, comebacks); 2015-2025 for drive-level rates under the current extra-point rule",
+    "candidate_sources": [
+     {
+      "name": "nflverse play_by_play via nflreadr",
+      "access": "free",
+      "note": "Provides cumulative score, clock and scoring flags; the largest lead and lead-change counts must be derived and checked against official game books"
+     },
+     {
+      "name": "Pro Football Reference game logs and scoring summaries",
+      "access": "free_scrape",
+      "note": "Cross-check for lead changes and largest lead; scraping terms restrict bulk use"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.score_path_sequence_sim",
+     "nfl.drive_outcome_by_index",
+     "nfl.scoring_event_point_values",
+     "nfl.non_offensive_scoring_rate",
+     "nfl.halftime_state_conditional_scoring",
+     "nfl.two_minute_tempo",
+     "nfl.deep_tail_margin_model",
+     "nfl.garbage_time",
+     "nfl.fourth_down_fg_decision_rate",
+     "nfl.late_tie_game_management",
+     "nfl.script"
+    ]
+   },
+   {
+    "dataset": "Pregame ratings, quarterback status and weather forecast vintages",
+    "grain": "team-game",
+    "fields": [
+     "own_team_rating_market_free",
+     "model_team_points_mean",
+     "starting_qb",
+     "qb_status_vintage",
+     "wind_gust",
+     "temperature",
+     "roof"
+    ],
+    "timestamp_requirement": "Rating and status as of a fixed time before kickoff (inactive list when available); forecast at the same lead time",
+    "history_needed": "2012-2025 team-games for volatility calibration",
+    "candidate_sources": [
+     {
+      "name": "nflverse injuries and depth charts, schedules",
+      "access": "free",
+      "note": "Status vintage must be captured by own snapshot to avoid leakage"
+     },
+     {
+      "name": "NWS and stadium weather forecasts",
+      "access": "own_capture",
+      "note": "Forecast vintages are not archived publicly; own capture needed"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.own_team_rating_market_free",
+     "nfl.heteroskedastic_margin_sd",
+     "nfl.qb",
+     "nfl.weather_pit"
+    ]
+   },
+   {
+    "dataset": "Kalshi settlement text and settled outcomes for score-path series",
+    "grain": "market",
+    "fields": [
+     "ticker",
+     "rules_primary",
+     "rules_secondary",
+     "result",
+     "strike_type",
+     "floor_strike"
+    ],
+    "timestamp_requirement": "Rules text as listed; outcomes after settlement",
+    "history_needed": "all finalized markets of the three series",
+    "candidate_sources": [
+     {
+      "name": "Kalshi market data",
+      "access": "own_capture",
+      "note": "Text and settlements of past markets are needed to confirm band inclusivity and overtime treatment"
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "None of the three sampled texts states how overtime scores, ties after overtime, postponement or a data source are treated, and KXNFLLARGELEAD does not say whether the 10-point end of its band is inclusive; the sampled markets are finalized markets for a single championship game.",
+    "what_would_resolve": "Full rules for live regular-season listings, or settlements of past markets in overtime games and with a largest lead exactly on a band edge.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "The drive-by-drive simulator is a design, not a calibrated model: the joint distribution of largest lead, lead changes and final margin has not been checked, and the size of score-state feedback (leaders running, trailers gambling) relative to team strength is unknown, so tail masses at 24-point deficits are only roughly characterised.",
+    "what_would_resolve": "Compare simulated and empirical joint frequencies of largest lead, lead changes and comebacks on 2000-2025 play-by-play, once experiments are permitted."
+   },
+   {
+    "id": "u3",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Playoff and must-win stakes plausibly change trailing-team aggression and leader conservatism, and all sampled markets are for a championship game, but no input isolates a stakes effect or its size relative to coach tendency.",
+    "what_would_resolve": "Compare 4th-down, 2-point and clock-management rates and the path functionals in playoff versus regular-season games for the same coaches, controlling for score state, 2012-2025.",
+    "category": "situational_schedule_motivation"
+   }
+  ],
+  "resolved_by": "catalog-blocker round NFL u1 split (2026-11-09)"
+ },
+ "unreg:rare_play_call_events": {
+  "reviewer": "author-blk2-NFL (Claude agent)",
+  "review_date": "2026-11-09",
+  "catalog_entry": {
+   "label": "NFL rare play-call events (non-QB pass, goal-line pass)",
+   "blueprint": "game_event",
+   "contract_types": [
+    "Non-QB passes",
+    "1-yard pass"
+   ],
+   "target": "Whether a named rare play call (a pass attempt by a non-quarterback, a pass attempt from on or inside the 1-yard line) occurs at least once in one game.",
+   "mechanism": "Each contract is the occurrence of a discretionary, low-frequency play call at least once in a game, a hazard of opportunities times a coach- and situation-specific call probability. For the 1-yard pass the opportunities are snaps with the line of scrimmage on or inside the opponent's 1 (drives reaching the goal line and fourth-and-goal decisions) and the call is a pass rather than a sneak or power run; for the non-quarterback pass the opportunities are the offence's snaps and the call is a trick play (receiver or back throws, fake kicks thrown by a non-quarterback) or an emergency throw after the quarterback leaves. Coach random effects, quarterback mobility and availability, and stakes dominate; team production counts do not.",
+   "inputs": [
+    {
+     "id": "nfl.trick_play_and_goal_line_pass_events",
+     "why": "Team- and coach-level base rates of non-quarterback pass attempts and of pass attempts from the 1-yard line, the two events the series settle on.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.goal_to_go_pass_rate",
+     "why": "Dropback rate by zone and down for goal-to-go snaps, the base probability that a snap from the 1 is a pass.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.goal_line_personnel",
+     "why": "Goal-line package and sneak/carry/target shares inside the 5 show how a team uses heavy sets, a mobile quarterback or tight-end targets at the 1.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.fourth_and_goal_policy",
+     "why": "Go-for-it policy on 4th-and-goal decides how many snaps from the 1 occur and in which down-and-distance, since a team that kicks removes snaps.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.coaching",
+     "why": "Head coach and coordinator tendencies (neutral pass rate, aggression, two-point rate) are the random effect that explains who calls trick plays and goal-line passes.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.qb",
+     "why": "Starting quarterback's mobility and goal-line sneak habit, and the chance a backup or wide receiver throws if the starter leaves, enter both series.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.in_game_exit_risk",
+     "why": "In-game exit risk of the quarterback creates the scenario where a non-quarterback attempts a pass or a backup QB listed at another position throws.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.redzone",
+     "why": "Red-zone entries and goal-to-go drive counts determine how many snaps from the opponent's 1-yard line a team gets.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.field_pos",
+     "why": "Starting field position and return units change how often drives start deep in opposing territory and so how often the 1-yard line is reached.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.rz_share",
+     "why": "Red-zone and goal-line usage shares show which players receive the ball at the 1, informing both quarterback sneak share and target share on goal-line passes.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.formation",
+     "why": "Formation and personnel mix (motion, play-action, trick formations) help identify direct snaps, wildcat looks and jump-ball sets that precede non-quarterback passes.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.def_personnel",
+     "why": "Opposing goal-line defensive personnel and tendencies affect whether the offence runs, throws or tries a trick.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.script",
+     "why": "Score state and clock affect pass calls at the 1: trailing teams late call more passes and fake plays, leading teams run.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.motivation_seeding",
+     "why": "Playoff seeding and elimination stakes are the closest available proxy for must-win aggression, though no tested link to trick-play rates exists.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "nfl.goal_line_personnel",
+      "nfl.coaching"
+     ],
+     "hypothesis": "The probability that a snap from the 1 is a pass depends on coach and personnel together: a coordinator who likes play-action from heavy sets throws far more than the team's overall pass rate suggests, while a mobile quarterback with a sneak habit suppresses it, so the coach effect only shows up conditional on the personnel group on the field.",
+     "form": "conditional",
+     "how_to_test": "Fit a logistic model of pass on snaps from the 1 with coach random effects interacted with personnel group and quarterback mobility, 2015-2025."
+    },
+    {
+     "inputs": [
+      "nfl.redzone",
+      "nfl.fourth_and_goal_policy"
+     ],
+     "hypothesis": "Expected pass attempts from the 1 per game equal the number of snaps reaching the 1 times the pass share; the snap count is a product of drives reaching goal-to-go and the willingness to run another snap or go for it on fourth down, so strong red-zone offences with conservative fourth-down coaches generate fewer such snaps than raw red-zone trips suggest.",
+     "form": "multiplicative",
+     "how_to_test": "Regress team-game counts of snaps from the 1 on red-zone trips and fourth-and-goal go rate, then test the product term against additive terms."
+    },
+    {
+     "inputs": [
+      "nfl.qb",
+      "nfl.in_game_exit_risk",
+      "nfl.trick_play_and_goal_line_pass_events"
+     ],
+     "hypothesis": "Non-quarterback pass attempts come from two regimes: planned trick plays, which depend on the coach, and emergency throws after the quarterback leaves, which depend on injury and depth; a game with a hurt or banged-up starter switches from the planned regime to a higher-hazard emergency regime that coach-based base rates do not capture.",
+     "form": "regime-switch",
+     "how_to_test": "Split 2015-2025 non-QB pass attempts into planned (quarterback present) and emergency (quarterback absent in game) and compare per-game rates by regime."
+    },
+    {
+     "inputs": [
+      "nfl.script",
+      "nfl.motivation_seeding",
+      "nfl.coaching"
+     ],
+     "hypothesis": "Aggressive and unusual calls rise when a coach faces a must-win or when trailing late; below a threshold of stakes and deficit the call mix follows the neutral tendency, above it a trick play or goal-line pass becomes worth its variance, so the effect is a threshold in stakes and score state rather than a smooth tilt.",
+     "form": "threshold",
+     "how_to_test": "Compare non-QB pass and goal-line pass rates for the same coaches in playoff and eliminated/must-win regular-season games versus others, controlling for score differential."
+    }
+   ]
+  },
+  "contract": {
+   "settlement_definition": "Two series, both sampled for the Seattle vs New England game 'originally scheduled for Feb 8, 2026'. KXNFLNONQBPASS settles Yes if a non-QB (by either team) records at least 1 pass attempt in the game (floor_strike 0.5, strike_type greater). KXNFL1YDPASS settles Yes if the named team records at least 1 official forward pass attempt with the line of scrimmage on or inside the opponent's 1-yard line at the snap; sacks, scrambles and runs do not count, the dropback depth or release point does not matter, and an attempt nullified by penalty still counts if it is officially recorded in the play-by-play. No sampled text states overtime handling, postponement, who counts as a 'non-QB', or a named data source beyond the official play-by-play for the 1-yard series.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "rules_evidence": [
+    {
+     "ticker": "KXNFL1YDPASS",
+     "quote": "The yard line for this market is based on the line of scrimmage at the snap; the quarterback’s dropback depth or release point does not affect settlement.",
+     "establishes": "Eligibility is the line of scrimmage at the snap (on or inside the 1), not where the throw occurs, so only snaps from the 1 count and a deep dropback does not matter."
+    },
+    {
+     "ticker": "KXNFL1YDPASS",
+     "quote": "A pass attempt still counts even if the play is nullified by penalty, provided the pass attempt is officially recorded in the play-by-play.",
+     "establishes": "Penalty-nullified pass attempts count when the play-by-play records them, so the settlement is the official statistic rather than the final distribution of plays."
+    },
+    {
+     "ticker": "KXNFLNONQBPASS",
+     "quote": "If a non-QB records at least 1 pass attempt in the Seattle vs New England professional football game",
+     "establishes": "A single pass attempt by any non-quarterback by both teams combined settles Yes; the text does not define 'non-QB' (roster position at the time versus player role on the play) or say whether overtime or a punter's or holder's thrown pass counts."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "KXNFL1YDPASS is a team-specific event for one named team (Seattle in the sample), whereas KXNFLNONQBPASS is a both-team event; the same rare-call model applies per team and the both-team event is the union over two teams.",
+    "The 1-yard line eligibility uses the line of scrimmage at the snap, so a pass from the 2 that is thrown to the end zone does not count, and a pass from the 1 that is nullified by penalty counts if recorded in the play-by-play.",
+    "KXNFLNONQBPASS does not define 'non-QB': a backup quarterback listed at another position, a punter or holder's fake-kick throw and a wide receiver option pass are candidate cases; settlement presumably follows the play-by-play passer position but this is not stated.",
+    "Both samples are finalized historical markets for the Feb 8, 2026 championship game with empty secondary text for NONQBPASS; overtime, postponement and source clauses are therefore unstated and no regular-season live listing was sampled."
+   ],
+   "settlement_data_source": "KXNFL1YDPASS refers to the play-by-play ('officially recorded in the play-by-play'); KXNFLNONQBPASS names no source, and official league play-by-play and statistics are implied but not stated.",
+   "series_mapping_issues": []
+  },
+  "mechanism": {
+   "summary": "Both contracts ask whether a discretionary, low-frequency play call happens at least once in a game. For the 1-yard pass the chain is: how many snaps the offence takes from on or inside the opponent's 1 (drive success, short fields, fourth-and-goal policy), then the probability that a snap from the 1 is a pass (coach and personnel, quarterback mobility, down and clock), then the settlement rule (official forward pass attempt, nullified plays counted). For the non-quarterback pass it is the union of a planned trick-play hazard (coach trait, big-game aggression) and an emergency hazard after a quarterback exit, mapped to the official passer position. The outcome is Bernoulli with a small mean, so P(Yes) is nearly linear in the per-game rate; the main uncertainty is the heavy-tailed coach distribution and thin samples, not mean offensive efficiency.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Supply of snaps from the 1-yard line",
+     "description": "A 1-yard pass attempt requires the offence to snap the ball on or inside the opponent's 1. That happens when a drive reaches goal-to-go from a long gain, a turnover or return gives a short field, or a penalty or failed first and second-down runs leave the offence at the 1. The count of such snaps per team-game is small (typically zero to three) and depends on red-zone trip volume, field position, and the offence's reluctance to settle for a field goal on fourth-and-goal. The opportunity count therefore varies with drive success and with the coach's fourth-and-goal policy.",
+     "distribution": "Snaps from the 1 per team-game: zero-inflated small count, mean around 0.6-0.9 per team (to recount), overdispersed by team style",
+     "categories": [
+      "pace_volume",
+      "efficiency_conversion"
+     ],
+     "input_ids": [
+      "nfl.redzone",
+      "nfl.field_pos",
+      "nfl.fourth_and_goal_policy",
+      "nfl.rz_share"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Pass versus run call at the goal line",
+     "description": "Given a snap from the 1, the offence chooses among a quarterback sneak, a power run, a play-action throw to a tight end or a quick fade. The choice reflects coach play-calling style, personnel on the field (heavy sets raise runs), quarterback mobility and sneak habit, opposing goal-line personnel, down (a third-down throw is more common than a first-down throw) and clock. The pass share at exactly the 1 is much lower than the team's goal-to-go pass rate from the 5, so rates must be measured at the 1. Settlement counts any official pass attempt, including one nullified by penalty.",
+     "distribution": "Per-snap pass probability roughly 0.15-0.35 at the 1 (to estimate), strongly coach dependent; Bernoulli per snap, summed to a zero-heavy count per game",
+     "categories": [
+      "coaching_scheme",
+      "role_personnel",
+      "opponent_matchup"
+     ],
+     "input_ids": [
+      "nfl.goal_to_go_pass_rate",
+      "nfl.goal_line_personnel",
+      "nfl.coaching",
+      "nfl.qb",
+      "nfl.def_personnel",
+      "nfl.trick_play_and_goal_line_pass_events"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Non-quarterback pass attempts: planned trick plays and emergency throws",
+     "description": "A non-quarterback attempt arises from a planned play (a halfback or wide receiver option pass, a fake punt or field goal thrown by the punter or holder, a direct snap) whose frequency is a coach trait, or from an emergency (the quarterback is injured and a receiver is the emergency passer, a backup quarterback listed at another position throws). The planned regime is a low-rate hazard with coach random effects and rises in big games or close finishes; the emergency regime is driven by in-game exit risk of the quarterback and by the depth chart. The event definition depends on roster position labels, which can differ from Kalshi's wording.",
+     "distribution": "Per team-game probability of at least one non-QB attempt roughly 0.10-0.20 (to recompute from 2015-2025 pbp); strongly concentrated in a minority of coaches; both teams combined roughly doubles it",
+     "categories": [
+      "coaching_scheme",
+      "availability_news",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nfl.trick_play_and_goal_line_pass_events",
+      "nfl.coaching",
+      "nfl.qb",
+      "nfl.in_game_exit_risk",
+      "nfl.formation"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Script, stakes and opposing team",
+     "description": "Both events are modulated by game state: a trailing team at the end of a half or game takes more variance (fake plays, quick throws at the 1), a team with a lead runs, and stakes (playoff, must-win) are widely assumed to raise unusual calls but have not been measured. The opposing team's goal-line stand rate and personnel change the number of snaps from the 1 and the call. These are second-order modulations on top of coach-specific rates and must be estimated with coach random effects, not league-wide slopes, because samples are tiny.",
+     "distribution": "Multiplicative modulation of the per-game hazard by factors of about 0.7 to 1.5; evidence is thin and heavily shrunk",
+     "categories": [
+      "game_context_script",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "nfl.script",
+      "nfl.motivation_seeding",
+      "nfl.def_personnel",
+      "nfl.coaching"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Settlement: official forward pass attempt and positional definition",
+     "description": "The 1-yard series counts official forward pass attempts recorded in the play-by-play with the line of scrimmage at the snap on or inside the 1; sacks, scrambles and runs do not count, and a pass attempt nullified by penalty counts if officially recorded. The non-QB series needs the passer's position; the sampled text does not define it, so a tight end lining up at quarterback or a backup quarterback listed elsewhere is ambiguous. The probability of Yes is the probability of at least one qualifying event over the game's snaps, with overtime handling unstated.",
+     "distribution": "Bernoulli outcome; P(Yes) = 1 - P(no qualifying snap) = 1 - exp(-lambda) with lambda overdispersed by coach and by quarterback availability",
+     "categories": [
+      "settlement_contract",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "m.rules_text",
+      "nfl.trick_play_and_goal_line_pass_events",
+      "nfl.goal_to_go_pass_rate"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.redzone"
+     ],
+     "note": "Team strength matters only through how often the offence reaches the 1-yard line; red-zone volume is the proxy."
+    },
+    "opponent_matchup": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.def_personnel"
+     ],
+     "note": "Opposing goal-line personnel and stand rate modulate snaps from the 1 and the call; evidence is thin."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.goal_line_personnel",
+      "nfl.qb",
+      "nfl.rz_share"
+     ],
+     "note": "Goal-line personnel, quarterback mobility and usage shares at the 1 define who gets the ball and whether a sneak replaces a pass."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.qb",
+      "nfl.in_game_exit_risk"
+     ],
+     "note": "Quarterback availability and in-game exit risk drive the emergency non-quarterback pass regime."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.coaching",
+      "nfl.goal_to_go_pass_rate",
+      "nfl.fourth_and_goal_policy",
+      "nfl.trick_play_and_goal_line_pass_events"
+     ],
+     "note": "Both events are coach choices; coach and coordinator random effects are the dominant source of variation."
+    },
+    "environment": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "Weather and venue change passing volume only slightly and do not alter whether a call from the 1-yard line or a trick play is made in any sampled rules; no environment input is staged for these series."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.script"
+     ],
+     "note": "Score state and clock shift the call at the 1 and the chance of fake plays late."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.field_pos",
+      "nfl.redzone"
+     ],
+     "note": "The number of snaps from the 1 per game is the volume of the 1-yard hazard; field position and red-zone trips supply it."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.redzone"
+     ],
+     "note": "Red-zone conversion decides whether drives stall at the 1 or score before; it matters for snap supply only."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.trick_play_and_goal_line_pass_events",
+      "nfl.coaching"
+     ],
+     "note": "Bernoulli hazard with a heavy-tailed coach distribution; shrinkage must reflect skew."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.motivation_seeding"
+     ],
+     "note": "Stakes are a plausible driver and only labelled by seeding stakes; the effect size is unmeasured (u2)."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text"
+     ],
+     "note": "Penalty-nullified attempts count and the scoring source is the official play-by-play; no other officiating effect is modelled."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text"
+     ],
+     "note": "Line of scrimmage at the snap, official forward pass attempt and penalty treatment are read from the rules text; non-QB is not defined."
+    }
+   }
+  },
+  "new_inputs": {
+   "nfl.trick_play_and_goal_line_pass_events": {
+    "label": "Rare play-call events: non-QB pass attempts and pass attempts from the 1-yard line",
+    "category": "player_role",
+    "mechanism": "Per-team rates of non-quarterback pass attempts (trick plays, fake punts) and of pass calls on snaps from on or inside the opponent's 1, combined with the expected number of snaps from the 1.",
+    "rationale": "Both contracts are low-rate Bernoulli events whose base rate differs strongly by coach and personnel (a former-quarterback receiver, a Tush-Push team that never passes from the 1); league averages mislead, but team samples are tiny, so heavy shrinkage toward the league rate is essential and stakes may raise trick-play frequency.",
+    "measurement": "Non-QB pass: count of pass attempts by players whose roster position is not QB per team-game over the last 3 seasons, shrunk to league rate (about 0.15 per game, to recompute) with k=40 team-games, coach random effect; P(any in game) = 1 - exp(-(rate_A + rate_B)). Pass from the 1: expected snaps with yardline_100 <= 1 per team-game (from drives reaching the 1, last 2 seasons, shrink k=30) x team pass share on those snaps (shrink to league about 0.35 with k=25 snaps) counting only pass_attempt == 1 (sacks and scrambles excluded); P(at least one) by Poisson. As-of kickoff with the active roster.",
+    "pregame_knowable": "yes",
+    "free_sources": [
+     "nflverse play-by-play (passer_player_id, pass_attempt, yardline_100, qb_scramble)",
+     "nflverse rosters (position)"
+    ],
+    "registry_ids": [],
+    "raw_data": [
+     "pbp: game_id, posteam, passer_player_id, pass_attempt, sack, qb_scramble, yardline_100, down",
+     "rosters: player_id, position"
+    ],
+    "why": "Prices KXNFLNONQBPASS and KXNFL1YDPASS, whose outcome is a play-calling choice in a narrow situation rather than team strength.",
+    "role": "primary"
+   }
+  },
+  "input_audit": {
+   "nfl.goal_to_go_pass_rate": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Closest measured rate for pass calls near the goal line; needs a special-case zone for the 1-yard line where sneaks and power runs dominate."
+   },
+   "nfl.goal_line_personnel": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Personnel at the goal line separates teams that call quarterback sneaks from teams that throw play-action from the 1."
+   },
+   "nfl.fourth_and_goal_policy": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Snap supply from the 1 depends on the coach's willingness to go on fourth down as well as on drive success."
+   },
+   "nfl.coaching": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Play-calling discretion is concentrated in a few coaches and coordinators; the regime label changes with a coordinator hire."
+   },
+   "nfl.qb": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "A mobile quarterback who sneaks lowers goal-line passes; the starter's availability sets the non-quarterback emergency-pass hazard."
+   },
+   "nfl.in_game_exit_risk": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Emergency non-QB passes are a small but non-zero share of the event and are driven by in-game exits."
+   },
+   "nfl.redzone": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The 1-yard pass event needs the offence to reach the 1; red-zone trips are the supply side of the hazard."
+   },
+   "nfl.field_pos": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Short fields from turnovers or returns raise goal-to-go snaps from the 1 without a long drive."
+   },
+   "nfl.rz_share": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Usage concentration at the goal line separates run-heavy from pass-heavy short-yardage calls."
+   },
+   "nfl.formation": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Formation charting is the only available evidence for trick-play usage beyond raw counts; limited sample."
+   },
+   "nfl.def_personnel": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Defensive goal-line packages change the offence's expected value for pass calls at the 1, a second-order matchup effect."
+   },
+   "nfl.script": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Script is an adjustment, not a driver, for rare pass calls with small samples."
+   },
+   "nfl.motivation_seeding": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Stakes plausibly raise trick-play and goal-line pass rates, but the input only labels stakes and does not estimate effects."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.goal_line_personnel",
+     "nfl.coaching"
+    ],
+    "form": "conditional",
+    "mechanism": "The probability that a snap from the 1 is a pass depends on coach and personnel together: a coordinator who likes play-action from heavy sets throws far more than the team's overall pass rate suggests, while a mobile quarterback with a sneak habit suppresses it, so the coach effect only shows up conditional on the personnel group on the field.",
+    "how_to_test": "Fit a logistic model of pass on snaps from the 1 with coach random effects interacted with personnel group and quarterback mobility, 2015-2025."
+   },
+   {
+    "inputs": [
+     "nfl.redzone",
+     "nfl.fourth_and_goal_policy"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Expected pass attempts from the 1 per game equal the number of snaps reaching the 1 times the pass share; the snap count is a product of drives reaching goal-to-go and the willingness to run another snap or go for it on fourth down, so strong red-zone offences with conservative fourth-down coaches generate fewer such snaps than raw red-zone trips suggest.",
+    "how_to_test": "Regress team-game counts of snaps from the 1 on red-zone trips and fourth-and-goal go rate, then test the product term against additive terms."
+   },
+   {
+    "inputs": [
+     "nfl.qb",
+     "nfl.in_game_exit_risk",
+     "nfl.trick_play_and_goal_line_pass_events"
+    ],
+    "form": "regime-switch",
+    "mechanism": "Non-quarterback pass attempts come from two regimes: planned trick plays, which depend on the coach, and emergency throws after the quarterback leaves, which depend on injury and depth; a game with a hurt or banged-up starter switches from the planned regime to a higher-hazard emergency regime that coach-based base rates do not capture.",
+    "how_to_test": "Split 2015-2025 non-QB pass attempts into planned (quarterback present) and emergency (quarterback absent in game) and compare per-game rates by regime."
+   },
+   {
+    "inputs": [
+     "nfl.script",
+     "nfl.motivation_seeding",
+     "nfl.coaching"
+    ],
+    "form": "threshold",
+    "mechanism": "Aggressive and unusual calls rise when a coach faces a must-win or when trailing late; below a threshold of stakes and deficit the call mix follows the neutral tendency, above it a trick play or goal-line pass becomes worth its variance, so the effect is a threshold in stakes and score state rather than a smooth tilt.",
+    "how_to_test": "Compare non-QB pass and goal-line pass rates for the same coaches in playoff and eliminated/must-win regular-season games versus others, controlling for score differential."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.goal_to_go_pass_rate",
+    "shape": "non-monotone in yards to go: pass share rises from the 1 to the 5-yard line and falls again only inside the 2",
+    "why": "Snaps from exactly the 1 are dominated by sneaks and short-yardage runs, so a team's average goal-to-go pass rate overstates its 1-yard pass rate; the response to distance is a steep step near the goal line rather than a linear trend."
+   },
+   {
+    "input_id": "nfl.trick_play_and_goal_line_pass_events",
+    "shape": "Bernoulli with a very small per-game probability: P(at least one) = 1 - exp(-lambda), almost linear in lambda for small lambda and saturating for high-volume trick-play teams",
+    "why": "For a rate near 0.15 events per team-game the probability of at least one is nearly proportional to the rate, so errors in the coach random effect translate nearly one-for-one into price error, while for the rare team with several per game the probability saturates."
+   },
+   {
+    "input_id": "nfl.coaching",
+    "shape": "heavy right tail: a minority of coaches and coordinators account for a large share of trick plays",
+    "why": "Trick-play usage is concentrated; the league mean hides a skewed distribution, so a shrinkage prior must be heavy tailed or the aggressive coaches' probabilities are underestimated and the typical coach's overestimated."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "Play-by-play with passer position, yard line and play type",
+    "grain": "play",
+    "fields": [
+     "yardline_100",
+     "down",
+     "ydstogo",
+     "play_type",
+     "pass_attempt",
+     "sack",
+     "qb_scramble",
+     "qb_dropback",
+     "passer_player_id",
+     "passer_player_name",
+     "penalty",
+     "offense_formation",
+     "offense_personnel",
+     "defense_personnel",
+     "game_seconds_remaining",
+     "score_differential",
+     "posteam",
+     "defteam"
+    ],
+    "timestamp_requirement": "Completed games before forecast time; rosters and positions as of each game",
+    "history_needed": "2015-2025 for team-game rates with coach and coordinator regime labels (about 5,000 team-games)",
+    "candidate_sources": [
+     {
+      "name": "nflverse play_by_play and rosters via nflreadr",
+      "access": "free",
+      "note": "Position of the passer comes from the roster table and may differ from the game-day listing; pass_attempt vs penalty-nullified plays must be checked"
+     },
+     {
+      "name": "FTN charting via nflverse",
+      "access": "free_limited",
+      "note": "Formation and personnel flags from 2022 only"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.trick_play_and_goal_line_pass_events",
+     "nfl.goal_to_go_pass_rate",
+     "nfl.goal_line_personnel",
+     "nfl.fourth_and_goal_policy",
+     "nfl.redzone",
+     "nfl.field_pos",
+     "nfl.rz_share",
+     "nfl.formation",
+     "nfl.def_personnel",
+     "nfl.script"
+    ]
+   },
+   {
+    "dataset": "Coach, coordinator and quarterback status",
+    "grain": "team-week",
+    "fields": [
+     "head_coach",
+     "offensive_coordinator",
+     "play_caller",
+     "starting_qb",
+     "qb_status",
+     "depth_chart_qb2"
+    ],
+    "timestamp_requirement": "As of a fixed time before kickoff; coach regime changes dated",
+    "history_needed": "2015-2025 for coach random effects",
+    "candidate_sources": [
+     {
+      "name": "nflverse schedules, depth charts and injuries",
+      "access": "free",
+      "note": "Play-caller identity is not a field in the free data and requires manual curation"
+     },
+     {
+      "name": "Team beat reports and league transactions",
+      "access": "own_capture",
+      "note": "Needed for coordinator hires and play-caller changes"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.coaching",
+     "nfl.qb",
+     "nfl.in_game_exit_risk",
+     "nfl.motivation_seeding"
+    ]
+   },
+   {
+    "dataset": "Kalshi settlement text and settled outcomes for rare-call series",
+    "grain": "market",
+    "fields": [
+     "ticker",
+     "rules_primary",
+     "rules_secondary",
+     "result"
+    ],
+    "timestamp_requirement": "Rules as listed; outcomes after settlement",
+    "history_needed": "all finalized markets of the two series",
+    "candidate_sources": [
+     {
+      "name": "Kalshi market data",
+      "access": "own_capture",
+      "note": "Settled outcomes are needed to confirm how non-QB is applied"
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "KXNFLNONQBPASS does not define a non-QB (roster position versus player role on the play), does not mention overtime or postponement and names no source; a backup quarterback listed at another position or a punter's fake-kick pass could resolve either way.",
+    "what_would_resolve": "Kalshi's full rules or settlements of past markets with an edge case (fake punt pass, backup QB listed at another position).",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "INPUT_DEFINITION_UNCERTAIN",
+    "description": "Per-team samples of non-QB passes and 1-yard passes are tiny, the play-caller identity is not in free data, and no input estimates how playoff or must-win stakes change trick-play or goal-line pass rates even though every sampled market is for a championship game.",
+    "what_would_resolve": "Compare non-QB pass and 1-yard pass rates for the same play-callers in playoff versus regular-season games controlling for score state, 2015-2025, and fit shrinkage constants by cross-validation.",
+    "category": "situational_schedule_motivation"
+   },
+   {
+    "id": "u3",
+    "type": "DATA_UNAVAILABLE",
+    "description": "The identity of the play-caller (head coach versus coordinator) is not published in the free play-by-play, and passer position labels in the free roster table may not match game-day listings, so the coach random effect and the non-QB definition rest on manual curation.",
+    "what_would_resolve": "Curate play-caller history from team reports for 2015-2025 and compare roster-position flags with game-book passer positions on a sample of games."
+   }
+  ],
+  "resolved_by": "catalog-blocker round NFL u1 split (2026-11-09)"
+ },
+ "unreg:league_tie_and_long_kick_counts": {
+  "reviewer": "author-blk2-NFL (Claude agent)",
+  "review_date": "2026-11-09",
+  "catalog_entry": {
+   "label": "NFL league-wide tie and long-field-goal counts",
+   "blueprint": "season_stat",
+   "contract_types": [
+    "Ties",
+    "Weekly tie",
+    "60+ yard field goals"
+   ],
+   "target": "Whether a league-wide count of rare outcomes (tied games in a season or week, made field goals from 60+ yards in a season) reaches a threshold.",
+   "mechanism": "Each contract counts a rare event over every game in a window: the number of tied games in the regular season, whether at least one game in a specific week ends tied, and the number of made field goals from 60 or more yards in the regular season. The count is a Poisson-binomial sum of small per-game probabilities over the games remaining in the window (schedule exposure), plus the banked count to date. A tie probability is the lattice mass at zero after regulation times the chance overtime ends level under the current overtime rule; a 60+ make probability is an end-of-half and big-leg attempt hazard times a steeply falling make curve with altitude and kicker-ceiling terms. Rare-event aggregation, rule eras and schedule exposure dominate rather than team production.",
+   "inputs": [
+    {
+     "id": "nfl.ot_model",
+     "why": "Probability that a game is level after 60 minutes and the overtime rule era give each game's tie probability; the season and weekly tie counts are sums of these.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.ot_ending_hazard",
+     "why": "Probability that a game ends level after the 10-minute regular-season overtime under the current possession rule, the conditional factor that turns an overtime game into a tie.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.model_margin_lattice",
+     "why": "Own-model margin distribution with mass at zero and key-number correction, the source of the per-game chance of a 60-minute tie for each scheduled game.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.late_tie_game_management",
+     "why": "Kneel-down, kick-to-tie and go-for-two policy in tied or one-score states late in games changes whether a regulation tie survives into overtime and how often overtime ends level.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.weekly_slate_composition",
+     "why": "Number of games per week, byes and windows define the exposure of a weekly tie contract (Week 2 has a specific game count) and the number of games left in the season count.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.long_fg_attempt_and_make_model",
+     "why": "Attempt and make model for 50+ and 60+ yard kicks by kicker, venue and weather, the per-game rate of made 60+ yard kicks.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.long_fg_end_of_half_attempt_hazard",
+     "why": "Attempt hazard for 60+ yard field goals at the end of halves and games, when most such attempts occur, by team and situation.",
+     "role": "primary"
+    },
+    {
+     "id": "nfl.kicker_ceiling_range_tail",
+     "why": "Leg-ceiling estimate by kicker beyond demonstrated range, relevant to make probability at 60-65 yards where observed makes are few.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.kicking_ball_and_fg_rule_era",
+     "why": "Rule and ball regime (K-ball preparation, kickoff regime) shifts the league-wide 60+ attempt and make rates between seasons.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.kicker",
+     "why": "Kicker accuracy by distance and effective range, the general base for the more specific long-range inputs.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.venue",
+     "why": "Altitude, roof and surface determine where 60+ yard attempts are feasible (Denver, domes) and where ties are more likely through scoring environment.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.weather_pit",
+     "why": "Wind and cold reduce kicker range and passing; the league-wide count aggregates over each game's weather draw.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.own_team_rating_market_free",
+     "why": "Market-free team strength gives the expected margin per scheduled game, which sets how close each game is and so its tie probability.",
+     "role": "secondary"
+    },
+    {
+     "id": "nfl.preseason_long_kick_evidence",
+     "why": "Preseason makes of 55+ yards are weak evidence for kickers who may attempt 60+ in the regular season.",
+     "role": "context"
+    },
+    {
+     "id": "nfl.weather_delay_hazard",
+     "why": "Weather-delay hazard bears on whether games are completed in the scheduled week and on kicking conditions for rare long attempts.",
+     "role": "context"
+    }
+   ],
+   "interactions": [
+    {
+     "inputs": [
+      "nfl.model_margin_lattice",
+      "nfl.ot_ending_hazard",
+      "nfl.ot_model"
+     ],
+     "hypothesis": "A game ends in a tie only if it is level after regulation and also level after the 10-minute overtime; the per-game tie probability is the product of the lattice mass at zero and the conditional chance that overtime ends level, so changes in the overtime rule change the season count multiplicatively, not additively, and the league's tie count is the sum of many such small products.",
+     "form": "multiplicative",
+     "how_to_test": "Estimate the regulation-level rate and the level-after-overtime rate separately by rule era and compare the product with the observed tie rate per season."
+    },
+    {
+     "inputs": [
+      "nfl.long_fg_end_of_half_attempt_hazard",
+      "nfl.kicker_ceiling_range_tail",
+      "nfl.long_fg_attempt_and_make_model"
+     ],
+     "hypothesis": "Expected 60+ yard makes equal attempts times make probability; a strong-legged kicker whose coach never attempts a 60+ kick contributes nothing, and an aggressive coach with a weaker leg contributes mostly misses, so the league-wide count is a sum of products of attempt hazard and range-conditional make rate across kickers.",
+     "form": "multiplicative",
+     "how_to_test": "Regress team-season counts of 60+ makes on the attempt hazard and the kicker ceiling estimate and test the product against additive terms."
+    },
+    {
+     "inputs": [
+      "nfl.venue",
+      "nfl.weather_pit",
+      "nfl.long_fg_attempt_and_make_model"
+     ],
+     "hypothesis": "The make probability beyond 55 yards switches regime by venue: altitude and domes extend range by several yards and wind or cold shortens it; attempts also concentrate at those venues, so the count of 60+ makes is a mixture over venue regimes with a few games carrying most of the mass.",
+     "form": "regime-switch",
+     "how_to_test": "Estimate 55+ and 60+ make rates by altitude, roof and wind bin from 2015-2025 play-by-play and see which venues account for most makes."
+    },
+    {
+     "inputs": [
+      "nfl.weekly_slate_composition",
+      "nfl.model_margin_lattice"
+     ],
+     "hypothesis": "A weekly tie contract is a union over the week's games of rare events that are slightly positively dependent through shared weather and rule regime; the probability is close to the sum of small per-game probabilities but the week's game count and closeness mix change the total, so a week with many close matchups has a higher chance than the league average times games.",
+     "form": "joint-distribution",
+     "how_to_test": "Compare weekly empirical tie frequency with the sum of per-game model tie probabilities across 2002-2025 weeks, stratified by number of games and closeness."
+    }
+   ]
+  },
+  "contract": {
+   "settlement_definition": "Three series over the 2026-27 regular season. KXNFLTIES settles Yes if at least 4 games result in a tie across the regular season (floor_strike 4, greater_or_equal); KXNFLWEEKTIE settles Yes if at least one game ends in a tie in Week 2 of the regular season; KXNFL60YARDFGS settles Yes if there are 8+ made field goals from at least 60 yards in the regular season. The sampled texts do not state the source of truth, how a postponed or relocated game or a game not completed is treated, or how kick distance is measured; the secondary text of KXNFLTIES says only that it resolves on the total number of tied games. Overtime is implicit in a tie (a regular-season game that ends level after overtime) but not discussed, and playoff games are outside the window by the 'regular season' wording.",
+   "rules_verification": "VERIFIED_FROM_RULES_TEXT",
+   "rules_evidence": [
+    {
+     "ticker": "KXNFLTIES",
+     "quote": "This market resolves based on the total number of games that result in a tie in the 2026-27 Pro Football regular season.",
+     "establishes": "Counts games ending in a tie over the whole regular season (strike 4+, floor_strike 4); playoff games cannot tie and a postponed game still counts when played within the season."
+    },
+    {
+     "ticker": "KXNFL60YARDFGS",
+     "quote": "If there are 8+ made field goals from at least 60 yards in the 2026-27 Pro Football regular season, then the market resolves to Yes.",
+     "establishes": "Counts made field goals of 60 yards or more by all kickers in the regular season (strike 8+); preseason and playoffs are outside the window, and whether the distance is measured as the official kick distance is not stated."
+    },
+    {
+     "ticker": "KXNFLWEEKTIE",
+     "quote": "If there is at least one game that ends in a tie in Week 2",
+     "establishes": "Settles Yes if any single game of Week 2 ends in a tie; the exposure is that week's slate and a game ending in a tie after overtime is the only qualifying result."
+    }
+   ],
+   "variants_and_edge_cases": [
+    "KXNFLTIES counts ties in the whole regular season, KXNFLWEEKTIE counts a union over one week's games (strike 'at least one'), and KXNFL60YARDFGS counts made kicks of 60+ yards; the first two are the same per-game tie process with different aggregation windows, so their prices must be coherent.",
+    "A tie requires a game level after the regular-season overtime period, so the overtime rule and any in-season rule change change the tie rate; the sampled texts do not mention the overtime rule, but an overtime-rule edge exists for 2026-27 (not verified).",
+    "KXNFL60YARDFGS counts made field goals from 'at least 60 yards': whether kick distance is the official play-by-play kick length (which includes the 17 yards of snap and end zone depth) is not stated; a made kick from exactly 60 is included.",
+    "The sampled series are a mix of active (KXNFLTIES, KXNFL60YARDFGS) and finalized (KXNFLWEEKTIE) markets; no sampled text defines what happens to a game that is cancelled or never played, so the count of a window can differ if a game is not played."
+   ],
+   "settlement_data_source": "Not named in any of the three sampled texts; official league game results and play-by-play are implied for ties and long field goals but unstated.",
+   "series_mapping_issues": []
+  },
+  "mechanism": {
+   "summary": "All three contracts count a rare event over every game of a window, so the object is a Poisson-binomial sum of small per-game probabilities plus a banked count. The chain starts with schedule exposure (which games remain, how many in the named week), builds a per-game tie probability as the product of the chance of a level score after regulation and the chance overtime ends level under the current rule, models long field goals as an end-of-half and big-leg attempt hazard times a steeply falling make curve with altitude and kicker-ceiling terms, and aggregates with the banked state at the contract strike. The estimate is dominated by rule and ball eras and by a few kickers and venues, not by average team quality, and the uncertainty is the scarcity of events: the league sees only a handful of ties and of 60+ makes per season.",
+   "stages": [
+    {
+     "id": "s1",
+     "name": "Schedule exposure and banked count",
+     "description": "Each contract sums over the games in its window. For the season count the window is the 272-game regular season; the number of games still to play, the banked count to date and the identity of the remaining matchups define the exposure. For the weekly tie the exposure is only that week's slate (14 to 16 games depending on byes). The model needs the schedule, current results and the as-of time, because a count already at the threshold is settled and a count far below it with few games left is nearly dead. Postponed or relocated games stay in the window if played within the season.",
+     "distribution": "Poisson-binomial over remaining games; banked count is an atom; weekly exposure 14-16 games each with a tie probability of a fraction of one percent",
+     "categories": [
+      "pace_volume",
+      "situational_schedule_motivation"
+     ],
+     "input_ids": [
+      "nfl.weekly_slate_composition",
+      "nfl.season_to_date_pace",
+      "nfl.games_played_dist",
+      "nfl.weather_delay_hazard"
+     ]
+    },
+    {
+     "id": "s2",
+     "name": "Per-game tie probability: level after regulation, level after overtime",
+     "description": "A game is a tie only if the score is level after 60 minutes and the regular-season overtime (a single 10-minute period) also ends level. The first factor is the mass at zero of the margin distribution, highest for close matchups and low-scoring games and corrected for key-number effects; the second depends on the overtime possession rule in force and on coaching decisions late in regulation and in overtime (kneeling, kick-to-tie, going for two). The two factors multiply, so the per-game tie probability is a fraction of a percent, with close games carrying several times the average.",
+     "distribution": "Per-game tie probability of order 0.2-0.5 percent (to recompute per rule era); overtime-level conditional probability of order 5-10 percent; both depend on closeness",
+     "categories": [
+      "game_context_script",
+      "distribution_variance",
+      "officiating_rules"
+     ],
+     "input_ids": [
+      "nfl.model_margin_lattice",
+      "nfl.ot_model",
+      "nfl.ot_ending_hazard",
+      "nfl.late_tie_game_management",
+      "nfl.own_team_rating_market_free"
+     ]
+    },
+    {
+     "id": "s3",
+     "name": "Long field goals: attempt hazard",
+     "description": "Made field goals from 60 or more yards need an attempt, and attempts are rare decisions: they occur mostly at the end of halves and games when the offence is outside normal range but time is short, in high-altitude or dome venues, and for kickers with demonstrated range. The attempt hazard per team-game depends on the coach's willingness, kicker ceiling, wind and altitude, the rule and ball regime and the score state (trailing by up to three at the end of a half). League-wide expected attempts are a sum over team-games of this hazard.",
+     "distribution": "Attempts per team-game very small (order 0.03-0.08, to recount) and clustered at end-of-half situations; league season total of order 10-25 attempts under the current regime (to recount)",
+     "categories": [
+      "coaching_scheme",
+      "environment",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nfl.long_fg_end_of_half_attempt_hazard",
+      "nfl.kicker_ceiling_range_tail",
+      "nfl.kicking_ball_and_fg_rule_era",
+      "nfl.venue",
+      "nfl.weather_pit"
+     ]
+    },
+    {
+     "id": "s4",
+     "name": "Long field goals: make probability beyond 60 yards",
+     "description": "Given an attempt, the make probability falls steeply with distance past about 55 yards, rises with altitude and a tailwind, is truncated by the kicker's physical ceiling, and shifts by season with the kicking-ball and rule regime. The expected count of makes is attempts times this curve summed over kickers and venues; because few kickers can make 60+, a handful of leg-strong kickers contribute most of the expected count. Preseason and warm-up evidence gives weak signal on who has the leg.",
+     "distribution": "Per-attempt make probability about 0.3-0.5 at 60-63 yards, falling toward 0.1 by 66+ (to refit by era); the season count is a thin right-skewed count",
+     "categories": [
+      "efficiency_conversion",
+      "role_personnel"
+     ],
+     "input_ids": [
+      "nfl.long_fg_attempt_and_make_model",
+      "nfl.kicker",
+      "nfl.kicker_ceiling_range_tail",
+      "nfl.preseason_long_kick_evidence",
+      "nfl.kicking_ball_and_fg_rule_era"
+     ]
+    },
+    {
+     "id": "s5",
+     "name": "Aggregation, banked state and settlement",
+     "description": "The final probability is the tail mass of the sum of banked count and the Poisson-binomial draw from remaining games, evaluated at the strike (4 ties, 8 long makes, one tie in the named week). Dependence between games is weak but present through shared rule regime and weather; the rule era and the choice of data source (official play-by-play distances for field goals, official final scores for ties) must be fixed. Whether an unplayed or abandoned game counts is not stated for these series, and postponed games are assumed to count if played within the season.",
+     "distribution": "Season tie count approximately Poisson with mean about 0.5-1.5 (to recompute per era); 60+ makes approximately Poisson with mean of the order of 3-8 and a heavy right tail from venue effects",
+     "categories": [
+      "distribution_variance",
+      "settlement_contract"
+     ],
+     "input_ids": [
+      "nfl.season_to_date_pace",
+      "nfl.games_played_dist",
+      "nfl.ot_model",
+      "nfl.long_fg_attempt_and_make_model",
+      "m.rules_text"
+     ]
+    }
+   ],
+   "category_coverage": {
+    "talent_strength": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.own_team_rating_market_free"
+     ],
+     "note": "Team ratings set closeness of each remaining game and so the tie probability; for 60+ kicks the kicker's leg matters instead."
+    },
+    "opponent_matchup": {
+     "status": "NOT_APPLICABLE",
+     "input_ids": [],
+     "note": "League-wide counts depend on matchups only through game closeness and stadium; no team-versus-team interaction input is required beyond the margin lattice already attached."
+    },
+    "role_personnel": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.kicker",
+      "nfl.kicker_ceiling_range_tail"
+     ],
+     "note": "The identity and range of the few kickers able to make 60+ yard kicks is the personnel driver of that series."
+    },
+    "availability_news": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.preseason_long_kick_evidence"
+     ],
+     "note": "Kicker signings, injuries and preseason leg evidence feed which kickers attempt long kicks; no separate availability input is staged."
+    },
+    "coaching_scheme": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.late_tie_game_management",
+      "nfl.long_fg_end_of_half_attempt_hazard"
+     ],
+     "note": "Coach decisions at the end of regulation and at the end of halves decide ties and long-attempt counts."
+    },
+    "environment": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.venue",
+      "nfl.weather_pit",
+      "nfl.weather_delay_hazard"
+     ],
+     "note": "Altitude, roof and wind shift the make curve and scoring variance; weather delays touch settlement of a weekly contract."
+    },
+    "game_context_script": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.model_margin_lattice",
+      "nfl.ot_model"
+     ],
+     "note": "Closeness of games and the level-after-regulation mass drive tie probability."
+    },
+    "pace_volume": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.weekly_slate_composition",
+      "nfl.season_to_date_pace"
+     ],
+     "note": "Games remaining in the window are the exposure of every contract."
+    },
+    "efficiency_conversion": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.long_fg_attempt_and_make_model",
+      "nfl.kicker"
+     ],
+     "note": "The make curve by distance, altitude and kicker is the conversion factor of the long field goal series."
+    },
+    "distribution_variance": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.ot_ending_hazard",
+      "nfl.ot_model"
+     ],
+     "note": "Counts are Poisson-binomial with heavy dependence on a few kickers and close games; overtime-level conditional probability is a separate factor."
+    },
+    "situational_schedule_motivation": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.weekly_slate_composition"
+     ],
+     "note": "Schedule exposure (week size, byes) is the situational factor; no stakes input is needed because ties and long kicks are not motivation driven in the sampled texts."
+    },
+    "officiating_rules": {
+     "status": "COVERED",
+     "input_ids": [
+      "nfl.ot_ending_hazard",
+      "nfl.kicking_ball_and_fg_rule_era"
+     ],
+     "note": "Overtime possession rule and the kicking-ball rule regime change tie and long-kick rates by season."
+    },
+    "settlement_contract": {
+     "status": "COVERED",
+     "input_ids": [
+      "m.rules_text"
+     ],
+     "note": "Window (regular season, a named week), counted object and strike come from the sampled rules text; source of truth, kick-distance definition and unplayed-game treatment are not stated."
+    }
+   }
+  },
+  "new_inputs": {},
+  "input_audit": {
+   "nfl.ot_model": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Defines P(tie) from the margin lattice mass at zero and the overtime process; the single most important per-game ingredient of the two tie series."
+   },
+   "nfl.ot_ending_hazard": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The tie rate given overtime depends on the rule era; separate from the chance of reaching overtime."
+   },
+   "nfl.model_margin_lattice": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The tie contract is a lattice-mass event; margin-lattice mass at zero is what must be summed over games."
+   },
+   "nfl.late_tie_game_management": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Coach policy at the end of regulation adjusts tie probability by a few relative percent."
+   },
+   "nfl.weekly_slate_composition": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "The weekly tie contract is a union over that week's games, so slate size sets the exposure; byes change the number of games per week."
+   },
+   "nfl.long_fg_attempt_and_make_model": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "Moves here from the mixed record where it was attached for the 8+ league-wide 60-yard count; shared with extreme_play_length."
+   },
+   "nfl.long_fg_end_of_half_attempt_hazard": {
+    "verdict": "KEEP_PRIMARY",
+    "reason": "The count of 60+ makes is attempts times make rate; attempts are concentrated in end-of-half situations and coach decisions."
+   },
+   "nfl.kicker_ceiling_range_tail": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Few kickers have made 60+ attempts, so ceiling extrapolation sets the make curve's right tail."
+   },
+   "nfl.kicking_ball_and_fg_rule_era": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Era effects make multi-year pooled rates biased for the 2026-27 season."
+   },
+   "nfl.kicker": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Used as the baseline make curve before the 60+ specific adjustments."
+   },
+   "nfl.venue": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Venue changes the 60+ make rate sharply through altitude and wind shelter."
+   },
+   "nfl.weather_pit": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Weather works through per-game kicker range and scoring variance; limited effect on the season count in aggregate."
+   },
+   "nfl.own_team_rating_market_free": {
+    "verdict": "KEEP_SECONDARY",
+    "reason": "Close matchups carry higher tie mass; ratings define closeness for each remaining game."
+   },
+   "nfl.preseason_long_kick_evidence": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Outside the contract window but informs which kickers have the leg; weak and selected sample."
+   },
+   "nfl.weather_delay_hazard": {
+    "verdict": "KEEP_CONTEXT",
+    "reason": "Settlement of a weekly contract depends on the game finishing; low-probability but a real contract edge case."
+   }
+  },
+  "interactions": [
+   {
+    "inputs": [
+     "nfl.model_margin_lattice",
+     "nfl.ot_ending_hazard",
+     "nfl.ot_model"
+    ],
+    "form": "multiplicative",
+    "mechanism": "A game ends in a tie only if it is level after regulation and also level after the 10-minute overtime; the per-game tie probability is the product of the lattice mass at zero and the conditional chance that overtime ends level, so changes in the overtime rule change the season count multiplicatively, not additively, and the league's tie count is the sum of many such small products.",
+    "how_to_test": "Estimate the regulation-level rate and the level-after-overtime rate separately by rule era and compare the product with the observed tie rate per season."
+   },
+   {
+    "inputs": [
+     "nfl.long_fg_end_of_half_attempt_hazard",
+     "nfl.kicker_ceiling_range_tail",
+     "nfl.long_fg_attempt_and_make_model"
+    ],
+    "form": "multiplicative",
+    "mechanism": "Expected 60+ yard makes equal attempts times make probability; a strong-legged kicker whose coach never attempts a 60+ kick contributes nothing, and an aggressive coach with a weaker leg contributes mostly misses, so the league-wide count is a sum of products of attempt hazard and range-conditional make rate across kickers.",
+    "how_to_test": "Regress team-season counts of 60+ makes on the attempt hazard and the kicker ceiling estimate and test the product against additive terms."
+   },
+   {
+    "inputs": [
+     "nfl.venue",
+     "nfl.weather_pit",
+     "nfl.long_fg_attempt_and_make_model"
+    ],
+    "form": "regime-switch",
+    "mechanism": "The make probability beyond 55 yards switches regime by venue: altitude and domes extend range by several yards and wind or cold shortens it; attempts also concentrate at those venues, so the count of 60+ makes is a mixture over venue regimes with a few games carrying most of the mass.",
+    "how_to_test": "Estimate 55+ and 60+ make rates by altitude, roof and wind bin from 2015-2025 play-by-play and see which venues account for most makes."
+   },
+   {
+    "inputs": [
+     "nfl.weekly_slate_composition",
+     "nfl.model_margin_lattice"
+    ],
+    "form": "joint-distribution",
+    "mechanism": "A weekly tie contract is a union over the week's games of rare events that are slightly positively dependent through shared weather and rule regime; the probability is close to the sum of small per-game probabilities but the week's game count and closeness mix change the total, so a week with many close matchups has a higher chance than the league average times games.",
+    "how_to_test": "Compare weekly empirical tie frequency with the sum of per-game model tie probabilities across 2002-2025 weeks, stratified by number of games and closeness."
+   }
+  ],
+  "nonlinearities": [
+   {
+    "input_id": "nfl.ot_model",
+    "shape": "tie probability is highest for evenly matched teams and falls toward zero as the expected margin passes about 10 points; the response is a bell shape in the expected absolute margin",
+    "why": "A game is level after 60 minutes with probability that peaks for toss-up games and decays in the expected margin, so the season count depends on the number of close games in the schedule and not only on the average margin; a convex-in-closeness response means the schedule's closeness mix matters."
+   },
+   {
+    "input_id": "nfl.long_fg_attempt_and_make_model",
+    "shape": "steep logistic decay of make probability with distance beyond 55 yards, shifted by altitude",
+    "why": "A few additional yards cut the make probability by several percentage points, so the count of 60+ yard makes is a strongly nonlinear function of the attempt distance distribution and venue; small changes in the share of attempts at 63-66 yards move the expected count disproportionately."
+   },
+   {
+    "input_id": "nfl.kicker_ceiling_range_tail",
+    "shape": "threshold: probability of a make is near zero for kickers whose demonstrated ceiling is below the distance and rises quickly above it",
+    "why": "Beyond a kicker's ceiling the make probability does not fall smoothly to zero but collapses, so a handful of strong-legged kickers account for almost all expected 60+ makes and the league-wide count behaves like a sum over a few contributors."
+   }
+  ],
+  "required_data": [
+   {
+    "dataset": "League schedule, results and overtime outcomes",
+    "grain": "game",
+    "fields": [
+     "season",
+     "week",
+     "game_id",
+     "home_team",
+     "away_team",
+     "home_score",
+     "away_score",
+     "overtime",
+     "result",
+     "game_type",
+     "roof",
+     "location"
+    ],
+    "timestamp_requirement": "Schedule as released and as updated before the as-of date; results after completion",
+    "history_needed": "2002-2026 for tie base rates by overtime rule era (the 2017 shortening of overtime to 10 minutes and later rule changes)",
+    "candidate_sources": [
+     {
+      "name": "nflverse schedules and results",
+      "access": "free",
+      "note": "Carries scores, overtime flag and week; rule-era flag must be added by hand"
+     },
+     {
+      "name": "Pro Football Reference game results",
+      "access": "free_scrape",
+      "note": "Cross-check; scraping terms restrict bulk use"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.model_margin_lattice",
+     "nfl.ot_model",
+     "nfl.ot_ending_hazard",
+     "nfl.late_tie_game_management",
+     "nfl.own_team_rating_market_free",
+     "nfl.weekly_slate_composition",
+     "nfl.season_to_date_pace",
+     "nfl.games_played_dist",
+     "nfl.weather_delay_hazard"
+    ]
+   },
+   {
+    "dataset": "Field-goal attempts with distance, venue and weather",
+    "grain": "play",
+    "fields": [
+     "kick_distance",
+     "field_goal_result",
+     "kicker_player_id",
+     "game_seconds_remaining",
+     "qtr",
+     "score_differential",
+     "stadium",
+     "roof",
+     "wind",
+     "temp",
+     "season"
+    ],
+    "timestamp_requirement": "Completed games before as-of date; kicker roster and signings as of a fixed time",
+    "history_needed": "2000-2026 for the make curve (about 25 seasons) and the last 4 seasons for coach hazard and rule era",
+    "candidate_sources": [
+     {
+      "name": "nflverse play_by_play via nflreadr",
+      "access": "free",
+      "note": "Official kick_distance and result; distance definition includes snap and end-zone depth"
+     },
+     {
+      "name": "Team preseason box scores and beat reports",
+      "access": "own_capture",
+      "note": "Needed for preseason and warm-up long-kick evidence"
+     }
+    ],
+    "feeds_inputs": [
+     "nfl.long_fg_attempt_and_make_model",
+     "nfl.long_fg_end_of_half_attempt_hazard",
+     "nfl.kicker_ceiling_range_tail",
+     "nfl.kicking_ball_and_fg_rule_era",
+     "nfl.kicker",
+     "nfl.venue",
+     "nfl.weather_pit",
+     "nfl.preseason_long_kick_evidence"
+    ]
+   },
+   {
+    "dataset": "Kalshi settlement text and outcomes for league-count series",
+    "grain": "market",
+    "fields": [
+     "ticker",
+     "rules_primary",
+     "rules_secondary",
+     "result",
+     "floor_strike"
+    ],
+    "timestamp_requirement": "Rules as listed; outcomes after settlement",
+    "history_needed": "all finalized markets of the three series",
+    "candidate_sources": [
+     {
+      "name": "Kalshi market data",
+      "access": "own_capture",
+      "note": "Needed to see how postponed or unplayed games were treated"
+     }
+    ],
+    "feeds_inputs": [
+     "m.rules_text"
+    ]
+   }
+  ],
+  "unresolved": [
+   {
+    "id": "u1",
+    "type": "CONTRACT_AMBIGUOUS",
+    "description": "None of the three sampled league-count texts names a source of truth, defines kick distance for the 60-yard contract, or says how a postponed, relocated or unplayed game counts toward the season or week window; the tie contracts do not mention the overtime rule at all.",
+    "what_would_resolve": "Kalshi's full rules for the live listings or settlement of past seasons' markets with a postponed game or a kick at the 60-yard boundary.",
+    "category": "settlement_contract"
+   },
+   {
+    "id": "u2",
+    "type": "MECHANISM_UNCERTAIN",
+    "description": "Base rates of ties and 60+ yard makes are tiny counts under changing rule and ball eras (overtime length, kicking ball, kickoff rules); the per-game rate constants quoted here are placeholders to recompute, and the relative weight of kicker ceiling versus coach attempt hazard has not been estimated.",
+    "what_would_resolve": "Recompute per-era tie rates and 60+ attempt and make rates from 2002-2025 results and play-by-play, and fit the attempt hazard and ceiling effects once experiments are allowed."
+   },
+   {
+    "id": "u3",
+    "type": "SOURCE_UNVERIFIED",
+    "description": "Whether nflverse kick_distance matches the distance Kalshi will use for the 60+ yard contract, and whether free play-by-play records every 60+ attempt consistently across seasons, has not been checked against official game books.",
+    "what_would_resolve": "Compare nflverse kick_distance for all 58+ yard attempts with official league game books for several seasons."
+   }
+  ],
+  "resolved_by": "catalog-blocker round NFL u1 split (2026-11-09)"
+ }
+}

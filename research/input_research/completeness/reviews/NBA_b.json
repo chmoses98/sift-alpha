@@ -3450,8 +3450,8 @@
     },
     {
      "id": "s7",
-     "name": "In-play conditioning for later-period markets",
-     "description": "Because the second-half and later-quarter markets stay open until a winner is declared, a quote placed during the game is a bet on the remaining part of a period given what has already happened. The value is the conditional distribution of the remaining margin given the current score, period start score, clock, the lineups actually on the floor, team-foul and bonus state and timeouts. Pregame inputs set the prior; the live state dominates once a period is under way.",
+     "name": "In-play conditioning for quarter and half markets",
+     "description": "Because the quarter and half markets (Q1 and 1H included) stay open until a winner or the event is decided, a quote placed during the game is a bet on the remaining part of a period given what has already happened. The value is the conditional distribution of the remaining margin given the current score, period start score, clock, the lineups actually on the floor, team-foul and bonus state and timeouts. Pregame inputs set the prior; the live state dominates once a period is under way.",
      "distribution": "Remaining-margin variance shrinks roughly linearly with remaining possessions; a period lead late in the quarter makes the outcome near-deterministic, with discrete jumps at each score.",
      "categories": [
       "game_context_script",
@@ -3732,10 +3732,10 @@
     "role": "primary"
    },
    "nba.live_period_state": {
-    "label": "In-play game state for later-period markets (score, clock, on-court lineups, team fouls, timeouts)",
+    "label": "In-play game state for period and half markets (score, clock, on-court lineups, team fouls, timeouts)",
     "category": "game_state",
-    "mechanism": "Later-period and second-half markets keep trading after tipoff, so their value is conditional on the realised state at the quote time rather than the pregame distribution.",
-    "rationale": "Verified on the Kalshi API (8 Nov 2026): KXNBA2H markets for 9 Nov games have close_time 12 Nov 03:00Z, two days after the game, with early close 'after a winner is declared', so they trade in play. Q2-Q4 and 2H prices then depend on the current margin, period, on-court five, team fouls toward the bonus, and timeouts left, none of which a pregame input carries.",
+    "mechanism": "Quarter, first-half and second-half markets keep trading after tipoff, so their value is conditional on the realised state at the quote time rather than the pregame distribution.",
+    "rationale": "Verified on the Kalshi API (9 Nov 2026): KXNBA2H markets for 9 Nov games have close_time 12 Nov 03:00Z, two days after the game, with early close 'after a winner is declared'; KXNBA1Q markets for the 10 Nov OKC-POR game have close_time 13 Nov 04:00Z with the same early-close condition, and a KXNBA1HTOTAL market for the 8 Nov BKN-DAL game carried 'close early if the event occurs' and closed at 02:10:05Z on 9 Nov, well after its open_time (the exact tip time was not read, so how long after tip it stayed open is unverified). Q1 and 1H markets therefore also trade in play once the game starts, while Q1 is still the most pregame-predictable quantity before tip. Prices then depend on the current margin, period, on-court five, team fouls toward the bonus, and timeouts left, none of which a pregame input carries.",
     "measurement": "At each quote timestamp: period, game clock (seconds), score by team, score at the start of the current period, five players on court per team, team fouls in the period (bonus at 5), timeouts remaining, possession; source cdn.nba.com liveData play-by-play and boxscore JSON polled every 5-10 s with receipt timestamps; the period-margin model is re-run conditional on elapsed time and remaining possessions (nba.period_possession_split scaled by remaining clock) and the on-court units' ratings from nba.quarter_unit_projection. As-of: quote timestamp minus feed latency (record both).",
     "pregame_knowable": "no",
     "free_sources": [
@@ -3747,7 +3747,7 @@
      "Live boxscore with on-court flags and team fouls",
      "Kalshi quote timestamps"
     ],
-    "why": "Q2-Q4 and 2H markets trade in play, so value is conditional on the live state at the quote time.",
+    "why": "Quarter (Q1-Q4), 1H and 2H markets all trade in play (KXNBA1Q and KXNBA2H early-close only after a winner is declared; KXNBA1HTOTAL closes early on the event), so value is conditional on the live state at the quote time; Q1 and 1H keep their pregame prior until tip.",
     "role": "primary"
    }
   },
@@ -6161,11 +6161,11 @@
     "role": "secondary"
    },
    "nba.longest_streak_max_and_tie_model": {
-    "label": "Distribution of the league-longest win streak and the number of tied teams (1/N payout) from game-level simulation",
+    "label": "Distribution of the league-longest win streak and the number of tied teams (1/N payout), read from the shared nba.standings_sim path draws",
     "category": "distribution",
-    "mechanism": "The league-longest streak is the maximum over 30 teams of the longest run of consecutive wins in each team's sequence, so a 'longest streak' contract depends on every team's game-by-game win probabilities, their serial dependence, and the chance that two or more teams share the maximum and split the payout.",
+    "mechanism": "The league-longest streak is the maximum over 30 teams of the longest run of consecutive wins in each team's sequence, so a 'longest streak' contract depends on every team's game-by-game win probabilities, their serial dependence, and the chance that two or more teams share the maximum and split the payout. It is computed as a functional of the shared standings_sim paths so streak and win-total contracts are priced from the same draws.",
     "rationale": "KXNBATEAMWINSTREAK pays $1/N to each of N teams tied for the longest streak and only regular-season games (Cup games before the final included) count, so the value for one team is P(it holds the maximum) times E[1/N | it does]. Strengths matter through a convex path: the best team is not only more likely to have a long run but also faces a different set of opponents and rest games, and common rating shocks make streaks cluster in time and in teams. Ignoring ties overstates the value of a favourite when two strong teams reach the same length.",
-    "measurement": "Simulate 20000 seasons from nba.standings_sim: draw team ratings from the posterior (rating uncertainty common across a team's games), form each game's win probability from rating difference, home court and rest, then record each team's longest run (a streak carrying over the Cup group stage and counting Cup knockout games before the final, excluding the final, play-in and playoffs). For each team report P(team has the strict maximum), P(team is in the tied set), the distribution of N and E[payout] = E[floor(100/N)/100 * 1{team in the tied set}]. Calibrate the serial dependence by comparing simulated run-length distributions with the last 15 seasons of real streak lengths (league-longest streak and its tie frequency). As-of: games completed to date, with the current run for each team carried in.",
+    "measurement": "A view, not a separate simulation: read each team's game-by-game win/loss sequence from the stored paths of the single shared nba.standings_sim run (the same 20,000 season draws, with the same posterior rating draw, home court, rest and injury scenarios that price win totals, seeds and records), and compute on every stored path each team's longest run, with the streak carried in from completed games and counting Cup knockout games before the final but excluding the Cup final, play-in and playoffs. For each team report P(team has the strict maximum), P(team is in the tied set), the distribution of N and E[payout] = E[floor(100/N)/100 * 1{team in the tied set}] as frequencies over those same paths. Do not redraw ratings or games; if the stored paths lack game-level order, extend nba.standings_sim instead. Serial dependence beyond what the shared draw implies (common within-season rating shock) is checked, not re-simulated: compare the simulated league-longest-streak and tie-frequency distribution over the stored paths with the last 15 seasons of real streak lengths and, if they disagree, adjust the shared simulation's game-level dependence so win totals and streaks stay on one set of draws. As-of: nightly with nba.standings_sim; current run for each team carried in.",
     "pregame_knowable": "yes",
     "free_sources": [
      "nba_api leaguegamelog (game results by team and date)",
@@ -7338,7 +7338,8 @@
     ],
     "form": "conditional",
     "mechanism": "The pair probability is the product of two bracket-reach probabilities only after the groups are settled; before that, each team's path depends on which wildcard slots open, and a margin-driven tiebreak in one group can move a team into the other half of the bracket, changing which pairs are even possible.",
-    "how_to_test": "Simulate group stages with and without point-differential tiebreaks and compare pair probabilities; check against historical Cup brackets for pairs excluded by bracket halves."
+    "how_to_test": "Simulate group stages with and without point-differential tiebreaks and compare each team's reach-final and East x West pair probabilities; check against past Cups that finalists have been one per conference and that same-conference pairs have never occurred (to be verified, not assumed).",
+    "hypothesis": "The pair probability is the product of two conference bracket-reach probabilities: East and West halves are disjoint until the Hinkle final, so any East x West pair is possible and a same-conference pair is exactly zero. A group tiebreak cannot move a team into the other half; before the groups settle, what a margin-driven tiebreak changes is a team's seeding inside its own conference (group winner versus wild card, which sets who hosts the quarterfinal and semifinal), so reach probabilities move through home court and path difficulty and are correlated only for teams of the same conference."
    },
    {
     "inputs": [

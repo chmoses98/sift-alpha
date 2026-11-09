@@ -50,10 +50,12 @@ def compute() -> dict:
     ss = rd(IR / "scaled_search_summary.json")
     comp_f = IN / "completeness/summary.json"
     df_f = IN / "data_foundation/summary.json"
+    vc_f = IN / "data_foundation/verified_coverage.json"
     lock_f = IN / "baseline_lock.json"
     return {"schema_version": "tracker-2.1", "status": "RESEARCH_ONLY", "phase": rd(IN / "phase_control.json"),
             "completeness": rd(comp_f) if comp_f.exists() else None,
             "data_foundation": rd(df_f) if df_f.exists() else None,
+            "verified_coverage": rd(vc_f)["summary"] if vc_f.exists() else None,
             "baseline_lock": ({k: rd(lock_f)[k] for k in ("approved_commit", "repairs_since_approved_commit", "known_discrepancies")} | {"totals": rd(lock_f)["current"]["totals"]}) if lock_f.exists() else None,
             "computable_inputs": {"n_inputs": cs["n_inputs"], "n_non_market": cs["n_non_market"], "verified_computed": cs["verified_computed"], "verified_by_level": cs["verified_by_level"], "totals": cs["totals"], "by_sport": cs["by_sport"], "blocker_classes": cs["blocker_classes"], "verification": cs["verification"]},
             "scaled_search": {"totals": ss["totals"], "ledger": ss["ledger"], "multiple_testing": ss["multiple_testing"], "rows": [r for r in ss["rows"] if r["status"] == "TESTED"], "not_tested": [r for r in ss["rows"] if r["status"] != "TESTED"]},
@@ -85,19 +87,21 @@ SHORT = {"NOT_STARTED": "not started", "STRUCTURE_INCOMPLETE": "structure incomp
 
 
 def _data_foundation_md(p: dict) -> list[str]:
-    d, lk = p.get("data_foundation"), p.get("baseline_lock")
+    d, lk, vc = p.get("data_foundation"), p.get("baseline_lock"), p.get("verified_coverage")
     if not d:
         return []
-    n = d["n_inputs"]; b = d["by_bucket"]
-    L = ["## Data foundation (ACTIVE PRIORITY): raw-data audit of every catalog input",
-         f"**{n} inputs audited across the eight sports** for exact raw-data requirements, real source availability, provenance, history, freshness, cost, missingness and point-in-time computability. "
-         f"**Computable {b.get('COMPUTABLE', 0)} · requires collection {b.get('REQUIRES_COLLECTION', 0)} · blocked {b.get('BLOCKED', 0)} · excluded as market-derived {b.get('EXCLUDED', 0)}.** "
-         f"Per-input reviewer verdicts recorded for {d['reviewed_inputs']} of {n} inputs. {d['verification_note']} Paid services added: {d['paid_services_added']}. Full report: `docs/DATA_FOUNDATION.md`; per-input rows and `coverage_matrix.csv` under `research/input_research/data_foundation/`.", "",
-         "| Sport | Computable | Requires collection | Blocked | Excluded (market-derived) |", "|---|---|---|---|---|"]
-    for s_, v in d["by_sport_bucket"].items():
-        L.append(f"| {s_} | {v.get('COMPUTABLE', 0)} | {v.get('REQUIRES_COLLECTION', 0)} | {v.get('BLOCKED', 0)} | {v.get('EXCLUDED', 0)} |")
-    L += ["", "Status: " + ", ".join(f"{k} {v}" for k, v in sorted(d["by_status"].items(), key=lambda kv: -kv[1])) + ".",
-          "Top free collection priorities (dataset: inputs it limits): " + ", ".join(f"`{x['dataset']}` {x['inputs_limited_by_it']}" for x in d["collection_priorities"][:8]) + ".", ""]
+    n = d["n_inputs"]; L = ["## Data foundation (ACTIVE PRIORITY): raw-data audit of every catalog input"]
+    if vc:
+        B = vc["by_verified_bucket"]; V = vc["by_verified_status"]
+        L += [f"**Verified coverage of {n} inputs (the one authoritative matrix: `research/input_research/data_foundation/coverage_matrix.csv`; report `docs/DATA_FOUNDATION.md`).** "
+              f"Verified computable **{B.get('VERIFIED_COMPUTABLE', 0)}** (full {V.get('VERIFIED_FULL', 0)}, partial {V.get('VERIFIED_PARTIAL', 0)}, proxy {V.get('VERIFIED_PROXY', 0)}, data-in-hand confirmed {V.get('DATA_IN_HAND_CONFIRMED', 0)}) · computable with point-in-time caveat {B.get('COMPUTABLE_WITH_CAVEAT', 0)} · "
+              f"claimed but unverified {B.get('CLAIMED_UNVERIFIED', 0)} · not computable as claimed {B.get('NOT_COMPUTABLE_AS_CLAIMED', 0)} · requires collection {B.get('REQUIRES_COLLECTION', 0)} · blocked (blind-confirmed) {B.get('BLOCKED', 0)} · blocked-contested {B.get('BLOCKED_CONTESTED', 0)} · excluded as market-derived {B.get('EXCLUDED', 0)}. "
+              f"The draft had called {vc['claimed_computable_at_draft']} inputs potentially computable. Verification is by Claude agents (replay + blind verifiers), **not human expert verification**; predictive experimentation stays PAUSED; paid services added: {d['paid_services_added']}. Network host proposal (not applied): `docs/NETWORK_ACCESS_PROPOSAL.md`.", "",
+              "| Sport | Verified computable | Caveat | Claimed, unverified | Not computable as claimed | Requires collection | Blocked (confirmed) | Blocked (contested) | Excluded |", "|---|---|---|---|---|---|---|---|---|"]
+        for s_, v in vc["by_sport_verified_status"].items():
+            vcn = sum(v.get(k, 0) for k in ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY", "DATA_IN_HAND_CONFIRMED"))
+            L.append(f"| {s_} | {vcn} | {v.get('REPLAYED_PIT_CAVEAT', 0)} | {v.get('CLAIMED_NOT_REPLAYED', 0) + v.get('DATA_IN_HAND_SCHEMA_ONLY', 0)} | {v.get('REPLAY_FAILED', 0) + v.get('DOWNGRADED_BY_VERIFIER', 0)} | {v.get('REQUIRES_COLLECTION', 0)} | {v.get('BLOCKED_CONFIRMED', 0)} | {v.get('BLOCKED_CONTESTED', 0)} | {v.get('EXCLUDED_BENCHMARK_ONLY', 0)} |")
+        L += ["", "Top free collection priorities (dataset: inputs it limits): " + ", ".join(f"`{x['dataset']}` {x['inputs_limited_by_it']}" for x in d["collection_priorities"][:8]) + ".", ""]
     if lk:
         t = lk["totals"]
         L += [f"**Baseline guard.** The approved catalog (`{lk['approved_commit'][:7]}`) is content-pinned (`baseline_lock.json`: {t['inputs']} inputs, {t['archetypes']} archetypes, {t['declared_gaps']} declared gaps) and regeneration is verified byte-for-byte (`python -m alpha_engine.input_research.regenerate --check`). "

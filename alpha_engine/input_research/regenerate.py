@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 COPY = ("alpha_engine", "research", "docs")
 # everything the pipeline may write; compared byte-for-byte by --check
-TRACKED = ("research/input_research", "research/audit/input_research", "docs/RESEARCH_TRACKER.md", "docs/DATA_FOUNDATION.md")
+TRACKED = ("research/input_research", "research/audit/input_research", "docs/RESEARCH_TRACKER.md", "docs/DATA_FOUNDATION.md", "docs/NETWORK_ACCESS_PROPOSAL.md")
 SKIP_DIRS = {"__pycache__"}
 
 

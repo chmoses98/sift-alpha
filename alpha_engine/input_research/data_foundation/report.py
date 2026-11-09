@@ -11,8 +11,11 @@ import hashlib
 import json
 from pathlib import Path
 
+from . import access_proposal as AP
 from . import audit as A
+from . import collection_plan as CP
 from . import evidence as EV
+from . import verified_coverage as VC
 
 ROOT = EV.ROOT
 DF = EV.DF
@@ -83,16 +86,83 @@ def _pct(a, b):
     return f"{100 * a / b:.0f}%" if b else "–"
 
 
-def render(b: dict, sample: dict) -> str:
+def render_verified(vc: dict) -> list[str]:
+    s = vc["summary"]; rows = vc["rows"]; n = s["n"]; V = s["by_verified_status"]; B = s["by_verified_bucket"]
+    VD = VC.VD
+    L = ["## VERIFIED COVERAGE (the one authoritative matrix: `coverage_matrix.csv` / `verified_coverage.json`)", "",
+         "Every figure below comes from committed verification evidence under `research/input_research/data_foundation/verification/`: a feature replay on re-collected raw data, blind verifier verdicts on real column schemas, a blind sample of the other buckets and a blind recheck of every BLOCKED input. "
+         "Verifiers are Claude agents, so this is **agent verification, not human expert verification**, and it does not by itself authorise predictive modelling.", "",
+         "| Verified bucket | Inputs | Meaning |", "|---|---|---|"]
+    meaning = {"VERIFIED_COMPUTABLE": "replayed on re-collected data with every point-in-time test passed (VERIFIED_FULL / PARTIAL / PROXY), or a blind verifier confirmed it from real columns (DATA_IN_HAND_CONFIRMED)",
+               "COMPUTABLE_WITH_CAVEAT": "replayed, but depends on as-played / retrieval-time fields or schedule structure: not clean point-in-time",
+               "CLAIMED_UNVERIFIED": "claimed computable but NOT replayed or checked against real rows in this phase (raw data not re-collectable here, or only a schema was checked)",
+               "NOT_COMPUTABLE_AS_CLAIMED": "a replay or a blind verifier showed the claim fails", "REQUIRES_COLLECTION": "free source exists; pull/encode, or capture prospectively (see the plan below)",
+               "BLOCKED": "blind re-verification agreed that no usable free source exists", "BLOCKED_CONTESTED": "drafted BLOCKED, but the blind verifier found a free path: unresolved (partly a scraping-policy question)", "EXCLUDED": "market-derived benchmark inputs"}
+    for k in ("VERIFIED_COMPUTABLE", "COMPUTABLE_WITH_CAVEAT", "CLAIMED_UNVERIFIED", "NOT_COMPUTABLE_AS_CLAIMED", "REQUIRES_COLLECTION", "BLOCKED", "BLOCKED_CONTESTED", "EXCLUDED"):
+        L.append(f"| {k.replace('_', ' ').title()} | {B.get(k, 0)} | {meaning[k]} |")
+    L += ["", f"Total {n} inputs. At the unreviewed-by-verifiers draft, **{s['claimed_computable_at_draft']}** inputs were called potentially computable; **{s['verified_computable']}** are verified computable now.", "",
+          "### Verified status by sport", "", "| Sport | " + " | ".join(x.replace("_", " ").lower() for x in VC.HEADLINE) + " |", "|---|" + "---|" * len(VC.HEADLINE)]
+    for sp in A.SPORTS:
+        v = s["by_sport_verified_status"][sp]; L.append(f"| {sp} | " + " | ".join(str(v.get(x, 0)) for x in VC.HEADLINE) + " |")
+    L.append("| **all** | " + " | ".join(f"**{V.get(x, 0)}**" for x in VC.HEADLINE) + " |")
+    # replay evidence
+    L += ["", "### Feature replay (previously computed inputs, re-collected raw data, independent tests)", "",
+          "Tests that do **not** reuse the earlier run's seeds, cut dates or protected-column lists: determinism; coverage replay vs the recorded values; **truncation** (recompute on data cut before date D, earlier rows must be identical); outcome perturbation at new cuts/seeds; own-game perturbation at a mid-history date; **vintage dependence** (scramble as-played / retrieval-time fields and see which computed columns move).", "",
+          "| Sport | Specs replayed | Determinism | Truncation | Perturbation | Own-game | Depend on as-played fields | Re-collected raw rows | Provenance vs ledger |", "|---|---|---|---|---|---|---|---|---|"]
+    reps = VC.load_replays()
+    for sp in A.SPORTS:
+        if sp not in reps:
+            L.append(f"| {sp} | **not replayed** | | | | | | | {'raw repo access denied this session' if sp in ('NBA', 'NHL') else 'replay not completed'} |"); continue
+        ins = reps[sp]["inputs"].values(); t = lambda f: sum(1 for i in ins if f(i["tests"]))
+        pv = s["provenance_checks"].get(sp) or {}
+        L.append(f"| {sp} | {len(ins)} | {t(lambda x: x['determinism']['ok'])} | {t(lambda x: all(y['ok'] for y in x['truncation']))} | {t(lambda x: all(y['ok'] for y in x['perturbation']))} | {t(lambda x: x['own_game']['ok'])} | {t(lambda x: any(x.get('vintage_dependence', {}).values()))} | {pv.get('replay_rows')} | {'ok' if pv.get('ok') else 'MISMATCH'} ({pv.get('basis', '')[:60]}) |")
+    # failed checks
+    fails = []
+    for sp, rp in reps.items():
+        for iid, r in rp["inputs"].items():
+            t = r["tests"]; bad = []
+            if not t["determinism"]["ok"]: bad.append("determinism")
+            for x in t["truncation"]:
+                if not x["ok"]: bad.append(f"truncation@{x['cut']}: {x['bad_columns'][:3]}"); break
+            for x in t["perturbation"]:
+                if not x["ok"]: bad.append(f"perturbation@{x['cut']}: {x['bad_columns'][:3]}"); break
+            if not t["own_game"]["ok"]: bad.append(f"own-game@{t['own_game'].get('date')}: {t['own_game'].get('bad_columns')}")
+            vd = [k for k, v in (t.get("vintage_dependence") or {}).items() if v]
+            if vd: bad.append("depends on as-played fields " + ", ".join(vd))
+            if bad: fails.append((f"{sp}:{iid}", bad))
+    L += ["", "**Failed or caveated replay checks (all of them):**", ""] + ([f"* `{k}`: {'; '.join(b)}" for k, b in fails] or ["* none"]) + [""]
+    # bucket sample + blocked recheck + dih
+    ks = VD / "bucket_sample"
+    if ks.exists():
+        key = json.loads((ks / "key.json").read_text()); ans = {}
+        for f in sorted(ks.glob("answers_*.json")): ans.update(json.loads(f.read_text())["answers"])
+        ag = collections.Counter(); tot = collections.Counter()
+        for k_, a in key.items():
+            tot[a["claimed_bucket"]] += 1; ag[a["claimed_bucket"]] += int(ans[k_]["bucket"] == a["claimed_bucket"])
+        L += ["### Blind verification of the other buckets", "", f"A stratified blind sample of {len(key)} inputs (verifiers saw only the catalog definition, never the claim): overall agreement **{sum(ag.values())}/{len(key)} = {sum(ag.values()) / len(key):.0%}**; " + "; ".join(f"{b}: {ag[b]}/{tot[b]}" for b in tot) + ". "
+              "The draft's BLOCKED calls did not survive: see the next paragraph. The sample is evidence about the draft's reliability by bucket; **85% overall agreement is not a licence to start predictive modelling**.", ""]
+    bk = VD / "blocked_recheck"
+    if bk.exists():
+        c = collections.Counter(v["verified_status"] for v in vc["rows"] if v["draft_bucket"] == "BLOCKED")
+        L += [f"**Blind recheck of every drafted-BLOCKED input ({sum(c.values())}):** {c.get('BLOCKED_CONFIRMED', 0)} confirmed blocked, {c.get('BLOCKED_CONTESTED', 0)} contested. Part of the disagreement is a policy question, not a fact: the verifiers counted *scrapeable* pages as free, whereas the owner's policy forbids restricted scraping and paid services. Contested inputs stay out of every computable or confirmed-blocked count until the owner settles the scraping policy and the specific sources are measured.", ""]
+    dih = VC.load_dih()
+    if dih:
+        c = collections.Counter(a["verdict"] for a in dih.values())
+        L += [f"**Blind verification of the {len(dih)} data-in-hand inputs (no builder existed):** " + ", ".join(f"{k} {v}" for k, v in c.items()) + ". CONFIRMED needs real re-collected columns; NBA and NHL could only be judged on committed ledger schemas (the owner's NBA/NHL archive repos were not readable this session), so at most CONFIRMED_SCHEMA_ONLY, which is **not** counted as verified.", ""]
+    return L
+
+
+def render(b: dict, sample: dict, vc: dict) -> str:
     s = b["summary"]; rows = b["rows"]; reg = b["registry"]; n = s["n_inputs"]
     P = EV.probes(); pc = collections.Counter(p["result"] for p in P.values())
     denied = sorted(p["id"] for p in P.values() if p["result"] == "POLICY_DENIED")
     L = ["# SIFT Alpha data foundation: raw-data audit of every catalog input (RESEARCH_ONLY)", "",
          "Generated by `python -m alpha_engine.input_research.data_foundation.audit` and `.report`; do not edit by hand. Artifacts: `research/input_research/data_foundation/` (`input_audit.json` per-input rows, `coverage_matrix.csv`, `datasets.json`, `sources.json`, `probes.json`, `summary.json`, `verification_sample.json`).", "",
-         "> **Status: NOT independently verified.** This assessment was built by a Claude agent from measured probes, repo ledgers and the catalog's own provenance" + (", and every input was then reviewed by a per-sport Claude reviewer. " if s["all_inputs_reviewed"] else f". **Only {s['reviewed_inputs']} of {n} inputs have a recorded reviewer verdict: the rest is the unreviewed regex draft and is optimistic in places.** ") + "That is agent work, **not** human expert verification and **not** the independent verification that must precede any predictive experiment. "
-         "**Predictive experimentation remains PAUSED.** No paid service was added, no live order was placed and no betting authority changed.", "",
-         f"The audited baseline is the approved catalog blueprint (commit `50dc65e`, pinned by `research/input_research/baseline_lock.json`): **{n} inputs, 170 archetypes, 1,030 declared gaps, all preserved**. Approval was of the blueprint only.", "",
-         "## Headline: which inputs are computable, which need collection, which are blocked", "",
+         "> **Status: agent-verified in part; NOT human-verified; the readiness gate is the owner's.** Built by a Claude agent from measured probes, repo ledgers and the catalog's own provenance; every input then got a per-sport Claude reviewer verdict; then a feature replay on re-collected data, blind verifiers on the data-in-hand inputs, a blind sample of the other buckets and a blind recheck of every BLOCKED input (see VERIFIED COVERAGE). "
+         "All verifiers are Claude agents: this is **not** human expert verification, many claims remain unverified (see the matrix), and **nothing here authorises predictive experimentation**, which remains PAUSED. No paid service was added, no live order was placed and no betting authority changed.", "",
+         "The audited baseline is the approved catalog blueprint (commit `50dc65e`, pinned by `research/input_research/baseline_lock.json`): **{n} inputs, 170 archetypes, 1,030 declared gaps, all preserved**. Approval was of the blueprint only.", "",
+         "VERIFIED_PLACEHOLDER", "",
+         "## Draft buckets before verification (reconciliation only; superseded by the verified matrix above)", "",
          "| Bucket | Inputs | Share | Meaning |", "|---|---|---|---|"]
     meaning = {"COMPUTABLE": "computed on real data by the earlier milestone (point-in-time perturbation test) or all needed data already sits in a profiled archive", "REQUIRES_COLLECTION": "a free source exists but data must still be pulled, encoded, or captured prospectively (vintages cannot be backfilled)",
                "BLOCKED": "no usable free source (paid-only, none found, or a partial sample only)", "EXCLUDED": "market-derived benchmark inputs: never market-free inputs, not assessed for data"}
@@ -121,10 +191,7 @@ def render(b: dict, sample: dict) -> str:
     L += ["", "| Dataset | Access status | History | PIT class | Cost | ToS risk | Collected rows |", "|---|---|---|---|---|---|---|"]
     for d, v in sorted(reg.items()):
         h = v["history"]; L.append(f"| `{d}` | {v['access_status']} | {h['first'] or '?'}–{h['last'] or '?'} ({h['basis'].lower()}) | {v['pit']} | {v['cost']} | {v['tos_risk']} | {v['rows_collected'] or ''} |")
-    L += ["", "## Collection plan (free sources only): datasets that limit the most inputs", "", "Ranked by the number of not-yet-computable inputs for which the dataset is the limiting requirement. `PROSPECTIVE_CAPTURE_ONLY` datasets accrue history only from the capture start date.", "",
-          "| Dataset | Limits (inputs) | Access status | PIT | Cost | ToS risk | Sports |", "|---|---|---|---|---|---|---|"]
-    for p in s["collection_priorities"][:30]:
-        L.append(f"| `{p['dataset']}` {p['title'][:60]} | {p['inputs_limited_by_it']} | {p['access_status']} | {p['pit']} | {p['cost']} | {p['tos_risk']} | {', '.join(p['sports'])} |")
+    L += [""] + CP.render(CP.build())
     free_key = sorted(d for d, v in reg.items() if v["cost"] == "free (key needed)" and v["access_status"] != "COLLECTED_ARCHIVE")
     paid = sorted(d for d, v in reg.items() if v["access_status"] == "PAID_ONLY")
     L += ["", "## Cost, permission and terms", "",
@@ -142,15 +209,19 @@ def render(b: dict, sample: dict) -> str:
           f"`verification_sample.json` is a deterministic stratified sample of {sample['sample_size_inputs']} inputs (sport x bucket) plus {len(sample['datasets'])} dataset status replays; it contains the questions only. The claims live in a separate `verification_answer_key.json` that the verifier must not open before submitting. An independent verifier re-derives each answer and fills `verification_results.json` (template included); `report.score()` compares it with the key. Proposed bar (the owner decides): "
           f"bucket agreement >= {sample['acceptance_proposal']['bucket_agreement_overall_min']:.0%} overall and >= {sample['acceptance_proposal']['bucket_agreement_computable_min']:.0%} on COMPUTABLE; every dataset replay matches; any COMPUTABLE input the verifier rates worse reopens that sport. "
           "The verifier must not be the author or a sport reviewer; a human domain expert is preferred. Until a verification is completed and accepted, `research/input_research/phase_control.json` keeps predictive experimentation PAUSED.", ""]
+    i = L.index("VERIFIED_PLACEHOLDER"); L[i:i + 1] = render_verified(vc)
     return "\n".join(L)
 
 
 def main() -> int:
     b = A.build(write=True)
+    vc = VC.build(write=True)
+    (DF / "collection_plan.json").write_text(json.dumps(CP.build(), indent=0, sort_keys=True, ensure_ascii=False) + "\n")
+    AP.main()
     sample, key = verification_sample(b["rows"], b["registry"])
     (DF / "verification_sample.json").write_text(json.dumps(sample, indent=0, sort_keys=True, ensure_ascii=False) + "\n")
     (DF / "verification_answer_key.json").write_text(json.dumps(key, indent=0, sort_keys=True, ensure_ascii=False) + "\n")
-    DOC.write_text(render(b, sample))
+    DOC.write_text(render(b, sample, vc))
     print("wrote", DOC.relative_to(ROOT), "and verification_sample.json:", sample["sample_size_inputs"], "inputs,", len(sample["datasets"]), "dataset replays")
     return 0
 

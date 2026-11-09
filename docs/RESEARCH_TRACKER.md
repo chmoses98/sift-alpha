@@ -28,7 +28,7 @@ Acceptance criteria (all must hold per archetype): structure valid (13-category 
 | every in-scope series is assigned to an archetype that exists in the catalog | PASS | 2610 in-scope series |
 | every review-added input is audited (definition, provenance, market-free class) | PASS | 986 audited of 943 review-added inputs |
 | every declared gap is classified | PASS | 969 of 969 |
-| no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids) | **NOT MET** | 8 open of 65 catalog blockers (57 resolved) |
+| no catalog blocker remains open (a blocker closes only with a verified change to existing catalog ids) | **NOT MET** | 7 open of 65 catalog blockers (58 resolved) |
 
 **All documented criteria met: no.** Meeting the documented criteria is necessary, not sufficient, and is never approval. Reviewers and verifiers are Claude agents, not human domain experts.
 

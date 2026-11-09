@@ -41,7 +41,7 @@ def build() -> dict:
         while rem:
             cnt = collections.Counter(s for ss in rem.values() for s in ss)
             if not cnt: break
-            s, n = cnt.most_common(1)[0]; got = [i for i, ss in rem.items() if s in ss]
+            s, n = sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))[0]; got = [i for i, ss in rem.items() if s in ss]
             order.append({"source": s, "unique_incremental_inputs": len(got)}); [rem.pop(i) for i in got]
         out["sports"][sp] = {"n_mapped": len(mp), "by_status": dict(st), "by_access_class": {k: len(v) for k, v in cls.items()}, "vintage_dependent_prospective": len(vint), "greedy_source_order_no_new_permission": order[:12]}
     return out

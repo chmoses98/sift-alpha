@@ -25,5 +25,11 @@ fired = SP.expand_cron_hours(lines, now - pd.Timedelta(hours=2), now + pd.Timede
 bad_on_time = SP.uncovered(games, fired, now)
 bad_late = SP.uncovered(games, fired, now, fire_min=SP.FIRE_MIN + 45)
 out = {"now": now.isoformat(), "future_firings_needed": len(need), "workflow_capture_crons": lines, "recommended_crons": proposal, "uncovered_on_time": bad_on_time, "uncovered_if_45min_late": bad_late}
+out["uncovered_on_time"] = {"count": len(bad_on_time), "first": bad_on_time[:5]}
+out["uncovered_if_45min_late"] = {"count": len(bad_late), "first": bad_late[:5]}
+out["recommended_crons"] = len(proposal)
 print(json.dumps(out, indent=1))
+print("RECOMMENDED_CRONS (planner output + 1 preceding hour margin):")
+for l in proposal:
+    print("  - cron: \"%s\"" % l)
 sys.exit(1 if (bad_on_time or bad_late) else 0)

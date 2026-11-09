@@ -8,34 +8,61 @@ The audited baseline is the approved catalog blueprint (commit `50dc65e`, pinned
 
 ## VERIFIED COVERAGE (the one authoritative matrix: `coverage_matrix.csv` / `verified_coverage.json`)
 
-Every figure below comes from committed verification evidence under `research/input_research/data_foundation/verification/`: a feature replay on re-collected raw data, blind verifier verdicts on real column schemas, a blind sample of the other buckets and a blind recheck of every BLOCKED input. Verifiers are Claude agents, so this is **agent verification, not human expert verification**, and it does not by itself authorise predictive modelling.
+Every figure below comes from committed verification evidence under `research/input_research/data_foundation/verification/`: feature replays on re-collected raw data (all eight sports), blind verifier verdicts on real column schemas (two rounds), a blind sample of the other buckets, and two blind rechecks of every drafted-BLOCKED input (the second under the owner's explicit access policy). Verifiers are Claude agents, so this is **agent verification, not human expert verification**, and it does not by itself authorise predictive modelling.
 
-| Verified bucket | Inputs | Meaning |
+| Bucket | Inputs | Meaning |
 |---|---|---|
-| Verified Computable | 139 | replayed on re-collected data with every point-in-time test passed (VERIFIED_FULL / PARTIAL / PROXY), or a blind verifier confirmed it from real columns (DATA_IN_HAND_CONFIRMED) |
-| Computable With Caveat | 2 | replayed, but depends on as-played / retrieval-time fields or schedule structure: not clean point-in-time |
-| Claimed Unverified | 134 | claimed computable but NOT replayed or checked against real rows in this phase (raw data not re-collectable here, or only a schema was checked) |
-| Not Computable As Claimed | 34 | a replay or a blind verifier showed the claim fails |
-| Requires Collection | 1116 | free source exists; pull/encode, or capture prospectively (see the plan below) |
-| Blocked | 28 | blind re-verification agreed that no usable free source exists |
-| Blocked Contested | 115 | drafted BLOCKED, but the blind verifier found a free path: unresolved (partly a scraping-policy question) |
+| Full | 54 | computed AND replayed: every independent test passed, no forbidden-as-pregame field, whole definition implemented, coverage and provenance checked |
+| Partial | 93 | replayed and clean, but only part of the catalog definition is implemented or coverage is limited |
+| Proxy | 19 | replayed and clean, but measures a different quantity for the same mechanism |
+| Data In Hand | 56 | no builder yet; two blind verifiers confirmed from REAL re-read columns that it can be built point-in-time (a verdict resting on a table not re-read this session does not count) |
+| Caveat | 0 | replayed; depends on schedule structure (e.g. games left) valid only if the fixture list is known before the event |
+| Unverified | 50 | a claim with no replay or real-column check (schema-only, or a blocked/computable dispute the two blind rounds did not settle) |
+| Failed | 60 | a replay or blind verifier showed the claim fails, or it depends on a field the point-in-time policy forbids (quarantined) |
+| Requires Collection | 1187 | a permitted source exists but data must still be pulled/encoded, or captured prospectively |
+| Blocked | 49 | no permitted usable source (policy-blocked, none found, sample-only, or blind-confirmed) |
 | Excluded | 81 | market-derived benchmark inputs |
 
-Total 1649 inputs. At the unreviewed-by-verifiers draft, **309** inputs were called potentially computable; **139** are verified computable now.
+Total 1649 inputs. At the draft, **309** inputs were called potentially computable; **222** are verified computable now (FULL 54, PARTIAL 93, PROXY 19, DATA_IN_HAND 56). These are counted separately everywhere: a FULL is never averaged with a DATA_IN_HAND.
 
 ### Verified status by sport
 
-| Sport | verified full | verified partial | verified proxy | data in hand confirmed | replayed pit caveat | claimed not replayed | data in hand schema only | replay failed | downgraded by verifier | requires collection | blocked confirmed | blocked contested | excluded benchmark only |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| NFL | 12 | 11 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 253 | 0 | 0 | 13 |
-| CFB | 1 | 6 | 2 | 0 | 2 | 0 | 0 | 0 | 4 | 128 | 7 | 2 | 11 |
-| NBA | 0 | 0 | 0 | 0 | 0 | 31 | 46 | 0 | 18 | 158 | 1 | 14 | 11 |
-| CBB | 1 | 6 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 134 | 5 | 25 | 11 |
-| NHL | 0 | 0 | 0 | 0 | 0 | 32 | 25 | 0 | 6 | 83 | 0 | 2 | 7 |
-| MLB | 2 | 14 | 2 | 1 | 0 | 0 | 0 | 0 | 1 | 222 | 0 | 1 | 8 |
-| SOCCER | 6 | 6 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 83 | 7 | 65 | 11 |
-| TENNIS | 15 | 18 | 2 | 26 | 0 | 0 | 0 | 0 | 4 | 55 | 8 | 6 | 9 |
-| **all** | **37** | **61** | **14** | **27** | **2** | **63** | **71** | **0** | **34** | **1116** | **28** | **115** | **81** |
+| Sport | verified full | verified partial | verified proxy | data in hand confirmed | replayed pit caveat | claimed not replayed | data in hand schema only | replay failed | downgraded by verifier | pit quarantined | requires collection | blocked confirmed | blocked by policy | blocked contested | excluded benchmark only |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| NFL | 12 | 11 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 253 | 0 | 0 | 0 | 13 |
+| CFB | 1 | 6 | 2 | 0 | 0 | 0 | 0 | 0 | 4 | 2 | 129 | 5 | 1 | 2 | 11 |
+| NBA | 8 | 19 | 4 | 21 | 0 | 0 | 14 | 0 | 29 | 0 | 158 | 1 | 9 | 5 | 11 |
+| CBB | 1 | 6 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 153 | 4 | 3 | 4 | 11 |
+| NHL | 9 | 17 | 2 | 10 | 0 | 0 | 13 | 0 | 8 | 4 | 84 | 0 | 0 | 1 | 7 |
+| MLB | 2 | 10 | 1 | 0 | 0 | 0 | 0 | 0 | 2 | 5 | 222 | 0 | 0 | 1 | 8 |
+| SOCCER | 6 | 6 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 131 | 6 | 17 | 1 | 11 |
+| TENNIS | 15 | 18 | 2 | 25 | 0 | 0 | 0 | 0 | 5 | 0 | 57 | 3 | 0 | 9 | 9 |
+| **all** | **54** | **93** | **19** | **56** | **0** | **0** | **27** | **0** | **49** | **11** | **1187** | **19** | **30** | **23** | **81** |
+
+### Point-in-time policy and quarantine
+
+Owner's rules: observed weather never replaces a pregame forecast; final lineups, game-day outcomes and revised / retrieval-time rankings never appear as pregame inputs. `alpha_engine/features/pit_policy.py` classifies the forbidden raw fields; any replayed input whose features depend on one is **quarantined** (`pit_quarantine.json`) and the feature framework now marks it `final_postgame` (never pregame-eligible). In the draft layer any pregame weather need is forced onto the forecast-vintage dataset, whatever a reviewer mapped. Quarantined inputs:
+
+* `CBB:cbb.motivation`: RETRIEVAL_TIME_RANK (raw.away_rank, raw.home_rank)
+* `CBB:cbb.popularity_bias`: RETRIEVAL_TIME_RANK (raw.away_rank, raw.home_rank)
+* `CFB:cfb.motivation`: RETRIEVAL_TIME_RANK (raw.away_rank, raw.home_rank)
+* `CFB:cfb.polls`: RETRIEVAL_TIME_RANK (raw.away_rank, raw.home_rank)
+* `MLB:mlb.babip_luck`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.k_rates`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.leash`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.pitcher_hr_vulnerability`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.sp_efficiency`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.sp_quality`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.sp_rest_days`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.sp_workload`: FINAL_STARTER_FLAG (box.gs)
+* `MLB:mlb.umpire`: AS_PLAYED_OFFICIAL (schedule.home_plate_ump_id)
+* `MLB:mlb.weather_pit`: OBSERVED_WEATHER (schedule.temp, schedule.weather_condition, schedule.wind)
+* `NFL:nfl.weather_pit`: OBSERVED_WEATHER (games.temp, games.wind)
+* `NHL:nhl.goalie_danger_split`: FINAL_STARTER_FLAG (goalies.starter)
+* `NHL:nhl.goalie_pull_risk`: FINAL_STARTER_FLAG (goalies.starter)
+* `NHL:nhl.goalie_quality`: FINAL_STARTER_FLAG (goalies.starter)
+* `NHL:nhl.goalie_workload`: FINAL_STARTER_FLAG (goalies.starter)
+
 
 ### Feature replay (previously computed inputs, re-collected raw data, independent tests)
 
@@ -45,9 +72,9 @@ Tests that do **not** reuse the earlier run's seeds, cut dates or protected-colu
 |---|---|---|---|---|---|---|---|---|
 | NFL | 33 (full: 3 truncation cuts, 3 perturbations) | 33 | 33 | 33 | 32 | 1 | 801532 | ok (no ledger for this source: re-collected rows exist and the s) |
 | CFB | 14 (full: 3 truncation cuts, 3 perturbations) | 14 | 14 | 14 | 14 | 2 | 5521 | ok (ledger espn_cfb_ledger.json: 5465 rows at the earlier collec) |
-| NBA | **not replayed** | | | | | | | raw repo access denied this session |
+| NBA | 32 (full: 3 truncation cuts, 3 perturbations) | 32 | 32 | 32 | 32 | 0 | 8636 | ok (ledger repo_archives_ledger.json: 8636 rows at the earlier c) |
 | CBB | 20 (full: 3 truncation cuts, 3 perturbations) | 20 | 20 | 20 | 20 | 2 | 31039 | ok (ledger espn_cbb_ledger.json: 31039 rows at the earlier colle) |
-| NHL | **not replayed** | | | | | | | raw repo access denied this session |
+| NHL | 32 (full: 3 truncation cuts, 3 perturbations) | 32 | 32 | 32 | 32 | 0 | 23344 | ok (ledger repo_archives_ledger.json: 23344 rows at the earlier ) |
 | MLB | 29 (full: 3 truncation cuts, 3 perturbations) | 29 | 29 | 29 | 28 | 2 | 25202 | ok (ledger mlb_schedule_ledger.json: 25202 rows at the earlier c) |
 | SOCCER | 21 (full: 3 truncation cuts, 3 perturbations) | 21 | 18 | 21 | 21 | 0 | 19763 | ok (no ledger for this source: re-collected rows exist and the s) |
 | TENNIS | 35 (quick: 1 truncation cut, 1 perturbation) | 35 | 35 | 35 | 35 | 0 | 79019 | ok (ledger repo_archives_ledger.json: 79019 rows at the earlier ) |
@@ -69,9 +96,9 @@ Tests that do **not** reuse the earlier run's seeds, cut dates or protected-colu
 
 A stratified blind sample of 95 inputs (verifiers saw only the catalog definition, never the claim): overall agreement **72/95 = 76%**; REQUIRES_COLLECTION: 50/56; EXCLUDED: 15/16; BLOCKED: 7/23. The draft's BLOCKED calls did not survive: see the next paragraph. The sample is evidence about the draft's reliability by bucket; **85% overall agreement is not a licence to start predictive modelling**.
 
-**Blind recheck of every drafted-BLOCKED input (143):** 28 confirmed blocked, 115 contested. Part of the disagreement is a policy question, not a fact: the verifiers counted *scrapeable* pages as free, whereas the owner's policy forbids restricted scraping and paid services. Contested inputs stay out of every computable or confirmed-blocked count until the owner settles the scraping policy and the specific sources are measured.
+**Two blind rechecks of every drafted-BLOCKED input (143); round 2 under the owner's explicit access policy (no restricted scraping, no paid services, no accounts):** BLOCKED_BY_POLICY 30, BLOCKED_CONFIRMED 19, BLOCKED_CONTESTED 23, RECLASSIFIED_TO_REQUIRES_COLLECTION 71. `BLOCKED_CONFIRMED` = both rounds say blocked; `BLOCKED_BY_POLICY` = round 2 finds the only route is one the policy forbids (round 1 had no policy); `RECLASSIFIED_TO_REQUIRES_COLLECTION` = both rounds find a permitted route; `BLOCKED_CONTESTED` = unresolved disagreement (counted as UNVERIFIED, never as blocked or computable). Round-2 verifiers reported low diligence on several keys (some did not open the catalog), so their answers are evidence, not proof.
 
-**Blind verification of the 132 data-in-hand inputs (no builder existed):** DOWNGRADED 34, CONFIRMED 27, CONFIRMED_SCHEMA_ONLY 69, UNDETERMINED 2. CONFIRMED needs real re-collected columns; NBA and NHL could only be judged on committed ledger schemas (the owner's NBA/NHL archive repos were not readable this session), so at most CONFIRMED_SCHEMA_ONLY, which is **not** counted as verified.
+**Blind verification of the 132 data-in-hand inputs (no builder existed), two rounds:** DATA_IN_HAND_CONFIRMED 56, DATA_IN_HAND_SCHEMA_ONLY 27, DOWNGRADED_BY_VERIFIER 49. NBA and NHL were re-judged in round 2 on REAL re-read columns (authorized read-only access to the owner's archive repos); a CONFIRMED that rests on a table whose rows were not re-read this session (NBA play-by-play and stints, NHL shot events) is downgraded to schema-only. For the others a downgrade in either round wins and CONFIRMED needs both.
 
 
 ## Draft buckets before verification (reconciliation only; superseded by the verified matrix above)
@@ -83,13 +110,13 @@ A stratified blind sample of 95 inputs (verifiers saw only the catalog definitio
 | Blocked | 143 | 9% | no usable free source (paid-only, none found, or a partial sample only) |
 | Excluded | 81 | 5% | market-derived benchmark inputs: never market-free inputs, not assessed for data |
 
-Reviewer coverage: **1649 of 1649 inputs** carry a recorded per-input reviewer verdict ({'OK': 658, 'FIX': 991}). Evidence grades: {'MEASURED (computed)': 210, 'MEASURED': 512, 'PARTLY_DOCUMENTED': 927}. Confidence of the mapping: {'MEDIUM': 1035, 'HIGH': 586, 'LOW': 28}.
+Reviewer coverage: **1649 of 1649 inputs** carry a recorded per-input reviewer verdict ({'OK': 658, 'FIX': 991}). Evidence grades: {'MEASURED (computed)': 210, 'MEASURED': 499, 'PARTLY_DOCUMENTED': 940}. Confidence of the mapping: {'MEDIUM': 1035, 'HIGH': 586, 'LOW': 28}.
 
 ### Coverage matrix (sport x status)
 
 | Sport | computed full | computed partial | computed proxy | data in hand | collect free measured | collect free unverified | collect prospective | blocked sample only | blocked paid only | blocked no free source | excluded benchmark only |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| NFL | 12 | 11 | 5 | 0 | 146 | 39 | 68 | 0 | 0 | 0 | 13 |
+| NFL | 12 | 11 | 5 | 0 | 129 | 56 | 68 | 0 | 0 | 0 | 13 |
 | CFB | 1 | 7 | 3 | 4 | 6 | 81 | 41 | 0 | 7 | 2 | 11 |
 | NBA | 9 | 18 | 4 | 64 | 11 | 61 | 86 | 0 | 5 | 10 | 11 |
 | CBB | 0 | 7 | 1 | 1 | 2 | 64 | 68 | 0 | 7 | 23 | 11 |
@@ -97,7 +124,7 @@ Reviewer coverage: **1649 of 1649 inputs** carry a recorded per-input reviewer v
 | MLB | 2 | 14 | 2 | 2 | 39 | 60 | 123 | 0 | 0 | 1 | 8 |
 | SOCCER | 5 | 7 | 2 | 0 | 14 | 45 | 24 | 17 | 1 | 54 | 11 |
 | TENNIS | 16 | 17 | 2 | 30 | 5 | 18 | 32 | 10 | 3 | 1 | 9 |
-| **all** | **52** | **103** | **22** | **132** | **228** | **394** | **494** | **27** | **23** | **93** | **81** |
+| **all** | **52** | **103** | **22** | **132** | **211** | **411** | **494** | **27** | **23** | **93** | **81** |
 
 Status meanings: `COMPUTED_FULL` computed, full definition (earlier milestone, point-in-time perturbation test); `COMPUTED_PARTIAL` computed, partial definition (earlier milestone); `COMPUTED_PROXY` computed as a proxy (earlier milestone); `DATA_IN_HAND` data in hand (profiled archive), builder not yet written; `COLLECT_FREE_MEASURED` free source fetched from the runner: pull and build; `COLLECT_FREE_UNVERIFIED` free source documented, not verifiable from the runner (or rules to encode); `COLLECT_PROSPECTIVE` no backfillable history: record vintages from now on (or accept final-only leakage); `BLOCKED_SAMPLE_ONLY` blocked: only a free sample exists; `BLOCKED_PAID_ONLY` blocked: commercial source only (not added without permission); `BLOCKED_NO_FREE_SOURCE` blocked: no free source found; `EXCLUDED_BENCHMARK_ONLY` excluded: market-derived benchmark.
 
@@ -330,11 +357,11 @@ Ranked within each class by archetypes touched (breadth across market archetypes
 | `xx.rules_reference` Rules, formats, regulations, tiebreakers, CBA te | 106 | 150 (144) | CBB, CFB, MLB, NBA, NFL, NHL, SOCCER | REFERENCE_DOCUMENT | STATIC | ?–? | medium | free |
 | `nfl.pbp` Play-by-play with EPA/WP, personnel-free (nflfas | 28 | 214 (186) | NFL | FREE_REACHABLE | EVENT_TIME | 1999–2025 | low | free |
 | `nfl.player_stats_weekly` Weekly player stats (passing/rushing/receiving/d | 28 | 118 (107) | NFL | FREE_REACHABLE | EVENT_TIME | 2011–2025 | low | free |
-| `nfl.schedule_results` Schedule, final scores, venue, roof/surface, obs | 27 | 38 (35) | NFL | FREE_REACHABLE | STATIC | 1999–2025 | low | free |
 | `nfl.injuries_weekly` Weekly practice and game-status injury designati | 27 | 30 (29) | NFL | FREE_REACHABLE | WEEKLY_SNAPSHOT | 2009–2025 | low | free |
 | `mlb.transactions` Transactions (IL, call-ups, trades, signings, DF | 26 | 51 (47) | MLB | FREE_REACHABLE | EVENT_TIME | ?–? | medium | free |
 | `mlb.pitch_pa_events` Pitch- and plate-appearance-level events with pi | 25 | 155 (140) | MLB | FREE_REACHABLE | EVENT_TIME | 2008–2025 | medium | free |
 | `soc.results_shots_cards` Match results, shots, SOT, corners, fouls, cards | 23 | 94 (81) | SOCCER | FREE_REACHABLE | EVENT_TIME | 2015–2026 | low | free |
+| `nfl.schedule_results` Schedule, final scores, venue, roof/surface, obs | 23 | 15 (14) | NFL | FREE_REACHABLE | STATIC | 1999–2025 | low | free |
 | `nfl.depth_charts` Depth charts (team-published, weekly) | 22 | 16 (16) | NFL | FREE_REACHABLE | WEEKLY_SNAPSHOT | 2001–2025 | low | free |
 | `nfl.participation` Per-play participation: personnel, formation, co | 21 | 27 (24) | NFL | FREE_REACHABLE | EVENT_TIME | 2016–2025 | low | free |
 | `nfl.snap_counts` Snap counts per player-game with snap share | 21 | 13 (13) | NFL | FREE_REACHABLE | EVENT_TIME | 2012–2025 | low | free |
@@ -380,9 +407,8 @@ Ranked within each class by archetypes touched (breadth across market archetypes
 
 | Dataset | Archetypes touched | Inputs depending (not yet computable) | Sports | Access status | PIT class | History | ToS risk | Cost |
 |---|---|---|---|---|---|---|---|---|
-| `env.venue_geo` Venue coordinates, altitude, orientation, roof,  | 117 | 100 (82) | CBB, CFB, MLB, NBA, NFL, NHL, SOCCER, TENNIS | FREE_UNPROBED | STATIC | ?–? | low | free |
-| `env.weather_forecast_pit` Weather FORECAST as issued before the game (poin | 64 | 29 (29) | CFB, MLB, NFL, SOCCER, TENNIS | FREE_BLOCKED_FROM_RUNNER | PIT_NATIVE | 2022–? | low | free |
-| `env.weather_observed` Observed weather by venue and time (Open-Meteo a | 42 | 31 (30) | CFB, MLB, SOCCER, TENNIS | FREE_BLOCKED_FROM_RUNNER | EVENT_TIME | 1940–? | low | free |
+| `env.venue_geo` Venue coordinates, altitude, orientation, roof,  | 118 | 113 (94) | CBB, CFB, MLB, NBA, NFL, NHL, SOCCER, TENNIS | FREE_UNPROBED | STATIC | ?–? | low | free |
+| `env.weather_forecast_pit` Weather FORECAST as issued before the game (poin | 66 | 55 (55) | CFB, MLB, NFL, SOCCER, TENNIS | FREE_BLOCKED_FROM_RUNNER | PIT_NATIVE | 2022–? | low | free |
 | `nba.box_history_long` Long NBA team/player box-score history (regular  | 24 | 13 (13) | NBA | FREE_UNPROBED | EVENT_TIME | 2004–2026 | high | free |
 | `cfb.pbp_cfbd` Play-by-play, drives, team and player game stats | 16 | 85 (78) | CFB | FREE_BLOCKED_FROM_RUNNER | EVENT_TIME | 2001–? | low | free (key needed) |
 | `cfb.recruiting_portal` Recruiting composites, transfer portal entries,  | 15 | 16 (16) | CFB | FREE_UNPROBED | FINAL_ONLY | ?–? | high | free (key needed) |
@@ -394,6 +420,7 @@ Ranked within each class by archetypes touched (breadth across market archetypes
 | `cbb.coaching_staff_history` Head coach by team-season, tenures, interim/perm | 12 | 8 (8) | CBB | FREE_UNPROBED | STATIC | ?–? | high | free |
 | `mlb.statcast_bulk` Statcast search exports (exit velocity, launch a | 11 | 11 (10) | MLB | FREE_BLOCKED_FROM_RUNNER | EVENT_TIME | 2015–? | medium | free |
 | `cbb.ratings_barttorvik` Bart Torvik T-Rank team/player tables and daily  | 11 | 8 (8) | CBB | FREE_BLOCKED_FROM_RUNNER | PIT_NATIVE | ?–? | medium | free |
+| `nba.referees` Referee assignments (announced pregame) and per- | 11 | 7 (4) | NBA | FREE_UNPROBED | STATIC | ?–? | low | free |
 
 ### D_BLOCKED_OR_SAMPLE_ONLY: paid, none found, or only a free sample
 
@@ -413,6 +440,9 @@ Ranked within each class by archetypes touched (breadth across market archetypes
 | `cbb.officials` NCAA men's basketball referee crew assignments a | 2 | 2 (2) | CBB | NO_FREE_SOURCE | STATIC | ?–? | medium | free |
 | `soc.opta_commercial` Opta / StatsBomb commercial event and tracking f | 1 | 1 (1) | SOCCER | PAID_ONLY | EVENT_TIME | ?–? | high | paid |
 | `ten.exhibition_results` Exhibition event results and formats | 1 | 1 (1) | TENNIS | NO_FREE_SOURCE | EVENT_TIME | ?–? | low | free |
+
+
+Capture progress (what the owner's workflows already record) and the inactive capture proposals: `docs/CAPTURE_PROPOSAL.md`. Network host proposal under the owner's access policy: `docs/NETWORK_ACCESS_PROPOSAL.md`.
 
 
 ## Cost, permission and terms

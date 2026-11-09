@@ -69,25 +69,35 @@ class VerifiedMeansReplayed(unittest.TestCase):
             if r["sport"] not in REPLAYS and r["draft_status"].startswith("COMPUTED"):
                 self.assertEqual(r["verified_status"], "CLAIMED_NOT_REPLAYED", r["key"])
 
-    def test_data_in_hand_is_confirmed_only_by_a_plain_confirmed_verdict_and_schema_only_is_not_verified(self):
-        dih = VC.load_dih()
+    def test_data_in_hand_needs_real_columns_and_both_rounds_and_a_downgrade_in_any_round_wins(self):
+        d1, d2 = VC.load_dih(), VC.load_dir_answers("data_in_hand_round2")
         for r in ROWS:
-            if r["draft_status"] == "DATA_IN_HAND":
-                v = dih[r["key"]]["verdict"]
-                if r["verified_status"] == "DATA_IN_HAND_CONFIRMED":
-                    self.assertEqual(v, "CONFIRMED", r["key"])
-                if v in ("CONFIRMED_SCHEMA_ONLY", "UNDETERMINED"):
-                    self.assertNotIn(r["verified_bucket"], ("VERIFIED_COMPUTABLE",), r["key"])
-                if v == "DOWNGRADED":
-                    self.assertEqual(r["verified_bucket"], "NOT_COMPUTABLE_AS_CLAIMED", r["key"])
-        self.assertEqual(len([r for r in ROWS if r["draft_status"] == "DATA_IN_HAND"]), len(dih))
+            if r["draft_status"] != "DATA_IN_HAND":
+                continue
+            v1 = (d1.get(r["key"]) or {}).get("verdict"); v2 = (d2.get(r["key"]) or {}).get("verdict")
+            if r["verified_status"] == "DATA_IN_HAND_CONFIRMED":
+                self.assertEqual(v2, "CONFIRMED", r["key"])
+                if r["sport"] not in ("NBA", "NHL"):
+                    self.assertEqual(v1, "CONFIRMED", r["key"])
+                else:   # NBA/NHL: never confirmed on a table whose rows were not re-read this session
+                    self.assertFalse(VC.UNMEASURED_TABLES.search(json.dumps(d2[r["key"]].get("columns_used")) + str(d2[r["key"]].get("reason")) + str(d2[r["key"]].get("history"))), r["key"])
+            if "DOWNGRADED" in (v1, v2) and r["sport"] not in ("NBA", "NHL"):
+                self.assertEqual(r["verified_bucket"], "FAILED", r["key"])
+            if v2 == "DOWNGRADED":
+                self.assertEqual(r["verified_bucket"], "FAILED", r["key"])
+        self.assertEqual(len([r for r in ROWS if r["draft_status"] == "DATA_IN_HAND"]), 132)
 
-    def test_every_drafted_blocked_input_has_a_blind_recheck_and_confirmed_means_the_verifier_agreed(self):
-        blk = VC.load_blocked()
+    def test_every_drafted_blocked_input_has_two_blind_rechecks_and_confirmed_needs_both_to_agree(self):
+        r1 = VC.load_blocked(); r2 = VC.load_dir_answers("blocked_recheck_policy", "answers_*.json")
         draft = [r for r in ROWS if r["draft_bucket"] == "BLOCKED"]
-        self.assertEqual({r["key"] for r in draft}, set(blk))
+        self.assertEqual({r["key"] for r in draft}, set(r1)); self.assertEqual({r["key"] for r in draft}, set(r2))
         for r in draft:
-            self.assertEqual(r["verified_status"] == "BLOCKED_CONFIRMED", blk[r["key"]]["bucket"] == "BLOCKED", r["key"])
+            if r["verified_status"] == "BLOCKED_CONFIRMED":
+                self.assertEqual(r1[r["key"]]["bucket"], "BLOCKED", r["key"]); self.assertIn(r2[r["key"]]["category"], ("BLOCKED_BY_POLICY", "BLOCKED_NO_SOURCE"), r["key"])
+            if r["verified_status"] == "REQUIRES_COLLECTION":
+                self.assertIn(r2[r["key"]]["category"], ("COLLECTABLE_PERMITTED", "PROSPECTIVE_ONLY", "NEEDS_OWNER_ACTION"), r["key"])
+            if r2[r["key"]]["category"] == "COMPUTABLE_NOW":
+                self.assertEqual(r["verified_bucket"], "UNVERIFIED", f"{r['key']}: a bare 'computable' claim without replay or columns must stay unverified")
 
     def test_the_bucket_sample_score_is_reproducible_from_committed_evidence(self):
         key = json.loads((DF / "verification/bucket_sample/key.json").read_text()); ans = {}
@@ -116,9 +126,11 @@ class ClassificationRules(unittest.TestCase):
         self.assertEqual(VC.assess_computed(ROW, _rp(_tests(truncation=sched)), PROV)[0], "REPLAYED_PIT_CAVEAT")
         self.assertEqual(VC.assess_computed(ROW, _rp(_tests(truncation=other)), PROV)[0], "REPLAY_FAILED")
 
-    def test_dependence_on_as_played_fields_is_a_caveat_never_full(self):
-        t = _tests(vintage_dependence={"raw.home_rank": ["ranked"]})
-        self.assertEqual(VC.assess_computed(ROW, _rp(t), PROV)[0], "REPLAYED_PIT_CAVEAT")
+    def test_dependence_on_a_forbidden_pregame_field_is_quarantined_never_full(self):
+        for f in ("raw.home_rank", "games.temp", "schedule.weather_condition", "schedule.home_lineup", "schedule.home_plate_ump_id"):
+            self.assertEqual(VC.assess_computed(ROW, _rp(_tests(vintage_dependence={f: ["x"]})), PROV)[0], "PIT_QUARANTINED", f)
+        self.assertEqual(VC.assess_computed(ROW, _rp(_tests(role_fields_own_date={"goalies.starter": {"bad_columns": ["sv_pre"], "date": "d"}})), PROV)[0], "PIT_QUARANTINED")
+        self.assertEqual(VC.assess_computed(ROW, _rp(_tests(vintage_dependence={"some.unlisted_field": ["x"]})), PROV)[0], "REPLAYED_PIT_CAVEAT")
 
     def test_an_own_game_failure_without_a_vintage_explanation_fails(self):
         self.assertEqual(VC.assess_computed(ROW, _rp(_tests(own_game={"ok": False, "bad_columns": ["a"], "date": "d"})), PROV)[0], "REPLAY_FAILED")
@@ -130,6 +142,52 @@ class ClassificationRules(unittest.TestCase):
 
     def test_no_replay_means_claimed_not_replayed(self):
         self.assertEqual(VC.assess_computed(ROW, None, None)[0], "CLAIMED_NOT_REPLAYED")
+
+
+class BlockedCombination(unittest.TestCase):
+    def test_rules(self):
+        c = VC.combine_blocked
+        self.assertEqual(c({"bucket": "BLOCKED"}, {"category": "BLOCKED_BY_POLICY"})[0], "BLOCKED_CONFIRMED")
+        self.assertEqual(c({"bucket": "REQUIRES_COLLECTION"}, {"category": "BLOCKED_BY_POLICY"})[0], "BLOCKED_BY_POLICY")
+        self.assertEqual(c({"bucket": "REQUIRES_COLLECTION"}, {"category": "BLOCKED_NO_SOURCE"})[0], "BLOCKED_CONTESTED")
+        self.assertEqual(c({"bucket": "BLOCKED"}, {"category": "COLLECTABLE_PERMITTED"})[0], "BLOCKED_CONTESTED")
+        self.assertEqual(c({"bucket": "REQUIRES_COLLECTION"}, {"category": "NEEDS_OWNER_ACTION"})[0], "REQUIRES_COLLECTION")
+        self.assertEqual(c({"bucket": "REQUIRES_COLLECTION"}, {"category": "COMPUTABLE_NOW"})[0], "BLOCKED_CONTESTED")
+        self.assertEqual(c({"bucket": "BLOCKED"}, None)[0], "BLOCKED_CONTESTED")
+
+
+class PitRepair(unittest.TestCase):
+    def test_every_quarantined_spec_is_marked_final_postgame_by_the_framework_and_is_not_pregame_eligible(self):
+        from alpha_engine.features import audit as FA
+        from alpha_engine.features import pit_policy as PP
+        q = PP.load_quarantine(); self.assertGreaterEqual(len(q), 15)
+        seen = set()
+        for sp, cfg in FA.SPORTS.items():
+            for sc in FA._specs(sp, cfg):
+                if f"{sp}:{sc.catalog_id}" in q:
+                    seen.add(f"{sp}:{sc.catalog_id}"); self.assertEqual(sc.pit, "final_postgame", sc.catalog_id)
+                    st, _ = FA.classify(sc, {c: {"present": True, "coverage": 1.0, "nunique": 5} for c in sc.columns}, {"ok": True, "unmoved_nonstatic": []}, set())
+                    self.assertEqual(st, "NOT_PREGAME_ELIGIBLE", sc.catalog_id)
+        self.assertEqual(seen, set(q))
+
+    def test_quarantine_file_covers_every_replayed_dependence_on_a_forbidden_field(self):
+        from alpha_engine.features import pit_policy as PP
+        q = PP.load_quarantine()
+        for sp, rp in REPLAYS.items():
+            for iid, r in rp["inputs"].items():
+                t = r["tests"]
+                dep = [f for f, b in (t.get("vintage_dependence") or {}).items() if b and PP.classify(f)] + [f for f, x in (t.get("role_fields_own_date") or {}).items() if x["bad_columns"] and PP.classify(f)]
+                if dep:
+                    self.assertIn(f"{sp}:{iid}", q, f"{sp}:{iid} depends on {dep}")
+
+    def test_observed_weather_never_satisfies_a_pregame_weather_need(self):
+        from alpha_engine.input_research.data_foundation import audit as A2, evidence as EV2
+        reg = EV2.resolve_all()
+        rec = {"label": "x", "category": "c", "mechanism": "m", "measurement": "m" * 130, "pregame_knowable": "yes", "raw_data": ["game-time temperature and wind"], "provenance": {"sources": [{"name": "nflverse", "access": "free"}], "verified": True}, "free_sources": []}
+        row = A2.assess("NFL", rec, reg, {"needs": [{"need": "WEATHER_OBS", "datasets": ["env.weather_observed"]}], "rationale": "x" * 50}, {"id": "nfl.t", "archetypes": [], "computed": None, "collection": None})
+        self.assertEqual([x["satisfied_by"] for x in row["requirements"] if x["need"] == "WEATHER_OBS"], ["env.weather_forecast_pit"])
+        post = A2.assess("NFL", {**rec, "pregame_knowable": "no"}, reg, {"needs": [{"need": "WEATHER_OBS", "datasets": ["env.weather_observed"]}], "rationale": "x" * 50}, {"id": "nfl.t", "archetypes": [], "computed": None, "collection": None})
+        self.assertEqual([x["satisfied_by"] for x in post["requirements"] if x["need"] == "WEATHER_OBS"], ["env.weather_observed"])
 
 
 class ScoringProtocol(unittest.TestCase):

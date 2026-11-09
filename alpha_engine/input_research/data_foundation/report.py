@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from . import access_proposal as AP
+from . import capture_plan as CAPP
 from . import audit as A
 from . import collection_plan as CP
 from . import evidence as EV
@@ -90,21 +91,32 @@ def render_verified(vc: dict) -> list[str]:
     s = vc["summary"]; rows = vc["rows"]; n = s["n"]; V = s["by_verified_status"]; B = s["by_verified_bucket"]
     VD = VC.VD
     L = ["## VERIFIED COVERAGE (the one authoritative matrix: `coverage_matrix.csv` / `verified_coverage.json`)", "",
-         "Every figure below comes from committed verification evidence under `research/input_research/data_foundation/verification/`: a feature replay on re-collected raw data, blind verifier verdicts on real column schemas, a blind sample of the other buckets and a blind recheck of every BLOCKED input. "
+         "Every figure below comes from committed verification evidence under `research/input_research/data_foundation/verification/`: feature replays on re-collected raw data (all eight sports), blind verifier verdicts on real column schemas (two rounds), a blind sample of the other buckets, and two blind rechecks of every drafted-BLOCKED input (the second under the owner's explicit access policy). "
          "Verifiers are Claude agents, so this is **agent verification, not human expert verification**, and it does not by itself authorise predictive modelling.", "",
-         "| Verified bucket | Inputs | Meaning |", "|---|---|---|"]
-    meaning = {"VERIFIED_COMPUTABLE": "replayed on re-collected data with every point-in-time test passed (VERIFIED_FULL / PARTIAL / PROXY), or a blind verifier confirmed it from real columns (DATA_IN_HAND_CONFIRMED)",
-               "COMPUTABLE_WITH_CAVEAT": "replayed, but depends on as-played / retrieval-time fields or schedule structure: not clean point-in-time",
-               "CLAIMED_UNVERIFIED": "claimed computable but NOT replayed or checked against real rows in this phase (raw data not re-collectable here, or only a schema was checked)",
-               "NOT_COMPUTABLE_AS_CLAIMED": "a replay or a blind verifier showed the claim fails", "REQUIRES_COLLECTION": "free source exists; pull/encode, or capture prospectively (see the plan below)",
-               "BLOCKED": "blind re-verification agreed that no usable free source exists", "BLOCKED_CONTESTED": "drafted BLOCKED, but the blind verifier found a free path: unresolved (partly a scraping-policy question)", "EXCLUDED": "market-derived benchmark inputs"}
-    for k in ("VERIFIED_COMPUTABLE", "COMPUTABLE_WITH_CAVEAT", "CLAIMED_UNVERIFIED", "NOT_COMPUTABLE_AS_CLAIMED", "REQUIRES_COLLECTION", "BLOCKED", "BLOCKED_CONTESTED", "EXCLUDED"):
+         "| Bucket | Inputs | Meaning |", "|---|---|---|"]
+    meaning = {"FULL": "computed AND replayed: every independent test passed, no forbidden-as-pregame field, whole definition implemented, coverage and provenance checked",
+               "PARTIAL": "replayed and clean, but only part of the catalog definition is implemented or coverage is limited", "PROXY": "replayed and clean, but measures a different quantity for the same mechanism",
+               "DATA_IN_HAND": "no builder yet; two blind verifiers confirmed from REAL re-read columns that it can be built point-in-time (a verdict resting on a table not re-read this session does not count)",
+               "CAVEAT": "replayed; depends on schedule structure (e.g. games left) valid only if the fixture list is known before the event",
+               "UNVERIFIED": "a claim with no replay or real-column check (schema-only, or a blocked/computable dispute the two blind rounds did not settle)",
+               "FAILED": "a replay or blind verifier showed the claim fails, or it depends on a field the point-in-time policy forbids (quarantined)",
+               "REQUIRES_COLLECTION": "a permitted source exists but data must still be pulled/encoded, or captured prospectively", "BLOCKED": "no permitted usable source (policy-blocked, none found, sample-only, or blind-confirmed)", "EXCLUDED": "market-derived benchmark inputs"}
+    for k in VC.BUCKET_ORDER:
         L.append(f"| {k.replace('_', ' ').title()} | {B.get(k, 0)} | {meaning[k]} |")
-    L += ["", f"Total {n} inputs. At the unreviewed-by-verifiers draft, **{s['claimed_computable_at_draft']}** inputs were called potentially computable; **{s['verified_computable']}** are verified computable now.", "",
+    vtot = sum(B.get(k, 0) for k in ("FULL", "PARTIAL", "PROXY", "DATA_IN_HAND"))
+    L += ["", f"Total {n} inputs. At the draft, **{s['claimed_computable_at_draft']}** inputs were called potentially computable; **{vtot}** are verified computable now (FULL {B.get('FULL', 0)}, PARTIAL {B.get('PARTIAL', 0)}, PROXY {B.get('PROXY', 0)}, DATA_IN_HAND {B.get('DATA_IN_HAND', 0)}). "
+          "These are counted separately everywhere: a FULL is never averaged with a DATA_IN_HAND.", "",
           "### Verified status by sport", "", "| Sport | " + " | ".join(x.replace("_", " ").lower() for x in VC.HEADLINE) + " |", "|---|" + "---|" * len(VC.HEADLINE)]
     for sp in A.SPORTS:
         v = s["by_sport_verified_status"][sp]; L.append(f"| {sp} | " + " | ".join(str(v.get(x, 0)) for x in VC.HEADLINE) + " |")
     L.append("| **all** | " + " | ".join(f"**{V.get(x, 0)}**" for x in VC.HEADLINE) + " |")
+    L += ["", "### Point-in-time policy and quarantine", "", "Owner's rules: observed weather never replaces a pregame forecast; final lineups, game-day outcomes and revised / retrieval-time rankings never appear as pregame inputs. `alpha_engine/features/pit_policy.py` classifies the forbidden raw fields; any replayed input whose features depend on one is **quarantined** (`pit_quarantine.json`) and the feature framework now marks it `final_postgame` (never pregame-eligible). "
+          "In the draft layer any pregame weather need is forced onto the forecast-vintage dataset, whatever a reviewer mapped. Quarantined inputs:", ""]
+    qf = DF / "pit_quarantine.json"
+    if qf.exists():
+        q = json.loads(qf.read_text())["specs"]
+        L += [f"* `{k}`: {', '.join(v['classes'])} ({', '.join(v['fields'][:3])})" for k, v in sorted(q.items())] or ["* none"]
+    L.append("")
     # replay evidence
     L += ["", "### Feature replay (previously computed inputs, re-collected raw data, independent tests)", "",
           "Tests that do **not** reuse the earlier run's seeds, cut dates or protected-column lists: determinism; coverage replay vs the recorded values; **truncation** (recompute on data cut before date D, earlier rows must be identical); outcome perturbation at new cuts/seeds; own-game perturbation at a mid-history date; **vintage dependence** (scramble as-played / retrieval-time fields and see which computed columns move).", "",
@@ -112,7 +124,7 @@ def render_verified(vc: dict) -> list[str]:
     reps = VC.load_replays()
     for sp in A.SPORTS:
         if sp not in reps:
-            L.append(f"| {sp} | **not replayed** | | | | | | | {'raw repo access denied this session' if sp in ('NBA', 'NHL') else 'replay not completed'} |"); continue
+            L.append(f"| {sp} | **not replayed** | | | | | | | {'replay not completed'} |"); continue
         ins = reps[sp]["inputs"].values(); t = lambda f: sum(1 for i in ins if f(i["tests"]))
         pv = s["provenance_checks"].get(sp) or {}
         L.append(f"| {sp} | {len(ins)} ({'quick: 1 truncation cut, 1 perturbation' if reps[sp].get('quick') else 'full: 3 truncation cuts, 3 perturbations'}) | {t(lambda x: x['determinism']['ok'])} | {t(lambda x: all(y['ok'] for y in x['truncation']))} | {t(lambda x: all(y['ok'] for y in x['perturbation']))} | {t(lambda x: x['own_game']['ok'])} | {t(lambda x: any(x.get('vintage_dependence', {}).values()))} | {pv.get('replay_rows')} | {'ok' if pv.get('ok') else 'MISMATCH'} ({pv.get('basis', '')[:60]}) |")
@@ -143,12 +155,14 @@ def render_verified(vc: dict) -> list[str]:
               "The draft's BLOCKED calls did not survive: see the next paragraph. The sample is evidence about the draft's reliability by bucket; **85% overall agreement is not a licence to start predictive modelling**.", ""]
     bk = VD / "blocked_recheck"
     if bk.exists():
-        c = collections.Counter(v["verified_status"] for v in vc["rows"] if v["draft_bucket"] == "BLOCKED")
-        L += [f"**Blind recheck of every drafted-BLOCKED input ({sum(c.values())}):** {c.get('BLOCKED_CONFIRMED', 0)} confirmed blocked, {c.get('BLOCKED_CONTESTED', 0)} contested. Part of the disagreement is a policy question, not a fact: the verifiers counted *scrapeable* pages as free, whereas the owner's policy forbids restricted scraping and paid services. Contested inputs stay out of every computable or confirmed-blocked count until the owner settles the scraping policy and the specific sources are measured.", ""]
-    dih = VC.load_dih()
-    if dih:
-        c = collections.Counter(a["verdict"] for a in dih.values())
-        L += [f"**Blind verification of the {len(dih)} data-in-hand inputs (no builder existed):** " + ", ".join(f"{k} {v}" for k, v in c.items()) + ". CONFIRMED needs real re-collected columns; NBA and NHL could only be judged on committed ledger schemas (the owner's NBA/NHL archive repos were not readable this session), so at most CONFIRMED_SCHEMA_ONLY, which is **not** counted as verified.", ""]
+        c = collections.Counter(("RECLASSIFIED_TO_REQUIRES_COLLECTION" if v["verified_status"] == "REQUIRES_COLLECTION" else v["verified_status"]) for v in vc["rows"] if v["draft_bucket"] == "BLOCKED")
+        L += [f"**Two blind rechecks of every drafted-BLOCKED input ({sum(c.values())}); round 2 under the owner's explicit access policy (no restricted scraping, no paid services, no accounts):** " + ", ".join(f"{k} {v}" for k, v in sorted(c.items())) + ". "
+              "`BLOCKED_CONFIRMED` = both rounds say blocked; `BLOCKED_BY_POLICY` = round 2 finds the only route is one the policy forbids (round 1 had no policy); `RECLASSIFIED_TO_REQUIRES_COLLECTION` = both rounds find a permitted route; `BLOCKED_CONTESTED` = unresolved disagreement (counted as UNVERIFIED, never as blocked or computable). "
+              "Round-2 verifiers reported low diligence on several keys (some did not open the catalog), so their answers are evidence, not proof.", ""]
+    dih = VC.load_dih(); dih2 = VC.load_dir_answers("data_in_hand_round2")
+    if dih2:
+        c = collections.Counter(v["verified_status"] for v in vc["rows"] if v["draft_status"] == "DATA_IN_HAND")
+        L += [f"**Blind verification of the {len(c and [1 for v in vc['rows'] if v['draft_status'] == 'DATA_IN_HAND'])} data-in-hand inputs (no builder existed), two rounds:** " + ", ".join(f"{k} {v}" for k, v in sorted(c.items())) + ". NBA and NHL were re-judged in round 2 on REAL re-read columns (authorized read-only access to the owner's archive repos); a CONFIRMED that rests on a table whose rows were not re-read this session (NBA play-by-play and stints, NHL shot events) is downgraded to schema-only. For the others a downgrade in either round wins and CONFIRMED needs both.", ""]
     return L
 
 
@@ -191,7 +205,7 @@ def render(b: dict, sample: dict, vc: dict) -> str:
     L += ["", "| Dataset | Access status | History | PIT class | Cost | ToS risk | Collected rows |", "|---|---|---|---|---|---|---|"]
     for d, v in sorted(reg.items()):
         h = v["history"]; L.append(f"| `{d}` | {v['access_status']} | {h['first'] or '?'}–{h['last'] or '?'} ({h['basis'].lower()}) | {v['pit']} | {v['cost']} | {v['tos_risk']} | {v['rows_collected'] or ''} |")
-    L += [""] + CP.render(CP.build())
+    L += [""] + CP.render(CP.build()) + ["", "Capture progress (what the owner's workflows already record) and the inactive capture proposals: `docs/CAPTURE_PROPOSAL.md`. Network host proposal under the owner's access policy: `docs/NETWORK_ACCESS_PROPOSAL.md`.", ""]
     free_key = sorted(d for d, v in reg.items() if v["cost"] == "free (key needed)" and v["access_status"] != "COLLECTED_ARCHIVE")
     paid = sorted(d for d, v in reg.items() if v["access_status"] == "PAID_ONLY")
     L += ["", "## Cost, permission and terms", "",
@@ -218,6 +232,7 @@ def main() -> int:
     vc = VC.build(write=True)
     (DF / "collection_plan.json").write_text(json.dumps(CP.build(), indent=0, sort_keys=True, ensure_ascii=False) + "\n")
     AP.main()
+    CAPP.main()
     sample, key = verification_sample(b["rows"], b["registry"])
     (DF / "verification_sample.json").write_text(json.dumps(sample, indent=0, sort_keys=True, ensure_ascii=False) + "\n")
     (DF / "verification_answer_key.json").write_text(json.dumps(key, indent=0, sort_keys=True, ensure_ascii=False) + "\n")

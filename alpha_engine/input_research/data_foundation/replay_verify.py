@@ -33,6 +33,8 @@ from alpha_engine.features.core import Paths  # noqa: E402
 # raw fields the data collectors document as AS-PLAYED / RETRIEVAL-TIME values (not pregame vintages): ledgers' timestamp_reliability notes, source_verification.json and the nflverse schedule (observed weather)
 VINTAGE = {"CBB": [(None, "home_rank"), (None, "away_rank")], "CFB": [(None, "home_rank"), (None, "away_rank")], "NFL": [("games", "temp"), ("games", "wind")],
            "MLB": [("schedule", c) for c in ("home_lineup", "away_lineup", "home_plate_ump_id", "home_sp_id", "away_sp_id", "weather_condition", "temp", "wind")]}
+# FINAL role / lineup fields of a game: legitimate only for EARLIER games. Test 7 scrambles them among the rows of one mid-history date; features dated on or before that date must not move
+ROLE_FIELDS = {"NBA": [("player_games", ["started", "dnp_reason"])], "NHL": [("goalies", ["starter"])], "MLB": [("box", ["gs", "bat_order", "pos"])]}
 TRUNC_Q = (0.55, 0.75, 0.92)
 PERTURB = ((0.60, 101), (0.80, 202), (0.93, 303))      # (cut quantile, seed): none equals the earlier (0.85, 7)
 OWN_Q = (0.5, 404)                                      # mid-history date, new seed
@@ -137,6 +139,21 @@ def run(sp: str, paths: Paths, quick: bool = False) -> dict:
             if len(new[s.table]) == len(base[s.table]):
                 bad = _cmp_rows(base[s.table], new[s.table], s.columns, np.ones(len(base[s.table]), bool))
                 res[s.catalog_id]["tests"].setdefault("vintage_dependence", {})[(tab or "raw") + "." + col] = bad
+    # 7 role fields of the game's own date (final lineups / starters must not feed that game's pregame features)
+    for tab, cols in ROLE_FIELDS.get(sp, []):
+        kind, dcol = cfg["tables"][tab]
+        d = FA._dates(raw[tab], kind, dcol); dmid = d.quantile(0.5).normalize(); dmid = d[d >= dmid].min().normalize()
+        on = (d.dt.normalize() == dmid).to_numpy(); rng2 = np.random.default_rng(606)
+        for c in cols:
+            t = raw[tab].copy(); idx = np.flatnonzero(on); t.loc[t.index[idx], c] = rng2.permutation(t.loc[t.index[idx], c].to_numpy())
+            r2 = dict(raw); r2[tab] = t; new = FA._compute(sp, cfg, r2)
+            for s in specs:
+                bt = base[s.table]; dd = FA._table_dates(bt)
+                if dd is None or len(new[s.table]) != len(bt):
+                    continue
+                sel = (dd.dt.normalize() <= dmid).to_numpy()
+                bad = _cmp_rows(bt, new[s.table][sel], s.columns, sel)   # the SAME selection on both sides
+                res[s.catalog_id]["tests"].setdefault("role_fields_own_date", {})[f"{tab}.{c}"] = {"date": str(dmid.date()), "bad_columns": bad}
     for s in specs:
         res[s.catalog_id]["benchmark_only"] = s.catalog_id in bench
     return {"sport": sp, "seconds": round(time.time() - t0), "rows": {k: int(len(v)) for k, v in base.items()}, "raw_rows": ({k: int(len(v)) for k, v in raw.items()} if isinstance(raw, dict) else int(len(raw))), "quick": quick, "inputs": res}

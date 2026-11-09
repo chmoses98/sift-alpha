@@ -92,15 +92,21 @@ def _data_foundation_md(p: dict) -> list[str]:
         return []
     n = d["n_inputs"]; L = ["## Data foundation (ACTIVE PRIORITY): raw-data audit of every catalog input"]
     if vc:
-        B = vc["by_verified_bucket"]; V = vc["by_verified_status"]
+        B = vc["by_verified_bucket"]
+        vtot = sum(B.get(k, 0) for k in ("FULL", "PARTIAL", "PROXY", "DATA_IN_HAND"))
         L += [f"**Verified coverage of {n} inputs (the one authoritative matrix: `research/input_research/data_foundation/coverage_matrix.csv`; report `docs/DATA_FOUNDATION.md`).** "
-              f"Verified computable **{B.get('VERIFIED_COMPUTABLE', 0)}** (full {V.get('VERIFIED_FULL', 0)}, partial {V.get('VERIFIED_PARTIAL', 0)}, proxy {V.get('VERIFIED_PROXY', 0)}, data-in-hand confirmed {V.get('DATA_IN_HAND_CONFIRMED', 0)}) · computable with point-in-time caveat {B.get('COMPUTABLE_WITH_CAVEAT', 0)} · "
-              f"claimed but unverified {B.get('CLAIMED_UNVERIFIED', 0)} · not computable as claimed {B.get('NOT_COMPUTABLE_AS_CLAIMED', 0)} · requires collection {B.get('REQUIRES_COLLECTION', 0)} · blocked (blind-confirmed) {B.get('BLOCKED', 0)} · blocked-contested {B.get('BLOCKED_CONTESTED', 0)} · excluded as market-derived {B.get('EXCLUDED', 0)}. "
-              f"The draft had called {vc['claimed_computable_at_draft']} inputs potentially computable. Verification is by Claude agents (replay + blind verifiers), **not human expert verification**; predictive experimentation stays PAUSED; paid services added: {d['paid_services_added']}. Network host proposal (not applied): `docs/NETWORK_ACCESS_PROPOSAL.md`.", "",
-              "| Sport | Verified computable | Caveat | Claimed, unverified | Not computable as claimed | Requires collection | Blocked (confirmed) | Blocked (contested) | Excluded |", "|---|---|---|---|---|---|---|---|---|"]
+              f"Verified computable **{vtot}** = FULL **{B.get('FULL', 0)}** · PARTIAL **{B.get('PARTIAL', 0)}** · PROXY **{B.get('PROXY', 0)}** · DATA_IN_HAND **{B.get('DATA_IN_HAND', 0)}** (counted separately, never merged). Also: caveat {B.get('CAVEAT', 0)} · UNVERIFIED {B.get('UNVERIFIED', 0)} · FAILED {B.get('FAILED', 0)} (includes point-in-time-quarantined inputs) · "
+              f"requires collection {B.get('REQUIRES_COLLECTION', 0)} · blocked {B.get('BLOCKED', 0)} · excluded as market-derived {B.get('EXCLUDED', 0)}. The draft had called {vc['claimed_computable_at_draft']} inputs potentially computable. "
+              f"Evidence: replays on re-collected data for all eight sports (NBA/NHL via authorized read-only access to the owner's archive repos), blind verifier rounds, a point-in-time policy with quarantine. Verification is by Claude agents, **not human expert verification**; predictive experimentation stays PAUSED; paid services added: {d['paid_services_added']}. "
+              "Source-access proposal under the owner's policy (nothing applied): `docs/NETWORK_ACCESS_PROPOSAL.md`; capture progress and inactive proposals: `docs/CAPTURE_PROPOSAL.md`.", "",
+              "| Sport | FULL | PARTIAL | PROXY | DATA_IN_HAND | Caveat | UNVERIFIED | FAILED | Requires collection | Blocked | Excluded |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+        import collections as _c
         for s_, v in vc["by_sport_verified_status"].items():
-            vcn = sum(v.get(k, 0) for k in ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY", "DATA_IN_HAND_CONFIRMED"))
-            L.append(f"| {s_} | {vcn} | {v.get('REPLAYED_PIT_CAVEAT', 0)} | {v.get('CLAIMED_NOT_REPLAYED', 0) + v.get('DATA_IN_HAND_SCHEMA_ONLY', 0)} | {v.get('REPLAY_FAILED', 0) + v.get('DOWNGRADED_BY_VERIFIER', 0)} | {v.get('REQUIRES_COLLECTION', 0)} | {v.get('BLOCKED_CONFIRMED', 0)} | {v.get('BLOCKED_CONTESTED', 0)} | {v.get('EXCLUDED_BENCHMARK_ONLY', 0)} |")
+            bk = _c.Counter()
+            for st, c in v.items():
+                bk[{"VERIFIED_FULL": "FULL", "VERIFIED_PARTIAL": "PARTIAL", "VERIFIED_PROXY": "PROXY", "DATA_IN_HAND_CONFIRMED": "DIH", "REPLAYED_PIT_CAVEAT": "CAV", "CLAIMED_NOT_REPLAYED": "UNV", "DATA_IN_HAND_SCHEMA_ONLY": "UNV", "BLOCKED_CONTESTED": "UNV",
+                    "REPLAY_FAILED": "FAIL", "DOWNGRADED_BY_VERIFIER": "FAIL", "PIT_QUARANTINED": "FAIL", "REQUIRES_COLLECTION": "REQ", "BLOCKED_CONFIRMED": "BLK", "BLOCKED_BY_POLICY": "BLK", "EXCLUDED_BENCHMARK_ONLY": "EXC"}[st]] += c
+            L.append(f"| {s_} | {bk['FULL']} | {bk['PARTIAL']} | {bk['PROXY']} | {bk['DIH']} | {bk['CAV']} | {bk['UNV']} | {bk['FAIL']} | {bk['REQ']} | {bk['BLK']} | {bk['EXC']} |")
         L += ["", "Top free collection priorities (dataset: inputs it limits): " + ", ".join(f"`{x['dataset']}` {x['inputs_limited_by_it']}" for x in d["collection_priorities"][:8]) + ".", ""]
     if lk:
         t = lk["totals"]

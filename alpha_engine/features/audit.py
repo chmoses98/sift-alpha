@@ -57,7 +57,14 @@ def _compute(sp, cfg, raw):
 
 def _specs(sp, cfg):
     m = cfg["mod"]
-    return m.specs_cbb() if sp == "CBB" else m.specs_cfb() if sp == "CFB" else m.specs()
+    specs = m.specs_cbb() if sp == "CBB" else m.specs_cfb() if sp == "CFB" else m.specs()
+    from .pit_policy import load_quarantine
+    q = load_quarantine()
+    for s in specs:   # point-in-time repair: an input that replay evidence shows depends on a FORBIDDEN-as-pregame field cannot be certified as pregame
+        if f"{sp}:{s.catalog_id}" in q and s.pit != "final_postgame":
+            s.pit = "final_postgame"
+            s.missing = list(s.missing) + ["(point-in-time quarantine) depends on " + ", ".join(q[f"{sp}:{s.catalog_id}"]["fields"]) + ": not a pregame vintage"]
+    return specs
 
 
 def _dates(df, kind, col):

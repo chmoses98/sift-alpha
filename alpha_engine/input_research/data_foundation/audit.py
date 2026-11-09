@@ -146,12 +146,20 @@ def assess(sport: str, rec: dict, reg: dict, review: dict | None, extra: dict) -
         needs = [{"need": n["need"], "trigger": "reviewer", "candidates": [d for d in n.get("datasets") or []]} for n in review["needs"] if n.get("datasets")] or needs
         conf = review.get("confidence") or "HIGH"; basis = "reviewer"
     resolved = []
+    weather_guard = False
     for n in needs:
+        if n["need"] == "WEATHER_OBS" and r.get("pregame_knowable") != "no":
+            # owner's rule: observed weather NEVER stands in for a pregame forecast; a pregame weather input needs the forecast as issued (vintage)
+            n = {**n, "candidates": ["env.weather_forecast_pit"]}; weather_guard = True
         cands = [d for d in n["candidates"] if d in reg and (sport in reg[d]["sports"])]
         if not cands:
             cands = [d for d in n["candidates"] if d in reg]
         best = min(cands, key=lambda d: (reg[d]["access_rank"], reg[d]["pit_rank"]), default=None)
         resolved.append({**n, "datasets_considered": cands, "satisfied_by": best, "access_status": reg[best]["access_status"] if best else None, "pit": reg[best]["pit"] if best else None, "pit_sensitive": n["need"] in RL.PIT_SENSITIVE})
+    if weather_guard:
+        flags_pre = ["pregame weather need forced onto the forecast-vintage dataset: observed weather is never a substitute for a forecast"]
+    else:
+        flags_pre = []
     drank = max((reg[x["satisfied_by"]]["access_rank"] for x in resolved if x["satisfied_by"]), default=1)
     # catalog provenance: best source access class (alternatives), conservative floor for own-capture / paid / unavailable
     prov = (r.get("provenance") or {}).get("sources") or []
@@ -160,7 +168,7 @@ def assess(sport: str, rec: dict, reg: dict, review: dict | None, extra: dict) -
     floor = prov_best if (prov_best is not None and prov_best >= 5) else 0
     rank = max(drank, floor)
     status = STATUS_OF_RANK[rank]
-    flags = []
+    flags = list(flags_pre)
     if floor > drank:
         flags.append(f"catalog provenance caps availability: best listed source is {['', 'free', '', '', '', 'own_capture', 'paid', 'unavailable_public'][floor]} while the dataset map says {STATUS_OF_RANK[drank]}")
     sens = [x for x in resolved if x["pit_sensitive"]]

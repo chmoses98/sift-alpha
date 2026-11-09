@@ -237,3 +237,54 @@ class CatalogIntegration(unittest.TestCase):
         self.assertIn("never approval", ac["note"].lower())
         self.assertEqual(ac["catalog_totals"]["TOTAL"]["inputs"], sum(len(cat.load(s)["inputs"]) for s in C.SPORTS))
         self.assertEqual(g["totals"]["archetypes"], sum(len(C.arch_keys(cat.load(s))) for s in C.SPORTS))
+
+
+class EventRoutingAndDetachedReferences(unittest.TestCase):
+    """KXMLBSTAT is one Kalshi series with 11 events: 8 season feats and 3 pitch-velocity thresholds. One series has one primary archetype; the routed events must be joined to the archetype that models them."""
+    VELO = {"KXMLBSTAT-26P105", "KXMLBSTAT-26P106", "KXMLBSTAT-26P107"}
+
+    def test_series_assignment_carries_the_routing(self):
+        rows = {r["ticker"]: r for r in C.rd(ROOT / "research/input_research/market_universe/series_assignment.json")["rows"]}
+        self.assertEqual(rows["KXMLBSTAT"]["final"], "unreg:season_stat_feats")
+        self.assertEqual(set(rows["KXMLBSTAT"]["event_routing"]), self.VELO)
+        self.assertEqual(set(rows["KXMLBSTAT"]["event_routing"].values()), {"unreg:pitch_velocity_extremes"})
+        self.assertEqual(rows["KXMLBFASTPITCH"]["final"], "unreg:pitch_velocity_extremes")
+
+    def test_ledger_join_assigns_each_event_to_the_right_archetype(self):
+        led = C.ledger_by_archetype()
+        feats = [r for r in led[("MLB", "unreg:season_stat_feats")] if r["ticker"] == "KXMLBSTAT"]
+        velo = [r for r in led[("MLB", "unreg:pitch_velocity_extremes")] if r["ticker"] == "KXMLBSTAT"]
+        self.assertEqual(len(feats), 1); self.assertEqual(len(velo), 1)
+        self.assertEqual(set(feats[0]["routed_away_events"]), self.VELO)
+        self.assertEqual(set(velo[0]["routed_events"]), self.VELO)
+        self.assertEqual(velo[0]["routed_from"], "unreg:season_stat_feats")
+        self.assertNotIn("routed_events", feats[0])
+        self.assertNotIn("routed_away_events", velo[0])
+        for k in (("MLB", "unreg:player_and_team_counting_specials"), ("MLB", "unreg:player_home_run_exposure")):
+            self.assertFalse([r for r in led[k] if r["ticker"] == "KXMLBSTAT"], k)
+
+    def test_every_routing_target_exists_in_the_catalog(self):
+        for r in C.rd(ROOT / "research/input_research/market_universe/series_assignment.json")["rows"]:
+            for ev, tgt in (r.get("event_routing") or {}).items():
+                self.assertTrue(ev.startswith(r["ticker"] + "-"), ev)
+                self.assertIn(tgt, C.arch_keys(cat.load(r["sport"])), (ev, tgt))
+
+    def test_evidence_pack_lists_routed_events_under_both_archetypes(self):
+        pk = C.rd(C.CD / "evidence/MLB_new.json") if (C.CD / "evidence/MLB_new.json").exists() else {}
+        led = C.ledger_by_archetype()
+        row = next(r for r in led[("MLB", "unreg:pitch_velocity_extremes")] if r["ticker"] == "KXMLBSTAT")
+        self.assertIn("KXMLBSTAT", RULES)   # the only sampled KXMLBSTAT rule text is a velocity event, so it must be citable by the velocity archetype
+        self.assertTrue(row["routed_events"])
+        self.assertIsInstance(pk, dict)
+
+    def test_no_detached_input_references_anywhere_in_the_catalog(self):
+        for s in C.SPORTS:
+            self.assertEqual(C.detached_references(cat.load(s)), [], s)
+
+    def test_blueprint_patch_is_honoured_and_blueprint_exists(self):
+        for s in C.SPORTS:
+            c = cat.load(s)
+            for k, p in C.archetype_patches(s).items():
+                if p.get("blueprint"):
+                    self.assertEqual(C.arch_entry(c, k)["blueprint"], p["blueprint"], (s, k))
+                    self.assertIn(p["blueprint"], c["blueprints"])

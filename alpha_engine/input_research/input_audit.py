@@ -185,6 +185,10 @@ def apply_archetype_patches() -> dict:
             if k not in comp.arch_keys(c):
                 raise ValueError(f"{s}: archetype patch for unknown archetype {k}")
             a = comp.arch_entry(c, k); have = {i["id"] for i in a["inputs"]}
+            if v.get("blueprint") and a.get("blueprint") != v["blueprint"]:   # re-home the archetype on a blueprint that fits its contract (inherited inputs/interactions follow the blueprint)
+                if v["blueprint"] not in c["blueprints"]:
+                    raise ValueError(f"{s}:{k}: unknown blueprint {v['blueprint']}")
+                a["blueprint"] = v["blueprint"]; n["blueprint"] += 1
             for fld in ("label", "target", "contract_types", "mechanism"):
                 if fld in v and a.get(fld) != v[fld]:
                     if fld in ("mechanism",) and len(str(v[fld])) < 120:

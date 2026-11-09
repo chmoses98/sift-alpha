@@ -92,11 +92,17 @@ def ledger_by_archetype() -> dict[tuple[str, str], list[dict]]:
         assign = {r["ticker"]: r for r in rd(IN / "market_universe/series_assignment.json")["rows"] if r.get("origin", "").startswith("reviewed")}
     for r in rd(LEDGER)["rows"]:
         a = assign.get(r["ticker"])
+        routing = {}
         if a:
             if a["scope"] != "IN_SCOPE":
                 continue
+            routing = a.get("event_routing") or {}   # events of this series that belong to ANOTHER archetype: {event ticker: archetype key}
             r = {**r, "archetype": a["final"], "evidence": a["basis"] if a["basis"] in ("RULES_TEXT", "TITLE_ONLY") else r["evidence"], "status": "COVERED_UNREGISTERED" if a["final"].startswith("unreg:") else "COVERED_REGISTERED"}
+        if routing:
+            r = {**r, "routed_away_events": sorted(routing)}
         out[(r["sport"], r["archetype"])].append(r)
+        for target in sorted(set(routing.values())):   # the routed events are also live series of the archetype that models them (marked: only these events)
+            out[(r["sport"], target)].append({**r, "archetype": target, "routed_events": sorted(e for e, t in routing.items() if t == target), "routed_from": a["final"]})
     return out
 
 
@@ -117,7 +123,7 @@ def build_evidence() -> dict[str, int]:
                 "target": a["target"], "existing_mechanism": a["mechanism"],
                 "existing_inputs": [{"id": i["id"], "role": i.get("role"), "why": i["why"], "label": c["inputs"][i["id"]]["label"], "category": c["inputs"][i["id"]]["category"], "pregame_knowable": c["inputs"][i["id"]]["pregame_knowable"]} for i in a["inputs"] if i["id"] not in (rvs.get(k, {}).get("new_inputs") or {})],
                 "existing_interactions": a["interactions"],
-                "live_series": [{"ticker": r["ticker"], "title": r["title"], "type": r.get("type"), "period": r.get("period"), "evidence": r["evidence"], "status": r["status"]} for r in rows],
+                "live_series": [{"ticker": r["ticker"], "title": r["title"], "type": r.get("type"), "period": r.get("period"), "evidence": r["evidence"], "status": r["status"], **{x: r[x] for x in ("routed_events", "routed_from", "routed_away_events") if r.get(x)}} for r in rows],
                 "rules_samples": {r["ticker"]: rules[r["ticker"]] for r in rows if r["ticker"] in rules and rules[r["ticker"]].get("rules_primary")},
             }
         (CD / "evidence" / f"{s}.json").write_text(json.dumps(pack, indent=1, sort_keys=True))
@@ -452,7 +458,7 @@ def archetype_patches(sport: str) -> dict:
             cur = out.setdefault(k, {"detach": [], "roles": {}, "attach": [], "drop_interactions": [], "drop_nonlinearities": []})
             cur["detach"] += v.get("detach") or []; cur["roles"].update(v.get("roles") or {}); cur["attach"] += v.get("attach") or []
             cur["drop_interactions"] += v.get("drop_interactions") or []; cur["drop_nonlinearities"] += v.get("drop_nonlinearities") or []
-            for fld in ("label", "target", "contract_types", "mechanism"):
+            for fld in ("label", "target", "contract_types", "mechanism", "blueprint"):
                 if fld in v:
                     cur[fld] = v[fld]
     return out

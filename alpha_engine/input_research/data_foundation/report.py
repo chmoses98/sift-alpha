@@ -108,14 +108,14 @@ def render_verified(vc: dict) -> list[str]:
     # replay evidence
     L += ["", "### Feature replay (previously computed inputs, re-collected raw data, independent tests)", "",
           "Tests that do **not** reuse the earlier run's seeds, cut dates or protected-column lists: determinism; coverage replay vs the recorded values; **truncation** (recompute on data cut before date D, earlier rows must be identical); outcome perturbation at new cuts/seeds; own-game perturbation at a mid-history date; **vintage dependence** (scramble as-played / retrieval-time fields and see which computed columns move).", "",
-          "| Sport | Specs replayed | Determinism | Truncation | Perturbation | Own-game | Depend on as-played fields | Re-collected raw rows | Provenance vs ledger |", "|---|---|---|---|---|---|---|---|---|"]
+          "| Sport | Specs replayed (mode) | Determinism | Truncation | Perturbation | Own-game | Depend on as-played fields | Re-collected raw rows | Provenance vs ledger |", "|---|---|---|---|---|---|---|---|---|"]
     reps = VC.load_replays()
     for sp in A.SPORTS:
         if sp not in reps:
             L.append(f"| {sp} | **not replayed** | | | | | | | {'raw repo access denied this session' if sp in ('NBA', 'NHL') else 'replay not completed'} |"); continue
         ins = reps[sp]["inputs"].values(); t = lambda f: sum(1 for i in ins if f(i["tests"]))
         pv = s["provenance_checks"].get(sp) or {}
-        L.append(f"| {sp} | {len(ins)} | {t(lambda x: x['determinism']['ok'])} | {t(lambda x: all(y['ok'] for y in x['truncation']))} | {t(lambda x: all(y['ok'] for y in x['perturbation']))} | {t(lambda x: x['own_game']['ok'])} | {t(lambda x: any(x.get('vintage_dependence', {}).values()))} | {pv.get('replay_rows')} | {'ok' if pv.get('ok') else 'MISMATCH'} ({pv.get('basis', '')[:60]}) |")
+        L.append(f"| {sp} | {len(ins)} ({'quick: 1 truncation cut, 1 perturbation' if reps[sp].get('quick') else 'full: 3 truncation cuts, 3 perturbations'}) | {t(lambda x: x['determinism']['ok'])} | {t(lambda x: all(y['ok'] for y in x['truncation']))} | {t(lambda x: all(y['ok'] for y in x['perturbation']))} | {t(lambda x: x['own_game']['ok'])} | {t(lambda x: any(x.get('vintage_dependence', {}).values()))} | {pv.get('replay_rows')} | {'ok' if pv.get('ok') else 'MISMATCH'} ({pv.get('basis', '')[:60]}) |")
     # failed checks
     fails = []
     for sp, rp in reps.items():

@@ -41,16 +41,16 @@ Total 1649 inputs. At the unreviewed-by-verifiers draft, **309** inputs were cal
 
 Tests that do **not** reuse the earlier run's seeds, cut dates or protected-column lists: determinism; coverage replay vs the recorded values; **truncation** (recompute on data cut before date D, earlier rows must be identical); outcome perturbation at new cuts/seeds; own-game perturbation at a mid-history date; **vintage dependence** (scramble as-played / retrieval-time fields and see which computed columns move).
 
-| Sport | Specs replayed | Determinism | Truncation | Perturbation | Own-game | Depend on as-played fields | Re-collected raw rows | Provenance vs ledger |
+| Sport | Specs replayed (mode) | Determinism | Truncation | Perturbation | Own-game | Depend on as-played fields | Re-collected raw rows | Provenance vs ledger |
 |---|---|---|---|---|---|---|---|---|
-| NFL | 33 | 33 | 33 | 33 | 32 | 1 | 801532 | ok (no ledger for this source: re-collected rows exist and the s) |
-| CFB | 14 | 14 | 14 | 14 | 14 | 2 | 5521 | ok (ledger espn_cfb_ledger.json: 5465 rows at the earlier collec) |
+| NFL | 33 (full: 3 truncation cuts, 3 perturbations) | 33 | 33 | 33 | 32 | 1 | 801532 | ok (no ledger for this source: re-collected rows exist and the s) |
+| CFB | 14 (full: 3 truncation cuts, 3 perturbations) | 14 | 14 | 14 | 14 | 2 | 5521 | ok (ledger espn_cfb_ledger.json: 5465 rows at the earlier collec) |
 | NBA | **not replayed** | | | | | | | raw repo access denied this session |
-| CBB | 20 | 20 | 20 | 20 | 20 | 2 | 31039 | ok (ledger espn_cbb_ledger.json: 31039 rows at the earlier colle) |
+| CBB | 20 (full: 3 truncation cuts, 3 perturbations) | 20 | 20 | 20 | 20 | 2 | 31039 | ok (ledger espn_cbb_ledger.json: 31039 rows at the earlier colle) |
 | NHL | **not replayed** | | | | | | | raw repo access denied this session |
 | MLB | **not replayed** | | | | | | | replay not completed |
-| SOCCER | 21 | 21 | 18 | 21 | 21 | 0 | 19763 | ok (no ledger for this source: re-collected rows exist and the s) |
-| TENNIS | 35 | 35 | 35 | 35 | 35 | 0 | 79019 | ok (ledger repo_archives_ledger.json: 79019 rows at the earlier ) |
+| SOCCER | 21 (full: 3 truncation cuts, 3 perturbations) | 21 | 18 | 21 | 21 | 0 | 19763 | ok (no ledger for this source: re-collected rows exist and the s) |
+| TENNIS | 35 (quick: 1 truncation cut, 1 perturbation) | 35 | 35 | 35 | 35 | 0 | 79019 | ok (ledger repo_archives_ledger.json: 79019 rows at the earlier ) |
 
 **Failed or caveated replay checks (all of them):**
 

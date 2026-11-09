@@ -434,8 +434,8 @@
     "label": "League-wide single-game rare-event hazard over the remaining season and playoffs (individual no-hitter, perfect game, 4+ HR game, 20+ K game, 2+ grand slams in a game, 500+ ft Statcast home run)",
     "category": "distribution",
     "mechanism": "Each 'any player' feat is a union over every remaining team-game of a tiny per-game probability, so its chance is one minus the survival of a low-rate point process whose rate depends on the league's strikeout and power environment and on how long starters pitch.",
-    "rationale": "Rates moved sharply across eras: higher strikeout rates raised no-hit and 20-strikeout chances per inning while shorter starts lowered the chance of one pitcher finishing 27 outs, and only individual no-hitters count here; multi-HR feats depend on the right tail of hitter power, and 500-foot drives depend on the Statcast distance tail and altitude (Coors Field). Using long-run historical averages without these adjustments misstates the hazard by large factors.",
-    "measurement": "For event e, per team-game rate lambda_e(t) = exp(b0_e + b1_e*league K% + b2_e*league HR per PA + b3_e*league mean starter outs per start) fitted by Poisson regression on league-season counts 1990-2025 (500 ft: Statcast seasons 2015-2025 only, count of HR with hit_distance_sc >= 500); for the individual no-hitter count only games where one pitcher recorded all outs; covariates are season-to-date values at the as-of date. Multi-HR and 2-grand-slam feats are cross-checked bottom-up: sum over hitter-games of P(4+ HR) or P(2+ GS) from each hitter's per-PA HR rate (mlb.hitter_hr_profile) with 4.2 PA per game. The 500 ft term uses a generalised Pareto tail fitted to HR distances >= 450 ft with a park altitude covariate. P(event in the rest of the season) = 1 - exp(-sum over remaining regular-season team-games and expected playoff games of lambda_e). Units: probability; as-of the market timestamp with games already played counted as observed (a feat already achieved settles Yes).",
+    "rationale": "Rates moved sharply across eras: higher strikeout rates raised no-hit and 20-strikeout chances per inning while shorter starts lowered the chance of one pitcher finishing 27 outs; multi-HR feats depend on the right tail of hitter power. The no-hitter definition is NOT settled by the contract: the rule says 'any pitcher records a no hitter' while the event title says 'Individual Pitcher No Hitter', and combined no-hitters are a material share of recent no-hitters (share not measured here), so this input carries the readings as explicit branches instead of assuming one. Using long-run historical averages without these adjustments misstates the hazard by large factors.",
+    "measurement": "For each event e and reading r, per team-game rate lambda_e,r(t) = exp(b0 + b1*league K% + b2*league HR per PA + b3*league mean starter outs per start) fitted by Poisson regression on league-season counts 1990-2025 (SOURCE_UNVERIFIED that every count is obtainable from Retrosheet and Baseball-Reference lists). Branches kept separately for the no-hitter: (A) one pitcher records all outs of a nine-inning game, (B) any no-hit game including combined and shortened games; the perfect game and 20-strikeout counts are single branches. Nested monotonicity is enforced: P(perfect game) <= P(no-hitter A) <= P(no-hitter B). The 500-ft drive, 4+ HR and 2+ grand-slam events are modelled bottom-up in mlb.hr_distance_tail_exceedance, mlb.hitter_hr_profile and mlb.bases_loaded_pa_opportunity; the league-count regression for those three is used only as a calibration cross-check against the bottom-up sum, never added to it. P(event in the rest of the season) = 1 - exp(-sum over remaining regular-season team-games and expected playoff team-games of lambda); playoff team-games count only for the six events that include the playoffs. Games already played are taken from the feats-to-date ledger (mlb.season_feat_ledger_state): an achieved feat settles Yes. Units: probability per branch. As-of: the market timestamp.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Retrosheet game logs and event files (no-hitters, multi-HR games, strikeouts per game)",
@@ -444,9 +444,9 @@
     ],
     "registry_ids": [],
     "raw_data": [
-     "league-season counts of individual no-hitters, perfect games, 4+ HR games, 20+ K games, 2+ GS games, 500+ ft HR",
+     "league-season counts of no-hitters (individual and combined), perfect games, 20+ K games, 4+ HR games and 2+ GS games",
      "league-season K%, HR per PA, starter outs per start",
-     "Statcast HR distances with park"
+     "feats-to-date ledger for the current season"
     ],
     "why": "Headline engine for the six single-game KXMLBSTAT events: a per-team-game hazard summed over the remaining season and playoffs.",
     "role": "primary"
@@ -475,9 +475,9 @@
    "mlb.joint_season_hr_sb_distribution": {
     "label": "Joint season HR-SB distribution for one hitter (power-speed profile, PA, availability)",
     "category": "distribution",
-    "mechanism": "A 50 HR and 40 SB season is a joint tail of two correlated counts requiring health and PA.",
-    "rationale": "The probability depends on the hitter's season-to-date pace, remaining PA and the rates of both events, and the two are correlated through playing time and hitter quality; independence misprices.",
-    "measurement": "Given current HR_0, SB_0, team games remaining G, per-game play probability from availability and PA per game by lineup slot, set rates r_HR and r_SB per PA = (ROS projection * 250 + season pace * n)/(250 + n) with n = season PA. Simulate 20,000 seasons: PA_rest from game draws with a health hazard; HR_rest ~ NegBin(mean r_HR*PA_rest, dispersion fitted across hitters 2015-2025) and SB_rest ~ NegBin(mean r_SB*PA_rest); couple the two with a Gaussian copula whose rho is the cross-hitter correlation of season HR and SB rate residuals given PA (2015-2025). Output P(HR_0 + HR_rest >= H* and SB_0 + SB_rest >= S*) for contract thresholds. As-of: daily.",
+    "mechanism": "A season with both H* home runs and S* steals (50 and 50 for KXMLBSTAT-265050, 50 and 40 for KXMLBSTATCOUNT) is a joint tail of two correlated counts requiring health and plate appearances; an any-hitter contract is the union of that joint tail over every hitter still on pace.",
+    "rationale": "The probability depends on each hitter's season-to-date pace, remaining PA and the rates of both events, and the two are correlated through playing time and hitter quality; independence misprices. For an any-hitter contract only a handful of hitters have both thresholds reachable, so the answer is dominated by the one or two power-speed candidates and by their health.",
+    "measurement": "Given current HR_0, SB_0, team games remaining G, per-game play probability from availability and PA per game by lineup slot, set rates r_HR and r_SB per PA = (ROS projection * 250 + season pace * n)/(250 + n) with n = season PA. Simulate 20,000 seasons: PA_rest from game draws with a health hazard; HR_rest ~ NegBin(mean r_HR*PA_rest, dispersion fitted across hitters 2015-2025) and SB_rest ~ NegBin(mean r_SB*PA_rest); couple the two with a Gaussian copula whose rho is the cross-hitter correlation of season HR and SB rate residuals given PA (2015-2025). Output p_h = P(HR_0 + HR_rest >= H* and SB_0 + SB_rest >= S*) for one hitter. For an any-hitter contract take the candidate set = hitters for whom both thresholds are still arithmetically reachable and compute P(any) = 1 - prod over candidates (1 - p_h), treating different clubs' hitters as independent. Units: probability. As-of: daily.",
     "pregame_knowable": "yes",
     "free_sources": [
      "FanGraphs/Steamer ROS projections",
@@ -1296,7 +1296,9 @@
      "mlb.hr_environment"
     ],
     "raw_data": [
-     "see catalog definition of mlb.hitter_hr_profile"
+     "Statcast batted-ball rows: launch_speed, launch_angle, spray angle, barrel flag",
+     "plate appearances and home runs by hitter and season",
+     "hitter handedness and park"
     ],
     "why": "The named hitter's per-PA home-run propensity (barrels, fly-ball and pull-air rate, maximum exit velocity) is the core rate of both series and window markets.",
     "role": "primary"
@@ -1317,7 +1319,9 @@
      "mlb.contact_defense"
     ],
     "raw_data": [
-     "see catalog definition of mlb.pitcher_hr_vulnerability"
+     "home runs, fly balls and barrels allowed by pitcher and batter handedness",
+     "batters faced by pitcher and season",
+     "park and game environment for each batter faced"
     ],
     "why": "HR/FB and barrels allowed by the rotation and relievers the hitter will face scale his per-PA rate in each game.",
     "role": "secondary"
@@ -1338,7 +1342,9 @@
      "mlb.injuries_pit"
     ],
     "raw_data": [
-     "see catalog definition of mlb.injuries_pit"
+     "IL placements and activations with transaction timestamps",
+     "injury and late-scratch reports with report time",
+     "roster status snapshots by date"
     ],
     "why": "Injury is an absorbing state that removes exposure in both a window and a series; point-in-time vintage avoids leaking later returns.",
     "role": "primary"
@@ -2066,11 +2072,10 @@
     "category": "game_state",
     "mechanism": "The probability of reaching N innings depends on how many consecutive scoreless outs the pitcher has already banked, which is a state variable reconstructed from play-by-play from the stated start date, not a forecast.",
     "rationale": "The contract counts from a fixed start date (Apr 30, 2026) with partial innings at one third, so the as-of total is not simply 'current streak' in a data feed: it depends on whether relief outs are included, how runs are charged (earned versus all runs, inherited runners) and whether the streak is still alive. The same pitcher can have different totals under the two run readings, which is exactly the ambiguity the contract leaves open, so both ledgers must be kept.",
-    "measurement": "From play-by-play since the stated start date build, for each pitcher-appearance, the sequence of outs recorded and runs charged (a) counting all runs charged to the pitcher including inherited runners who score, and (b) counting earned runs only; streak total_outs = outs recorded since the start date up to but excluding the first run under each reading, alive = no run charged under that reading, remaining_outs_needed = max(0, 3N - total_outs). Also store the number of regular-season team games remaining and the pitcher's projected starts left from mlb.pitcher_rotation_slot_and_rest. Flag any appearance in which official scoring was changed after the game (error to hit, earned-run reassignment). Units: outs and a binary alive flag per reading. As-of: after every appearance and again after the 48-hour scoring-correction window.",
+    "measurement": "From play-by-play since the stated start date build, for each pitcher-appearance, the sequence of outs recorded and runs charged (a) counting all runs charged to the pitcher including inherited runners who score, and (b) counting earned runs only; streak total_outs = outs recorded since the start date up to but excluding the first run under each reading, alive = no run charged under that reading, remaining_outs_needed = max(0, 3N - total_outs). Also store the number of regular-season team games remaining and the pitcher's projected starts left from mlb.pitcher_rotation_slot_and_rest. Flag any appearance in which official scoring was later changed (error to hit, earned-run reassignment): re-pull each appearance after a lag chosen by an observed revision study, because no source stating an official scoring-correction window was found (the 48 hours assumed earlier was unsourced). Run charging and inherited-runner attribution must be taken from a source that exposes them (MLB Stats API play-by-play or Retrosheet event files; field availability is SOURCE_UNVERIFIED here). Units: outs and a binary alive flag per reading. As-of: after every appearance and after each re-pull.",
     "pregame_knowable": "yes",
     "free_sources": [
-     "MLB Stats API play-by-play and game logs (free)",
-     "Baseball Savant event-level data (free)",
+     "MLB Stats API play-by-play and game logs (free; run-charging fields SOURCE_UNVERIFIED)",
      "Retrosheet event files for historical validation (free)"
     ],
     "registry_ids": [],

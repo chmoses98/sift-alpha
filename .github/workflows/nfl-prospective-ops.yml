@@ -1,0 +1,132 @@
+name: nfl-prospective-ops
+# NFL prospective capture + daily refresh on ordinary compute (replaces the Claude worker triggers). RESEARCH_ONLY: no orders, no credentials, no LLM, no paid services.
+#   * Runs the lab code pinned by RELEASE.json on `prospective-data` through scripts/prospective/bootstrap.sh (the same entry point the Claude workers used).  The code is checked out from
+#     branch feat/sift-lab; this workflow does NOT depend on, and does not merge, PR #59.
+#   * capture : fires only at hours the window planner says are needed (+1 preceding hour as margin for late GitHub schedule delivery); inside a window it ticks every 5 min and writes
+#     immutable shards + a start and end heartbeat to `prospective-data` (new files only).  Missed captures are reported, never reconstructed.  Actual capture times are in the shards.
+#   * refresh : daily, single writer (writer lease), idempotent shard ingestion into the hash-chained ledgers, frozen-model and pin checks, settlement, append-only publish.
+#   * plan    : weekly + on PR; fails (GitHub notifies the owner) if any future decision window lacks a firing, on time or 45 min late.
+#   * CUTOVER GATES: scheduled capture/refresh do nothing until ci/GHA_CAPTURE_ENABLED / ci/GHA_REFRESH_ENABLED exist on prospective-data.  workflow_dispatch always runs.
+on:
+  schedule:
+    - cron: "37 18 * * 0"
+    - cron: "7 8 * * *"
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "capture, refresh or plan"
+        default: "capture"
+      force:
+        description: "capture proof run outside a window (shards are marked forced)"
+        type: boolean
+        default: false
+      span:
+        description: "capture span minutes"
+        default: "57"
+      interval:
+        description: "capture tick interval seconds"
+        default: "300"
+  pull_request:
+    paths:
+      - ".github/workflows/nfl-prospective-ops.yml"
+      - ".github/scripts/nfl_plan_check.py"
+
+permissions:
+  contents: write   # only used to add files / append to the prospective-data branch
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+jobs:
+  plan:
+    if: ${{ github.event_name == 'pull_request' || github.event.schedule == '17 6 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'plan') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: feat/sift-lab, path: lab, persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install -q numpy==2.5.3 pandas==3.0.5 pyyaml
+      - name: Window coverage check
+        run: python .github/scripts/nfl_plan_check.py lab .github/workflows/nfl-prospective-ops.yml | tee "$RUNNER_TEMP/plan.json"
+      - if: always()
+        run: |
+          { echo '```json'; cat "$RUNNER_TEMP/plan.json" 2>/dev/null || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  capture:
+    if: ${{ github.event_name != 'pull_request' && github.event.schedule != '7 8 * * *' && github.event.schedule != '17 6 * * 1' && (github.event_name == 'schedule' || inputs.job == 'capture') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    concurrency:
+      group: nfl-capture
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: feat/sift-lab, fetch-depth: 0 }
+      - name: Cutover gate
+        id: gate
+        run: |
+          go=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            git fetch -q --depth=1 origin prospective-data
+            git cat-file -e FETCH_HEAD:ci/GHA_CAPTURE_ENABLED 2>/dev/null || go=false
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"; echo "### NFL capture go=$go" >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.gate.outputs.go == 'true'
+        uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Capture (window-driven; heartbeat published on every firing)
+        if: steps.gate.outputs.go == 'true'
+        env:
+          CAPTURE_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          FORCE: ${{ inputs.force }}
+          SPAN: ${{ inputs.span }}
+          INTERVAL: ${{ inputs.interval }}
+        run: |
+          args=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then args="--span ${SPAN:-57} --interval ${INTERVAL:-300}"; [ "$FORCE" = "true" ] && args="$args --force"; fi
+          set +e; bash scripts/prospective/bootstrap.sh capture $args | tee "$RUNNER_TEMP/line.txt"; rc=${PIPESTATUS[0]}; set -e
+          { echo '```'; cat "$RUNNER_TEMP/line.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -Eq '^CAPTURE (ok|no_window) .*series_failures=0 publish_errors=0 heartbeat=pushed' "$RUNNER_TEMP/line.txt" || { echo "::error::capture needs attention"; exit 1; }
+          exit $rc
+
+  refresh:
+    if: ${{ github.event_name != 'pull_request' && (github.event.schedule == '7 8 * * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'refresh')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: nfl-refresh
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: feat/sift-lab, fetch-depth: 0 }
+      - name: Cutover gate
+        id: gate
+        run: |
+          go=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            git fetch -q --depth=1 origin prospective-data
+            git cat-file -e FETCH_HEAD:ci/GHA_REFRESH_ENABLED 2>/dev/null || go=false
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"; echo "### NFL refresh go=$go" >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.gate.outputs.go == 'true'
+        uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Refresh (writer lease, idempotent ingest, hash-chain and pin verification, append-only publish)
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          set +e; bash scripts/prospective/bootstrap.sh refresh | tee "$RUNNER_TEMP/line.txt"; rc=${PIPESTATUS[0]}; set -e
+          { echo '```'; cat "$RUNNER_TEMP/line.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          [ "$rc" = "0" ] || { echo "::error::refresh failed (rc=$rc)"; exit 1; }
+          grep -q 'aborted=False' "$RUNNER_TEMP/line.txt" || { echo "::error::refresh aborted"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.go == 'true'
+        with:
+          name: nfl-refresh-${{ github.run_id }}
+          path: /tmp/work/pv/REPORT.json
+          retention-days: 30
+          if-no-files-found: ignore

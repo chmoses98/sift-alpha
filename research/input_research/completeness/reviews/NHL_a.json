@@ -7039,7 +7039,8 @@
       "nhl.ratings",
       "nhl.coach_expectation_delta",
       "nhl.goalie_quality",
-      "nhl.standings_stakes"
+      "nhl.standings_stakes",
+      "nhl.prior_to_current_blend"
      ]
     },
     {
@@ -7060,7 +7061,7 @@
     {
      "id": "s4",
      "name": "Jack Adams coach-level choice model (KXNHLADAMS)",
-     "description": "The Jack Adams winner is one of roughly 32 head coaches (plus any coach fired or hired mid-season who ran 41+ games of a team), chosen by NHL Broadcasters' Association members on a 5-3-1 ballot cast after the regular season. The probability for each coach is a conditional (softmax) logit over all eligible coaches on his simulated final coach expectation delta (realised points pct minus preseason expectation), the change in that delta versus the prior season and a first-year-with-team flag, averaged over joint simulations of the remaining regular season from nhl.team_season_points_distribution, so correlated team outcomes and a coach's firing hazard are carried through. This is the coach branch of nhl.award_vote_share_model; it does not reuse player features. Ties settle 1/N under the KXNHLADAMS rules.",
+     "description": "The Jack Adams winner is one of roughly 32 head coaches (plus any coach fired or hired mid-season who ran 41+ games of a team), chosen by NHL Broadcasters' Association members on a 5-3-1 ballot cast after the regular season. The probability for each coach is a conditional (softmax) logit over all eligible coaches on his simulated final coach expectation delta (realised points pct minus preseason expectation), the change in that delta versus the prior season and a first-year-with-team flag, averaged over joint simulations of the remaining regular season from nhl.season_sim_distribution, so correlated team outcomes and a coach's firing hazard are carried through. The branch is specified in nhl.coach_expectation_delta (its canonical home), not in the player vote-share model, and it does not reuse player features. Ties settle 1/N under the KXNHLADAMS rules.",
      "distribution": "Categorical over ~32 coaches; mass concentrated on 3-6 coaches with the largest positive deltas but early-season tails are wide because the final delta sd is ~0.09 points pct; winner margins can be tiny (226 vs 223 NHLBA points in 2025-26).",
      "categories": [
       "coaching_scheme",
@@ -7070,8 +7071,7 @@
      ],
      "input_ids": [
       "nhl.coach_expectation_delta",
-      "nhl.award_vote_share_model",
-      "nhl.team_season_points_distribution",
+      "nhl.season_sim_distribution",
       "nhl.award_voting_rules",
       "nhl.ratings"
      ]
@@ -7173,11 +7173,10 @@
     "coaching_scheme": {
      "status": "COVERED",
      "input_ids": [
-      "nhl.award_vote_share_model",
       "nhl.award_voting_rules",
       "nhl.coach_expectation_delta"
      ],
-     "note": "Jack Adams path: stage s4 coach-level conditional logit on nhl.coach_expectation_delta (coach branch of nhl.award_vote_share_model), NHLBA electorate."
+     "note": "Jack Adams path: stage s4 coach-level conditional logit specified in nhl.coach_expectation_delta, NHLBA electorate."
     },
     "game_context_script": {
      "status": "NOT_APPLICABLE",
@@ -7254,7 +7253,7 @@
     "category": "motivation",
     "mechanism": "Difference between realised points percentage and an in-house preseason expectation (weighted prior points pct plus roster-change term), plus year-over-year change and coaching tenure flags.",
     "rationale": "The Jack Adams Award is voted on who coached best relative to expectations, so what matters is the surprise, not the level; a team that finished first as expected earns less credit than one that jumped from the bottom. The expectation must be formed before the season to avoid hindsight bias.",
-    "measurement": "P_exp = 0.6*points pct (season-1) + 0.4*points pct (season-2), plus nhl.prior_to_current_blend roster-change term (minutes-weighted 3-season RAPM of arrivals minus departures, per 82 games, converted at 0.015 pts pct per goal/60-game); computed in-house so no archived preseason projection is required. Delta_t = points pct to date (games before as-of date t) minus P_exp; SE = sqrt(p(1-p)/n_games_played). Final delta per simulation = (banked points + simulated rest-of-season points from nhl.team_season_points_distribution)/(2*82) minus P_exp. Jack Adams choice model (coach branch of nhl.award_vote_share_model): candidate set = every head coach who ran >=41 regular-season games of one team (about 32); U_c = b1*Delta_final + b2*(Delta_final - Delta_prev_season) + b3*first_year_with_team; P(win) = exp(U_c)/sum_j exp(U_j), averaged over simulations (a coach fired before the threshold drops out of that draw). Fit as a conditional logit on winners 2005-06 onward, augmented with a rank-ordered (exploded) logit on the NHLBA top-3 finish order from published 5-3-1 point totals; ridge penalty chosen by leave-one-season-out log loss; at most 3 covariates. Use only games before t.",
+    "measurement": "P_exp = 0.6*points pct (season-1) + 0.4*points pct (season-2), plus nhl.prior_to_current_blend roster-change term (minutes-weighted 3-season RAPM of arrivals minus departures, per 82 games, converted at 0.015 pts pct per goal/60-game); computed in-house so no archived preseason projection is required. Delta_t = points pct to date (games before as-of date t) minus P_exp; SE = sqrt(p(1-p)/n_games_played). Final delta per simulation = (banked points + simulated rest-of-season points from the joint season simulation nhl.season_sim_distribution)/(2*82) minus P_exp. Jack Adams choice model (this input is its canonical home; nhl.award_vote_share_model does not carry it): candidate set = every head coach who ran >=41 regular-season games of one team (about 32); U_c = b1*Delta_final + b2*(Delta_final - Delta_prev_season) + b3*first_year_with_team; P(win) = exp(U_c)/sum_j exp(U_j), averaged over simulations (a coach fired before the threshold drops out of that draw). Fit as a conditional logit on winners 2005-06 onward, augmented with a rank-ordered (exploded) logit on the NHLBA top-3 finish order from published 5-3-1 point totals; ridge penalty chosen by leave-one-season-out log loss; at most 3 covariates. Use only games before t.",
     "pregame_knowable": "yes",
     "free_sources": [
      "NHL standings API",
@@ -7344,7 +7343,7 @@
     "category": "player_role",
     "mechanism": "Historical multinomial-logit model of vote shares for each award using production, team success, position and narrative variables.",
     "rationale": "Hart, Norris and Calder are voted by writers and Vezina by general managers; each electorate rewards different features (points, team rank, goalie wins, shutouts, GSAx), so a single player-quality model does not map to voting outcomes.",
-    "measurement": "For each award collect the last 20 seasons' finalists and vote shares; regress log vote share on points per game, goals, team points percentage, games played, position and for goalies wins, save percentage and shutouts; fit multinomial logit with season fixed effects and shrinkage; apply to the projected end-of-season stat line distribution from simulations; output win probability by candidate with draw uncertainty; update with finalists and ballot dates. Source caveat (SOURCE_UNVERIFIED for the Ted Lindsay Award): full vote shares are not known to be published for player-voted awards (only finalists and the winner), so where shares are missing fit a conditional-logit on winner-among-finalists instead of a share regression; with only a few dozen finalists per award use at most 4 covariates and strong shrinkage. Coach branch (Jack Adams, NHL Broadcasters' Association electorate, 5-3-1 ballot, individual ballots unpublished): a separate coach-level conditional logit over all ~32 head coaches on nhl.coach_expectation_delta (final delta, change versus prior-season delta, first-year flag) as specified in that input; no player production covariates are used for it.",
+    "measurement": "For each award collect the last 20 seasons' finalists and vote shares; regress log vote share on points per game, goals, team points percentage, games played, position and for goalies wins, save percentage and shutouts; fit multinomial logit with season fixed effects and shrinkage; apply to the projected end-of-season stat line distribution from simulations; output win probability by candidate with draw uncertainty; update with finalists and ballot dates. Source caveat (SOURCE_UNVERIFIED for the Ted Lindsay Award): full vote shares are not known to be published for player-voted awards (only finalists and the winner), so where shares are missing fit a conditional-logit on winner-among-finalists instead of a share regression; with only a few dozen finalists per award use at most 4 covariates and strong shrinkage. Coach branch (Jack Adams): not modelled in this input; the coach-level conditional logit over all ~32 head coaches (NHL Broadcasters' Association electorate, 5-3-1 ballot, individual ballots unpublished) is specified in nhl.coach_expectation_delta, and no player production covariates apply to it.",
     "pregame_knowable": "yes",
     "free_sources": [
      "Hockey-Reference award voting pages",

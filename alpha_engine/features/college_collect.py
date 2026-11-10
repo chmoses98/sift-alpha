@@ -52,6 +52,8 @@ def assert_no_market(cols) -> None:
 
 
 def main(a=None) -> int:
+    from ..input_research.data_foundation.rights import assert_collection_permitted
+    assert_collection_permitted("alpha_engine.features.college_collect")   # Phase 9 owner decision: no new collection from rights-unresolved sportsdataverse-derived sources
     a = a or sys.argv[1:]; out = Path(a[0]); man = {}
     yr = lambda flag, d: tuple(int(x) for x in (a[a.index(flag) + 1] if flag in a else d).split("-"))
     c0, c1 = yr("--cbb-years", "2004-2026"); f0, f1 = yr("--cfb-years", "2014-2025")

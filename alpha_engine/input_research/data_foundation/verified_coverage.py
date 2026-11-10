@@ -234,6 +234,18 @@ def load_blocked() -> dict:
     return out
 
 
+def cap_extension_full(vs: str, ev: dict) -> tuple[str, dict]:
+    """Extension-gate policy (tests/test_extension_gate.py): an input built AFTER the earlier milestone is never certified FULL by this pipeline, however complete its definition and however clean its blind comparison.
+    A FULL claim that passes every gate is kept as VERIFIED_PARTIAL with `full_candidate` evidence so the owner can decide to lift the cap; nothing is silently promoted."""
+    if vs == "VERIFIED_FULL":
+        return "VERIFIED_PARTIAL", {**ev, "full_candidate": True, "limits": list(ev.get("limits", [])) + ["FULL candidate: whole catalog definition implemented, all gates and the blind exact match passed; capped at PARTIAL by the extension-gate policy (an owner decision to lift it is required)"]}
+    return vs, ev
+
+
+# statuses a measured extension builder (replay gates + blind exact match) may promote from: no builder existed yet. DOWNGRADED_BY_VERIFIER is deliberately NOT promotable.
+PROMOTABLE = ("REQUIRES_COLLECTION", "DATA_IN_HAND_CONFIRMED", "DATA_IN_HAND_SCHEMA_ONLY")
+
+
 def build(write: bool = True) -> dict:
     rows = rd(DF / "input_audit.json")["rows"]
     replays = load_replays(); exts = load_ext_replays(); ind = load_independent(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
@@ -266,13 +278,22 @@ def build(write: bool = True) -> dict:
             vs, ev = combine_blocked(blk.get(r["key"]), blkp.get(r["key"]))
         else:
             vs = "REQUIRES_COLLECTION"
-        if vs == "REQUIRES_COLLECTION" and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
+        if vs in PROMOTABLE and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
+            was = vs
             vs, ev = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})
             if vs.startswith("VERIFIED"):
                 gate, gev = independent_gate(r, exts[sp]["inputs"][r["id"]]["columns"], ind)
                 ev.update(gev)
                 if gate: vs = gate
-            ev["promoted_from"] = "REQUIRES_COLLECTION"
+                else: vs, ev = cap_extension_full(vs, ev)
+            ev["promoted_from"] = was
+        if vs == "VERIFIED_PARTIAL" and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
+            # an extension builder that completes the definition of an input the earlier milestone left PARTIAL: it must pass the same replay gates AND the blind exact-match gate; even then the status stays PARTIAL (extension-gate cap), with `full_candidate` evidence
+            vs2, ev2 = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})
+            gate, gev = independent_gate(r, exts[sp]["inputs"][r["id"]]["columns"], ind) if vs2 == "VERIFIED_FULL" else (None, {})
+            if vs2 == "VERIFIED_FULL" and not gate:
+                _, ev3 = cap_extension_full(vs2, {**ev2, **gev})
+                ev = {**ev, "full_candidate": True, "full_candidate_evidence": ev3, "earlier_partial_missing": ev.get("limits")}
         if r["computed_prior"] and not r["status"].startswith("COMPUTED") and r["status"] != "EXCLUDED_BENCHMARK_ONLY":
             ps, pe = assess_computed(r, replays.get(sp), prov.get(sp))   # the earlier milestone computed it but a reviewer/dependency later demoted it: keep what the replay found
             ev = {**ev, "earlier_computation_replay_status": ps, "earlier_computation_replay": pe}

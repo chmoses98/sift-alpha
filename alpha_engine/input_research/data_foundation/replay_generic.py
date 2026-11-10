@@ -62,6 +62,8 @@ def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", ga
         return o
 
     def scramble(r, late_ids, seed):
+        if hasattr(mod, "perturb"):     # builders whose outcome lives in WHICH entity won (tennis) supply their own role-preserving perturbation: the row universe (game_id, entity) must not change
+            return mod.perturb(r, late_ids, seed)
         o = dict(r); rng = np.random.default_rng(seed)
         for tb, (gc, cols) in tables.items(): o[tb] = _perm(r[tb], r[tb][gc].isin(late_ids).to_numpy(), cols, rng)
         return o
@@ -79,7 +81,7 @@ def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", ga
     for s in specs:
         b = _cmp(base, own, s.columns, sel); res[s.catalog_id]["tests"]["own_game"] = {"date": str(dmid.date()), "n_rows_on_date": int((base.date.dt.normalize() == dmid).sum()), "bad_columns": b, "ok": not b}
     # non-vacuity: permute ONE early block (a mid season) -> later features of the same inputs must move
-    yr = int(base.season.median()); blk = set(base.loc[base.season == yr, "game_id"]); mv = mod.compute(scramble(raw, blk, 707))["team"]
+    yr = int(base.season.median()); blk = set(base.loc[base.season == yr, "game_id"]); mv = mod.compute(mod.perturb_nv(raw, blk, 707) if hasattr(mod, "perturb_nv") else scramble(raw, blk, 707))["team"]
     for s in specs:
         moved = [c for c in s.columns if not _same(base[c].fillna(-1), mv[c].fillna(-1))]
         res[s.catalog_id]["tests"]["pit_check_perturbation_not_vacuous"] = {"block_season": yr, "n_block_games": len(blk), "columns_that_moved": moved, "ok": len(moved) == len(s.columns)}

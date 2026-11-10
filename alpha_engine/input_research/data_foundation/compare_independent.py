@@ -18,7 +18,9 @@ import pandas as pd
 
 def main(a=None) -> int:
     a = a or sys.argv[1:]; i = a.index("--"); mod, out, blind, notes, brief = a[:i]; args = a[i + 1:]
-    m = importlib.import_module("alpha_engine." + mod); base = m.compute(m.load_raw(*args))["team"]; b = pd.read_csv(blind)
+    m = importlib.import_module("alpha_engine." + mod); base = m.compute(m.load_raw(*args))["team"]; b = pd.read_csv(blind.split(",")[0])
+    for extra in blind.split(",")[1:]:
+        b = b.merge(pd.read_csv(extra), on=["game_id", "team"], how="outer")
     j = base.merge(b, on=["game_id", "team"], how="outer", suffixes=("", "_b"), indicator=True)
     keys_ok = bool((j._merge == "both").all()) and not b.duplicated(["game_id", "team"]).any()
     res = {}
@@ -34,7 +36,7 @@ def main(a=None) -> int:
         res[s.catalog_id] = {"columns": cols}
     amb = json.loads(Path(notes).read_text()).get("ambiguities", [])
     Path(out).write_text(json.dumps({"family": mod, "verifier": "blind Claude agent re-implementation from the brief only; comparison computed by compare_independent.py (agent verification, not human)", "brief_sha256": hashlib.sha256(Path(brief).read_bytes()).hexdigest(),
-                                     "blind_csv_sha256": hashlib.sha256(Path(blind).read_bytes()).hexdigest(), "keys_identical": keys_ok, "n_rows": int(len(base)), "inputs": res, "ambiguities": amb}, indent=1) + "\n")
+                                     "blind_csv_sha256": hashlib.sha256(b"".join(Path(x).read_bytes() for x in blind.split(","))).hexdigest(), "keys_identical": keys_ok, "n_rows": int(len(base)), "inputs": res, "ambiguities": amb}, indent=1) + "\n")
     print({k: sorted({c["verdict"] for c in v["columns"].values()}) for k, v in res.items()}); return 0
 
 

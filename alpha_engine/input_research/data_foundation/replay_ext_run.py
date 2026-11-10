@@ -1,4 +1,5 @@
-"""Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
+"""Families: tennis, mlb_pitch, nba_team, nba_player (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
+Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
 
     python -m alpha_engine.input_research.data_foundation.replay_ext_run tennis RAW_DIR OUT.json [--quick]
     python -m alpha_engine.input_research.data_foundation.replay_ext_run mlb_pitch PITCH_DIR SCHEDULE.csv.gz OUT.json [--quick]
@@ -20,6 +21,26 @@ def main(a=None) -> int:
         from ...features import mlb_pitch_ext as X
         raw = X.load_raw(a[1], a[2]); out = a[3]
         r = G.run(X, raw, "MLB", {"pitches": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="date", quick=quick)
+    elif fam == "nba_team":
+        from ...features import nba_ext as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NBA", {"team_games": ("game_id", X.TG_CONTENT), "player_games": ("game_id", X.PG_CONTENT)}, games_table="team_games", games_date_col="game_date_et", quick=quick)
+    elif fam == "nba_player":
+        from ...features import nba_player_ext as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NBA", {"player_games": ("game_id", X.PG_CONTENT), "shots": ("game_id", X.SH_CONTENT)}, games_table="player_games", games_date_col="game_date_et", quick=quick)
+    elif fam == "tennis2":
+        from ...features import tennis_ext2 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "TENNIS", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="date", quick=quick)
+    elif fam == "tennis3":
+        from ...features import tennis_ext3 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "TENNIS", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="date", quick=quick)
+    elif fam == "nhl":
+        from ...features import nhl_ext as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NHL", {"games": ("game_id", X.G_CONTENT), "mp": ("game_id", X.MP_CONTENT)}, games_table="games", games_date_col="game_date", quick=quick)
     else:
         raise SystemExit("unknown family " + fam)
     Path(out).write_text(json.dumps(r, default=str, indent=0)); print("replayed", len(r["inputs"]), r["seconds"], "s"); return 0

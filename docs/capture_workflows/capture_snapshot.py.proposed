@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Append-only, timestamped snapshot collector for point-in-time (vintage) data. PROPOSED, NOT ACTIVE (RESEARCH_ONLY).
+
+Fetches a fixed list of PUBLIC, already-permitted JSON endpoints (no credentials, no accounts, no scraping of web pages) and writes each response, untouched, to
+    <root>/<feed>/dt=YYYY-MM-DD/<feed>_<UTC timestamp>.json.gz
+plus one line per capture in <root>/MANIFEST.jsonl (feed, url, http status, bytes, sha256, capture_utc). Nothing is ever rewritten or deleted: the capture time IS the vintage.
+Polite by design: generic User-Agent, one request per feed per run, a 30 s timeout, no retries on 403/429, and a hard cap on response size.
+Usage: python capture_snapshot.py --root DIR --feed name=URL [--feed name=URL ...]
+"""
+import argparse, datetime, gzip, hashlib, json, pathlib, sys, urllib.error, urllib.request
+
+UA = "sift-alpha-research/1.0 (research-only vintage capture; contact: repository owner)"
+MAX_BYTES = 30_000_000
+
+
+def capture(root: pathlib.Path, name: str, url: str) -> dict:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    rec = {"feed": name, "url": url, "capture_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = r.read(MAX_BYTES + 1); rec["http"] = r.status
+    except urllib.error.HTTPError as e:
+        rec.update(http=e.code, error="HTTPError"); return rec          # never retry 403/429
+    except Exception as e:                                               # network failure: record it, do not hide it
+        rec.update(http=0, error=type(e).__name__); return rec
+    if len(body) > MAX_BYTES:
+        rec.update(error="response larger than cap; not stored"); return rec
+    d = root / name / f"dt={now:%Y-%m-%d}"; d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{name}_{now:%Y%m%dT%H%M%SZ}.json.gz"
+    with gzip.open(f, "wb") as g:
+        g.write(body)
+    rec.update(bytes=len(body), sha256=hashlib.sha256(body).hexdigest(), file=str(f.relative_to(root)))
+    return rec
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(); ap.add_argument("--root", required=True); ap.add_argument("--feed", action="append", required=True)
+    a = ap.parse_args(); root = pathlib.Path(a.root); root.mkdir(parents=True, exist_ok=True); bad = 0
+    with open(root / "MANIFEST.jsonl", "a") as m:
+        for spec in a.feed:
+            name, url = spec.split("=", 1); rec = capture(root, name, url); m.write(json.dumps(rec, sort_keys=True) + "\n"); bad += rec.get("http") != 200
+            print(rec["feed"], rec.get("http"), rec.get("bytes"))
+    return 1 if bad == len(a.feed) else 0     # a partial failure is recorded in the manifest, not fatal
+
+
+if __name__ == "__main__":
+    sys.exit(main())

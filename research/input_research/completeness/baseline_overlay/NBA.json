@@ -1,0 +1,1118 @@
+{
+ "schema_version": "baseline-overlay-1.0",
+ "sport": "NBA",
+ "approved_commit": "50dc65e32e0a2c57a700905ceb986d6198ecf219",
+ "inputs": {},
+ "archetypes": {
+  "awards_draft": {
+   "interactions": {
+    "replaces_sha256": "eadbcd306929cc360006b610f0bef52ea9825c781098b1ba32f58c0b16095c88",
+    "value": [
+     {
+      "inputs": [
+       "nba.award_stats",
+       "nba.standings_sim"
+      ],
+      "hypothesis": "Voters reward production attached to team success, so model vote share with an interaction between individual metrics and team win percentage."
+     },
+     {
+      "inputs": [
+       "nba.games_played_eligibility",
+       "nba.injury_risk_season"
+      ],
+      "hypothesis": "Eligibility is a hard gate: a player on the games-played bubble has a bimodal outcome."
+     },
+     {
+      "inputs": [
+       "nba.voting_narrative",
+       "nba.award_stats"
+      ],
+      "hypothesis": "Narrative shifts in the final weeks can overcome small metric gaps; use ladder trackers as a signal with caution."
+     },
+     {
+      "inputs": [
+       "nba.draft_board",
+       "nba.news"
+      ],
+      "hypothesis": "Pre-draft trades and workout news create large consensus changes in the final days."
+     },
+     {
+      "inputs": [
+       "nba.award_stats",
+       "nba.standings_sim"
+      ],
+      "hypothesis": "Voters treat team success as a gate: production wins only when the team is a top-two seed, and below that seed the same production sees a sharp discount, especially for MVP and DPOY; the effect is much smaller for ROY and MIP.",
+      "form": "conditional",
+      "how_to_test": "Fit vote share on production gap with a seed-bucket dummy and compare slopes by award across 2000-2025 results; test seed-bucket x gap coefficient.",
+      "source": "completeness-review"
+     },
+     {
+      "inputs": [
+       "nba.games_played_eligibility",
+       "nba.eligibility_minutes_ledger"
+      ],
+      "hypothesis": "At zero slack the ledger term P(ledger) steps down sharply: one more missed or sub-threshold game puts a candidate below the line, so P(ledger) is a step in games remaining rather than a smooth penalty and players with high slack are insulated. It is not a complete removal: P(eligible) = P(ledger) + (1 - P(ledger)) x P(appeal granted), and the 2025-26 appeals (Doncic and Cunningham granted at 64 and 63 qualifying games, Edwards denied by an arbitrator) show the residual branch is material for stars just under the line.",
+      "form": "threshold",
+      "how_to_test": "Compare realised winner rate across slack buckets 0, 1-3, 4-8, 9+ on historical candidates; look for a discontinuity at slack 0, and separately estimate the share of below-line candidates restored by appeal.",
+      "source": "completeness-review"
+     },
+     {
+      "inputs": [
+       "nba.allnba_points_ladder",
+       "nba.award_stats"
+      ],
+      "hypothesis": "Similar candidates split ballot ranks: two centres with equal metrics both fall relative to a lone candidate with the same metrics, and a surplus of strong forwards lowers P(third team) for a marginal one.",
+      "form": "joint-distribution",
+      "how_to_test": "Add the count of candidates with a similar profile within 1 sd as a feature, or simulate ballots to see whether pairwise vote-share correlation is negative. Treat this as a modelling choice (a ballot-split simulation) and validate it on past points distributions rather than assuming the dependence.",
+      "source": "completeness-review"
+     },
+     {
+      "inputs": [
+       "nba.expectation_overperformance",
+       "nba.standings_sim"
+      ],
+      "hypothesis": "Coach of the Year rewards positive surprise but saturates once a team is already a top seed, because a title favourite cannot overperform much; a mid-seed team with a large surprise beats a top seed with a small one.",
+      "form": "saturating",
+      "how_to_test": "Regress COY winner on surprise and seed with a saturating term; compare predictions of winners for teams above 60 wins.",
+      "source": "completeness-review"
+     },
+     {
+      "inputs": [
+       "nba.pick_ownership_ledger",
+       "nba.prospect_slot_probability_model"
+      ],
+      "hypothesis": "Slot probabilities for prospects depend on who holds the pick: a team with a veteran roster, a rebuilding team and a team trading the pick pick differently, so P(prospect at slot k) is conditional on the holder.",
+      "form": "conditional",
+      "how_to_test": "Fit selection model with owner-type features on past drafts; measure rank-error of consensus by pick holder.",
+      "source": "completeness-review"
+     },
+     {
+      "inputs": [
+       "nba.title_path",
+       "nba.finals_mvp_given_title_share"
+      ],
+      "hypothesis": "A series MVP needs both his team to win and the panel to pick him, so a star on a modest favourite can be worth less than the second option on a heavy favourite; the product, not either factor, ranks candidates, and both update after every game.",
+      "form": "multiplicative",
+      "how_to_test": "Compare log loss of P(win) x P(chosen | win) against a model using only individual series production on past Finals and conference-finals MVPs.",
+      "source": "completeness-review"
+     }
+    ]
+   },
+   "mechanism_review": {
+    "replaces_sha256": "4efacd47006f89b8103b49403f344105fa0c7e61f10c7d2a1ac865d8f20bb374",
+    "value": {
+     "summary": "These contracts resolve through human processes whose inputs arrive at different clocks. Awards are a ranked-ballot election: a panel of media voters ranks five candidates for MVP (points 10-7-5-3-1) and three for most other awards (5-3-1) after the season, so the winner is the candidate with the greatest points, which depends on (a) who is eligible after the games/minutes minimum, (b) the candidates' perceived production relative to the field, (c) team success which voters treat as a prerequisite, and (d) vote splitting among near-equal candidates and voter fatigue for repeat winners. Selection markets (All-NBA, All-Star, All-Defensive, All-Rookie) are nested cut lines on the same points ranking. Monthly awards depend on the games actually played in a calendar window. Draft markets are a different chain: lottery draw and pick ownership (protections, swaps) decide which team holds slot N, then team preference, workouts and trade activity decide who is selected. Outcomes are lumpy (one winner), early prices drift on narrative, and the most informative single observable is eligibility, which can flip an outcome from near-certain to impossible. All-Star selection is a separate process: a 50% fan, 25% player and 25% media weighted-rank composite picks the top five per conference without regard to position (2026 rules), subject to a 16 US / 8 international minimum, and conference coaches then pick reserves (stage s6). Series MVPs (Finals, conference finals, Cup) are a third process: a small media panel picks a player almost always from the winning side right after the deciding game, so P(MVP) = P(team wins) x P(chosen | team wins). Committee and peer-vote honours (Hall of Fame, Social Justice Champion, Teammate and Sportsmanship awards) are nominee elections with their own panels and calendars.",
+     "stages": [
+      {
+       "id": "s1",
+       "name": "Eligibility and games-played gate",
+       "description": "A candidate must clear league thresholds before production matters. Verified for 2025-26 and unchanged as of Nov 2026: the 65-game rule governs MVP, DPOY, Most Improved, All-NBA and All-Defensive, counting games with 20+ minutes in at least 63 and 15-20 minutes in up to two more; ROY, Sixth Man and All-Rookie are exempt, and monthly awards, Coach/Executive of the Year, All-Star and the draft are outside it. The ledger moves with each injury, rest night and minute total, but it is not the last word: an Extraordinary Circumstances challenge decided by the NBA and NBPA granted Doncic and Cunningham eligibility in April 2026 and an arbitrator denied Edwards, so eligibility = ledger survival plus a discretionary appeal branch. Clutch-award coverage is not confirmed (u3).",
+       "distribution": "Bimodal near the line: mass near 0 or 1 for most players, with a narrow band of players with zero slack whose probability is a binomial-style survival over remaining games and injury hazard.",
+       "categories": [
+        "availability_news",
+        "settlement_contract"
+       ],
+       "input_ids": [
+        "nba.games_played_eligibility",
+        "nba.injury_risk_season",
+        "nba.eligibility_minutes_ledger",
+        "nba.eligibility_appeal_grant_model"
+       ]
+      },
+      {
+       "id": "s2",
+       "name": "Perceived production versus the field",
+       "description": "Voters rank on points, rebounds, assists, efficiency summaries and advanced numbers, but also on role-specific awards: defensive reputation and block/steal counts for DPOY, improvement delta versus the previous season for MIP, rookie rank for ROY. The relevant quantity is the gap to the next-best candidate on the stats voters actually look at, not the candidate's absolute level, and the stats used by voters are not identical to RAPM-type impact models.",
+       "distribution": "Heavy right tail in the leader's margin; the winner's vote share is typically concentrated (first-place votes dominated by one or two names) so P(win) behaves like a softmax over a small candidate set.",
+       "categories": [
+        "talent_strength",
+        "efficiency_conversion"
+       ],
+       "input_ids": [
+        "nba.award_stats",
+        "nba.player_impact",
+        "nba.award_role_filters"
+       ]
+      },
+      {
+       "id": "s3",
+       "name": "Team success and narrative conditioning",
+       "description": "Historical winners overwhelmingly come from top seeds, and the penalty for a lower seed is steep for MVP/DPOY while smaller for ROY; coach and executive awards are driven by wins relative to preseason expectation, not wins alone. Late-season stories (a surge, a record chase, a voter-fatigue narrative about a repeat winner) can reverse a small metric gap, and voters' ballots are submitted before the playoffs.",
+       "distribution": "Step-like in team seed and approximately logistic in the gap between win total and preseason expectation; narrative shocks are rare and large.",
+       "categories": [
+        "situational_schedule_motivation",
+        "game_context_script"
+       ],
+       "input_ids": [
+        "nba.standings_sim",
+        "nba.expectation_overperformance",
+        "nba.voter_signal_proxy"
+       ]
+      },
+      {
+       "id": "s4",
+       "name": "Ballot aggregation and cut lines",
+       "description": "Final standings are the sum of points across about 100 ballots, with ties broken by rule or shared payout; All-NBA and similar teams are cut lines on the same ranking (positionless since 2023-24), so P(1st team) is nested inside P(any team). Vote splitting between two similar candidates (two centers, two rookies) reduces both below what each would earn alone.",
+       "distribution": "Discrete, bounded sum of ranks; winner and cut-line events are strongly negatively correlated across candidates; nested sets must satisfy monotone sums.",
+       "categories": [
+        "distribution_variance",
+        "settlement_contract"
+       ],
+       "input_ids": [
+        "nba.allnba_points_ladder",
+        "nba.voter_signal_proxy"
+       ]
+      },
+      {
+       "id": "s5",
+       "name": "Draft order and selection",
+       "description": "Lottery order is a draw from published odds that depend on final standings (and tie-break coin flips); KXNBALOTTERY, KXNBATOPPICK and KXNBALOTTERYODDS settle directly on that draw, while pick ownership (protections, swaps) decides who holds each slot. Given owner and slot, selection depends on consensus board rank and its dispersion, team need, workout and medical information, and draft-night trades. Slot, team, range (top-5..top-30, first 33), matchup (A before B), count (freshmen in the top 10) and comparison (ACC vs Big 12 in round 1) markets are all functionals of one joint draft order, so they must be read off the same simulation with prospect attributes attached; KXNBATOP5ROTY additionally needs the ROY ballot model conditioned on draft slot.",
+       "distribution": "Lottery is a known discrete probability table; selection among the top few prospects is a categorical mixture whose entropy falls sharply in the final 48 hours.",
+       "categories": [
+        "role_personnel",
+        "availability_news",
+        "distribution_variance"
+       ],
+       "input_ids": [
+        "nba.draft_board",
+        "nba.pick_ownership_ledger",
+        "nba.prospect_slot_probability_model",
+        "nba.news",
+        "nba.draft_lottery_odds_table",
+        "nba.draft_order_joint_simulation"
+       ]
+      },
+      {
+       "id": "s6",
+       "name": "All-Star selection: positionless vote composite, coach reserves and nationality minimum",
+       "description": "Verified for 2026: starters are the top five per conference on a 50/25/25 fan/player/media composite chosen without regard to position (fan vote breaks composite ties), reserves are seven per conference voted by head coaches without regard to position and not for their own players, and injured selectees are replaced by the Commissioner. The USA-vs-World format then imposes a 16 US / 8 international minimum filled by Commissioner additions, so a fringe candidate's chance depends on conference rank and on the depth of his nationality group. The 2027 format has not been announced; the stage applies the 2026 rules until it is.",
+       "distribution": "Weighted-rank composite with a random-walk fan component that shrinks as the voting window closes; discrete slot allocation (5 starters and 7 reserves per conference) with correlated displacement within a conference and within a nationality group (positionless since 2026).",
+       "categories": [
+        "distribution_variance",
+        "role_personnel",
+        "situational_schedule_motivation"
+       ],
+       "input_ids": [
+        "nba.allstar_fan_vote_composite",
+        "nba.allstar_reserve_coach_vote",
+        "nba.all_star_process",
+        "nba.award_stats",
+        "nba.allstar_nationality_quota"
+       ]
+      },
+      {
+       "id": "s7",
+       "name": "Series and tournament MVP conditional on the winning side",
+       "description": "Finals MVP, the two conference-finals MVPs (awarded since 2022) and the Cup MVP are voted by a small media panel immediately after the deciding game, and the winner almost always comes from the team that won (the only losing-team Finals MVP was in 1969). The probability therefore factors into the chance the team wins the series or the Cup knockout (bracket path, home court, series length, single Cup knockout games hosted by the higher seed through the semifinal, with only the final neutral) and the chance the panel picks this player given a win, which follows his share of the winning team's series scoring and pre-series best-player status; a dominant star takes most of the conditional mass, a balanced roster splits it. Prices move game by game as both factors update. The Cup All-Tournament Team (KXNBACUP1STTEAM) is the same panel's five-player selection, drawn mostly from the knockout-round teams.",
+       "distribution": "Product of a series-win Bernoulli and a categorical over two to four candidates on the winning roster, highly concentrated on the top scorer; small co-MVP mass for the $1/N clause.",
+       "categories": [
+        "talent_strength",
+        "distribution_variance",
+        "settlement_contract"
+       ],
+       "input_ids": [
+        "nba.title_path",
+        "nba.series_model",
+        "nba.cup_format",
+        "nba.finals_mvp_given_title_share",
+        "nba.award_vote_and_cowinner_model"
+       ]
+      },
+      {
+       "id": "s8",
+       "name": "Committee, nominee and peer-vote honours including the Hall of Fame",
+       "description": "The Hall of Fame (KXNBAHALLOFFAME) inducts a class through a screening committee that names finalists, usually at All-Star weekend, and an honors committee whose supermajority vote is announced in early April, with direct-elect committees for veterans, contributors and international candidates bypassing the finalist stage; coaches such as the sampled candidate follow the coach path. The Social Justice Champion is chosen by a league committee from team nominees and finalists, and the Teammate and Sportsmanship awards by player votes among finalists. These outcomes depend on nominee status, career markers and committee composition, not on game production in the market window, and the finalist announcement is the main information jump.",
+       "distribution": "Two-stage Bernoulli (finalist, then elected) for the Hall of Fame with no fixed class size; categorical over five or so finalists for the nominee awards, with a small co-winner probability.",
+       "categories": [
+        "officiating_rules",
+        "settlement_contract",
+        "role_personnel"
+       ],
+       "input_ids": [
+        "nba.hof_committee_vote_model",
+        "nba.award_vote_and_cowinner_model",
+        "nba.news"
+       ]
+      },
+      {
+       "id": "s9",
+       "name": "Formula-decided Hustle Award",
+       "description": "KXNBAHUSTLE is settled by the league's statistical formula, not a ballot: qualifying players are ranked per minute in nine tracked hustle categories and the top aggregate wins. The outcome therefore depends on season-long tracked rates, the minutes floor that filters out small samples, and the unpublished category weights, which must be inferred from past winners. Low-usage bigs and defensive guards dominate; production and team record are irrelevant except through minutes.",
+       "distribution": "Winner is an argmax over a few dozen qualifiers; rates per minute are approximately normal after 1,000 minutes, so the probability concentrates on 3-5 players with heavy weight uncertainty.",
+       "categories": [
+        "distribution_variance",
+        "settlement_contract"
+       ],
+       "input_ids": [
+        "nba.hustle_stat_index"
+       ]
+      }
+     ],
+     "category_coverage": {
+      "talent_strength": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.award_stats",
+        "nba.player_impact",
+        "nba.title_path"
+       ],
+       "note": "Candidate production and impact; impact metrics are secondary because voters use box-score and reputation."
+      },
+      "opponent_matchup": {
+       "status": "NOT_APPLICABLE",
+       "input_ids": [],
+       "note": "Awards and draft slots are season-long or one-off events decided by a ballot or a lottery, so no head-to-head opponent exists; the nearest analogue is field competition, handled in s4 under nba.allnba_points_ladder."
+      },
+      "role_personnel": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.award_role_filters",
+        "nba.prospect_slot_probability_model",
+        "nba.allstar_reserve_coach_vote"
+       ],
+       "note": "Role definitions (bench, rookie, clutch minutes) and prospect fit decide who is in the candidate set."
+      },
+      "availability_news": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.games_played_eligibility",
+        "nba.eligibility_minutes_ledger",
+        "nba.injury_risk_season",
+        "nba.news"
+       ],
+       "note": "Eligibility ledger and injury hazard determine whether the candidate remains in the field."
+      },
+      "coaching_scheme": {
+       "status": "NOT_APPLICABLE",
+       "input_ids": [],
+       "note": "Coach of the Year is voted on win totals versus expectation rather than on a measurable scheme variable; scheme effects enter through wins in nba.expectation_overperformance, so no separate scheme input is warranted for award or draft ballots."
+      },
+      "environment": {
+       "status": "NOT_APPLICABLE",
+       "input_ids": [],
+       "note": "Venue, altitude and weather play no part in a vote or a lottery draw; the only environmental channel is schedule strength feeding wins, covered by nba.standings_sim."
+      },
+      "game_context_script": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.voter_signal_proxy",
+        "nba.expectation_overperformance"
+       ],
+       "note": "Late-season trajectory and storyline before ballots are cast."
+      },
+      "pace_volume": {
+       "status": "NOT_APPLICABLE",
+       "input_ids": [],
+       "note": "Volume matters only through counting-stat totals inside nba.award_stats; there is no per-event opportunity count that a pace input would scale in these markets."
+      },
+      "efficiency_conversion": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.award_stats"
+       ],
+       "note": "Shooting efficiency and defensive metrics are summary inputs voters read."
+      },
+      "distribution_variance": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.allnba_points_ladder",
+        "nba.prospect_slot_probability_model",
+        "nba.allstar_fan_vote_composite",
+        "nba.finals_mvp_given_title_share",
+        "nba.draft_order_joint_simulation"
+       ],
+       "note": "Ballot-sum distribution and board dispersion define tails and cut-line probabilities."
+      },
+      "situational_schedule_motivation": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.standings_sim",
+        "nba.monthly_window_schedule"
+       ],
+       "note": "Seeding and games-in-window for monthly awards."
+      },
+      "officiating_rules": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.games_played_eligibility",
+        "nba.award_role_filters",
+        "nba.hof_committee_vote_model",
+        "nba.cup_format"
+       ],
+       "note": "League eligibility rules act as the rule layer for awards."
+      },
+      "settlement_contract": {
+       "status": "COVERED",
+       "input_ids": [
+        "m.rules_text",
+        "nba.pick_ownership_ledger",
+        "nba.award_vote_and_cowinner_model",
+        "nba.draft_lottery_odds_table"
+       ],
+       "note": "60 of 65 series have rules text: $1/N co-winner split where stated, selection-based All-Star, finalists No if unannounced, draft team ignores later trades (undrafted = No), lottery on the draw; 5 series TITLE_ONLY (u1)."
+      }
+     }
+    }
+   },
+   "nonlinearities": {
+    "replaces_sha256": "3440d6a2e03611e020b879066cbc8c43a3b75ec4b2ec31952d0b65316019d2e6",
+    "value": [
+     {
+      "input_id": "nba.games_played_eligibility",
+      "shape": "Step function at the threshold (65 qualifying games)",
+      "why": "The rule is a hard threshold, so effect on P(win) is zero until the player is within a few games of the line and then collapses; linear injury-risk adjustment would misprice players near the line."
+     },
+     {
+      "input_id": "nba.standings_sim",
+      "shape": "Step in seed (top-2 vs rest), saturating above",
+      "why": "Winners cluster in top seeds, so probability changes little between seed 1 and 2 but falls sharply beyond seed 4; response is closer to a gate than a slope."
+     },
+     {
+      "input_id": "nba.award_stats",
+      "shape": "Softmax in the gap to the next candidate",
+      "why": "Vote share is concentrated; a candidate's win probability depends on the margin over the runner-up on voter-visible stats rather than the absolute level."
+     },
+     {
+      "input_id": "nba.prospect_slot_probability_model",
+      "shape": "Entropy collapse near draft night",
+      "why": "Selection probability concentrates quickly as boards converge and insiders report, so the slot probabilities should be recomputed from time-stamped board snapshots with a recency weight rather than held static."
+     }
+    ]
+   },
+   "required_data": {
+    "replaces_sha256": "5ec36bd56ff3374a8459c712ed6985ed3f83a67b07ce4399b797a8f0a7ab7352",
+    "value": [
+     {
+      "dataset": "Award voting history and results",
+      "grain": "player-season-award",
+      "fields": [
+       "player",
+       "season",
+       "award",
+       "points_won",
+       "first_place_votes",
+       "share",
+       "rank",
+       "finalist"
+      ],
+      "timestamp_requirement": "Season of announcement; snapshot dated after official release.",
+      "history_needed": "2000-2026 for MVP/DPOY/ROY/6MOY/MIP/All-NBA",
+      "candidate_sources": [
+       {
+        "name": "Basketball-Reference awards voting pages",
+        "access": "free_scrape",
+        "note": "Includes share and first-place votes; scrape allowed with rate limiting, terms unverified"
+       },
+       {
+        "name": "NBA.com voting results releases",
+        "access": "free",
+        "note": "Published post-announcement with per-voter ballots for major awards (SOURCE_UNVERIFIED for all awards)"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.allnba_points_ladder",
+       "nba.award_stats",
+       "nba.voter_signal_proxy"
+      ]
+     },
+     {
+      "dataset": "Player game logs with minutes, starts and clutch splits",
+      "grain": "player-game",
+      "fields": [
+       "player_id",
+       "game_id",
+       "minutes",
+       "started",
+       "points",
+       "rebounds",
+       "assists",
+       "clutch_minutes",
+       "clutch_net"
+      ],
+      "timestamp_requirement": "Final box score as of last game; stat corrections lag up to 24h.",
+      "history_needed": "2000-2026",
+      "candidate_sources": [
+       {
+        "name": "NBA Stats API (nba_api client)",
+        "access": "free_limited",
+        "note": "Rate-limited, endpoints change; commonly accessible"
+       },
+       {
+        "name": "Basketball-Reference game logs",
+        "access": "free_scrape",
+        "note": "Daily updated"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.eligibility_minutes_ledger",
+       "nba.award_role_filters",
+       "nba.award_stats",
+       "nba.monthly_window_schedule",
+       "nba.games_played_eligibility",
+       "nba.injury_risk_season",
+       "nba.player_impact",
+       "nba.eligibility_appeal_grant_model"
+      ]
+     },
+     {
+      "dataset": "Draft pick ownership and lottery table",
+      "grain": "pick-year",
+      "fields": [
+       "original_team",
+       "owner",
+       "protection",
+       "swap_rights",
+       "conveyance_year",
+       "lottery_odds_by_seed"
+      ],
+      "timestamp_requirement": "Transaction date; as-of the latest trade and the final standings.",
+      "history_needed": "2015-2026 drafts plus future picks to 2033",
+      "candidate_sources": [
+       {
+        "name": "RealGM draft pick tracker",
+        "access": "free_scrape",
+        "note": "Team-by-year ownership table"
+       },
+       {
+        "name": "Spotrac draft pick ownership",
+        "access": "free_scrape",
+        "note": "Includes protection text"
+       },
+       {
+        "name": "NBA.com lottery odds",
+        "access": "free",
+        "note": "Odds table published annually"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.pick_ownership_ledger",
+       "nba.draft_lottery_odds_table"
+      ]
+     },
+     {
+      "dataset": "Prospect board snapshots",
+      "grain": "prospect-source-date",
+      "fields": [
+       "prospect",
+       "source",
+       "rank",
+       "date",
+       "workouts",
+       "medicals",
+       "age",
+       "league",
+       "prospect class year, college conference, international flag"
+      ],
+      "timestamp_requirement": "Timestamp each snapshot; use only snapshots dated before quote time.",
+      "history_needed": "2015-2026 boards",
+      "candidate_sources": [
+       {
+        "name": "Tankathon / NBADraft.net",
+        "access": "free_scrape",
+        "note": "Public consensus"
+       },
+       {
+        "name": "ESPN Draft Insider, The Athletic big board",
+        "access": "paid",
+        "note": "Behind subscription; scrapable text not assured"
+       },
+       {
+        "name": "Team workout lists",
+        "access": "unavailable_public",
+        "note": "Many team workouts reported inconsistently"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.prospect_slot_probability_model",
+       "nba.draft_board",
+       "nba.news",
+       "nba.draft_order_joint_simulation"
+      ]
+     },
+     {
+      "dataset": "Team results and preseason ratings",
+      "grain": "team-season-game",
+      "fields": [
+       "team",
+       "date",
+       "result",
+       "margin",
+       "own_preseason_rating",
+       "schedule_strength"
+      ],
+      "timestamp_requirement": "As-of game date; preseason rating frozen at tip of opening night.",
+      "history_needed": "2000-2026",
+      "candidate_sources": [
+       {
+        "name": "Basketball-Reference",
+        "access": "free_scrape",
+        "note": "Standings and ratings"
+       },
+       {
+        "name": "own rating derived from returning minutes",
+        "access": "derived",
+        "note": "Needs minutes-weighted prior"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.expectation_overperformance",
+       "nba.standings_sim"
+      ]
+     },
+     {
+      "dataset": "All-Star fan vote returns, ballots and selections",
+      "grain": "candidate-conference-snapshot",
+      "fields": [
+       "season",
+       "conference",
+       "position_group_pre2026",
+       "candidate",
+       "nationality_group",
+       "us_or_international_flag",
+       "fan_votes",
+       "fan_rank",
+       "player_rank",
+       "media_rank",
+       "starter_flag",
+       "reserve_flag",
+       "replacement_flag",
+       "snapshot_date"
+      ],
+      "timestamp_requirement": "Snapshot date of each published early return; use the last snapshot before the prediction time and never the final result.",
+      "history_needed": "10 seasons of return snapshots and final selections",
+      "candidate_sources": [
+       {
+        "name": "NBA.com All-Star voting returns",
+        "access": "free_scrape",
+        "note": "Early-return snapshots are published on set dates; machine-readable history not verified; nationality designation per the league's format release, to be captured per season (source for the flag not verified)"
+       },
+       {
+        "name": "Basketball-Reference All-Star voting and rosters",
+        "access": "free_scrape",
+        "note": "Final fan, player and media ranks; early-return history absent"
+       },
+       {
+        "name": "Wayback Machine snapshots of the fan-vote leaderboards",
+        "access": "free_limited",
+        "note": "Coverage uneven across years"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.allstar_fan_vote_composite",
+       "nba.allstar_reserve_coach_vote",
+       "nba.all_star_process",
+       "nba.allstar_nationality_quota"
+      ]
+     },
+     {
+      "dataset": "Playoff bracket, series and Cup knockout results",
+      "grain": "one row per playoff or Cup knockout game, with series id",
+      "fields": [
+       "season",
+       "round",
+       "series_id",
+       "home_team",
+       "away_team",
+       "final_score",
+       "game_number",
+       "seed",
+       "cup_stage"
+      ],
+      "timestamp_requirement": "results as of the market timestamp; seeds and bracket frozen at the end of the regular season or Cup group stage",
+      "history_needed": "15 seasons of playoffs; all Cup seasons since 2023-24",
+      "candidate_sources": [
+       {
+        "name": "Basketball-Reference playoff and Cup pages",
+        "access": "free_scrape",
+        "note": "series-level and game-level results"
+       },
+       {
+        "name": "NBA schedule JSON (cdn.nba.com scheduleLeagueV2)",
+        "access": "free",
+        "note": "game ids and Cup stage flags"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.title_path",
+       "nba.series_model",
+       "nba.cup_format"
+      ]
+     },
+     {
+      "dataset": "Series MVP, nominee award and Hall of Fame history",
+      "grain": "one row per award or candidate per year",
+      "fields": [
+       "award",
+       "year",
+       "candidate",
+       "finalist_flag",
+       "winner_flag",
+       "n_awardees",
+       "team",
+       "series_points_share",
+       "category"
+      ],
+      "timestamp_requirement": "finalist lists stored with their announcement date so a backtest uses only lists published before the market timestamp",
+      "history_needed": "at least 15 award years; Hall of Fame classes since 2000",
+      "candidate_sources": [
+       {
+        "name": "Basketball-Reference awards pages",
+        "access": "free_scrape",
+        "note": "Finals MVP and season awards"
+       },
+       {
+        "name": "hoophall.com finalist and class announcements",
+        "access": "free_scrape",
+        "note": "finalists and inductees by category"
+       },
+       {
+        "name": "NBA.com award announcements",
+        "access": "free",
+        "note": "Social Justice, Teammate, Sportsmanship finalists and winners"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.finals_mvp_given_title_share",
+       "nba.award_vote_and_cowinner_model",
+       "nba.hof_committee_vote_model"
+      ]
+     },
+     {
+      "dataset": "League hustle-stat tracking by player-season",
+      "grain": "player x season (and player x game for projection)",
+      "fields": [
+       "deflections",
+       "charges_drawn",
+       "screen_assists",
+       "contested_2pt",
+       "contested_3pt",
+       "loose_balls_off",
+       "loose_balls_def",
+       "box_outs_off",
+       "box_outs_def",
+       "minutes",
+       "games"
+      ],
+      "timestamp_requirement": "Nightly snapshot with retrieval timestamp; tracking counts are occasionally revised, keep vintages.",
+      "history_needed": "2016-17 to date (tracking began in the 2016 postseason) plus Hustle Award winners/finalists.",
+      "candidate_sources": [
+       {
+        "name": "stats.nba.com leaguehustlestatsplayer endpoint",
+        "access": "free_limited",
+        "note": "undocumented, rate-limited, blocks some cloud IPs"
+       },
+       {
+        "name": "NBA.com Hustle Award releases",
+        "access": "free"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.hustle_stat_index"
+      ]
+     }
+    ]
+   }
+  },
+  "season_futures_team": {
+   "mechanism_review": {
+    "replaces_sha256": "7632defc90e238b911d8532dec328baa2cc5a5f43f8172bf1ec80a64200d15f6",
+    "value": {
+     "summary": "Season-level team contracts are functionals of a simulated season: a latent team strength (a prior from the roster plus in-season updates, with real uncertainty), the realized availability of its stars over the games and into the playoffs, the remaining schedule with home/away and rest, game results as correlated Bernoulli trials giving a Poisson-binomial win total, standings with official tiebreakers, two seed definitions around the Play-In, and then a playoff bracket of best-of-seven series with tightened rotations. Probabilities of rare outcomes (title, 72 wins, a Play-In team in the Conference Finals) are convex in uncertainty: errors in rating sd and star health matter more than error in the mean, and boundary effects at tiebreaks, seed cut points and the 1/N or 50/50 tie rules drive seed, division and record contracts. The MVP-champion conjunction and franchise-set champion contracts add functionals (a vote correlated with team success, sums over fixed franchise lists) on top of the bracket.",
+     "stages": [
+      {
+       "id": "s1",
+       "name": "Latent team strength: prior and in-season update",
+       "description": "True strength before the season is a roster-based prior (minutes-weighted player impact, aging, continuity, rookies), with an error sd of roughly 3-4 net rating points. Each game updates it with a gain that declines with games played; with ten games played the prior still dominates. Trades and coaching changes shift both mean and variance with a lag for integration.",
+       "distribution": "Gaussian posterior with sd about 2.5-3.5 net rating points early in the season shrinking with games; heavy tail for roster shocks (trades, injuries to stars).",
+       "categories": [
+        "talent_strength",
+        "role_personnel"
+       ],
+       "input_ids": [
+        "nba.ratings",
+        "nba.player_impact",
+        "nba.preseason_roster_aging_prior",
+        "nba.rating_update_gain",
+        "nba.news"
+       ]
+      },
+      {
+       "id": "s2",
+       "name": "Availability of stars over the season and into the playoffs",
+       "description": "Stars miss a random number of games through injury and load management, with a heavy right tail of long absences; the quantity that matters differs by contract: expected games missed for win totals and seeds, probability of being healthy in April-June for round-reach and titles. Availability changes the team rating by a player-specific amount.",
+       "distribution": "Mixture: most players miss 5-15 games, a few percent miss most of the season; time-to-injury is a survival process with age and workload dependence.",
+       "categories": [
+        "availability_news",
+        "situational_schedule_motivation"
+       ],
+       "input_ids": [
+        "nba.injury_risk_season",
+        "nba.load_mgmt",
+        "nba.lineup_adj_rating",
+        "nba.playoff_star_health_hazard"
+       ]
+      },
+      {
+       "id": "s3",
+       "name": "Schedule: opponent strength, rest and Cup games in the regular season",
+       "description": "The remaining schedule determines each game's win probability through opponent strength, home/away and rest asymmetry. Cup group and knockout games before the Cup final count as regular-season games (KXNBAPOSTASREC text) and teams eliminated early receive filler games scheduled later, so part of the schedule is unknown in November. Early in the season schedule effects are small next to rating uncertainty, but they matter for division races, 1 seeds and the final-weeks seed battle.",
+       "distribution": "Deterministic schedule given; game win probabilities range 15-85%; the rest/travel adjustments are about +/-1 point of margin.",
+       "categories": [
+        "situational_schedule_motivation",
+        "environment"
+       ],
+       "input_ids": [
+        "nba.sos_remaining",
+        "nba.rest_travel",
+        "nba.cup_format"
+       ]
+      },
+      {
+       "id": "s4",
+       "name": "Regular-season win totals, extremes and pairwise records",
+       "description": "The win total is a sum of correlated game outcomes: independent Bernoulli noise (sd about 4.5 wins for an average team) plus common shocks through rating uncertainty and injuries, so the distribution is wider than a binomial. KXNBAMOSTWINS and KXNBAWINRECORD are upper-tail events of the best team (72+ or 74+ wins), KXNBARECORD is the minimum over 30 teams where lottery incentives make weak teams rest veterans late, KXNBAPOSTASREC is a maximum of partial-season percentages, and KXNBAH2HWINS is a difference of two totals linked by their head-to-head games, with the equal-wins mass paid at half. KXNBATEAMWINSTREAK pays $1/N to each team tied for the longest regular-season win streak, so it is a run-length maximum over 30 teams read from the same stored simulation paths as the win totals (nba.longest_streak_max_and_tie_model), not from a separate streak simulation.",
+       "distribution": "Poisson-binomial with a hierarchical shock (total sd about 6-7 wins); extreme-value behaviour for maxima and minima over 30 teams; integer ties paid 1/N or 50/50.",
+       "categories": [
+        "distribution_variance",
+        "efficiency_conversion"
+       ],
+       "input_ids": [
+        "nba.standings_sim",
+        "nba.pythag_residual",
+        "nba.ratings",
+        "nba.team_record_head_to_head_linkage",
+        "nba.standings_motivation",
+        "nba.longest_streak_max_and_tie_model"
+       ]
+      },
+      {
+       "id": "s5",
+       "name": "Division titles, seeding, Play-In and playoff qualification",
+       "description": "Six division winners, conference 1 seeds and seed contracts are ranks of simulated records resolved by the official tiebreak hierarchy (head-to-head, division and conference records). Seeds 7-10 enter the Play-In (KXNBAPLAYIN), whose bracket decides playoff qualification (KXNBAPLAYOFF) and the exact 7 and 8 seeds (KXNBASEED), while KXNBASEEDOU stays on the pre-Play-In seed. Boundary probabilities hinge on one win and on the tiebreak ledger, and division titles carry no seeding reward, so late-season resting follows the conference table.",
+       "distribution": "Discrete rank outcomes with deterministic tiebreaks; the Play-In adds a three-game mini-bracket with per-game probabilities near 50% that maps seeds 7-10 to 7, 8 or out.",
+       "categories": [
+        "settlement_contract",
+        "situational_schedule_motivation"
+       ],
+       "input_ids": [
+        "nba.standings_sim",
+        "nba.tiebreak_ledger",
+        "nba.play_in_path_model",
+        "m.rules_text"
+       ]
+      },
+      {
+       "id": "s6",
+       "name": "Playoff bracket and series conversion",
+       "description": "Each series is a best-of-seven with home-court structure, playoff-tightened rotations and game-to-game correlation; per-game win probability converts steeply to series probability. The bracket path and star health in each round give conference-finals qualification, conference and league titles, the exact Finals pair, the playoff-win count (sum of wins over series reached, Play-In excluded) and whether a Play-In entrant reaches the Conference Finals; all are strongly convex in team strength.",
+       "distribution": "Series win probability is an S-shaped function of per-game edge (60% per game gives about 71% series); correlation between games from injuries and adjustments widens outcomes.",
+       "categories": [
+        "talent_strength",
+        "opponent_matchup",
+        "coaching_scheme"
+       ],
+       "input_ids": [
+        "nba.series_model",
+        "nba.title_path",
+        "nba.playoff_rotation",
+        "nba.playoff_star_health_hazard",
+        "nba.series_length_distribution",
+        "nba.play_in_path_model"
+       ]
+      },
+      {
+       "id": "s7",
+       "name": "Derived award and franchise-set functionals",
+       "description": "Two contract families sit on top of the bracket. The MVP-champion conjunction needs the regular-season MVP vote (a conditional choice among a few candidates whose odds rise with team record) joined to that player's team title probability, including his playoff health. Franchise-set contracts (first-time champion, no title in eight seasons, the three-peat) are sums or single terms of title probabilities over fixed lists, so their errors are the correlated errors of those teams' strength estimates.",
+       "distribution": "Conditional logit over MVP candidates joined to a title probability (strong positive dependence); sums of correlated team title probabilities for franchise sets.",
+       "categories": [
+        "settlement_contract",
+        "game_context_script"
+       ],
+       "input_ids": [
+        "nba.award_vote_and_cowinner_model",
+        "nba.title_path",
+        "nba.playoff_star_health_hazard"
+       ]
+      }
+     ],
+     "category_coverage": {
+      "talent_strength": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.ratings",
+        "nba.player_impact",
+        "nba.preseason_roster_aging_prior",
+        "nba.rating_update_gain"
+       ],
+       "note": "Latent strength with prior, aging and update gain."
+      },
+      "opponent_matchup": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.title_path",
+        "nba.series_model",
+        "nba.team_record_head_to_head_linkage"
+       ],
+       "note": "Bracket path and matchup-specific series results."
+      },
+      "role_personnel": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.lineup_adj_rating",
+        "nba.player_impact",
+        "nba.playoff_rotation"
+       ],
+       "note": "Who plays and how playoff rotations concentrate minutes."
+      },
+      "availability_news": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.injury_risk_season",
+        "nba.load_mgmt",
+        "nba.playoff_star_health_hazard",
+        "nba.news"
+       ],
+       "note": "Season and playoff-time availability distribution."
+      },
+      "coaching_scheme": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.playoff_rotation",
+        "nba.news"
+       ],
+       "note": "Coaching changes and playoff rotation tightening; only weakly quantified."
+      },
+      "environment": {
+       "status": "NOT_APPLICABLE",
+       "input_ids": [],
+       "note": "Venue, altitude and arena effects are small at the season-aggregate level and are absorbed in home/away win probabilities within the schedule; no separate environment variable is warranted for futures."
+      },
+      "game_context_script": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.series_model",
+        "nba.pythag_residual"
+       ],
+       "note": "Close-game luck and series dynamics (game-to-game correlation)."
+      },
+      "pace_volume": {
+       "status": "NOT_APPLICABLE",
+       "input_ids": [],
+       "note": "Possession count has no direct role at the season-futures level; it enters only through net rating, which already includes pace effects, so no separate pace or volume input is needed."
+      },
+      "efficiency_conversion": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.pythag_residual",
+        "nba.ratings"
+       ],
+       "note": "Luck versus skill in point differential and records."
+      },
+      "distribution_variance": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.standings_sim",
+        "nba.series_model",
+        "nba.rating_update_gain",
+        "nba.team_record_head_to_head_linkage"
+       ],
+       "note": "Win-total, extreme-record and series distributions with rating uncertainty and head-to-head linkage."
+      },
+      "situational_schedule_motivation": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.sos_remaining",
+        "nba.load_mgmt",
+        "nba.rest_travel",
+        "nba.tiebreak_ledger",
+        "nba.standings_motivation"
+       ],
+       "note": "Schedule strength, rest and boundary-stakes."
+      },
+      "officiating_rules": {
+       "status": "COVERED",
+       "input_ids": [
+        "nba.tiebreak_ledger",
+        "nba.play_in_path_model",
+        "nba.cup_format"
+       ],
+       "note": "Format rules: tiebreak hierarchy, Play-In bracket and Cup games counted in the regular season."
+      },
+      "settlement_contract": {
+       "status": "COVERED",
+       "input_ids": [
+        "m.rules_text",
+        "nba.play_in_path_model",
+        "nba.tiebreak_ledger",
+        "nba.award_vote_and_cowinner_model"
+       ],
+       "note": "Per-series forms: integer win strikes, 1/N and 50/50 tie rules, tiebreak-decided divisions and seeds, pre- versus post-Play-In seeds, Play-In wins excluded, exact Finals pair, franchise lists and the MVP-title conjunction."
+      }
+     }
+    }
+   },
+   "required_data": {
+    "replaces_sha256": "ab540ce00e5e14e3653b8cdf14f2b715010856b55cf3c7ccbe371bfc123571f0",
+    "value": [
+     {
+      "dataset": "Team game results with margins, schedule and rosters",
+      "grain": "team x game",
+      "fields": [
+       "game_id",
+       "date",
+       "team",
+       "opp",
+       "home",
+       "pts",
+       "opp_pts",
+       "possessions",
+       "rest_days",
+       "players_available"
+      ],
+      "timestamp_requirement": "Nightly after final; ratings as-of date",
+      "history_needed": "15 seasons for backtests",
+      "candidate_sources": [
+       {
+        "name": "nba_api game logs / standings",
+        "access": "free_scrape",
+        "note": "Public endpoints"
+       },
+       {
+        "name": "Basketball-Reference",
+        "access": "free_scrape",
+        "note": "Scrape terms"
+       },
+       {
+        "name": "Sportradar NBA",
+        "access": "paid",
+        "note": "Licensed"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.ratings",
+       "nba.rating_update_gain",
+       "nba.pythag_residual",
+       "nba.standings_sim",
+       "nba.sos_remaining",
+       "nba.tiebreak_ledger",
+       "nba.rest_travel",
+       "nba.standings_motivation",
+       "nba.team_record_head_to_head_linkage",
+       "nba.play_in_path_model",
+       "nba.longest_streak_max_and_tie_model"
+      ]
+     },
+     {
+      "dataset": "Player impact and roster transactions with ages",
+      "grain": "player x season, transaction",
+      "fields": [
+       "player_id",
+       "age",
+       "minutes",
+       "bpm_epm_rapm",
+       "team",
+       "transaction_type",
+       "date"
+      ],
+      "timestamp_requirement": "Update at each transaction; as-of date",
+      "history_needed": "10 seasons",
+      "candidate_sources": [
+       {
+        "name": "Basketball-Reference BPM/VORP",
+        "access": "free_scrape",
+        "note": "Terms"
+       },
+       {
+        "name": "Dunks and Threes EPM / similar",
+        "access": "paid",
+        "note": "Subscription"
+       },
+       {
+        "name": "Pro Sports Transactions",
+        "access": "free_scrape",
+        "note": "Transactions history"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.player_impact",
+       "nba.preseason_roster_aging_prior",
+       "nba.news",
+       "nba.lineup_adj_rating",
+       "nba.playoff_rotation"
+      ]
+     },
+     {
+      "dataset": "Injury episodes and minutes load",
+      "grain": "player x injury episode",
+      "fields": [
+       "player_id",
+       "start_date",
+       "return_date",
+       "injury_type",
+       "games_missed",
+       "minutes_per_game",
+       "age"
+      ],
+      "timestamp_requirement": "Vintage-archived; as-of report",
+      "history_needed": "10 seasons",
+      "candidate_sources": [
+       {
+        "name": "NBA injury reports (archived)",
+        "access": "own_capture",
+        "note": "Official reports not archived by the league in structured form"
+       },
+       {
+        "name": "Pro Sports Transactions",
+        "access": "free_scrape",
+        "note": "Injury list placements"
+       },
+       {
+        "name": "Basketball-Reference",
+        "access": "free_scrape",
+        "note": "Games missed"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.injury_risk_season",
+       "nba.load_mgmt",
+       "nba.playoff_star_health_hazard"
+      ]
+     },
+     {
+      "dataset": "Playoff series results and award voting history",
+      "grain": "series; award year; Finals year",
+      "fields": [
+       "series_id",
+       "teams",
+       "game_results",
+       "series_player_stats",
+       "games_played",
+       "mvp_vote_shares",
+       "mvp_team_record",
+       "nominees_or_finalists",
+       "awardee_count"
+      ],
+      "timestamp_requirement": "Static history; annual update",
+      "history_needed": "20 seasons",
+      "candidate_sources": [
+       {
+        "name": "Basketball-Reference playoffs and awards",
+        "access": "free_scrape",
+        "note": "Terms"
+       }
+      ],
+      "feeds_inputs": [
+       "nba.series_model",
+       "nba.title_path",
+       "nba.award_vote_and_cowinner_model",
+       "nba.series_length_distribution"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ "blueprints": {},
+ "top_level": {}
+}

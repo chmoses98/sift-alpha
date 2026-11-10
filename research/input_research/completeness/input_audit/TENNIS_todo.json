@@ -1,0 +1,1437 @@
+{
+"m.external_lines": {
+"category": "market_structure",
+"free_sources": [
+"tennis-data.co.uk odds spreadsheets (Pinnacle/Bet365/Max/Avg closing odds)",
+"Betfair Exchange historical data (data.betfair.com basic plan)"
+],
+"label": "Sportsbook/exchange reference prices",
+"measurement": "De-vig each external quote (Shin for 3-way/long-shot-heavy sets, power for two-way), timestamp-match to the Kalshi quote, compute the Kalshi minus sharp probability difference and its sign persistence.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Sharp external prices are an information-rich prior; a Kalshi price that disagrees with the de-vigged sharp close either carries a stale quote or genuine information.",
+"pregame_knowable": "yes",
+"rationale": "The sharp closing line is the best-known single predictor in most sports markets, so any model must clear it, and its de-vigging method matters (proportional vs Shin vs power) especially for 3-way markets and long-shots. Subtle: timestamps must be matched; using a closing price against an earlier Kalshi quote overstates edge (look-ahead), and free historical files only give open/close snapshots.",
+"registry_ids": [
+"m.external_lines"
+]
+},
+"m.fees": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi fee schedule PDF / help center (kalshi.com/fee-schedule)"
+],
+"label": "Fee schedule and maker/taker rules",
+"measurement": "Implement fee(price, size, role, date) from the schedule; compute net edge = model_p minus price minus fee/contract minus half-spread; evaluate decisions on net edge.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Fees reduce realised edge nonlinearly in price (larger relative drag near 50c and for small expected edges), so the net-of-fee probability threshold differs by rung.",
+"pregame_knowable": "yes",
+"rationale": "A model edge below the fee-plus-spread hurdle is not tradable; the hurdle depends on price level and on maker vs taker. Fee rules change over time so a historical backtest must apply the schedule in force on the trade date. It does not predict the outcome but determines which model edges are monetisable.",
+"registry_ids": [
+"m.fees"
+]
+},
+"m.ladder_structure": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+],
+"label": "Cross-rung consistency of the threshold ladder",
+"measurement": "Collect all rungs of an event at one timestamp; check monotonicity of cumulative prices; fit a constrained distribution (game-differential from a hold/break Markov model) by least squares on mid prices and record per-rung residuals and implied pmf.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Games/sets/spread ladders must be monotone and mutually consistent with the match-winner market; kinks expose mispriced rungs and the implied game-differential distribution.",
+"pregame_knowable": "yes",
+"rationale": "Each rung is priced separately by different participants, so the implied pmf (differences between adjacent cumulative prices) can go negative or be implausibly lumpy. Fitting a smooth parametric distribution across rungs and trading the residual is a market-structure edge that does not depend on a view about the teams. Subtle: push rules and integer vs half-point lines change which rung differences are legitimate.",
+"registry_ids": [
+"m.ladder_structure"
+]
+},
+"m.lifecycle": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks); market status/open_time/close_time/expiration fields"
+],
+"label": "Open/close/halt/postponement lifecycle events",
+"measurement": "Log status transitions with timestamps; compute minutes between last tradable quote and event start; flag postponements, delays >30 min, halts and re-opens.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "The lifecycle (open, close before start, halts, postponement, early settlement) controls when information can still be traded on and which markets get voided or re-opened.",
+"pregame_knowable": "partial",
+"rationale": "Tennis start times are only estimates (order of play, rain), so a market can sit open for hours or close on a different court time than the model assumed; suspensions and walkovers create halts and voids.",
+"registry_ids": [
+"m.lifecycle"
+]
+},
+"m.orderbook_depth": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+],
+"label": "Order-book depth and spread",
+"measurement": "Record top-5 level price/size per side, cumulative depth within 1/2/5 cents of mid, spread in cents and as fraction of price; compute expected fill price for a target size.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Executable size at each price level, not the mid, determines how much edge can be captured and what slippage costs.",
+"pregame_knowable": "yes",
+"rationale": "A model edge of two cents is worthless if depth at the touch is a handful of contracts; wide spreads on long-shot rungs mean the quoted probability is mostly spread. Depth also signals whether a market maker is active (tight, refreshed quotes) or the book is abandoned (stale quotes that will be picked off when news lands).",
+"registry_ids": [
+"m.orderbook_depth"
+]
+},
+"m.quote_history": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+],
+"label": "Kalshi bid/ask/last time series",
+"measurement": "Snapshot bid/ask/mid/last at fixed horizons (T-24h, T-6h, T-1h, T-10m, close); compute spread, time since last trade, and signed drift vs the sharp-book de-vigged price at the same timestamp. Never use post-start quotes for pregame features.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Prices aggregate dispersed information; the path of the quote (and its drift toward kickoff) reveals when informed flow arrives and how stale an early quote is.",
+"pregame_knowable": "yes",
+"rationale": "A resting Kalshi quote hours before first serve is partly stale: team news, injury and line moves at sharp books arrive in bursts, and Kalshi liquidity is thin so quotes can lag. The quote path also defines the realistic entry price (not a mid that was never tradable). Subtle: last-trade can be far from the executable bid/ask, and closing-quote efficiency is a benchmark rather than a given.",
+"registry_ids": [
+"m.quote_history"
+]
+},
+"m.rules_text": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks); market rules_primary / rules_secondary fields"
+],
+"label": "Versioned rules_primary / settlement wording",
+"measurement": "Store rules text with a version hash at each fetch; parse into flags (regulation_only, includes_ET, includes_pens, void_if_abandoned, void_if_retired, min_games_required, source_of_record) and use them as hard filters/feature switches.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Wording fixes the event: retirement/walkover handling, minimum completion for set/game/ace markets, rain suspension carry-over, source of record and tie rules.",
+"pregame_knowable": "yes",
+"rationale": "Retirement and walkover handling is the dominant settlement risk in tennis: some markets void or refund when a player retires before completion, others settle on the final state; ace/game totals may need a minimum number of games played. Mis-reading these rules turns a model edge into a loss. Subtle: wording differs by market type and can change across seasons, so it must be parsed per market and versioned.",
+"registry_ids": [
+"m.rules_text"
+]
+},
+"m.settlement_truth": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks); settled market fields (result, settlement_value, settlement_ts)"
+],
+"label": "Settled result, value and timestamp",
+"measurement": "Join each market to its settled result/value and settlement time; flag markets whose settled value disagrees with an independently computed result as wording/void cases.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID",
+"NOT_PREGAME_KNOWABLE"
+],
+"mechanism": "Settlement is the realised label; the exact settled value and timestamp (not the box-score) is what pays.",
+"pregame_knowable": "no",
+"rationale": "Labels must be taken from Kalshi's recorded settlement, not re-derived from a stats site: edge cases (extra time, abandoned matches, retirements, source corrections after the fact) can make the settled value differ from the intuitive result. It is never a pregame feature but is the ground truth for backtests and for measuring how often wording edge cases occur.",
+"registry_ids": [
+"m.settlement_truth"
+]
+},
+"m.strike_hit_rates": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks) settled history (result by strike per family)"
+],
+"label": "Historical realized frequency by strike/rung",
+"measurement": "For each family and strike bucket: realised YES rate minus average de-vigged pre-close price, with Wilson intervals; shrink toward zero by n/(n+k).",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Calibration by rung exposes systematic mispricing at specific strikes (e.g. favourite-longshot bias, popular round numbers) independent of any team model.",
+"pregame_knowable": "yes",
+"rationale": "Ladders attract round-number and narrative bias: some rungs settle YES more often than priced, others less. The frequency table is a prior and a calibration check for the model, not a causal input; it needs enough settled history per family/strike and a shrinkage rule to avoid chasing noise.",
+"registry_ids": [
+"m.strike_hit_rates"
+]
+},
+"m.trade_tape": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks) /markets/trades endpoint"
+],
+"label": "Executed trades (price, size, taker side, time)",
+"measurement": "Compute signed volume imbalance (taker side), VWAP vs mid, price impact over the next 1/5/30 minutes, trade count and size quantiles per market per hour.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Trade prints with taker side show where aggressive flow went, how fast the price moves after trades (impact) and what fills were realistically achievable.",
+"pregame_knowable": "yes",
+"rationale": "Order-flow imbalance before the news window can foreshadow lineup/injury information; trade size distribution separates informed from retail flow; post-trade price reversion measures adverse selection. Subtle: public tape lacks participant identity, so flow signals are noisy and must be validated out of sample.",
+"registry_ids": [
+"m.trade_tape"
+]
+},
+"m.volume_oi": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi public market data API (trade-api/v2: markets, orderbook, trades, candlesticks)"
+],
+"label": "Volume and open interest",
+"measurement": "Per market: cumulative volume, OI, volume in the last hour before close, volume rank within the family; log-scale features and ratios to family median.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Traded volume and open interest proxy how much information and capital has been committed, hence how trustworthy the price is.",
+"pregame_knowable": "yes",
+"rationale": "High-volume rungs are usually closer to sharp consensus; thin rungs deviate and can be mispriced but are also costly to trade. Volume spikes near the news window reveal when informed trading happens. Subtle: volume is cumulative by market and cannot be compared across markets with different contract caps without normalising.",
+"registry_ids": [
+"m.volume_oi"
+]
+},
+"ten.ace_settlement_source": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi market rules text naming the source of record (e.g., official tournament stats)",
+"Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)"
+],
+"label": "Stats source and counting rules for ace/double-fault settlement",
+"measurement": "Record the named source of record, compare sources historically for disagreement rates, and incorporate as extra variance and void probability.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Aces and double faults settle on a specified statistics feed; differences in counting (service lets, challenge-reversed calls, retirements) can change the result.",
+"pregame_knowable": "yes",
+"rationale": "Edge cases (reviewed calls, un-reported aces, discrepancies between ATP/WTA and tournament feeds) create settlement noise unrelated to player ability. Subtle: for retirements or suspended matches the count at stopping time may or may not count.",
+"registry_ids": [
+"m.rules_text"
+]
+},
+"ten.ball_change_cycle": {
+"category": "environment",
+"free_sources": [
+"ATP and WTA rulebooks",
+"Sackmann point-by-point (game sequences)"
+],
+"label": "Ball age and ball-change schedule",
+"measurement": "Per-event ball-change register first: record for each event whether new balls come after 7 then every 9 games, after 9 then every 11, or on another schedule, and whether the count includes the warm-up (event-dependent; the register is a required dataset). Then games_since_ball_change = (total games played - first_change_game) mod interval for the event's schedule, with a flag for the first game on new balls; estimate delta_hold by regression of hold outcome on that flag controlling for server, surface and event using point-by-point data; report in spw points. Where the event schedule is not in the register the input is missing, not imputed.",
+"mechanical_flags": [],
+"mechanism": "New balls favour the server and change the ratio of hold probability across the first games after a ball change.",
+"pregame_knowable": "yes",
+"rationale": "Slam and tour rules change balls after seven games and then every nine games; a game right after a ball change is played with livelier balls. The magnitude is small and event-specific, so the sign and size must be estimated, not assumed.",
+"raw_data": [
+"game index within match",
+"ball-change schedule per event"
+],
+"registry_ids": []
+},
+"ten.ball_type_pressure": {
+"category": "environment",
+"free_sources": [
+"Wikipedia tournament pages (draws, seedings, surfaces, format rules)",
+"Tournament and ball-supplier public announcements (e.g., official ball per event)"
+],
+"label": "Ball brand and condition effects",
+"measurement": "Event-year ball flag; estimate effect on hold%/aces in a mixed model with venue effects; check persistence.",
+"mechanical_flags": [
+"THIN_MEASUREMENT"
+],
+"mechanism": "Ball type (brand, pressure/fluff) changes speed and bounce, interacting with altitude and serve style.",
+"pregame_knowable": "partial",
+"rationale": "Players have articulated preferences for particular balls, and ball changes (e.g., a tournament switching supplier) affect hold rates; effects are small and confounded with court. Subtle: hard to isolate and data sparse; useful mainly as part of venue-year speed.",
+"registry_ids": []
+},
+"ten.bo5_rating_premium": {
+"category": "team_strength",
+"free_sources": [
+"Sackmann CSV (best_of column)"
+],
+"label": "Best-of-five rating premium",
+"measurement": "Elo residual in bo5 matches versus bo3 matches per player (last 60 bo5 matches, half-life 3 years), shrunk toward the tour mean difference with n/(n+25); output bo5 premium in Elo points added to the gap in Slam matches. As-of: before the event.",
+"mechanical_flags": [],
+"mechanism": "Some players outperform their best-of-three rating in best-of-five Slam matches because of endurance or consistency.",
+"pregame_knowable": "yes",
+"rationale": "Men's majors are best-of-five; ratings fitted mainly on best-of-three matches can mis-rank contenders for a major.",
+"raw_data": [
+"match rows with best_of and ratings"
+],
+"registry_ids": []
+},
+"ten.career_major_count_state": {
+"category": "market_structure",
+"free_sources": [
+"Official tournament results",
+"Wikipedia player pages"
+],
+"label": "Career major-count state",
+"measurement": "Count of singles major titles per player with each date; compare to the contract's target at the as-of date; flag if the count differs from contract assumption. As-of: after each major final.",
+"mechanical_flags": [],
+"mechanism": "The state variable for cumulative contracts: the player's singles major count and any titles won since the contract was issued.",
+"pregame_knowable": "yes",
+"rationale": "The 25th-major contract is path-dependent on the count; a title already won shifts the target, and doubles titles are excluded.",
+"raw_data": [
+"major titles with date and category"
+],
+"registry_ids": []
+},
+"ten.compatriot_collision_matrix": {
+"category": "matchup",
+"free_sources": [
+"ATP/WTA draw pages",
+"Wikipedia draws"
+],
+"label": "Compatriot collision matrix by round",
+"measurement": "For each pair of compatriots in the draw find the earliest round where they can meet (from bracket positions), compute P(both reach that round) times P(they meet | both reach) = 1 (if bracket position forces), and the loss to union = P(meet) * min(p_i, p_j conditional). Use simulation output from the draw; before the draw, average over draw randomness conditional on seeding. As-of: draw publication.",
+"mechanical_flags": [],
+"mechanism": "The probability that two players of the same nation meet before a given stage and so cannot both advance.",
+"pregame_knowable": "yes",
+"rationale": "The union probability of a nationality contract falls below the independent union by the collision term; the term depends on draw positions and the probability both survive to the meeting round.",
+"raw_data": [
+"draw positions, nationality by player"
+],
+"registry_ids": []
+},
+"ten.court_side_point_asymmetry": {
+"category": "matchup",
+"free_sources": [
+"Jeff Sackmann MatchChartingProject (limited coverage)",
+"Sportradar point data (paid)"
+],
+"label": "Deuce-court versus ad-court serve and return asymmetry",
+"measurement": "From charted points, estimate spw_deuce and spw_ad per server and the returner's rpw on each side with shrinkage n/(n+80); expected game win probability computed with side-specific spw along the score path (e.g. 30-40 and 40-40 on the ad side). Sparse for non-charted matches.",
+"mechanical_flags": [],
+"mechanism": "A player's serve and return win rates differ between the deuce and ad sides, and break points are mostly played on the ad side in this lead-in.",
+"pregame_knowable": "partial",
+"rationale": "The point score determines which side the point is played from, so game state and side are tied; lefties and right-handers differ systematically.",
+"raw_data": [
+"charted points with side indicator, server, outcome",
+"player-id, hand"
+],
+"registry_ids": []
+},
+"ten.cross_surface_rating_covariance": {
+"category": "team_strength",
+"free_sources": [
+"Sackmann CSV (surface column)",
+"Tennis Abstract surface Elo"
+],
+"label": "Cross-surface rating covariance",
+"measurement": "Fit a hierarchical Elo model with a player-level vector (hard, clay, grass) and a covariance matrix Sigma estimated across players (typical correlation 0.5-0.8); report posterior covariance for each pair of surfaces for the player; use it in the joint simulation to draw correlated surface-specific strengths. As-of: before the first leg.",
+"mechanical_flags": [],
+"mechanism": "Joint posterior of a player's hard, clay and grass ratings, which determines how much a title on one surface predicts another.",
+"pregame_knowable": "yes",
+"rationale": "Treating each surface rating as independent makes consecutive-title joint probabilities too low; a pooled rating treats them as identical and makes them too high.",
+"raw_data": [
+"match results with surface"
+],
+"registry_ids": []
+},
+"ten.decider_format_tail": {
+"category": "distribution",
+"free_sources": [
+"ITF and Grand Slam rulebooks",
+"ATP/WTA rulebooks"
+],
+"label": "Deciding-set format and tail probability",
+"measurement": "Event-year lookup of deciding rule; probability of a deciding set exceeding 13 games from the DP model under that rule (0 for tiebreak at 6-6, geometric for advantage sets). Include the format effective date. As-of: official rulebook for the event year.",
+"mechanical_flags": [],
+"mechanism": "The deciding set can end at 6-6 with a 7-point tiebreak, at 6-6 with a 10-point tiebreak, at 12-12, or only by a two-game margin.",
+"pregame_knowable": "yes",
+"rationale": "The right tail of totals depends on the final-set rule by event and year; Davis Cup and some tour events differ from the majors.",
+"raw_data": [
+"event format register"
+],
+"registry_ids": []
+},
+"ten.decider_record": {
+"category": "distribution",
+"free_sources": [
+"Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+"Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)"
+],
+"label": "Deciding-set record, first-set-winner conversion",
+"measurement": "Rate of decider wins minus rating-implied probability, shrunk by n/(n+30); conditional match-win rate given set-1 win relative to expectation.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Performance in deciding sets and conversion after winning a set reflect fitness, nerves and rating, and affect set-score distributions.",
+"pregame_knowable": "yes",
+"rationale": "Records of winning deciders are partly fitness and partly luck; the structural effect is the strong conditional probability of winning the match after taking the first set (and the added mass at 2-0 and 3-0). Subtle: samples are small; shrink heavily to the rating-implied rate.",
+"registry_ids": [
+"ten.decider_record"
+]
+},
+"ten.doubles_pair_strength": {
+"category": "player_role",
+"free_sources": [
+"Sackmann doubles CSVs (atp_matches_doubles)",
+"ATP doubles rankings public pages"
+],
+"label": "Doubles pair strength and partnership continuity",
+"measurement": "Pair rating = 0.6*mean(doubles Elo of each player, shrunk with n/(n+15) toward 1500) + 0.25*pair Elo (zero if <5 shared matches) + 0.15*mean singles Elo scaled by 0.3. Add penalty term for first-time partnership (-20 Elo if 0 prior matches, linearly vanishing at 10). Use only matches before as-of timestamp; format modifiers for match tiebreak and no-ad. The weights 0.6/0.25/0.15, the n/(n+15) shrinkage, the -20 Elo debut penalty and the 10-match fade are initial placeholders to be fitted by out-of-sample log loss on doubles history, not calibrated values; the doubles rule set (no-ad, match tiebreak) is coded per event by ten.format (unresolved mw_doubles_format).",
+"mechanical_flags": [],
+"mechanism": "A doubles winner is a pair-level outcome: net play, serve-plus-one patterns and chemistry matter beyond two individual singles ratings.",
+"pregame_knowable": "yes",
+"rationale": "KXWTADOUBLES, KXATPDOUBLES and KXATPCHALLENGERDOUBLES settle pairs that often formed days earlier. Singles rating is a weak proxy: doubles specialists with weak singles records dominate.",
+"raw_data": [
+"doubles match rows with 4 player ids, score, round",
+"partnership history"
+],
+"registry_ids": []
+},
+"ten.eligible_event_calendar": {
+"category": "schedule_context",
+"free_sources": [
+"ATP/WTA official calendar",
+"tournament entry deadline pages"
+],
+"label": "Eligible event calendar inside the window",
+"measurement": "For each player and window, list events with entry deadline after as-of, surface, category and points; P(entry) = P(eligible) * P(commit); P(return by T)=1-prod(1-P(enter_e)*P(start_e|enter)). Entry deadlines from tour calendars. As-of: before each deadline. Event scope: include ATP Tour main-draw events and the majors (the only scope the sampled note confirms); Challenger, team-event and exhibition entries are carried as a separate flagged set and excluded from P(return) until rp_atp_match_scope is clarified.",
+"mechanical_flags": [],
+"mechanism": "The number and type of events a player can enter before the deadline set the number of chances to return or participate.",
+"pregame_knowable": "yes",
+"rationale": "A return before a date is a union across entry opportunities with different entry and incentive probabilities.",
+"raw_data": [
+"calendar with deadlines, category, location"
+],
+"registry_ids": []
+},
+"ten.exhibition_format_effort": {
+"category": "motivation",
+"free_sources": [
+"ATP/WTA and promoter announcements",
+"Wikipedia exhibition pages"
+],
+"label": "Exhibition format and effort proxy",
+"measurement": "Binary flags for event class (exhibition, invitational, team exhibition) plus format descriptors (sets to win, games per set, match-tiebreak, no-ad) coded from the event announcement; shrink the Elo-implied win probability toward 50% by a factor estimated from historical exhibition results (target shrink 0.6-0.8, to be fit when data exist). As-of: announcement date.",
+"mechanical_flags": [],
+"mechanism": "Exhibitions use shortened formats and non-binding stakes, so the usual ability-to-result mapping is distorted.",
+"pregame_knowable": "partial",
+"rationale": "KXTENNISEXHIBITION is a winner market whose format may be short sets, a match tiebreak or time limit; player effort is discretionary and favourites may coast.",
+"raw_data": [
+"event class, format spec, entry list"
+],
+"registry_ids": []
+},
+"ten.first_serve_speed_trend": {
+"category": "player_role",
+"free_sources": [
+"Event statistics pages (not verified)",
+"Hawk-Eye or Sportradar speed data (paid)"
+],
+"label": "First-serve speed trend within and across matches",
+"measurement": "Per player compute mean first-serve speed in the last two matches and in the previous 10 matches (if published), z-score vs career; expected ace rate adjusted by elasticity beta estimated per player; SOURCE_UNVERIFIED for availability of serve-speed data outside the majors.",
+"mechanical_flags": [],
+"mechanism": "Serve speed in the current event and its decay over the match predict ace rate.",
+"pregame_knowable": "partial",
+"rationale": "Pre-event speed averages mask injuries and form; in-event speed from earlier rounds is a direct indicator of the current serve state.",
+"raw_data": [
+"serve speed by serve",
+"match and round"
+],
+"registry_ids": []
+},
+"ten.game_margin_pmf_calibration": {
+"category": "distribution",
+"free_sources": [
+"Sackmann match score strings"
+],
+"label": "Calibrated game-margin probability mass function",
+"measurement": "Build the empirical PMF of D (games A minus games B) from Sackmann score strings (retirements excluded and modelled separately), by bin of pre-match Elo-implied win probability (5-point bins), tour, best_of, surface; smooth with a kernel over adjacent bins and shrink to a parametric fit with weight n/(n+50). Report P(D>k) for half-integer k. As-of: ratings before each historical match.",
+"mechanical_flags": [],
+"mechanism": "The empirical distribution of match games differential by pre-match edge, format and tour, with tiebreak-induced discreteness.",
+"pregame_knowable": "yes",
+"rationale": "Smooth normal approximations miss the 1-game masses created by tiebreaks and the 5-6 game tails created by bagels; a calibrated PMF corrects both and is not a market price.",
+"raw_data": [
+"set scores per match, pre-match ratings"
+],
+"registry_ids": []
+},
+"ten.game_serial_dependence": {
+"category": "distribution",
+"free_sources": [
+"Sackmann point-by-point game sequences"
+],
+"label": "Serial dependence of game results within and across sets",
+"measurement": "From game sequences, estimate P(hold | prior game was a break against this server) minus P(hold | otherwise) controlling for server and set-level state; include an indicator for serving to stay in the set; estimate pooled effect and player heterogeneity with shrinkage n/(n+60).",
+"mechanical_flags": [],
+"mechanism": "The chance a player holds depends on whether he was just broken and on set-state pressure.",
+"pregame_knowable": "yes",
+"rationale": "Independent game results understate the clustering of breaks; the thickness of the margin tail relies on this serial effect.",
+"raw_data": [
+"game-by-game winner and server within sets"
+],
+"registry_ids": []
+},
+"ten.games_per_set_distribution": {
+"category": "distribution",
+"free_sources": [
+"Sackmann score strings and serve counts"
+],
+"label": "Games-per-set distribution from the pair's hold rates",
+"measurement": "For hold probabilities h_A and h_B from adjusted serve/return (A and B alternating serve, first server randomised), compute by dynamic programming the set-score PMF over 6-0 .. 7-6; calibrate to the empirical frequency of set scores from Sackmann by bins of (h_A+h_B)/2 and |h_A-h_B| with kernel smoothing and shrinkage n/(n+60) to the model PMF. Output the PMF of games per set and P(tiebreak). As-of: serve statistics before the match.",
+"mechanical_flags": [],
+"mechanism": "The mass over {6,7,8,9,10,12,13} games for a set is a function of the two hold probabilities.",
+"pregame_knowable": "yes",
+"rationale": "Totals are most sensitive to the discrete masses at 12 and 13 games, which a continuous model misses and which depend on the hold levels in a nonlinear way.",
+"raw_data": [
+"set scores and serve counts"
+],
+"registry_ids": []
+},
+"ten.h2h_style": {
+"category": "matchup",
+"free_sources": [
+"Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+"Tennis Abstract (tennisabstract.com player pages, Elo ratings, surface splits)",
+"Ultimate Tennis Statistics (ultimatetennisstatistics.com)"
+],
+"label": "Head-to-head and style matchup",
+"measurement": "Residual of observed result over rating-implied probability, aggregated over H2H meetings with shrinkage n/(n+10); alternative: style-pair regression using handedness, serve speed, rally length profile.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Particular styles (lefty serve, big server vs weak returner, heavy topspin vs flat hitters) create matchup residuals beyond overall rating.",
+"pregame_knowable": "yes",
+"rationale": "Head-to-head records capture matchup residuals but are tiny samples and mostly reflect rating gaps; stylistic features (handedness, serve profile, return aggressiveness) are better. Subtle: raw H2H overstated by selection (they meet often because both are high-ranked, on specific surfaces) and should be shrunk very heavily.",
+"registry_ids": [
+"ten.h2h_style"
+]
+},
+"ten.handedness": {
+"category": "matchup",
+"free_sources": [
+"Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+"Ultimate Tennis Statistics (ultimatetennisstatistics.com)"
+],
+"label": "Handedness and left-hander matchup",
+"measurement": "Handedness indicator and lefty vs rating residual in the training sample; interact with surface and ranking gap.",
+"mechanical_flags": [
+"THIN_MEASUREMENT"
+],
+"mechanism": "Left-handers' serve patterns and spin directions are less commonly faced, shifting performance against right-handers' backhands and in deuce/ad court patterns.",
+"pregame_knowable": "yes",
+"rationale": "Lefty-vs-righty matchup effects are modest but persistent, and tend to benefit the lefty a little versus average; matter at the margin with strong baseline matchups. Subtle: confounded by player quality; effect is small relative to rating.",
+"registry_ids": []
+},
+"ten.health_persistence_between_events": {
+"category": "availability",
+"free_sources": [
+"Sackmann CSV (entries via results)",
+"Wikipedia draw pages"
+],
+"label": "Health persistence between consecutive events",
+"measurement": "From historical consecutive event pairs for top-50 players compute P(start event j+1 | started event j), by age bin, prior-run depth (rounds, minutes), and gap days; logistic with shrinkage n/(n+30). Use in the joint simulation as a player-level state. As-of: before the first leg.",
+"mechanical_flags": [],
+"mechanism": "Probability a player is fit for event j+1 given fit at event j and a deep run, estimated from consecutive entries.",
+"pregame_knowable": "partial",
+"rationale": "Shared health links legs for one player; persistence differs by age and prior load.",
+"raw_data": [
+"player participation sequences"
+],
+"registry_ids": []
+},
+"ten.hold_gap_expected_margin": {
+"category": "distribution",
+"free_sources": [
+"Sackmann CSV w_svpt, w_1stWon, w_2ndWon, l_ columns"
+],
+"label": "Hold-gap implied expected games margin",
+"measurement": "For each set compute E[D_set] = E[N_set] * (h_A - h_B), where E[N_set] is the expected number of games actually played in the set (about 9.7-10.4 for tour sets, counting a 7-6 set as 13 games; take it from a DP over set scores given h_A and h_B), not a fixed 12: each game moves the margin by the hold gap on average, but a set stops at 6-x, 7-5 or 7-6. Worked check by DP: h_A=0.85, h_B=0.75 gives E[N]=10.1 and E[D_set] about 1.03, whereas 12*(h_A-h_B)=1.20 overstates it by about 17 percent. Better still compute the set margin PMF by the DP directly and average over who serves first. h comes from opponent-adjusted spw via the closed-form hold formula (spw 0.65 gives hold 0.83); sum over expected sets with weights from match-length probabilities; report mean and standard deviation of the margin with spw sampled from its posterior (SD of spw about 0.015). Base: match CSV w_/l_ serve points with a 12-month half-life, as of the day before (source access unverified, see sp_sackmann_access).",
+"mechanical_flags": [],
+"mechanism": "Expected games differential over a full 12-game window is 12 times the difference of the two hold probabilities, a quantity with its own measurement noise.",
+"pregame_knowable": "yes",
+"rationale": "The model reduces to a simple relationship between hold gap and margin that is easy to estimate and check; the catalog has hold and break but not the margin as a first-class variable.",
+"raw_data": [
+"serve point counts per player",
+"opponent return stats"
+],
+"registry_ids": []
+},
+"ten.hold_rate_uncertainty_propagation": {
+"category": "distribution",
+"free_sources": [
+"Sackmann serve counts"
+],
+"label": "Hold-rate uncertainty propagation (Jensen correction)",
+"measurement": "Draw spw_A, spw_B from Beta posteriors with effective n = serve points over the last 12 months (half-life 12 months), add day shock sd 0.02 on spw, convert to holds, compute set 6-6 probability by DP for each draw, average over 2,000 draws; report E[p66] and E[p66]-p66(E[h]). As-of: stats before the match.",
+"mechanical_flags": [],
+"mechanism": "Because P(6-6) is convex in hold, uncertainty about hold raises expected tiebreak probability.",
+"pregame_knowable": "yes",
+"rationale": "Plugging point-estimate holds into the tiebreak formula understates the probability by a few points: averaging 0.80 and 0.90 gives 0.30 while the probability at the mean hold 0.85 is 0.28.",
+"raw_data": [
+"serve points won and played by player-surface"
+],
+"registry_ids": []
+},
+"ten.home_crowd": {
+"category": "environment",
+"free_sources": [
+"ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)",
+"Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)"
+],
+"label": "Home crowd/nationality advantage",
+"measurement": "Nationality-equals-host indicator, event tier; regress rating residual with player random effects.",
+"mechanical_flags": [
+"THIN_MEASUREMENT"
+],
+"mechanism": "Home-country support and familiarity with conditions provide small advantage and pressure effects, particularly in Slams and Davis Cup-type events.",
+"pregame_knowable": "yes",
+"rationale": "Home players show some over-performance in front of supportive crowds, but also pressure; at team events the effect is bigger. Subtle: confounded by conditions (local surfaces) and by seeding.",
+"registry_ids": []
+},
+"ten.home_slam_depth_prior": {
+"category": "team_strength",
+"free_sources": [
+"Wikipedia Slam draw pages",
+"Sackmann CSV (nationality column)"
+],
+"label": "Home-nation depth prior at home majors",
+"measurement": "For each nation and major, compute frequency of at least one home player reaching R16, QF, SF, F over the last 15 editions with decay half-life 6 years; blend with the path-model value using an initial weight of 0.3 that is a placeholder to be fitted on held-out editions (not calibrated); report by tour. As-of: before event. Because a historical home-progress frequency partly re-encodes the strength the model already captures, use it only as an out-of-sample calibration check on the union probability, not as an extra driver inside the model.",
+"mechanical_flags": [],
+"mechanism": "Historical distribution of the number of home-nation players reaching each round at their own major.",
+"pregame_knowable": "yes",
+"rationale": "A calibration prior for union contracts (such as 1+ Americans in the final) that checks the union model against history.",
+"raw_data": [
+"nationality by player and round reached"
+],
+"registry_ids": []
+},
+"ten.host_surface_selection": {
+"category": "environment",
+"free_sources": [
+"ITF Davis Cup and BJK Cup announcements",
+"event pages"
+],
+"label": "Host surface and court speed selection in team events",
+"measurement": "From tie announcements record the surface, indoor/outdoor and pace descriptor; compute each nominated player's pace-adjusted rating (Elo + speed slope * pace) and the change in tie win probability against neutral-surface ratings. As-of: surface announcement (typically weeks before the tie). SOURCE_UNVERIFIED for pace data.",
+"mechanical_flags": [],
+"mechanism": "The host nation picks the surface and sometimes the court speed to favour its players in team ties.",
+"pregame_knowable": "yes",
+"rationale": "The rubber probabilities depend on the surface and pace; a host that picks a slow clay court changes which players are favoured relative to neutral ratings.",
+"raw_data": [
+"tie surface and venue announcements"
+],
+"registry_ids": []
+},
+"ten.in_event_rating_update": {
+"category": "team_strength",
+"free_sources": [
+"Sackmann CSV (serve stats by match, when available)",
+"official live stats"
+],
+"label": "In-event rating and form updating",
+"measurement": "After each match compute performance residual = (observed dominance ratio minus expected from ratings), shrink with a weight k=0.15 per match for the next-round estimate; clip at +/- 40 Elo; apply decay to zero over 10 days. As-of: after each completed match. The constants k=0.15, the +/-40 Elo clip and the 10-day decay are initial placeholders, to be fitted on past events by out-of-sample log loss of next-round match predictions, not validated values; the sign of the fatigue interaction is a hypothesis (a long match can signal both load and form).",
+"mechanical_flags": [],
+"mechanism": "As a tournament proceeds, each round's performance (serve and return numbers, not just win/loss) updates a player's strength estimate.",
+"pregame_knowable": "yes",
+"rationale": "The title probability before round four should use information from rounds one to three; a dominant straight-set run is evidence about current form and health that pre-event ratings do not have.",
+"raw_data": [
+"match serve statistics per round"
+],
+"registry_ids": []
+},
+"ten.in_match_spw_posterior": {
+"category": "game_state",
+"free_sources": [
+"Sackmann slam point-by-point for calibration of k",
+"live feed in production"
+],
+"label": "In-match running serve-point posterior",
+"measurement": "Beta-binomial: spw_post = (k*spw_prior + wins_so_far)/(k + points_served_so_far) with k fit by maximising held-out game log-likelihood on historical point sequences (start with k=60 points, range 30-120); allow a separate k for first-serve points and second-serve points; add an exponential forgetting factor of 0.98 per point when a medical signal fires. Updated after every point, timestamped to the feed clock.",
+"mechanical_flags": [
+"NOT_PREGAME_KNOWABLE"
+],
+"mechanism": "The server's spw during the match is a posterior combining the pregame pair prior with the points played so far.",
+"pregame_knowable": "no",
+"rationale": "The existing catalog lists the live point stream but not the update rule; the trade-off between prior weight and observed points is the central modelling choice.",
+"raw_data": [
+"point sequences with server and winner",
+"pregame spw prior per pair"
+],
+"registry_ids": []
+},
+"ten.layoff_survival_curve": {
+"category": "availability",
+"free_sources": [
+"Wikipedia player season pages",
+"ATP/WTA player activity pages",
+"press coverage"
+],
+"label": "Layoff survival curve by injury class",
+"measurement": "Kaplan-Meier estimate of return time from the last match date, by injury class (wrist/elbow, knee, back, foot, illness, surgery vs no surgery), from historical layoffs of at least 30 days; condition on days already elapsed (residual-life curve); shrink class curves to pooled with n/(n+20); output P(return by date T | state at as-of). Public statements enter as a shift of the hazard (statement types coded).",
+"mechanical_flags": [],
+"mechanism": "Time-to-return distribution after an injury layoff, conditional on injury class and public statements.",
+"pregame_knowable": "partial",
+"rationale": "The catalog has a generic comeback input but a time-to-return contract needs a survival curve with censoring; the key is the probability of returning before a fixed date given days already missed.",
+"raw_data": [
+"player match dates, injury label, surgery flag, stated timeline"
+],
+"registry_ids": []
+},
+"ten.leg_resolution_state": {
+"category": "market_structure",
+"free_sources": [
+"Official tournament results"
+],
+"label": "Leg resolution state and conditional collapse",
+"measurement": "Track per contract each leg status with timestamp; compute P(combo | resolved legs) from the joint simulation conditional on resolved legs; flag combinations whose legs have mutually exclusive outcomes; as-of: official result time.",
+"mechanical_flags": [],
+"mechanism": "State of each leg (open, won, lost) and the conditional probability of the remaining legs.",
+"pregame_knowable": "yes",
+"rationale": "A combination whose first leg has resolved Yes is just the remaining legs' joint probability; a lost leg makes it zero; the leg structure determines how the conditional probability collapses as legs resolve.",
+"raw_data": [
+"leg status table"
+],
+"registry_ids": []
+},
+"ten.level_transfer_offset": {
+"category": "team_strength",
+"free_sources": [
+"Sackmann CSV (tour, Challenger and ITF rows)",
+"ITF world tennis rankings public pages"
+],
+"label": "Challenger/ITF to tour rating offset",
+"measurement": "Estimate level offsets by fitting Elo on all levels with a level-dummy per player pool: offset_L estimated from players who played at both levels in the previous 24 months (mean rating change across a level crossing, shrunk with n/(n+25)). Apply offset_L to each player's rating before computing the gap. Recompute weekly with data available at the as-of timestamp.",
+"mechanical_flags": [],
+"mechanism": "Players move between Challenger/ITF and tour level, and ratings fitted on different pools are not on the same scale.",
+"pregame_knowable": "yes",
+"rationale": "Kalshi lists Challenger matches (KXATPCHALLENGERMATCH, KXWTACHALLENGERMATCH) where one player may have 80% of recent matches at ITF level and the other on tour; a pooled Elo with a single scale overstates the lower-level player.",
+"raw_data": [
+"match rows incl. tourney_level for ATP main, Challenger, ITF",
+"player_id, date, result"
+],
+"registry_ids": []
+},
+"ten.line_calling_regime": {
+"category": "officiating",
+"free_sources": [
+"ATP/WTA announcements and rulebooks",
+"Wikipedia event pages"
+],
+"label": "Line-calling regime and foot-fault enforcement",
+"measurement": "Event-year flags for electronic line calling and for line judges; estimate the regime effect on ace rate by regressing ace per service point on the regime flag with player and surface effects; SOURCE_UNVERIFIED for the event list by year.",
+"mechanical_flags": [],
+"mechanism": "Electronic line calling versus human line judges and foot-fault enforcement change which serves count as aces or faults.",
+"pregame_knowable": "yes",
+"rationale": "Systematic differences in service-box calls can shift ace and fault counts by small amounts; regime differs by event and year.",
+"raw_data": [
+"event-year regime flags"
+],
+"registry_ids": []
+},
+"ten.major_participation_hazard": {
+"category": "availability",
+"free_sources": [
+"Sackmann CSV (Slam rows)",
+"Wikipedia Slam draws"
+],
+"label": "Probability of entering each remaining major",
+"measurement": "Per player and major, estimate P(start) = 1 - hazard(withdraw before first round), using historical Slam participation by age bin (>=35: lower), injury layoff flag (days since last match>60) and entry list status; logistic with shrinkage n/(n+20). As-of: before each draw.",
+"mechanical_flags": [],
+"mechanism": "P(player enters and starts a major) for each of the four majors of 2027, conditional on age, injury state and recent history.",
+"pregame_knowable": "partial",
+"rationale": "A major title probability multiplies a participation probability by P(win | play); a veteran or an injured player can have participation well below 1.",
+"raw_data": [
+"Slam entries and starts by player-year"
+],
+"registry_ids": []
+},
+"ten.major_winner_concentration": {
+"category": "distribution",
+"free_sources": [
+"Wikipedia and official Slam results"
+],
+"label": "Concentration of recent major winners",
+"measurement": "Compute the Herfindahl index and top-2 share over the last 12 majors with weights decaying by edition; compare to the model-implied concentration and shrink player probabilities toward the history-implied shares with an initial weight of 0.3 that is a placeholder to be fitted on held-out majors (not calibrated); update after each major. As-of: after each major. It is a calibration check on model-implied concentration, not a driver multiplied into player probabilities.",
+"mechanical_flags": [],
+"mechanism": "Share of recent majors won by the top one or two players, a measure of how top-heavy the title distribution is.",
+"pregame_knowable": "yes",
+"rationale": "The title probability distribution across players should have a concentration level consistent with history; ratings alone may not reproduce the top-heavy shares.",
+"raw_data": [
+"majors winners list"
+],
+"registry_ids": []
+},
+"ten.market_margin_bias": {
+"category": "market_structure",
+"free_sources": [
+"tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)",
+"Tennis Explorer (tennisexplorer.com results and odds history)"
+],
+"label": "De-vig method and favourite-longshot bias in tennis lines",
+"measurement": "Calibration of closing implied probabilities vs outcomes by probability bucket on tennis-data.co.uk history; fit power/Shin; use to correct comparison.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Closing-line margin and favourite-longshot bias distort implied probabilities; the right de-vig method changes the baseline probabilities for heavy favourites.",
+"pregame_knowable": "yes",
+"rationale": "In two-way markets the longshot side tends to be overpriced; when comparing Kalshi prices to book odds the correction matters for lopsided matches. Subtle: bias differs by tour and round and must be estimated on out-of-sample data.",
+"registry_ids": []
+},
+"ten.market_odds": {
+"category": "market_structure",
+"free_sources": [
+"tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)",
+"Tennis Explorer (tennisexplorer.com results and odds history)"
+],
+"label": "Closing bookmaker odds",
+"measurement": "De-vig (proportional/power) Pinnacle/average closing odds; compare to Kalshi quote at the same timestamp; track open-to-close movement where available.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Sharp closing odds aggregate ratings, injury information and sharp money, so they are the benchmark any tennis model must clear.",
+"pregame_knowable": "yes",
+"rationale": "Closing odds for match winner (and, where available, handicap/total games) are the best single prior; the useful signal is the gap between Kalshi and de-vigged sharp price and its movement. Subtle: free historical files only provide a single close; retirement/walkover matches are inconsistently handled; favourite-longshot bias in two-way markets is smaller than in soccer 3-way.",
+"registry_ids": [
+"ten.market_odds"
+]
+},
+"ten.nationality_designation_status": {
+"category": "market_structure",
+"free_sources": [
+"ATP/WTA player profiles",
+"Wikipedia player pages"
+],
+"label": "Nationality designation and neutral-status register",
+"measurement": "Register per player: designated nation as shown on the tournament draw sheet and ATP/WTA player profile (the contract defers to the 'Governing League'; use the draw-sheet flag at draw publication as the primary value and the ATP/WTA profile as the check), passport nation, neutral-athlete flag, date of last change; flag players whose designation differs across sources and treat them as a binary uncertain-membership case. No source exists for the probability that a designation changes before settlement, so it is carried as a scenario flag, not an estimated hazard (see nt_designation_source). As-of: draw publication.",
+"mechanical_flags": [],
+"mechanism": "Which players the league designates as the nation's, including neutral designations and allegiance switches.",
+"pregame_knowable": "yes",
+"rationale": "The contract defers to the governing league's designation; players with neutral status or dual nationality can be inside or outside the nation's set, and that changes the union.",
+"raw_data": [
+"player nationality fields from multiple sources"
+],
+"registry_ids": []
+},
+"ten.player_games_residual": {
+"category": "pace_volume",
+"free_sources": [
+"Sackmann scores and serve counts"
+],
+"label": "Player persistent games-per-match residual",
+"measurement": "Compute residual_i = games in match minus model expectation (from adjusted hold rates), averaged over the last 40 matches with half-life 9 months, shrunk with n/(n+20) toward 0; test persistence by split-sample correlation before use. As-of date: day before match.",
+"mechanical_flags": [],
+"mechanism": "A player's matches end up longer or shorter than a rating-based model predicts, persistently across opponents.",
+"pregame_knowable": "yes",
+"rationale": "Style traits (patient baseline play vs aggressive first-strike tennis) show up as residual match length beyond hold and rating; the existing return-style input is a descriptive profile, not a measured residual.",
+"raw_data": [
+"match games and model expectations"
+],
+"registry_ids": []
+},
+"ten.player_set_drop_propensity": {
+"category": "distribution",
+"free_sources": [
+"Sackmann score strings"
+],
+"label": "Player set-drop propensity beyond rating",
+"measurement": "Per player, residual = share of wins in straight sets minus the model expectation given opponent rating; average over the last 60 wins with half-life 12 months and shrink to 0 with n/(n+25); test split-sample persistence before use; include format and round.",
+"mechanical_flags": [],
+"mechanism": "Some players win more matches in straight sets than their rating implies, others drop sets habitually.",
+"pregame_knowable": "yes",
+"rationale": "The sweep probability depends on the pattern of set loss, not only on win probability; style and consistency produce heterogeneity.",
+"raw_data": [
+"scores, ratings"
+],
+"registry_ids": []
+},
+"ten.player_speed_slope": {
+"category": "team_strength",
+"free_sources": [
+"Sackmann CSV aggregates (hold%, ace rate by tourney_name)",
+"Tennis Abstract surface splits"
+],
+"label": "Player-specific court-speed response slope",
+"measurement": "For each player fit Elo_i(c)=Elo_i0 + beta_i*(CPI_c - mean CPI) with CPI from event ace-rate/hold-rate index over the previous three editions (hold% over tour average, with time-decay half-life one year). Estimate beta_i by ridge regression on that player's last ~120 tour matches using only matches completed before the as-of date; prior beta mean from serve profile (ace rate, height) with ridge penalty lambda ~ 20 matches. Output the speed-adjusted Elo for the match event. Leave-player-out rule: the event CPI used for player i is recomputed excluding every match involving player i (and the same player's other events), so beta_i is not fit against an index containing its own serve and return results; each remaining match's hold and ace residual is first adjusted for the two players' own tour-surface baselines to reduce field-composition contamination (field composition is still not fully removable, see mw_speed_index_source).",
+"mechanical_flags": [],
+"mechanism": "A player's strength is a function of continuous court pace, not just a hard/clay/grass label.",
+"pregame_knowable": "yes",
+"rationale": "Overall Elo blends surfaces and surface Elo is a three-way categorical split. Court speed varies a lot inside 'hard' (Indian Wells slow, Paris indoor fast). Players differ in their sensitivity: big servers gain on fast courts, baseliners lose.",
+"raw_data": [
+"match rows with tourney_name, surface, w_/l_ serve counts",
+"event-level hold% by year"
+],
+"registry_ids": []
+},
+"ten.protected_ranking_and_entry_pathway": {
+"category": "player_role",
+"free_sources": [
+"ATP/WTA rulebooks",
+"entry lists on official sites"
+],
+"label": "Protected ranking, wildcard and cutoff pathway",
+"measurement": "Binary flags and values: current ranking, protected ranking value and expiry, use count, entry cutoff of each event (last direct acceptance in recent editions), wildcard history of the tournament; P(eligible)=1 if rank<=cutoff else P(wildcard or protected use). As-of: entry list publication.",
+"mechanical_flags": [],
+"mechanism": "Whether a returning player can enter depends on ranking cutoff, protected-ranking use and wildcard probability.",
+"pregame_knowable": "yes",
+"rationale": "A healthy but low-ranked returnee needs a protected ranking or a wildcard; both are discrete and time-limited.",
+"raw_data": [
+"rank, protected ranking, event cutoffs"
+],
+"registry_ids": []
+},
+"ten.ranking_publication_calendar": {
+"category": "market_structure",
+"free_sources": [
+"ATP/WTA ranking pages",
+"Sackmann rankings files"
+],
+"label": "Ranking publication calendar and snapshot rule",
+"measurement": "Table of publication dates for ATP and WTA by year; for a settlement time T, the applicable list is the latest publication <= T; check history of publications in late December in prior years (SOURCE_UNVERIFIED).",
+"mechanical_flags": [],
+"mechanism": "Which published list applies at the stated settlement clock depends on the publication calendar.",
+"pregame_knowable": "yes",
+"rationale": "The settlement uses the most recently published list, so a Thursday year-end resolves to the last Monday list; the lists at weeks without events may be identical to the prior one.",
+"raw_data": [
+"publication dates by week"
+],
+"registry_ids": []
+},
+"ten.remaining_race_arithmetic": {
+"category": "pace_volume",
+"free_sources": [
+"ATP/WTA ranking and race pages",
+"tournament points tables from rulebooks"
+],
+"label": "Remaining-points arithmetic to the snapshot date",
+"measurement": "For each player compute P_end = P_now - drop(t..T) + sum over remaining events of earned points; maximum earned by event structure (for example Finals: 200 per round-robin win, 400 semifinal, 500 final, 1500 undefeated; Masters 1000 etc.); minimum from not playing; compute the probability of rank 1 (or top 5) by simulation constrained by these bounds; update after each event. As-of: after each Monday publication. Finals qualification (KXATPFINALSQUAL, KXWTAFINALSQUAL; title only): qualifier count is eight singles places, the cutoff is the 8th-place Race to the Finals total at the qualification date, a withdrawn qualifier is replaced by the next alternate in race order, and the probability of qualifying is the simulated probability of finishing in the top eight after applying participation hazards; special exemptions (for example the treatment of Grand Slam winners outside the top eight) and doubles-team qualification are not modelled and are SOURCE_UNVERIFIED (sr_finals_qual_contracts).",
+"mechanical_flags": [],
+"mechanism": "Maximum and minimum achievable ranking points by the settlement date for each contender, given drop-offs and remaining events. The same race arithmetic also settles Finals-qualification contracts (cutoff at the 8th place, alternates).",
+"pregame_knowable": "yes",
+"rationale": "In early November the rank is almost mechanically bounded; probability of overtaking is zero unless the gap is less than the maximum swing, and nonzero only through a small set of events.",
+"raw_data": [
+"current points, expiry schedule, points table, remaining calendar"
+],
+"registry_ids": []
+},
+"ten.retirement_announcement_hazard": {
+"category": "player_role",
+"free_sources": [
+"Wikipedia retirement lists",
+"ATP/WTA player bios"
+],
+"label": "Retirement announcement hazard by age and rank",
+"measurement": "From historical career-end records for players with careers of at least eight years: hazard by age bin (30-31, 32-33, ..., 38+), rank band, injury layoff flag, prior announcements; discrete-time logistic; shrink to pooled with n/(n+25); output the probability of an announcement effective by the deadline. As-of: before the decision date. Avoid survivorship: the at-risk set must include every player with an eight-plus-year career in each age bin whether or not he later announced (active players censored at the as-of date), not only players found on retirement lists; the announcement date itself is taken from the dated statement, not the final match.",
+"mechanical_flags": [],
+"mechanism": "Annual and within-year hazard of announcing retirement given age, career length, ranking trend and injuries.",
+"pregame_knowable": "yes",
+"rationale": "The retirement contract is a low-probability tail event that depends on structured career variables and on announcement habits.",
+"raw_data": [
+"player, birth date, last match, announcement date, rank history"
+],
+"registry_ids": []
+},
+"ten.retirement_games_completed_profile": {
+"category": "availability",
+"free_sources": [
+"Sackmann score strings with RET"
+],
+"label": "Completed games at retirement",
+"measurement": "From Sackmann score strings with RET compute games completed by tour and best_of; fit a distribution with covariates (age, round, heat flag) and shrink with n/(n+30); output P(count>k | retirement) for each strike k.",
+"mechanical_flags": [],
+"mechanism": "The count of games completed when a retirement ends the match.",
+"pregame_knowable": "partial",
+"rationale": "Totals markets settle on completed games, so an interrupted match gives a truncated count; the over side can be settled if the count already exceeds the strike.",
+"raw_data": [
+"partial set scores, round, best_of"
+],
+"registry_ids": []
+},
+"ten.retirement_margin_state": {
+"category": "availability",
+"free_sources": [
+"Sackmann CSV score with RET"
+],
+"label": "Games margin at retirement",
+"measurement": "From Sackmann score strings with RET, extract games for each player at retirement; estimate the distribution of D at retirement by tour and by which player retired; shrink pooled with n/(n+30). Report P(D>1.5 | retirement).",
+"mechanical_flags": [],
+"mechanism": "If the match is truncated by retirement, the games differential at that moment determines whether the spread rung can be settled.",
+"pregame_knowable": "partial",
+"rationale": "The margin at retirement is usually favourable to the non-retiring player and is smaller than a typical completed-match margin; the spread settlement depends on it.",
+"raw_data": [
+"partial set scores at retirement"
+],
+"registry_ids": []
+},
+"ten.retirement_settlement_rules": {
+"category": "market_structure",
+"free_sources": [
+"Kalshi market rules_primary text per tennis market (public API)"
+],
+"label": "Retirement/walkover/suspension settlement wording",
+"measurement": "Parse rules text into flags (settle_on_retirement_winner, void_if_not_completed, min_sets/games, count_partial_games); compute expected value with P(complete) and P(retire by state) from retirement hazard.",
+"mechanical_flags": [
+"MARKET_REGISTRY_ID"
+],
+"mechanism": "Settlement rules define what happens to match-winner, set, game, total-games and ace markets if a player retires, is defaulted, or play is suspended, and whether partial results count.",
+"pregame_knowable": "yes",
+"rationale": "Because tennis has frequent partial-completion events, the same model probability corresponds to different expected values under different wording (void vs settle on result vs count games played). Subtle: wording can differ across markets of the same match and may change; the effective probability of YES must include void/refund pathways.",
+"registry_ids": [
+"m.rules_text"
+]
+},
+"ten.retirement_timing_profile": {
+"category": "availability",
+"free_sources": [
+"Sackmann CSV score field with RET"
+],
+"label": "Retirement timing distribution by set",
+"measurement": "From Sackmann score strings containing RET, parse the number of completed sets and the set-score at retirement; estimate P(retire in set k | retirement) by tour, round, best_of and by which player was trailing; shrink toward tour pooled with n/(n+30). Output: P(retirement before completing set 1/2/3), P(retiring player trailing).",
+"mechanical_flags": [],
+"mechanism": "When a retirement happens decides which exact-score rungs are already settled.",
+"pregame_knowable": "partial",
+"rationale": "A retirement after set 1 resolves different rungs than one in set 3; the existing retirement base rate does not carry timing.",
+"raw_data": [
+"score strings with partial sets",
+"round, best_of"
+],
+"registry_ids": []
+},
+"ten.round_robin_group_structure": {
+"category": "matchup",
+"free_sources": [
+"ATP/WTA Finals rulebooks",
+"official draw pages"
+],
+"label": "Round-robin group structure and tie-break rules",
+"measurement": "Simulate the group of four: 6 matches each with win probabilities from surface ratings at the event (indoor hard), record wins, sets and games; apply the official tie-break order; probability of advancing and of winning the event = P(advance) * product of semifinal and final probabilities; handle alternates as additional entrants with replacement probabilities. Rules from the event rulebook for the year; as-of group draw.",
+"mechanical_flags": [],
+"mechanism": "In round-robin finals, advancement depends on group composition, results and tie-break rules, not on a knockout path.",
+"pregame_knowable": "yes",
+"rationale": "ATP Finals, WTA Finals and Next Gen Finals use groups; the probability of advancing is a function of the three-match group and tie-break rules (wins, head-to-head, set ratio, game ratio), and alternates replace withdrawals.",
+"raw_data": [
+"group composition, tie-break rules, results"
+],
+"registry_ids": []
+},
+"ten.round_upset_calibration": {
+"category": "distribution",
+"free_sources": [
+"Sackmann CSV (seed, round columns)"
+],
+"label": "Round-by-round upset calibration by seed band",
+"measurement": "From Sackmann results compute by round and seed-difference bin the favourite's win frequency relative to the Elo-implied probability; fit a logistic correction with round dummies; shrink to 0 with n/(n+100); apply to the simulation. As-of: before event.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Empirical upset frequency by round, seed band and surface to calibrate the path simulation.",
+"pregame_knowable": "yes",
+"rationale": "A model that multiplies match probabilities can be miscalibrated for early-round upsets and late-round parity; the calibration table is a data-driven check.",
+"raw_data": [
+"match rows with seed and round"
+],
+"registry_ids": []
+},
+"ten.score_feed_latency": {
+"category": "market_structure",
+"free_sources": [
+"ESPN public JSON (site.api.espn.com/apis/site/v2/sports/tennis/<tour>/scoreboard)",
+"ATP and WTA public sites (atptour.com, wtatennis.com: draws, scores, stats, rankings, race, order of play)"
+],
+"label": "Score-feed latency and settlement source timing",
+"measurement": "Measure delay between event time (if available) and feed timestamp; track price lag after score changes.",
+"mechanical_flags": [
+"THIN_MEASUREMENT"
+],
+"mechanism": "Live prices depend on the freshness of the score feed; stale scores create stale quotes and adverse selection.",
+"pregame_knowable": "partial",
+"rationale": "In point-level markets the observed lag between the courtside score and public feeds is large relative to price changes; trading on stale information is the dominant risk or edge. Subtle: this is infrastructure rather than prediction.",
+"registry_ids": []
+},
+"ten.second_serve_risk_policy": {
+"category": "variance_luck",
+"free_sources": [
+"Sackmann serve counts (df and second serve counts)",
+"Match Charting Project"
+],
+"label": "Second-serve risk policy",
+"measurement": "Per player, estimate P(DF | second serve) as a function of returner aggression (share of second serves attacked), score pressure (break point flag), and age; shrink with n/(n+60); output expected DF rate against this returner. As-of: day before the match.",
+"mechanical_flags": [],
+"mechanism": "The double-fault rate depends on how aggressively a player hits the second serve, which varies with the returner and the score.",
+"pregame_knowable": "yes",
+"rationale": "Double-fault counts are not just noise: players who hit big second serves against aggressive returners fault more.",
+"raw_data": [
+"df, 2nd serve points, break-point states"
+],
+"registry_ids": []
+},
+"ten.second_serve_vulnerability": {
+"category": "matchup",
+"free_sources": [
+"Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+"Jeff Sackmann tennis_MatchChartingProject (github.com/JeffSackmann/tennis_MatchChartingProject; shot-level charted matches, limited coverage)",
+"Grand Slam official sites (SlamTracker/match stats pages: aces, double faults, serve speeds)"
+],
+"label": "Second-serve and return vulnerability",
+"measurement": "Second-serve points won, opponent-adjusted; returner's points won vs second serves; pair product relative to tour mean.",
+"mechanical_flags": [
+"THIN_MEASUREMENT"
+],
+"mechanism": "Second-serve points-won rates determine breaks; aggressive returners exploit weak second serves, creating pair-specific break probabilities.",
+"pregame_knowable": "yes",
+"rationale": "The break probability depends mainly on server's second-serve strength and returner's second-serve return; two players with similar overall ratings differ widely here. Subtle: second-serve points are fewer and noisy; condition on surface.",
+"registry_ids": []
+},
+"ten.serve_direction_mix_vs_returner": {
+"category": "matchup",
+"free_sources": [
+"Match Charting Project",
+"Sportradar point data (paid)"
+],
+"label": "Serve direction mix versus returner weakness",
+"measurement": "From charted points compute the server's share of wide/body/T by side and the ace rate by direction, and the returner's unreturned share by direction; expected ace probability = sum over direction of share_server * (ace rate by direction adjusted by returner weakness); shrink with n/(n+80). Coverage is limited to charted matches.",
+"mechanical_flags": [],
+"mechanism": "Ace probability depends on direction (wide, body, T) and side and on the returner's weaker wing.",
+"pregame_knowable": "partial",
+"rationale": "The pair interaction is where most of the variance in ace rate sits; direction frequencies are player-specific and known.",
+"raw_data": [
+"serve direction and outcome per point"
+],
+"registry_ids": []
+},
+"ten.service_points_scenario_mixture": {
+"category": "pace_volume",
+"free_sources": [
+"Sackmann serve counts and scores"
+],
+"label": "Service-points exposure by match scenario",
+"measurement": "For each player compute N = sum over scenarios s (straight-set win/loss, 3-set, 4-set, 5-set, with and without tiebreaks) of P(s) * (service games_s * E[points per game | spw, rpw] + tiebreak serve points); E[points per game] from the point-score Markov chain (about 5.3 at spw 0.65). Keep the scenario weights from the set-count distribution and from hold probabilities. As-of: before match. Add a retirement scenario: with probability P(ret) from ten.retirement_base_rate (by tour, round, best_of, pre-match fitness flag) the match stops at game g drawn from the retirement-timing distribution, so N is truncated to the service points served before g; the count at retirement is then compared with each rung under ten.retirement_settlement_rules.",
+"mechanical_flags": [],
+"mechanism": "The player's service points are a mixture over match scenarios and depend on points per service game.",
+"pregame_knowable": "yes",
+"rationale": "The existing match-length input is an expectation; the ace distribution depends on the full exposure distribution and its correlation with the ace rate (a player serving well wins quickly and serves fewer points).",
+"raw_data": [
+"svpt, SvGms, set scores"
+],
+"registry_ids": []
+},
+"ten.set_count_distribution_by_edge": {
+"category": "distribution",
+"free_sources": [
+"Sackmann scores"
+],
+"label": "Set-count distribution by edge and format",
+"measurement": "Empirical P(N sets) from Sackmann scores by Elo-implied win-probability bin (5-point bins), best_of, surface, tour; smooth by monotone logistic in edge; add 1.5-point shrinkage per bin with weight n/(n+40); expose P(decider), P(winner dropped a set), P(straight sets) per format. As-of: ratings before the match.",
+"mechanical_flags": [],
+"mechanism": "The probability mass over 2/3 sets (bo3) or 3/4/5 sets (bo5) as a function of pair edge, surface and tour.",
+"pregame_knowable": "yes",
+"rationale": "Total sets and set spread contracts are direct functions of this distribution; 'any set' is its straight-set complement. The existing catalog lists match length in games but not the set-count distribution.",
+"raw_data": [
+"match scores, best_of, ratings"
+],
+"registry_ids": []
+},
+"ten.set_first_server_sequence": {
+"category": "game_state",
+"free_sources": [
+"Sackmann point-by-point files (serve sequence)",
+"ATP/WTA live scores"
+],
+"label": "First server in each set (serve-order sequence)",
+"measurement": "Serve order after toss: set 1 first server S1 (from toss; unknown pre-match, treat as 0.5/0.5 until announced). Set k first server = opponent of the player who served the last game of set k-1 unless set k-1 ended with a tiebreak, in which case the player who received first in that tiebreak serves first. Compute P(set win | first server) by running the game-level chain for each of the 12-game sequences. Output per-set first-server probabilities conditional on tiebreak history. As-of: toss result (about 15 minutes before play) for the live case; pre-match treat unknown.",
+"mechanical_flags": [],
+"mechanism": "Which player serves first in each set is a deterministic function of the start of the match and game parity, and first-serve shifts set-win probability.",
+"pregame_knowable": "partial",
+"rationale": "The existing catalog models hold and break but does not carry set-by-set serve order; for evenly matched big servers a coin-toss-driven first-serve advantage shifts the 2-0 versus 2-1 split. A tiebreak resets the rotation, so conditional on a tiebreak in set 1 the order in set 2 differs from the no-tiebreak case.",
+"raw_data": [
+"point-by-point serve indicators",
+"toss result when announced"
+],
+"registry_ids": []
+},
+"ten.set_number_calibration": {
+"category": "distribution",
+"free_sources": [
+"Sackmann score strings"
+],
+"label": "Set-index and previous-set calibration offsets",
+"measurement": "From Sackmann score strings compute, for the favourite by edge bin, the empirical win frequency in set 1, set 2 given won/lost 1, set 3 given 1-1, bo5 set 4 and set 5 conditional on state; fit a logistic with edge, set index and prior-set result dummies, shrink toward the pooled model with n/(n+50). Output offsets in logit units per set index and state. Interpretation limit: score strings give only the net conditional offset by set index and prior-set result (latent day form, momentum and fatigue combined); separating latent form from momentum needs point-level data that exist for Slams only, as exact_set_score's es_dependence_estimation states.",
+"mechanical_flags": [],
+"mechanism": "Win probability for a given edge differs by set number and by the previous set's result.",
+"pregame_knowable": "yes",
+"rationale": "The match model implies a single set-win probability but empirical frequencies show set-index effects (first set cautious, deciders fatigue and tiebreak formats). A naive model that reuses one probability across sets misprices set-3 and set-5 contracts.",
+"raw_data": [
+"set scores by match, ratings"
+],
+"registry_ids": []
+},
+"ten.short_format_rules": {
+"category": "distribution",
+"free_sources": [
+"ATP Next Gen Finals rulebook and event page",
+"Wikipedia event pages for past editions"
+],
+"label": "Next Gen Finals short-format scoring rules",
+"measurement": "Code the event format from the current-year rulebook (sets to win, games per set, tiebreak score, ad or no-ad, let rule). Convert spw to the game hold probability with the no-ad formula (the receiver wins the single deciding point at 3-3, so hold = sum over scores of the point-win probabilities with one deciding point), then to a first-to-four set with a tiebreak at 3-3 by a DP over game scores, then to best-of-five sets. Use per-player spw/rpw with a short-format variance inflation estimated from past Next Gen Finals sets (pooled shrinkage n/(n+40) toward the standard-format model). As-of: rulebook publication before the event; rules change between years so the year is part of the key.",
+"mechanical_flags": [],
+"mechanism": "Short sets (first to four games, tiebreak at 3-3), no-ad scoring and a best-of-five sets match change the point-to-match map, so favourite probabilities and round-robin set/game ratios differ from standard best-of-three tour matches.",
+"pregame_knowable": "yes",
+"rationale": "KXATPNEXTGEN is a live series and the Next Gen Finals use a shortened format; applying standard-set hold-to-match conversion misstates match win probability and the set/game-ratio tiebreaks that decide round-robin advancement.",
+"raw_data": [
+"event rulebook fields by year: sets_to_win, games_per_set, tiebreak_at, no_ad, let_rule",
+"past Next Gen Finals set and game scores"
+],
+"registry_ids": []
+},
+"ten.shot_clock_and_violation_state": {
+"category": "officiating",
+"free_sources": [
+"Broadcast and official match reports (manual coding)",
+"Sportradar events (unverified)"
+],
+"label": "Shot-clock and violation state",
+"measurement": "Count of time violations and code violations per match from official or broadcast logs; estimate violation hazard per player and chair umpire (shrunk n/(n+20)); for a live game include a binary flag if a warning has been issued. SOURCE_UNVERIFIED for structured violation logs.",
+"mechanical_flags": [
+"NOT_PREGAME_KNOWABLE"
+],
+"mechanism": "The serve clock and warnings change second-serve timing and can produce a lost first serve or point penalty inside a game.",
+"pregame_knowable": "no",
+"rationale": "Time violations take away a first serve or award a point in limited cases; in tight finals the umpire's discretion varies and affects the point score directly.",
+"raw_data": [
+"violation events per match",
+"umpire id"
+],
+"registry_ids": []
+},
+"ten.slam_to_slam_carryover": {
+"category": "schedule_context",
+"free_sources": [
+"Wikipedia major champions lists",
+"Sackmann CSV"
+],
+"label": "Event-to-event carryover after a title",
+"measurement": "From history of pairs of consecutive majors compute P(title at event 2 | title at event 1) for the same player by gap days (<=21, 22-42, >42) and surface change (clay to grass, grass to hard), as a ratio to the product of marginal probabilities; shrink the ratio toward the model-implied ratio with weight n/(n+8). As-of: before the first leg.",
+"mechanical_flags": [],
+"mechanism": "Empirical probability of winning the next event given a title at the previous one, by calendar gap and surface change.",
+"pregame_knowable": "yes",
+"rationale": "The combination probability needs P(leg 2 | leg 1), which depends on the load of leg 1, the gap and the surface transition; the historical frequency of consecutive major titles provides a calibration target.",
+"raw_data": [
+"major winners by year and event"
+],
+"registry_ids": []
+},
+"ten.straight_set_share_curve": {
+"category": "distribution",
+"free_sources": [
+"Sackmann CSVs (score strings)"
+],
+"label": "Empirical straight-set share by pre-match edge",
+"measurement": "From Sackmann match scores for the past ten years, compute for bins of pre-match Elo-implied win probability (in 5-point bins, split by tour, best_of, surface) the share of matches won 2-0/3-0 and the share reaching a decider; shrink bin shares toward a logistic fit with weight n/(n+40); report P(2-0 | A wins) and P(deciding set). As-of: ratings available before each historical match.",
+"mechanical_flags": [],
+"mechanism": "Probability that the winner takes the match without dropping a set as a function of pair edge, tour and format.",
+"pregame_knowable": "yes",
+"rationale": "This is a calibration curve (not a market price): it tells how much of the match-win probability mass historically converts to the sweep versus decider scorelines, which a purely i.i.d. model gets wrong.",
+"raw_data": [
+"match score strings, pre-match Elo",
+"best_of, tour, surface"
+],
+"registry_ids": []
+},
+"ten.team_group_tiebreak_rules": {
+"category": "officiating",
+"free_sources": [
+"ITF rulebooks",
+"official group tables"
+],
+"label": "Group tie-break order and rubber results",
+"measurement": "Encode event rules (ordered tie-break criteria), current group table, remaining ties; simulate remaining ties with rubber distributions and compute advancement; flag cases where games ratio decides (probability > 5%). As-of: after each tie.",
+"mechanical_flags": [],
+"mechanism": "The order of tie-breakers (ties, rubbers, sets, games) and the current group state decide advancement in close groups.",
+"pregame_knowable": "yes",
+"rationale": "Advancement in a group of three or four can come down to sets and games ratios, so the margin of wins matters, not only the win.",
+"raw_data": [
+"group tables, rules"
+],
+"registry_ids": []
+},
+"ten.team_tie_lineup_distribution": {
+"category": "player_role",
+"free_sources": [
+"ITF nominations",
+"official team pages",
+"press"
+],
+"label": "Team tie lineup distribution",
+"measurement": "Probability distribution over lineups: P(player nominated) from nomination lists (usually 4-5 players); P(starts singles 1/2) from captain history and rankings; doubles pair from past ties and partnership record; rubber win probabilities from pace-adjusted ratings; simulate the tie (best of three or five rubbers). As-of: nomination list publication.",
+"mechanical_flags": [],
+"mechanism": "The set of nominated singles players and doubles pair and the captain's likely choices.",
+"pregame_knowable": "partial",
+"rationale": "A tie result is determined by the lineup, which is announced late and depends on nominations, fitness and captain history.",
+"raw_data": [
+"nominations, past lineups, results"
+],
+"registry_ids": []
+},
+"ten.tiebreak_base_rate_by_event": {
+"category": "distribution",
+"free_sources": [
+"Sackmann score strings (tiebreak shown in parentheses)"
+],
+"label": "Tiebreak and sweep base rates by event and format",
+"measurement": "For each tournament, compute the share of matches with at least one tiebreak and the share won without dropping a set over the last three editions, weighted with half-life 18 months and shrunk to the tour-level rate with n/(n+60); provide split by round and best_of. As-of: before the event.",
+"mechanical_flags": [],
+"mechanism": "Empirical frequency of at least one tiebreak per match, and of straight-set wins, by tournament-edition and format.",
+"pregame_knowable": "yes",
+"rationale": "Event-level conditions (indoor courts, altitude) produce persistent tiebreak rates that exceed what player stats imply; the base rate is a prior to be updated by the pair.",
+"raw_data": [
+"score strings by tournament, year, round"
+],
+"registry_ids": []
+},
+"ten.tiebreak_sweep_joint_table": {
+"category": "distribution",
+"free_sources": [
+"Sackmann score strings"
+],
+"label": "Joint table of tiebreak occurrence and straight-set win",
+"measurement": "From Sackmann scores compute the 2x2 table (any tiebreak, straight-set win) by bin of mean hold and hold gap with smoothing; shrink to independence with weight n/(n+80) and report odds ratio by bin.",
+"mechanical_flags": [],
+"mechanism": "Tiebreak occurrence and sweeps are not independent because big-serving pairs produce many 7-6 7-6 straight-set wins.",
+"pregame_knowable": "yes",
+"rationale": "If the two contracts are listed together, their dependence is relevant for combined pricing and for checking that marginals are consistent.",
+"raw_data": [
+"scores per match"
+],
+"registry_ids": []
+},
+"ten.tour_gender_effect": {
+"category": "distribution",
+"free_sources": [
+"Jeff Sackmann tennis_atp / tennis_wta match CSVs (github.com/JeffSackmann: atp_matches_YYYY.csv, wta_matches_YYYY.csv, rankings, players)",
+"tennis-data.co.uk odds spreadsheets (ATP/WTA results with Pinnacle/Bet365/Max/Avg odds)"
+],
+"label": "Tour/gender and level differences",
+"measurement": "Tour and level indicators in all hold/break/set models; separate intercepts and dispersion parameters by tour.",
+"mechanical_flags": [
+"THIN_MEASUREMENT"
+],
+"mechanism": "WTA and ATP have different hold rates, break frequencies and format (bo3 vs bo5), changing set distributions and totals.",
+"pregame_knowable": "yes",
+"rationale": "Break rates are higher in the WTA, so total games, tiebreak frequencies and exact-set distributions differ; ratings must be tour-specific. Subtle: Challenger/ITF levels have their own characteristics.",
+"registry_ids": []
+},
+"ten.tournament_set_drop_path": {
+"category": "team_strength",
+"free_sources": [
+"Sackmann scores for historical runs",
+"ATP draw pages"
+],
+"label": "Tournament-level set-drop path probabilities",
+"measurement": "For each round r with expected opponent distribution from draw simulation, P(straight sets in r)=P(win)*P(sweep|win) from ten.set_count_distribution_by_edge; multiply across rounds with a correlation adjustment (shared form shock) estimated from historical title runs; output P(title without dropping a set) and compare to P(title). Requires draw and opponent distributions as-of.",
+"mechanical_flags": [],
+"mechanism": "The probability that a player wins a whole tournament without dropping a set is a product across rounds of per-match straight-set probabilities.",
+"pregame_knowable": "partial",
+"rationale": "If KXATPSETSWEEP means a tournament-level sweep (title unclear), the contract is a path product with the seven or more match-level straight-set probabilities, and correlated with the title probability itself.",
+"raw_data": [
+"draw, results by round for past events"
+],
+"registry_ids": []
+},
+"ten.unretirement_reentry_status": {
+"category": "availability",
+"free_sources": [
+"ITIA announcements and Tennis Anti-Doping Programme rules",
+"WTA/ATP and tournament wildcard announcements",
+"Reputable news reports"
+],
+"label": "Re-entry status of a retired player (testing-pool notice and entry route)",
+"measurement": "State variable as of the market timestamp with values {no public re-entry step, testing-pool re-registration reported (date), wildcard or protected-ranking entry announced (event, date), entered in an acceptance list}; earliest eligible competition date = notice date + required notice period (six months under the WADA Code rule, to be checked against the current ITIA Tennis Anti-Doping Programme); P(compete by window end) = 0 before the earliest eligible date, otherwise a hazard estimated from historical un-retirements (e.g. Clijsters, Hingis, Wozniacki) with n<20 so shrink heavily toward a judgemental prior.",
+"mechanical_flags": [],
+"mechanism": "A player who has retired can only compete again after re-registering for anti-doping testing with advance notice and obtaining a main-draw place by wildcard or special/protected ranking.",
+"pregame_knowable": "partial",
+"rationale": "For a comeback-from-retirement contract the binding constraint is administrative and personal, not physical recovery: the WADA Code return-from-retirement rule requires written notice to the anti-doping authority months before competing, and with no ranking the player needs wildcards; a public notice is a near-necessary leading indicator that sharply separates a near-zero probability from a material one. Subtle: notice lists may not be public, and doubles or exhibition play can precede singles.",
+"raw_data": [
+"re-registration or notice date (news/ITIA)",
+"wildcard and entry announcements with dates",
+"historical un-retirement cases: retirement date, notice date, first match date, event type (singles/doubles)"
+],
+"registry_ids": []
+},
+"ten.walkover_slot_hazard": {
+"category": "availability",
+"free_sources": [
+"Sackmann-style score field W/O rows (access unverified, see mw_sackmann_access)",
+"Own capture of ATP/WTA daily order-of-play pages (forward only)"
+],
+"label": "Walkover and late-withdrawal hazard by slot",
+"measurement": "Empirical day-level hazard h(round, tier, days_since_last_match, last_match_minutes>150, age>=33) = share of scheduled matches ending in a W/O score (withdrawal after the draw is made, including lucky-loser replaced slots) in the Sackmann-style score field; logistic regression with shrinkage toward round-level means (n/(n+30)). Sackmann score strings carry NO withdrawal timestamp, so this historical estimate is a single per-match rate; horizon-specific P(WO) at T-48h/T-12h/T-2h must be built from own-captured order-of-play and entry-list snapshots going forward (see unresolved mw_wo_vintage) and is not backfillable. As-of timestamp: order-of-play publication time.",
+"mechanical_flags": [],
+"mechanism": "Pre-start walkovers and lucky-loser swaps remove a match from the payoff set or change the participants.",
+"pregame_knowable": "partial",
+"rationale": "The sampled rule sends non-occurrence to a fair price, so the exposure is to price drift in the final hours before a withdrawal becomes public, not to a final loss. Hazard varies by round, event tier and days since last match.",
+"raw_data": [
+"score='W/O' rows with round and date",
+"order-of-play snapshots"
+],
+"registry_ids": []
+},
+"ten.win_margin_conversion_curve": {
+"category": "distribution",
+"free_sources": [
+"Sackmann score strings"
+],
+"label": "Margin given win conversion curve",
+"measurement": "From Sackmann scores compute for each edge bin P(D>k | winner) and P(D<0 | winner) by format; fit a logistic in edge and format; shrink to pooled values with n/(n+60). Combine with the winner probability: P(D>1.5)=P(win)*P(D>1.5|win)+P(lose)*P(D>1.5|lose). The edge bins use the market-free P(win) from the match_winner model (surface- and pace-adjusted Elo variant, stated in the dataset), never a price-implied probability.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "The probability that a match winner also has a games margin above a threshold, as a function of pair edge and format.",
+"pregame_knowable": "yes",
+"rationale": "Spread settlement mixes winner and margin; the share of wins that are close (negative or small margins) rises as the gap shrinks and in best-of-five, and matters more than the mean margin at the strike.",
+"raw_data": [
+"scores, best_of, ratings"
+],
+"registry_ids": []
+},
+"ten.withdrawal_cascade_effect": {
+"category": "availability",
+"free_sources": [
+"Entry list and draw archives",
+"own captured snapshots"
+],
+"label": "Withdrawal cascade through the bracket",
+"measurement": "For each possible withdrawal, recompute title and stage probabilities with the replacement rules (lucky loser from qualifying draw with ratings, opponent's walkover with rest credit); weight by an empirical day-level withdrawal rate by round taken from W/O score rows (no timestamp; see tw_withdrawal_vintage and tw_sackmann_access), and treat any horizon-specific weighting as available only from forward own-capture; output the sensitivity of each player's title probability to the top-8 players' withdrawals.",
+"mechanical_flags": [],
+"mechanism": "A withdrawal changes the bracket: the opponent gets a walkover (rest), a lucky loser enters, and the path of other players shifts.",
+"pregame_knowable": "partial",
+"rationale": "The stage rule says a player who qualifies for the final but does not play still pays, so withdrawals at different points settle differently, and a withdrawal reshuffles the title probabilities of everyone else.",
+"raw_data": [
+"bracket slots, replacement history"
+],
+"registry_ids": []
+},
+"ten.withdrawal_hazard_timeline": {
+"category": "availability",
+"free_sources": [
+"Entry list and draw archives (Wikipedia, official sites)",
+"own captured snapshots"
+],
+"label": "Withdrawal hazard timeline from entry deadline to first ball",
+"measurement": "Estimate hazard in intervals (entry to draw, draw to OOP, OOP to first ball) from historical entry lists, draws and results by event category, rank band, age, and days since last match; logistic with shrinkage n/(n+30); as-of: vintage of the entry list snapshot (needs own capture).",
+"mechanical_flags": [],
+"mechanism": "Probability of withdrawal at each interval: before the draw, after the draw before order of play, before the first match.",
+"pregame_knowable": "partial",
+"rationale": "The hazard is time-varying and clusters near the start; intervals carry different information, which determines when a market should move.",
+"raw_data": [
+"entry list snapshots, draw, OOP, results"
+],
+"registry_ids": []
+},
+"ten.within_match_serve_decay": {
+"category": "variance_luck",
+"free_sources": [
+"Sackmann slam point-by-point",
+"Match Charting Project"
+],
+"label": "Within-match serve and movement decay profile",
+"measurement": "From point-level or set-level serve data compute per player (spw in set k+1 minus spw in set k) averaged over bo5 matches lasting at least 3 sets; shrink toward the tour average 0.0 with n/(n+25); include age>=33, prior-match minutes>200, and heat as covariates. Report expected spw change by set index for each player.",
+"mechanical_flags": [],
+"mechanism": "A player's serve-point win rate drifts down in later sets, and the drift differs by age, previous workload and match length.",
+"pregame_knowable": "partial",
+"rationale": "Late-set contracts (set 4, set 5, set 3 of a bo3) depend on fatigue effects that appear within the match rather than in rest days; a pre-match fatigue number only partly predicts it.",
+"raw_data": [
+"point-level server and winner by set"
+],
+"registry_ids": []
+}
+}

@@ -93,9 +93,10 @@ def validate(doc: dict, sport: str, *, require_blueprint_coverage: bool = True) 
                 errs.append(f"{p}: interaction needs a hypothesis")
         if len(rec.get("interactions") or []) < 2:
             errs.append(f"{p}: needs >=2 interactions")
-    used = {i.get("id") for rec in bps.values() for i in rec.get("inputs", [])} | {i.get("id") for rec in (doc.get("archetypes") or {}).values() for i in rec.get("inputs", [])}
+    used = ({i.get("id") for rec in bps.values() for i in rec.get("inputs", [])} | {i.get("id") for rec in (doc.get("archetypes") or {}).values() for i in rec.get("inputs", [])}
+            | {i.get("id") for rec in (doc.get("unregistered_archetypes") or {}).values() for i in rec.get("inputs", [])})
     for iid in inputs:
-        if iid not in used:
+        if iid not in used and not inputs[iid].get("retired"):   # `retired` = detached from every archetype by an audited correction (kept for traceability, never deleted)
             errs.append(f"input {iid}: defined but not attached to any blueprint or archetype input list (it would be invisible on the dashboard)")
     fam_by_bp = registry_blueprints(sport)
     all_fams = {f for fs in fam_by_bp.values() for f in fs}
@@ -125,6 +126,28 @@ def validate(doc: dict, sport: str, *, require_blueprint_coverage: bool = True) 
         for ix in rec.get("interactions") or []:
             if len(ix.get("inputs", [])) < 2 or any(i not in inputs for i in ix["inputs"]):
                 errs.append(f"{p}: interaction references undefined inputs")
+        if len(rec.get("interactions") or []) < 3:
+            errs.append(f"{p}: needs >=3 interactions")
+    for a, rec in (doc.get("unregistered_archetypes") or {}).items():
+        p = f"unregistered archetype {a}"
+        if rec.get("blueprint") not in bps:
+            errs.append(f"{p}: blueprint {rec.get('blueprint')!r} not defined")
+        if not rec.get("contract_types"):
+            errs.append(f"{p}: contract_types must list the listed Kalshi contract titles it covers")
+        if a in (doc.get("archetypes") or {}):
+            errs.append(f"{p}: name collides with a registered archetype")
+        for k in ("label", "target", "mechanism", "inputs", "interactions"):
+            if k not in rec:
+                errs.append(f"{p}: missing {k}")
+        if len(str(rec.get("mechanism", ""))) < 120:
+            errs.append(f"{p}: mechanism must be a substantive paragraph (>=120 chars)")
+        if len(rec.get("inputs") or []) < 8:
+            errs.append(f"{p}: needs >=8 inputs")
+        for it in rec.get("inputs") or []:
+            if it.get("id") not in inputs:
+                errs.append(f"{p}: input {it.get('id')!r} not defined in inputs")
+            if len(str(it.get("why", ""))) < 30:
+                errs.append(f"{p}: input {it.get('id')!r} needs a market-specific 'why'")
         if len(rec.get("interactions") or []) < 3:
             errs.append(f"{p}: needs >=3 interactions")
     if require_blueprint_coverage:

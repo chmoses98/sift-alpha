@@ -1,0 +1,48 @@
+{
+ "note": "Final audit fixes for MLB input text (award electorate shrinkage, award_voting legacy text, starter-change scope, leash readout). Each entry carries the full patched fields because input patches replace per input id.",
+ "patches": {
+  "mlb.award_electorate_procedure": {
+   "measurement": "Table keyed by award x league x season with fields: electorate_class in {BBWAA, RETIRED_RELIEVER_PANEL, MLBCOM_BEAT_REPORTERS, HOF_PANEL_PLUS_FANS, CLUB_EXECUTIVES, MANAGERS_COACHES_PLUS_SDI, OTHER}, n_voters, ballot_places, points_vector, vote_deadline relative to the end of the regular season, postseason_included flag, fan_vote flag and published weight (null if unpublished), public_ballots flag, finalist_announcement flag. Source each row from the awarding body's announcement for that season. Use: award_vote_rank_model coefficients are pooled only within one electorate_class; classes without public ballots are fitted on winner and finalist outcomes only (multinomial logit over the finalist set), ridge-shrunk with penalty equal to 3 seasons toward zero on every term except a production term (WAR_z, or OPS+/HR for the Hank Aaron Award), never toward BBWAA coefficients: BBWAA-class coefficients are used only for BBWAA awards (MVP, Cy Young, Rookie, Manager of the Year) and are not a prior for panel, beat-reporter, fan or executive awards; the ballot simulation uses that row's n_voters and points_vector. As-of: the row for the season being priced, frozen at the vote deadline.",
+   "free_sources": [
+    "MVP, Cy Young, Rookie of the Year, Manager of the Year: BBWAA voting rules and results (bbwaa.com awards pages; ballots public after the fact), per earlier research notes",
+    "Rivera and Hoffman Reliever of the Year: MLB.com award announcements (panel of retired relievers; 2023 members named Rivera, Hoffman, Eckersley, Fingers, Franco, Wagner; panel size unverified, six vs nine in different notes)",
+    "BBWAA Relief Pitcher of the Year (new 2026): BBWAA announcement (finalists Nov 2 2026, winners due Nov 11 2026 per earlier notes)",
+    "Comeback Player of the Year: MLB.com announcement (30 club beat reporters), per earlier research notes",
+    "Hank Aaron Award: MLB.com award page (Hall of Fame panel plus online fan vote; relative weights unpublished)",
+    "Executive of the Year: MLB.com announcement (executives of the 30 clubs, voted before the postseason, no public ballots)",
+    "Gold Glove: Rawlings Gold Glove selection process and SABR Defensive Index page (sabr.org; managers and coaches plus about 25 percent SDI)",
+    "VERIFICATION STATUS: these per-award citations come from earlier research notes (reviews/MLB_a.json, gap_resolution/MLB_a.json); mlb.com, bbwaa.com and sabr.org were not reachable in this fix round, so no page was re-fetched and exact URLs are unverified"
+   ]
+  },
+  "mlb.award_vote_rank_model": {
+   "measurement": "Plackett-Luce likelihood on 1996-2025 BBWAA ballots per award and league (rank-ordered top 10 for MVP with points 14-9-8-7-6-5-4-3-2-1, top 5 for Cy Young since 2010 with 7-4-3-2-1, top 3 for Rookie and Manager of the Year with 5-3-1): worth_i = exp(b1*WAR_z + b2*team_win_pct_z + b3*counting_z + b4*playoff_flag + b5*milestone_flag + position/pitcher effects), z-scores computed within each league-season over the top 15 candidates by WAR, WAR = mean of fWAR and bWAR at the end of the regular season (ballot deadline). Estimate by maximum likelihood with ridge shrinkage of each award's coefficients toward the pooled coefficients of the same electorate class from mlb.award_electorate_procedure (penalty equal to 3 seasons of data); BBWAA coefficients are never pooled with, or used as a prior for, panel, beat-reporter, fan or executive awards; those classes have no public ballots and are fitted by the finalist-set logit in mlb.award_electorate_procedure (reliever awards by mlb.reliever_award_production), so this Plackett-Luce model serves the BBWAA class only. Simulate 30 voter ballots from the fitted model (temperature tau fitted on first-place-vote dispersion) with the real points scale; output P(winner) and P(top 3 by points). milestone_flag and the other narrative terms are the pre-registered flags of mlb.award_narrative. As-of: final regular-season stats, before ballot release."
+  },
+  "mlb.award_voting": {
+   "label": "Award voting (BBWAA-class ballots): ballot structure, voter-visible stats, narrative, finalist timing",
+   "mechanism": "For the awards that BBWAA writers vote (MVP, Cy Young, Rookie of the Year, Manager of the Year) the ballot structure, timing and voter-visible stats define the outcome; other awards have different electorates (retired-reliever panel, MLB.com beat reporters, Hall of Fame panel plus fans, club executives, managers and coaches) and are described in mlb.award_electorate_procedure.",
+   "rationale": "MVP and Cy Young votes weigh WAR, counting stats and team success differently across eras; BBWAA ballots are cast before the postseason. Subtle: finalists are announced before winners and voters' collective preferences are lumpy, so a model of historical voting with the main stats fits better than raw WAR. This input holds only the BBWAA-class ballot history; it does not describe who votes for the other awards.",
+   "measurement": "BBWAA awards only: regress historical voting shares on WAR, team win%, counting stats and position; rank-ordered logit; update after finalist announcement. Non-BBWAA awards are not fitted here (see mlb.award_electorate_procedure and mlb.reliever_award_production).",
+   "free_sources": [
+    "BBWAA MVP, Cy Young, Rookie and Manager of the Year voting results via Baseball-Reference (baseball-reference.com/awards) and bbwaa.com (ballots public after the fact)",
+    "FanGraphs (fangraphs.com leaderboards, splits, projections: Steamer/ZiPS/ATC, park factors, RosterResource)",
+    "VERIFICATION STATUS: per-award electorate citations for the non-BBWAA awards are listed in mlb.award_electorate_procedure; not re-fetched this round"
+   ]
+  },
+  "mlb.pitcher_hr_vulnerability": {
+   "measurement": "Pitcher barrel%/FB% allowed by batter hand, HR/FB regressed (prior weight ~200 FB); combine with hitter HR profile via log5 for per-PA HR probability. When used for opposing-hitter markets before first pitch (single-game HR; hits and total bases apply the same mixture to mlb.sp_quality in hitter_hits_and_total_bases, because this input is carried only by the HR, pitcher-earned-runs and exposure archetypes), evaluate it as a mixture over starters: per-PA HR probability = (1 - P(change)) * p(announced starter) + P(change) * sum over replacements r of P(r | change) * p(r), with P(change) and the replacement distribution (next rotation arm, opener plus bulk, bullpen game) from mlb.f5_starter_change_risk at the same as-of time; for the pitcher's own ladders use the announced pitcher only. As-of: lineup post.",
+   "raw_data": [
+    "home runs, fly balls and barrels allowed by pitcher and batter handedness",
+    "batters faced by pitcher and season",
+    "park and game environment for each batter faced"
+   ]
+  },
+  "mlb.f5_starter_change_risk": {
+   "measurement": "P(change) = logistic(a + b1*days_to_first_pitch + b2*IL_return_flag + b3*injury_report_flag + b4*team opener or bulk start rate in last 10 starts + b5*postseason + b6*doubleheader), fitted only on own-captured announced-versus-actual starters; until at least one full season of captured vintages exists, use the league base rate stratified by status flags with a Beta prior (k = 100 games) and label the output uncalibrated. Replacement distribution = mixture of next-in-rotation, bulk reliever and opener with their F5 run rates over 2 seasons shrunk to team average with k = 8 starts. Output P(change), the replacement distribution (identity, throwing hand and role of each candidate with probabilities), E[F5 runs | change] minus E[F5 runs | no change] for F5 markets, and the replacement mixture used by opposing-hitter props through mlb.pitcher_hr_vulnerability (home runs) and mlb.sp_quality (hits and total bases). As-of: each timestamp before first pitch, using only announcements available then."
+  },
+  "mlb.leash": {
+   "label": "Manager hook tendency (component of the shared starter exit hazard: manager effect and bullpen freshness)",
+   "measurement": "Not a separate model: leash is reported as the manager random effect (shrunk with k = 40 starts, reset on a manager change) and the bullpen-freshness coefficient inside mlb.sp_hook_hazard_curve, summarised as the manager's predicted median batters faced at exit for a league-average starter at 0 runs allowed and a 95-pitch count, relative to the league median. Units: batters faced relative to league. As-of: starts through the previous day.",
+   "mechanism": "Readout of the manager component of the starter exit hazard mlb.sp_hook_hazard_curve, not a separate model: managers remove starters based on pitch count, times through the order and leverage, and that effect sits inside the hazard. The id is still carried through the blueprints player_pitch, pitcher_er, pitcher_hits, pitcher_bb and period, so it is NOT detached everywhere; interactions that name leash are read as the hazard's manager term."
+  }
+ }
+}

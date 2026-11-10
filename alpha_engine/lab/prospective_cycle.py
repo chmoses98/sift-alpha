@@ -472,7 +472,8 @@ def _refresh_locked(repo, work, data_dir, player, now, season, run_id, meta, out
             extra.append({"severity": "HIGH", "code": "SETTLEMENT_MISMATCH", "detail": f"{k}: {v['SETTLEMENT_MISMATCH']} game-horizon cell(s) where exchange result != nflverse outcome"})
     if xconf:
         extra.append({"severity": "HIGH", "code": "SETTLEMENT_MISMATCH", "detail": f"{len(xconf)} ticker(s) with conflicting exchange results across shards"})
-    alerts = AL.evaluate(heartbeats, obs, out["steps"]["shard_ingest"], now, coverage=cov, since=first, extra=extra)
+    wins = [{"start": dt - pd.Timedelta(minutes=CW.PRE_MIN), "end": dt + pd.Timedelta(minutes=CW.POST_MIN)} for _, _, dt in CW.decision_times(ko[ko > pd.Timestamp(first)], now)] if len(ko) else []
+    alerts = AL.evaluate(heartbeats, obs, out["steps"]["shard_ingest"], now, coverage=cov, since=first, extra=extra, windows=wins)
     out["alerts"] = alerts; out["alert_summary"] = AL.summarize(alerts)
     (pv / "alerts.json").write_text(json.dumps({"generated_utc": now.isoformat(), "run_id": run_id, "summary": out["alert_summary"], "alerts": alerts}, indent=1))
     if rep.get("aborted"):

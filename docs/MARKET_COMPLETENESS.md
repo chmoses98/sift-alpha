@@ -12,42 +12,44 @@ Per input (exactly one category): **FULL / PARTIAL / PROXY** = replayed + blind-
 | Sport | archetypes | required slots | FULL | PARTIAL | PROXY | DATA_IN_HAND | FREE_ACCESSIBLE | PROSPECTIVE | NO_FREE_SOURCE | CONTESTED | primary slots | primary covered (F/P/X) | primary missing critical | mean critical score |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | NFL | 28 | 751 | 52 | 151 | 24 | 0 | 412 | 112 | 0 | 0 | 252 | 10/34/5 | 203 | 0.118 |
-| CFB | 16 | 390 | 1 | 29 | 18 | 0 | 240 | 84 | 14 | 4 | 119 | 0/10/6 | 103 | 0.055 |
+| CFB | 16 | 390 | 1 | 72 | 18 | 0 | 207 | 74 | 14 | 4 | 119 | 0/29/6 | 84 | 0.133 |
 | NBA | 31 | 703 | 40 | 168 | 22 | 15 | 303 | 121 | 25 | 9 | 297 | 20/81/3 | 193 | 0.222 |
-| CBB | 18 | 402 | 4 | 25 | 2 | 0 | 271 | 50 | 41 | 9 | 147 | 0/10/0 | 137 | 0.034 |
-| NHL | 15 | 350 | 37 | 76 | 5 | 13 | 117 | 98 | 3 | 1 | 136 | 16/22/3 | 95 | 0.210 |
+| CBB | 18 | 402 | 4 | 64 | 2 | 0 | 232 | 50 | 41 | 9 | 147 | 0/25/0 | 122 | 0.093 |
+| NHL | 15 | 350 | 39 | 74 | 5 | 13 | 117 | 98 | 3 | 1 | 136 | 16/22/3 | 95 | 0.210 |
 | MLB | 26 | 550 | 2 | 52 | 1 | 0 | 316 | 179 | 0 | 0 | 209 | 1/15/0 | 193 | 0.038 |
-| SOCCER | 23 | 484 | 30 | 30 | 13 | 0 | 153 | 75 | 180 | 3 | 176 | 4/11/2 | 159 | 0.066 |
-| TENNIS | 13 | 269 | 32 | 101 | 8 | 17 | 55 | 41 | 5 | 10 | 81 | 3/27/0 | 51 | 0.200 |
-| **all** | 170 | 3899 | 198 | 632 | 93 | 45 | 1867 | 760 | 268 | 36 | | | 1134 | |
+| SOCCER | 23 | 484 | 30 | 38 | 13 | 0 | 145 | 75 | 180 | 3 | 176 | 4/17/2 | 153 | 0.089 |
+| TENNIS | 13 | 269 | 35 | 98 | 8 | 17 | 55 | 41 | 5 | 10 | 81 | 3/27/0 | 51 | 0.200 |
+| **all** | 170 | 3899 | 203 | 717 | 93 | 45 | 1787 | 750 | 268 | 36 | | | 1094 | |
 
-## Change versus baseline `74aab4e`
+## Change versus baseline `be3c9f1`
 
 
-33 of 170 archetypes gained built-and-verified input slots; the largest gains:
+Counts of improved archetypes depend on the measure (all four are reported; none is a profitability claim): built-and-verified input slots up **39**; PRIMARY built slots up **24**; critical (primary) score up **24**; primary slots still missing down **24**. Unique PRIMARY slots unlocked (sum over archetypes): **40**.
+
+39 of 170 archetypes gained built-and-verified input slots; the largest gains:
 
 | Archetype | slots built before | now | critical score before | now |
 |---|---|---|---|---|
-| TENNIS/set_and_game_spreads | 11 | 16 | 0.25 | 0.333 |
-| TENNIS/tournament_winner_futures | 9 | 14 | 0.083 | 0.083 |
-| TENNIS/set_sweep_and_tiebreak_events | 9 | 13 | 0.3 | 0.4 |
-| NHL/playoff_series_aggregate | 11 | 15 | 0.139 | 0.25 |
-| NBA/player_escalator_payout | 9 | 12 | 0.333 | 0.444 |
-| NBA/team_and_player_counting_specials | 10 | 13 | 0.25 | 0.312 |
-| NBA/game_overtime_and_team_events | 8 | 11 | 0.167 | 0.278 |
-| NBA/first_basket | 6 | 9 | 0.125 | 0.25 |
-| TENNIS/exact_set_score | 8 | 11 | 0.2 | 0.2 |
-| TENNIS/total_games_and_sets | 12 | 14 | 0.286 | 0.357 |
-| NBA/combo_props | 8 | 10 | 0.3 | 0.35 |
-| NBA/player_points | 10 | 12 | 0.25 | 0.35 |
-| NHL/team_and_player_season_counting | 5 | 7 | 0.25 | 0.312 |
-| NBA/player_assists | 8 | 10 | 0.208 | 0.292 |
-| TENNIS/set_winner_and_any_set | 11 | 13 | 0.143 | 0.214 |
-| NBA/season_stat_markets | 6 | 8 | 0.179 | 0.214 |
-| NHL/season_futures | 5 | 7 | 0.042 | 0.083 |
-| TENNIS/season_ranking_and_majors | 7 | 9 | 0.0 | 0.0 |
-| TENNIS/combo_tournament_winners | 5 | 7 | 0.0 | 0.0 |
-| NBA/player_free_throws | 9 | 10 | 0.5 | 0.5 |
+| CFB/game_stat_props | 2 | 10 | 0.018 | 0.161 |
+| CFB/game_total | 3 | 9 | 0.031 | 0.281 |
+| CBB/team_total | 3 | 8 | 0.111 | 0.222 |
+| CFB/touchdown_scorer | 3 | 8 | 0.0 | 0.2 |
+| CBB/overtime_periods | 1 | 5 | 0.0 | 0.333 |
+| CBB/game_moneyline_spread | 6 | 10 | 0.125 | 0.208 |
+| CFB/team_total | 3 | 6 | 0.083 | 0.25 |
+| CFB/team_event_counting_specials | 2 | 5 | 0.031 | 0.219 |
+| CFB/game_moneyline_spread | 5 | 8 | 0.0 | 0.2 |
+| CFB/half_full_double_result | 7 | 10 | 0.139 | 0.139 |
+| CBB/kenpom_rating_snapshot | 4 | 7 | 0.0 | 0.062 |
+| CFB/multi_leg_parlay_packs | 5 | 8 | 0.042 | 0.042 |
+| CBB/game_total | 4 | 6 | 0.143 | 0.286 |
+| CFB/quarter_and_half_totals | 5 | 7 | 0.15 | 0.25 |
+| CFB/quarter_and_half_sides | 4 | 6 | 0.188 | 0.188 |
+| CBB/race_to_n_points | 3 | 5 | 0.167 | 0.167 |
+| CBB/first_half | 3 | 5 | 0.071 | 0.143 |
+| CBB/player_points | 0 | 2 | 0.0 | 0.056 |
+| CBB/polls_and_awards | 2 | 4 | 0.0 | 0.05 |
+| CBB/player_props | 0 | 2 | 0.0 | 0.05 |
 
 ## All 170 archetypes ranked by data completeness
 
@@ -68,146 +70,146 @@ Per input (exactly one category): **FULL / PARTIAL / PROXY** = replayed + blind-
 | 12 | TENNIS | total_games_and_sets | 24 | 5 | 8 | 1 | 2 | 5 | 2 | 0 | 1 | 2 | 0.357 | 0.385 |
 | 13 | NBA | combo_props | 24 | 2 | 8 | 0 | 0 | 9 | 3 | 2 | 0 | 4 | 0.350 | 0.250 |
 | 14 | NBA | player_points | 29 | 3 | 8 | 1 | 1 | 9 | 4 | 2 | 1 | 4 | 0.350 | 0.250 |
-| 15 | TENNIS | set_and_game_spreads | 20 | 4 | 12 | 0 | 2 | 1 | 0 | 0 | 1 | 2 | 0.333 | 0.500 |
+| 15 | TENNIS | set_and_game_spreads | 20 | 5 | 11 | 0 | 2 | 1 | 0 | 0 | 1 | 2 | 0.333 | 0.525 |
 | 16 | NFL | team_and_event_counting_specials | 19 | 3 | 8 | 1 | 0 | 6 | 1 | 0 | 0 | 3 | 0.333 | 0.382 |
 | 17 | NFL | team_total | 24 | 4 | 9 | 1 | 0 | 9 | 1 | 0 | 0 | 4 | 0.333 | 0.365 |
-| 18 | TENNIS | match_winner | 27 | 2 | 14 | 0 | 2 | 5 | 3 | 0 | 1 | 2 | 0.333 | 0.333 |
-| 19 | NFL | game_total | 37 | 8 | 11 | 2 | 0 | 14 | 2 | 0 | 0 | 7 | 0.318 | 0.378 |
-| 20 | NBA | team_and_player_counting_specials | 25 | 1 | 10 | 2 | 0 | 9 | 3 | 0 | 0 | 4 | 0.312 | 0.260 |
-| 21 | NHL | team_and_player_season_counting | 18 | 2 | 5 | 0 | 1 | 7 | 3 | 0 | 0 | 4 | 0.312 | 0.250 |
-| 22 | NBA | game_total | 25 | 2 | 7 | 1 | 1 | 10 | 2 | 1 | 1 | 4 | 0.312 | 0.230 |
-| 23 | NBA | game_moneyline_spread | 26 | 1 | 7 | 1 | 1 | 12 | 2 | 2 | 0 | 4 | 0.312 | 0.183 |
-| 24 | NBA | player_h2h_series_stats | 19 | 1 | 4 | 2 | 2 | 7 | 3 | 0 | 0 | 4 | 0.306 | 0.184 |
-| 25 | NFL | first_score_team_time_race | 19 | 4 | 6 | 2 | 0 | 6 | 1 | 0 | 0 | 2 | 0.300 | 0.395 |
-| 26 | NBA | team_total | 18 | 2 | 7 | 1 | 0 | 7 | 0 | 0 | 1 | 5 | 0.300 | 0.319 |
-| 27 | NFL | rare_play_call_events | 19 | 1 | 7 | 1 | 0 | 8 | 2 | 0 | 0 | 2 | 0.300 | 0.250 |
-| 28 | NBA | player_milestones | 24 | 1 | 7 | 1 | 0 | 8 | 5 | 2 | 0 | 5 | 0.300 | 0.198 |
-| 29 | NBA | player_assists | 26 | 1 | 8 | 1 | 0 | 8 | 2 | 4 | 2 | 6 | 0.292 | 0.202 |
-| 30 | NFL | rushing_yards | 23 | 2 | 4 | 0 | 0 | 16 | 1 | 0 | 0 | 4 | 0.286 | 0.174 |
-| 31 | NBA | race_to_and_points_leader | 18 | 2 | 7 | 0 | 1 | 7 | 1 | 0 | 0 | 5 | 0.278 | 0.306 |
-| 32 | NBA | game_overtime_and_team_events | 24 | 2 | 8 | 1 | 1 | 10 | 2 | 0 | 0 | 5 | 0.278 | 0.260 |
-| 33 | NHL | playoff_series_aggregate | 26 | 3 | 11 | 1 | 0 | 7 | 4 | 0 | 0 | 4 | 0.250 | 0.337 |
-| 34 | NBA | first_basket | 16 | 1 | 8 | 0 | 1 | 4 | 1 | 1 | 0 | 4 | 0.250 | 0.312 |
-| 35 | NHL | game_moneyline_puckline | 26 | 4 | 6 | 1 | 1 | 7 | 7 | 0 | 0 | 6 | 0.250 | 0.279 |
-| 36 | NHL | period_markets | 23 | 4 | 4 | 0 | 1 | 11 | 2 | 0 | 1 | 6 | 0.250 | 0.261 |
-| 37 | NBA | player_rebounds | 25 | 3 | 4 | 2 | 0 | 10 | 2 | 3 | 1 | 6 | 0.250 | 0.220 |
-| 38 | NHL | goalie_saves | 22 | 1 | 6 | 1 | 1 | 7 | 5 | 1 | 0 | 5 | 0.250 | 0.193 |
-| 39 | TENNIS | set_winner_and_any_set | 20 | 4 | 9 | 0 | 2 | 3 | 1 | 0 | 1 | 4 | 0.214 | 0.425 |
-| 40 | NBA | season_stat_markets | 26 | 2 | 6 | 0 | 1 | 14 | 3 | 0 | 0 | 10 | 0.214 | 0.192 |
-| 41 | SOCCER | match_result_3way | 26 | 2 | 4 | 1 | 0 | 9 | 3 | 7 | 0 | 5 | 0.214 | 0.163 |
-| 42 | TENNIS | exact_set_score | 16 | 2 | 9 | 0 | 2 | 1 | 2 | 0 | 0 | 3 | 0.200 | 0.406 |
-| 43 | NFL | qb_passing_yards | 36 | 5 | 10 | 1 | 0 | 16 | 4 | 0 | 0 | 9 | 0.196 | 0.285 |
-| 44 | NFL | game_events | 30 | 3 | 12 | 2 | 0 | 12 | 1 | 0 | 0 | 5 | 0.194 | 0.317 |
-| 45 | NHL | player_points_goals_assists | 30 | 2 | 6 | 0 | 1 | 11 | 9 | 1 | 0 | 10 | 0.192 | 0.167 |
-| 46 | CFB | quarter_and_half_sides | 20 | 0 | 3 | 1 | 0 | 14 | 2 | 0 | 0 | 5 | 0.188 | 0.087 |
-| 47 | NHL | game_events | 26 | 3 | 5 | 1 | 1 | 10 | 6 | 0 | 0 | 7 | 0.175 | 0.221 |
-| 48 | TENNIS | retirement_walkover_participation | 21 | 2 | 3 | 1 | 0 | 6 | 9 | 0 | 0 | 9 | 0.167 | 0.179 |
-| 49 | NBA | player_availability | 18 | 0 | 4 | 0 | 1 | 5 | 8 | 0 | 0 | 6 | 0.167 | 0.111 |
-| 50 | CFB | overtime | 16 | 0 | 2 | 2 | 0 | 11 | 1 | 0 | 0 | 2 | 0.167 | 0.094 |
-| 51 | CBB | race_to_n_points | 20 | 0 | 3 | 0 | 0 | 13 | 2 | 2 | 0 | 4 | 0.167 | 0.075 |
-| 52 | SOCCER | player_shots_saves_props | 15 | 1 | 0 | 0 | 0 | 0 | 2 | 12 | 0 | 5 | 0.167 | 0.067 |
-| 53 | NBA | quarter_and_half_markets | 22 | 1 | 6 | 1 | 0 | 12 | 2 | 0 | 0 | 7 | 0.150 | 0.193 |
-| 54 | MLB | pitcher_strikeouts | 30 | 0 | 8 | 0 | 0 | 17 | 5 | 0 | 0 | 7 | 0.150 | 0.133 |
-| 55 | CFB | quarter_and_half_totals | 23 | 0 | 4 | 1 | 0 | 16 | 2 | 0 | 0 | 7 | 0.150 | 0.098 |
-| 56 | CBB | game_total | 25 | 0 | 4 | 0 | 0 | 13 | 1 | 6 | 1 | 5 | 0.143 | 0.080 |
-| 57 | CFB | half_full_double_result | 35 | 0 | 5 | 2 | 0 | 20 | 6 | 2 | 0 | 6 | 0.139 | 0.086 |
-| 58 | MLB | player_participation | 20 | 1 | 2 | 0 | 0 | 8 | 9 | 0 | 0 | 9 | 0.136 | 0.100 |
-| 59 | NFL | game_moneyline_spread | 29 | 4 | 9 | 2 | 0 | 10 | 4 | 0 | 0 | 7 | 0.125 | 0.310 |
-| 60 | NFL | anytime_first_td_scorer | 35 | 3 | 7 | 0 | 0 | 22 | 3 | 0 | 0 | 6 | 0.125 | 0.186 |
-| 61 | CBB | game_moneyline_spread | 37 | 1 | 5 | 0 | 0 | 24 | 4 | 3 | 0 | 9 | 0.125 | 0.095 |
-| 62 | MLB | pitch_velocity_extremes | 14 | 0 | 2 | 0 | 0 | 7 | 5 | 0 | 0 | 3 | 0.125 | 0.071 |
-| 63 | MLB | hitter_hits_and_total_bases | 27 | 0 | 6 | 1 | 0 | 13 | 7 | 0 | 0 | 7 | 0.111 | 0.120 |
-| 64 | CBB | team_total | 23 | 1 | 2 | 0 | 0 | 15 | 1 | 4 | 0 | 7 | 0.111 | 0.087 |
-| 65 | MLB | hitter_rbis_runs_sb | 19 | 0 | 3 | 0 | 0 | 11 | 5 | 0 | 0 | 7 | 0.111 | 0.079 |
-| 66 | TENNIS | game_winner_inplay | 18 | 4 | 2 | 1 | 1 | 1 | 2 | 4 | 3 | 4 | 0.100 | 0.292 |
-| 67 | SOCCER | handicap_and_exact_score | 20 | 2 | 3 | 1 | 0 | 6 | 2 | 6 | 0 | 4 | 0.100 | 0.188 |
-| 68 | SOCCER | first_half_and_period | 19 | 2 | 1 | 2 | 0 | 5 | 1 | 8 | 0 | 4 | 0.100 | 0.158 |
-| 69 | SOCCER | team_points_and_margin | 23 | 2 | 2 | 1 | 0 | 10 | 5 | 3 | 0 | 4 | 0.100 | 0.141 |
-| 70 | SOCCER | competition_winner_and_top_n | 24 | 1 | 3 | 0 | 0 | 10 | 5 | 5 | 0 | 8 | 0.100 | 0.104 |
-| 71 | MLB | player_home_run_exposure | 19 | 0 | 3 | 0 | 0 | 9 | 7 | 0 | 0 | 4 | 0.100 | 0.079 |
-| 72 | MLB | hitter_home_runs | 23 | 0 | 2 | 0 | 0 | 16 | 5 | 0 | 0 | 8 | 0.100 | 0.043 |
-| 73 | SOCCER | total_goals | 24 | 4 | 2 | 2 | 0 | 5 | 1 | 10 | 0 | 6 | 0.094 | 0.229 |
-| 74 | NBA | parlay_combo | 18 | 1 | 5 | 0 | 1 | 11 | 0 | 0 | 0 | 9 | 0.091 | 0.194 |
-| 75 | TENNIS | tournament_winner_futures | 30 | 0 | 13 | 1 | 1 | 9 | 6 | 0 | 0 | 5 | 0.083 | 0.225 |
-| 76 | NFL | fantasy_points_markets | 48 | 4 | 10 | 2 | 0 | 25 | 7 | 0 | 0 | 10 | 0.083 | 0.198 |
-| 77 | NHL | season_futures | 31 | 3 | 4 | 0 | 1 | 15 | 8 | 0 | 0 | 10 | 0.083 | 0.161 |
-| 78 | CFB | team_total | 21 | 0 | 2 | 1 | 0 | 11 | 5 | 2 | 0 | 5 | 0.083 | 0.060 |
-| 79 | NBA | series_and_cup | 21 | 0 | 4 | 0 | 1 | 16 | 0 | 0 | 0 | 11 | 0.077 | 0.095 |
-| 80 | NHL | parlay_combo | 17 | 3 | 2 | 0 | 3 | 3 | 6 | 0 | 0 | 6 | 0.071 | 0.235 |
-| 81 | NBA | game_win_margin | 18 | 1 | 4 | 1 | 0 | 11 | 0 | 1 | 0 | 6 | 0.071 | 0.181 |
-| 82 | NFL | qb_passing_tds_and_ints | 29 | 1 | 7 | 0 | 0 | 18 | 3 | 0 | 0 | 6 | 0.071 | 0.155 |
-| 83 | CBB | first_half | 22 | 0 | 3 | 0 | 0 | 13 | 3 | 3 | 0 | 6 | 0.071 | 0.068 |
-| 84 | NBA | all_star_game_mvp | 18 | 0 | 2 | 0 | 0 | 6 | 10 | 0 | 0 | 6 | 0.071 | 0.056 |
-| 85 | NBA | series_cumulative_points | 40 | 1 | 8 | 1 | 1 | 25 | 2 | 1 | 1 | 7 | 0.062 | 0.131 |
-| 86 | NFL | combos_and_parlays | 22 | 0 | 2 | 1 | 0 | 17 | 2 | 0 | 0 | 7 | 0.062 | 0.057 |
-| 87 | SOCCER | tournament_aggregate_event_props | 34 | 1 | 2 | 0 | 0 | 14 | 1 | 15 | 1 | 15 | 0.059 | 0.059 |
-| 88 | NBA | all_star_exhibition_games | 18 | 0 | 2 | 0 | 0 | 8 | 8 | 0 | 0 | 8 | 0.056 | 0.056 |
-| 89 | NBA | all_star_weekend_events | 20 | 0 | 2 | 0 | 0 | 9 | 8 | 0 | 1 | 8 | 0.056 | 0.050 |
-| 90 | MLB | game_total_and_team_total | 24 | 0 | 2 | 0 | 0 | 15 | 7 | 0 | 0 | 8 | 0.056 | 0.042 |
-| 91 | NFL | season_win_totals_and_futures | 22 | 2 | 3 | 0 | 0 | 14 | 3 | 0 | 0 | 9 | 0.050 | 0.159 |
-| 92 | MLB | all_star_week_events | 27 | 0 | 3 | 0 | 0 | 15 | 9 | 0 | 0 | 9 | 0.050 | 0.056 |
-| 93 | NBA | season_futures_team | 28 | 0 | 3 | 0 | 1 | 19 | 5 | 0 | 0 | 9 | 0.050 | 0.054 |
-| 94 | SOCCER | tournament_bracket_composition | 16 | 0 | 1 | 0 | 0 | 12 | 3 | 0 | 0 | 10 | 0.045 | 0.031 |
-| 95 | NHL | season_awards_and_stats | 30 | 2 | 4 | 0 | 0 | 13 | 11 | 0 | 0 | 11 | 0.042 | 0.133 |
-| 96 | CFB | multi_leg_parlay_packs | 26 | 0 | 4 | 1 | 0 | 14 | 6 | 1 | 0 | 5 | 0.042 | 0.087 |
-| 97 | NFL | player_availability | 25 | 0 | 4 | 0 | 0 | 12 | 9 | 0 | 0 | 11 | 0.042 | 0.080 |
-| 98 | MLB | season_futures | 28 | 0 | 1 | 0 | 0 | 13 | 14 | 0 | 0 | 11 | 0.042 | 0.018 |
-| 99 | NFL | extreme_play_length | 37 | 2 | 6 | 0 | 0 | 25 | 4 | 0 | 0 | 13 | 0.036 | 0.135 |
-| 100 | CFB | polls_and_cfp_rankings | 17 | 0 | 0 | 1 | 0 | 12 | 4 | 0 | 0 | 6 | 0.036 | 0.015 |
-| 101 | NFL | league_tie_and_long_kick_counts | 18 | 0 | 2 | 1 | 0 | 14 | 1 | 0 | 0 | 7 | 0.031 | 0.069 |
-| 102 | CFB | game_total | 27 | 0 | 2 | 1 | 0 | 19 | 3 | 2 | 0 | 7 | 0.031 | 0.046 |
-| 103 | CFB | team_event_counting_specials | 21 | 0 | 1 | 1 | 0 | 15 | 1 | 2 | 1 | 7 | 0.031 | 0.036 |
-| 104 | SOCCER | player_season_leader_and_awards | 22 | 1 | 0 | 2 | 0 | 5 | 3 | 11 | 0 | 8 | 0.028 | 0.068 |
-| 105 | CFB | game_stat_props | 39 | 0 | 0 | 2 | 0 | 27 | 8 | 1 | 1 | 13 | 0.018 | 0.013 |
-| 106 | TENNIS | season_ranking_and_majors | 19 | 3 | 5 | 1 | 1 | 6 | 3 | 0 | 0 | 6 | 0.000 | 0.303 |
-| 107 | NFL | score_path_functionals | 24 | 2 | 8 | 0 | 0 | 13 | 1 | 0 | 0 | 5 | 0.000 | 0.250 |
-| 108 | TENNIS | combo_tournament_winners | 15 | 1 | 5 | 1 | 1 | 3 | 4 | 0 | 0 | 4 | 0.000 | 0.250 |
-| 109 | SOCCER | team_win_streak | 16 | 2 | 2 | 0 | 0 | 6 | 3 | 3 | 0 | 6 | 0.000 | 0.188 |
-| 110 | NFL | team_window_event_hazards | 20 | 1 | 4 | 0 | 0 | 14 | 1 | 0 | 0 | 5 | 0.000 | 0.150 |
-| 111 | TENNIS | nationality_and_team_futures | 17 | 0 | 4 | 1 | 0 | 4 | 8 | 0 | 0 | 6 | 0.000 | 0.132 |
-| 112 | MLB | game_moneyline | 29 | 1 | 5 | 0 | 0 | 15 | 8 | 0 | 0 | 9 | 0.000 | 0.121 |
-| 113 | SOCCER | knockout_method_of_victory | 24 | 1 | 3 | 0 | 0 | 9 | 2 | 9 | 0 | 7 | 0.000 | 0.104 |
-| 114 | NFL | super_bowl_mvp | 29 | 0 | 5 | 2 | 0 | 17 | 5 | 0 | 0 | 9 | 0.000 | 0.103 |
-| 115 | SOCCER | btts_and_clean_sheet | 27 | 2 | 1 | 1 | 0 | 7 | 2 | 14 | 0 | 7 | 0.000 | 0.102 |
-| 116 | SOCCER | competition_head_to_head | 27 | 2 | 1 | 1 | 0 | 12 | 4 | 7 | 0 | 9 | 0.000 | 0.102 |
-| 117 | CBB | kenpom_rating_snapshot | 25 | 1 | 3 | 0 | 0 | 12 | 2 | 7 | 0 | 8 | 0.000 | 0.100 |
-| 118 | NBA | summer_league_games | 15 | 0 | 3 | 0 | 0 | 7 | 5 | 0 | 0 | 6 | 0.000 | 0.100 |
-| 119 | SOCCER | first_to_score_event | 15 | 1 | 1 | 0 | 0 | 5 | 1 | 7 | 0 | 4 | 0.000 | 0.100 |
-| 120 | NFL | receiving_yards_and_receptions | 31 | 0 | 5 | 1 | 0 | 21 | 4 | 0 | 0 | 8 | 0.000 | 0.089 |
-| 121 | MLB | pitcher_outs | 24 | 0 | 4 | 0 | 0 | 13 | 7 | 0 | 0 | 8 | 0.000 | 0.083 |
-| 122 | SOCCER | player_award | 16 | 1 | 0 | 1 | 0 | 5 | 2 | 7 | 0 | 7 | 0.000 | 0.078 |
-| 123 | SOCCER | player_squad_selection_and_lineup | 20 | 1 | 1 | 0 | 0 | 4 | 9 | 5 | 0 | 7 | 0.000 | 0.075 |
-| 124 | MLB | first5_markets | 22 | 0 | 3 | 0 | 0 | 14 | 5 | 0 | 0 | 8 | 0.000 | 0.068 |
-| 125 | CBB | futures_conference | 23 | 1 | 1 | 0 | 0 | 20 | 1 | 0 | 0 | 9 | 0.000 | 0.065 |
-| 126 | CFB | game_moneyline_spread | 35 | 0 | 3 | 2 | 0 | 16 | 11 | 3 | 0 | 5 | 0.000 | 0.057 |
-| 127 | SOCCER | relegation_qualification_advancement | 27 | 1 | 1 | 0 | 0 | 14 | 6 | 5 | 0 | 8 | 0.000 | 0.056 |
-| 128 | CFB | season_futures | 24 | 1 | 0 | 1 | 0 | 17 | 5 | 0 | 0 | 10 | 0.000 | 0.052 |
-| 129 | MLB | first_inning_and_inning_markets | 20 | 0 | 2 | 0 | 0 | 15 | 3 | 0 | 0 | 7 | 0.000 | 0.050 |
-| 130 | CFB | touchdown_scorer | 26 | 0 | 2 | 1 | 0 | 15 | 7 | 1 | 0 | 5 | 0.000 | 0.048 |
-| 131 | SOCCER | player_appearance_selection | 23 | 1 | 0 | 0 | 0 | 6 | 7 | 9 | 0 | 11 | 0.000 | 0.043 |
-| 132 | SOCCER | player_goal_assist_props | 18 | 0 | 1 | 1 | 0 | 0 | 2 | 14 | 0 | 8 | 0.000 | 0.042 |
-| 133 | MLB | pitcher_earned_runs_hits_walks | 25 | 0 | 2 | 0 | 0 | 19 | 4 | 0 | 0 | 9 | 0.000 | 0.040 |
-| 134 | CBB | overtime_periods | 13 | 0 | 1 | 0 | 0 | 11 | 1 | 0 | 0 | 3 | 0.000 | 0.038 |
-| 135 | CBB | polls_and_awards | 21 | 0 | 1 | 1 | 0 | 15 | 3 | 1 | 0 | 10 | 0.000 | 0.036 |
-| 136 | NFL | slate_extremes | 35 | 0 | 2 | 1 | 0 | 30 | 2 | 0 | 0 | 10 | 0.000 | 0.036 |
-| 137 | NBA | awards_draft | 33 | 1 | 0 | 0 | 1 | 16 | 14 | 1 | 0 | 18 | 0.000 | 0.030 |
-| 138 | CBB | futures_seed_other | 25 | 0 | 1 | 1 | 0 | 21 | 2 | 0 | 0 | 10 | 0.000 | 0.030 |
-| 139 | MLB | extras_and_delay | 17 | 0 | 1 | 0 | 0 | 13 | 3 | 0 | 0 | 8 | 0.000 | 0.029 |
-| 140 | MLB | player_and_team_counting_specials | 18 | 0 | 1 | 0 | 0 | 16 | 1 | 0 | 0 | 5 | 0.000 | 0.028 |
-| 141 | CFB | season_stat_leader | 28 | 0 | 1 | 1 | 0 | 17 | 8 | 0 | 1 | 6 | 0.000 | 0.027 |
-| 142 | MLB | season_stat_feats | 21 | 0 | 1 | 0 | 0 | 15 | 5 | 0 | 0 | 6 | 0.000 | 0.024 |
-| 143 | NFL | off_field_events | 23 | 0 | 1 | 0 | 0 | 7 | 15 | 0 | 0 | 13 | 0.000 | 0.022 |
-| 144 | CBB | futures_champion | 26 | 0 | 1 | 0 | 0 | 21 | 3 | 1 | 0 | 11 | 0.000 | 0.019 |
-| 145 | MLB | season_leaders_and_awards | 33 | 0 | 1 | 0 | 0 | 15 | 17 | 0 | 0 | 16 | 0.000 | 0.015 |
-| 146 | NFL | season_awards | 23 | 0 | 0 | 1 | 0 | 16 | 6 | 0 | 0 | 11 | 0.000 | 0.011 |
-| 147 | NFL | season_player_stats_and_leaders | 25 | 0 | 0 | 1 | 0 | 21 | 3 | 0 | 0 | 8 | 0.000 | 0.010 |
-| 148 | CBB | coaching_and_governance_events | 17 | 0 | 0 | 0 | 0 | 7 | 10 | 0 | 0 | 6 | 0.000 | 0.000 |
-| 149 | CBB | player_points | 19 | 0 | 0 | 0 | 0 | 14 | 2 | 2 | 1 | 9 | 0.000 | 0.000 |
-| 150 | CBB | player_props | 24 | 0 | 0 | 0 | 0 | 18 | 5 | 0 | 1 | 10 | 0.000 | 0.000 |
-| 151 | CBB | player_rebounds_assists | 21 | 0 | 0 | 0 | 0 | 11 | 2 | 6 | 2 | 9 | 0.000 | 0.000 |
-| 152 | CBB | player_threes | 17 | 0 | 0 | 0 | 0 | 9 | 2 | 4 | 2 | 8 | 0.000 | 0.000 |
-| 153 | CBB | season_stat_leader | 25 | 0 | 0 | 0 | 0 | 18 | 4 | 2 | 1 | 7 | 0.000 | 0.000 |
-| 154 | CBB | tournament_player_milestone | 19 | 0 | 0 | 0 | 0 | 16 | 2 | 0 | 1 | 6 | 0.000 | 0.000 |
+| 18 | TENNIS | match_winner | 27 | 3 | 13 | 0 | 2 | 5 | 3 | 0 | 1 | 2 | 0.333 | 0.352 |
+| 19 | CBB | overtime_periods | 13 | 0 | 5 | 0 | 0 | 7 | 1 | 0 | 0 | 1 | 0.333 | 0.192 |
+| 20 | NFL | game_total | 37 | 8 | 11 | 2 | 0 | 14 | 2 | 0 | 0 | 7 | 0.318 | 0.378 |
+| 21 | NHL | team_and_player_season_counting | 18 | 3 | 4 | 0 | 1 | 7 | 3 | 0 | 0 | 4 | 0.312 | 0.278 |
+| 22 | NBA | team_and_player_counting_specials | 25 | 1 | 10 | 2 | 0 | 9 | 3 | 0 | 0 | 4 | 0.312 | 0.260 |
+| 23 | NBA | game_total | 25 | 2 | 7 | 1 | 1 | 10 | 2 | 1 | 1 | 4 | 0.312 | 0.230 |
+| 24 | NBA | game_moneyline_spread | 26 | 1 | 7 | 1 | 1 | 12 | 2 | 2 | 0 | 4 | 0.312 | 0.183 |
+| 25 | NBA | player_h2h_series_stats | 19 | 1 | 4 | 2 | 2 | 7 | 3 | 0 | 0 | 4 | 0.306 | 0.184 |
+| 26 | NFL | first_score_team_time_race | 19 | 4 | 6 | 2 | 0 | 6 | 1 | 0 | 0 | 2 | 0.300 | 0.395 |
+| 27 | NBA | team_total | 18 | 2 | 7 | 1 | 0 | 7 | 0 | 0 | 1 | 5 | 0.300 | 0.319 |
+| 28 | NFL | rare_play_call_events | 19 | 1 | 7 | 1 | 0 | 8 | 2 | 0 | 0 | 2 | 0.300 | 0.250 |
+| 29 | NBA | player_milestones | 24 | 1 | 7 | 1 | 0 | 8 | 5 | 2 | 0 | 5 | 0.300 | 0.198 |
+| 30 | NBA | player_assists | 26 | 1 | 8 | 1 | 0 | 8 | 2 | 4 | 2 | 6 | 0.292 | 0.202 |
+| 31 | SOCCER | match_result_3way | 26 | 2 | 5 | 1 | 0 | 8 | 3 | 7 | 0 | 4 | 0.286 | 0.183 |
+| 32 | NFL | rushing_yards | 23 | 2 | 4 | 0 | 0 | 16 | 1 | 0 | 0 | 4 | 0.286 | 0.174 |
+| 33 | CBB | game_total | 25 | 0 | 6 | 0 | 0 | 11 | 1 | 6 | 1 | 3 | 0.286 | 0.120 |
+| 34 | CFB | game_total | 27 | 0 | 8 | 1 | 0 | 14 | 2 | 2 | 0 | 3 | 0.281 | 0.157 |
+| 35 | NBA | race_to_and_points_leader | 18 | 2 | 7 | 0 | 1 | 7 | 1 | 0 | 0 | 5 | 0.278 | 0.306 |
+| 36 | NBA | game_overtime_and_team_events | 24 | 2 | 8 | 1 | 1 | 10 | 2 | 0 | 0 | 5 | 0.278 | 0.260 |
+| 37 | NHL | playoff_series_aggregate | 26 | 3 | 11 | 1 | 0 | 7 | 4 | 0 | 0 | 4 | 0.250 | 0.337 |
+| 38 | NBA | first_basket | 16 | 1 | 8 | 0 | 1 | 4 | 1 | 1 | 0 | 4 | 0.250 | 0.312 |
+| 39 | NHL | game_moneyline_puckline | 26 | 4 | 6 | 1 | 1 | 7 | 7 | 0 | 0 | 6 | 0.250 | 0.279 |
+| 40 | NHL | period_markets | 23 | 4 | 4 | 0 | 1 | 11 | 2 | 0 | 1 | 6 | 0.250 | 0.261 |
+| 41 | NBA | player_rebounds | 25 | 3 | 4 | 2 | 0 | 10 | 2 | 3 | 1 | 6 | 0.250 | 0.220 |
+| 42 | NHL | goalie_saves | 22 | 1 | 6 | 1 | 1 | 7 | 5 | 1 | 0 | 5 | 0.250 | 0.193 |
+| 43 | CFB | quarter_and_half_totals | 23 | 0 | 6 | 1 | 0 | 15 | 1 | 0 | 0 | 5 | 0.250 | 0.141 |
+| 44 | CFB | team_total | 21 | 0 | 5 | 1 | 0 | 9 | 4 | 2 | 0 | 3 | 0.250 | 0.131 |
+| 45 | CBB | team_total | 23 | 1 | 7 | 0 | 0 | 10 | 1 | 4 | 0 | 5 | 0.222 | 0.196 |
+| 46 | CFB | team_event_counting_specials | 21 | 0 | 4 | 1 | 0 | 12 | 1 | 2 | 1 | 4 | 0.219 | 0.107 |
+| 47 | TENNIS | set_winner_and_any_set | 20 | 4 | 9 | 0 | 2 | 3 | 1 | 0 | 1 | 4 | 0.214 | 0.425 |
+| 48 | NBA | season_stat_markets | 26 | 2 | 6 | 0 | 1 | 14 | 3 | 0 | 0 | 10 | 0.214 | 0.192 |
+| 49 | CBB | game_moneyline_spread | 37 | 1 | 9 | 0 | 0 | 20 | 4 | 3 | 0 | 7 | 0.208 | 0.149 |
+| 50 | TENNIS | exact_set_score | 16 | 2 | 9 | 0 | 2 | 1 | 2 | 0 | 0 | 3 | 0.200 | 0.406 |
+| 51 | SOCCER | handicap_and_exact_score | 20 | 2 | 4 | 1 | 0 | 5 | 2 | 6 | 0 | 3 | 0.200 | 0.212 |
+| 52 | SOCCER | first_half_and_period | 19 | 2 | 2 | 2 | 0 | 4 | 1 | 8 | 0 | 3 | 0.200 | 0.184 |
+| 53 | CFB | touchdown_scorer | 26 | 0 | 7 | 1 | 0 | 11 | 6 | 1 | 0 | 3 | 0.200 | 0.144 |
+| 54 | CFB | game_moneyline_spread | 35 | 0 | 6 | 2 | 0 | 14 | 10 | 3 | 0 | 3 | 0.200 | 0.100 |
+| 55 | NFL | qb_passing_yards | 36 | 5 | 10 | 1 | 0 | 16 | 4 | 0 | 0 | 9 | 0.196 | 0.285 |
+| 56 | NFL | game_events | 30 | 3 | 12 | 2 | 0 | 12 | 1 | 0 | 0 | 5 | 0.194 | 0.317 |
+| 57 | NHL | player_points_goals_assists | 30 | 2 | 6 | 0 | 1 | 11 | 9 | 1 | 0 | 10 | 0.192 | 0.167 |
+| 58 | CFB | quarter_and_half_sides | 20 | 0 | 5 | 1 | 0 | 13 | 1 | 0 | 0 | 5 | 0.188 | 0.138 |
+| 59 | NHL | game_events | 26 | 3 | 5 | 1 | 1 | 10 | 6 | 0 | 0 | 7 | 0.175 | 0.221 |
+| 60 | TENNIS | retirement_walkover_participation | 21 | 2 | 3 | 1 | 0 | 6 | 9 | 0 | 0 | 9 | 0.167 | 0.179 |
+| 61 | CBB | race_to_n_points | 20 | 0 | 5 | 0 | 0 | 11 | 2 | 2 | 0 | 4 | 0.167 | 0.125 |
+| 62 | CFB | overtime | 16 | 0 | 3 | 2 | 0 | 10 | 1 | 0 | 0 | 2 | 0.167 | 0.125 |
+| 63 | NBA | player_availability | 18 | 0 | 4 | 0 | 1 | 5 | 8 | 0 | 0 | 6 | 0.167 | 0.111 |
+| 64 | SOCCER | player_shots_saves_props | 15 | 1 | 0 | 0 | 0 | 0 | 2 | 12 | 0 | 5 | 0.167 | 0.067 |
+| 65 | CFB | game_stat_props | 39 | 0 | 8 | 2 | 0 | 20 | 7 | 1 | 1 | 9 | 0.161 | 0.115 |
+| 66 | NBA | quarter_and_half_markets | 22 | 1 | 6 | 1 | 0 | 12 | 2 | 0 | 0 | 7 | 0.150 | 0.193 |
+| 67 | MLB | pitcher_strikeouts | 30 | 0 | 8 | 0 | 0 | 17 | 5 | 0 | 0 | 7 | 0.150 | 0.133 |
+| 68 | CBB | first_half | 22 | 0 | 5 | 0 | 0 | 11 | 3 | 3 | 0 | 5 | 0.143 | 0.114 |
+| 69 | CFB | half_full_double_result | 35 | 0 | 8 | 2 | 0 | 18 | 5 | 2 | 0 | 6 | 0.139 | 0.129 |
+| 70 | MLB | player_participation | 20 | 1 | 2 | 0 | 0 | 8 | 9 | 0 | 0 | 9 | 0.136 | 0.100 |
+| 71 | NFL | game_moneyline_spread | 29 | 4 | 9 | 2 | 0 | 10 | 4 | 0 | 0 | 7 | 0.125 | 0.310 |
+| 72 | NFL | anytime_first_td_scorer | 35 | 3 | 7 | 0 | 0 | 22 | 3 | 0 | 0 | 6 | 0.125 | 0.186 |
+| 73 | SOCCER | first_to_score_event | 15 | 1 | 2 | 0 | 0 | 4 | 1 | 7 | 0 | 3 | 0.125 | 0.133 |
+| 74 | MLB | pitch_velocity_extremes | 14 | 0 | 2 | 0 | 0 | 7 | 5 | 0 | 0 | 3 | 0.125 | 0.071 |
+| 75 | MLB | hitter_hits_and_total_bases | 27 | 0 | 6 | 1 | 0 | 13 | 7 | 0 | 0 | 7 | 0.111 | 0.120 |
+| 76 | MLB | hitter_rbis_runs_sb | 19 | 0 | 3 | 0 | 0 | 11 | 5 | 0 | 0 | 7 | 0.111 | 0.079 |
+| 77 | TENNIS | game_winner_inplay | 18 | 4 | 2 | 1 | 1 | 1 | 2 | 4 | 3 | 4 | 0.100 | 0.292 |
+| 78 | SOCCER | team_points_and_margin | 23 | 2 | 2 | 1 | 0 | 10 | 5 | 3 | 0 | 4 | 0.100 | 0.141 |
+| 79 | SOCCER | competition_winner_and_top_n | 24 | 1 | 3 | 0 | 0 | 10 | 5 | 5 | 0 | 8 | 0.100 | 0.104 |
+| 80 | MLB | player_home_run_exposure | 19 | 0 | 3 | 0 | 0 | 9 | 7 | 0 | 0 | 4 | 0.100 | 0.079 |
+| 81 | MLB | hitter_home_runs | 23 | 0 | 2 | 0 | 0 | 16 | 5 | 0 | 0 | 8 | 0.100 | 0.043 |
+| 82 | SOCCER | total_goals | 24 | 4 | 3 | 2 | 0 | 4 | 1 | 10 | 0 | 6 | 0.094 | 0.250 |
+| 83 | NBA | parlay_combo | 18 | 1 | 5 | 0 | 1 | 11 | 0 | 0 | 0 | 9 | 0.091 | 0.194 |
+| 84 | TENNIS | tournament_winner_futures | 30 | 0 | 13 | 1 | 1 | 9 | 6 | 0 | 0 | 5 | 0.083 | 0.225 |
+| 85 | NFL | fantasy_points_markets | 48 | 4 | 10 | 2 | 0 | 25 | 7 | 0 | 0 | 10 | 0.083 | 0.198 |
+| 86 | NHL | season_futures | 31 | 4 | 3 | 0 | 1 | 15 | 8 | 0 | 0 | 10 | 0.083 | 0.177 |
+| 87 | NBA | series_and_cup | 21 | 0 | 4 | 0 | 1 | 16 | 0 | 0 | 0 | 11 | 0.077 | 0.095 |
+| 88 | NHL | parlay_combo | 17 | 3 | 2 | 0 | 3 | 3 | 6 | 0 | 0 | 6 | 0.071 | 0.235 |
+| 89 | NBA | game_win_margin | 18 | 1 | 4 | 1 | 0 | 11 | 0 | 1 | 0 | 6 | 0.071 | 0.181 |
+| 90 | NFL | qb_passing_tds_and_ints | 29 | 1 | 7 | 0 | 0 | 18 | 3 | 0 | 0 | 6 | 0.071 | 0.155 |
+| 91 | SOCCER | knockout_method_of_victory | 24 | 1 | 4 | 0 | 0 | 8 | 2 | 9 | 0 | 6 | 0.071 | 0.125 |
+| 92 | SOCCER | btts_and_clean_sheet | 27 | 2 | 2 | 1 | 0 | 6 | 2 | 14 | 0 | 6 | 0.071 | 0.120 |
+| 93 | NBA | all_star_game_mvp | 18 | 0 | 2 | 0 | 0 | 6 | 10 | 0 | 0 | 6 | 0.071 | 0.056 |
+| 94 | CBB | kenpom_rating_snapshot | 25 | 1 | 6 | 0 | 0 | 9 | 2 | 7 | 0 | 7 | 0.062 | 0.160 |
+| 95 | NBA | series_cumulative_points | 40 | 1 | 8 | 1 | 1 | 25 | 2 | 1 | 1 | 7 | 0.062 | 0.131 |
+| 96 | NFL | combos_and_parlays | 22 | 0 | 2 | 1 | 0 | 17 | 2 | 0 | 0 | 7 | 0.062 | 0.057 |
+| 97 | SOCCER | tournament_aggregate_event_props | 34 | 1 | 2 | 0 | 0 | 14 | 1 | 15 | 1 | 15 | 0.059 | 0.059 |
+| 98 | CBB | futures_conference | 23 | 1 | 2 | 0 | 0 | 19 | 1 | 0 | 0 | 8 | 0.056 | 0.087 |
+| 99 | NBA | all_star_exhibition_games | 18 | 0 | 2 | 0 | 0 | 8 | 8 | 0 | 0 | 8 | 0.056 | 0.056 |
+| 100 | CBB | player_points | 19 | 0 | 2 | 0 | 0 | 12 | 2 | 2 | 1 | 8 | 0.056 | 0.053 |
+| 101 | NBA | all_star_weekend_events | 20 | 0 | 2 | 0 | 0 | 9 | 8 | 0 | 1 | 8 | 0.056 | 0.050 |
+| 102 | MLB | game_total_and_team_total | 24 | 0 | 2 | 0 | 0 | 15 | 7 | 0 | 0 | 8 | 0.056 | 0.042 |
+| 103 | NFL | season_win_totals_and_futures | 22 | 2 | 3 | 0 | 0 | 14 | 3 | 0 | 0 | 9 | 0.050 | 0.159 |
+| 104 | CBB | polls_and_awards | 21 | 0 | 3 | 1 | 0 | 13 | 3 | 1 | 0 | 9 | 0.050 | 0.083 |
+| 105 | MLB | all_star_week_events | 27 | 0 | 3 | 0 | 0 | 15 | 9 | 0 | 0 | 9 | 0.050 | 0.056 |
+| 106 | NBA | season_futures_team | 28 | 0 | 3 | 0 | 1 | 19 | 5 | 0 | 0 | 9 | 0.050 | 0.054 |
+| 107 | CBB | player_props | 24 | 0 | 2 | 0 | 0 | 16 | 5 | 0 | 1 | 9 | 0.050 | 0.042 |
+| 108 | CBB | futures_champion | 26 | 0 | 2 | 0 | 0 | 20 | 3 | 1 | 0 | 10 | 0.045 | 0.038 |
+| 109 | SOCCER | tournament_bracket_composition | 16 | 0 | 1 | 0 | 0 | 12 | 3 | 0 | 0 | 10 | 0.045 | 0.031 |
+| 110 | CFB | multi_leg_parlay_packs | 26 | 0 | 7 | 1 | 0 | 12 | 5 | 1 | 0 | 5 | 0.042 | 0.144 |
+| 111 | NHL | season_awards_and_stats | 30 | 2 | 4 | 0 | 0 | 13 | 11 | 0 | 0 | 11 | 0.042 | 0.133 |
+| 112 | NFL | player_availability | 25 | 0 | 4 | 0 | 0 | 12 | 9 | 0 | 0 | 11 | 0.042 | 0.080 |
+| 113 | MLB | season_futures | 28 | 0 | 1 | 0 | 0 | 13 | 14 | 0 | 0 | 11 | 0.042 | 0.018 |
+| 114 | NFL | extreme_play_length | 37 | 2 | 6 | 0 | 0 | 25 | 4 | 0 | 0 | 13 | 0.036 | 0.135 |
+| 115 | CFB | polls_and_cfp_rankings | 17 | 0 | 2 | 1 | 0 | 11 | 3 | 0 | 0 | 6 | 0.036 | 0.074 |
+| 116 | NFL | league_tie_and_long_kick_counts | 18 | 0 | 2 | 1 | 0 | 14 | 1 | 0 | 0 | 7 | 0.031 | 0.069 |
+| 117 | SOCCER | player_season_leader_and_awards | 22 | 1 | 0 | 2 | 0 | 5 | 3 | 11 | 0 | 8 | 0.028 | 0.068 |
+| 118 | TENNIS | season_ranking_and_majors | 19 | 4 | 4 | 1 | 1 | 6 | 3 | 0 | 0 | 6 | 0.000 | 0.329 |
+| 119 | NFL | score_path_functionals | 24 | 2 | 8 | 0 | 0 | 13 | 1 | 0 | 0 | 5 | 0.000 | 0.250 |
+| 120 | TENNIS | combo_tournament_winners | 15 | 1 | 5 | 1 | 1 | 3 | 4 | 0 | 0 | 4 | 0.000 | 0.250 |
+| 121 | SOCCER | team_win_streak | 16 | 2 | 2 | 0 | 0 | 6 | 3 | 3 | 0 | 6 | 0.000 | 0.188 |
+| 122 | NFL | team_window_event_hazards | 20 | 1 | 4 | 0 | 0 | 14 | 1 | 0 | 0 | 5 | 0.000 | 0.150 |
+| 123 | TENNIS | nationality_and_team_futures | 17 | 0 | 4 | 1 | 0 | 4 | 8 | 0 | 0 | 6 | 0.000 | 0.132 |
+| 124 | MLB | game_moneyline | 29 | 1 | 5 | 0 | 0 | 15 | 8 | 0 | 0 | 9 | 0.000 | 0.121 |
+| 125 | SOCCER | competition_head_to_head | 27 | 2 | 2 | 1 | 0 | 11 | 4 | 7 | 0 | 9 | 0.000 | 0.120 |
+| 126 | NFL | super_bowl_mvp | 29 | 0 | 5 | 2 | 0 | 17 | 5 | 0 | 0 | 9 | 0.000 | 0.103 |
+| 127 | NBA | summer_league_games | 15 | 0 | 3 | 0 | 0 | 7 | 5 | 0 | 0 | 6 | 0.000 | 0.100 |
+| 128 | NFL | receiving_yards_and_receptions | 31 | 0 | 5 | 1 | 0 | 21 | 4 | 0 | 0 | 8 | 0.000 | 0.089 |
+| 129 | MLB | pitcher_outs | 24 | 0 | 4 | 0 | 0 | 13 | 7 | 0 | 0 | 8 | 0.000 | 0.083 |
+| 130 | SOCCER | player_award | 16 | 1 | 0 | 1 | 0 | 5 | 2 | 7 | 0 | 7 | 0.000 | 0.078 |
+| 131 | SOCCER | player_squad_selection_and_lineup | 20 | 1 | 1 | 0 | 0 | 4 | 9 | 5 | 0 | 7 | 0.000 | 0.075 |
+| 132 | MLB | first5_markets | 22 | 0 | 3 | 0 | 0 | 14 | 5 | 0 | 0 | 8 | 0.000 | 0.068 |
+| 133 | CFB | season_stat_leader | 28 | 0 | 3 | 1 | 0 | 15 | 8 | 0 | 1 | 6 | 0.000 | 0.062 |
+| 134 | CBB | player_threes | 17 | 0 | 2 | 0 | 0 | 7 | 2 | 4 | 2 | 8 | 0.000 | 0.059 |
+| 135 | SOCCER | relegation_qualification_advancement | 27 | 1 | 1 | 0 | 0 | 14 | 6 | 5 | 0 | 8 | 0.000 | 0.056 |
+| 136 | CBB | tournament_player_milestone | 19 | 0 | 2 | 0 | 0 | 14 | 2 | 0 | 1 | 6 | 0.000 | 0.053 |
+| 137 | CFB | season_futures | 24 | 1 | 0 | 1 | 0 | 17 | 5 | 0 | 0 | 10 | 0.000 | 0.052 |
+| 138 | CBB | futures_seed_other | 25 | 0 | 2 | 1 | 0 | 20 | 2 | 0 | 0 | 10 | 0.000 | 0.050 |
+| 139 | MLB | first_inning_and_inning_markets | 20 | 0 | 2 | 0 | 0 | 15 | 3 | 0 | 0 | 7 | 0.000 | 0.050 |
+| 140 | CBB | player_rebounds_assists | 21 | 0 | 2 | 0 | 0 | 9 | 2 | 6 | 2 | 9 | 0.000 | 0.048 |
+| 141 | SOCCER | player_appearance_selection | 23 | 1 | 0 | 0 | 0 | 6 | 7 | 9 | 0 | 11 | 0.000 | 0.043 |
+| 142 | SOCCER | player_goal_assist_props | 18 | 0 | 1 | 1 | 0 | 0 | 2 | 14 | 0 | 8 | 0.000 | 0.042 |
+| 143 | MLB | pitcher_earned_runs_hits_walks | 25 | 0 | 2 | 0 | 0 | 19 | 4 | 0 | 0 | 9 | 0.000 | 0.040 |
+| 144 | NFL | slate_extremes | 35 | 0 | 2 | 1 | 0 | 30 | 2 | 0 | 0 | 10 | 0.000 | 0.036 |
+| 145 | NBA | awards_draft | 33 | 1 | 0 | 0 | 1 | 16 | 14 | 1 | 0 | 18 | 0.000 | 0.030 |
+| 146 | CBB | coaching_and_governance_events | 17 | 0 | 1 | 0 | 0 | 6 | 10 | 0 | 0 | 6 | 0.000 | 0.029 |
+| 147 | MLB | extras_and_delay | 17 | 0 | 1 | 0 | 0 | 13 | 3 | 0 | 0 | 8 | 0.000 | 0.029 |
+| 148 | MLB | player_and_team_counting_specials | 18 | 0 | 1 | 0 | 0 | 16 | 1 | 0 | 0 | 5 | 0.000 | 0.028 |
+| 149 | MLB | season_stat_feats | 21 | 0 | 1 | 0 | 0 | 15 | 5 | 0 | 0 | 6 | 0.000 | 0.024 |
+| 150 | NFL | off_field_events | 23 | 0 | 1 | 0 | 0 | 7 | 15 | 0 | 0 | 13 | 0.000 | 0.022 |
+| 151 | CBB | season_stat_leader | 25 | 0 | 1 | 0 | 0 | 17 | 4 | 2 | 1 | 7 | 0.000 | 0.020 |
+| 152 | MLB | season_leaders_and_awards | 33 | 0 | 1 | 0 | 0 | 15 | 17 | 0 | 0 | 16 | 0.000 | 0.015 |
+| 153 | NFL | season_awards | 23 | 0 | 0 | 1 | 0 | 16 | 6 | 0 | 0 | 11 | 0.000 | 0.011 |
+| 154 | NFL | season_player_stats_and_leaders | 25 | 0 | 0 | 1 | 0 | 21 | 3 | 0 | 0 | 8 | 0.000 | 0.010 |
 | 155 | CFB | awards_and_honors | 15 | 0 | 0 | 0 | 0 | 9 | 5 | 0 | 1 | 7 | 0.000 | 0.000 |
 | 156 | CFB | coaching_and_governance_events | 17 | 0 | 0 | 0 | 0 | 7 | 10 | 0 | 0 | 7 | 0.000 | 0.000 |
 | 157 | MLB | amateur_draft_selection | 13 | 0 | 0 | 0 | 0 | 4 | 9 | 0 | 0 | 5 | 0.000 | 0.000 |
@@ -236,11 +238,9 @@ Per archetype, the PRIMARY-role inputs not yet built, split into: (a) accessible
 | MLB | season_leaders_and_awards | 10 | 6 | 0 |
 | NBA | off_court_events | 2 | 13 | 0 |
 | SOCCER | tournament_aggregate_event_props | 8 | 0 | 7 |
-| CFB | game_stat_props | 11 | 2 | 0 |
 | NFL | extreme_play_length | 13 | 0 | 0 |
 | NFL | off_field_events | 3 | 10 | 0 |
 | NFL | nfl_draft_selection | 4 | 8 | 0 |
-| CBB | futures_champion | 10 | 1 | 0 |
 | MLB | season_futures | 3 | 8 | 0 |
 | MLB | transactions | 5 | 6 | 0 |
 | NBA | series_and_cup | 11 | 0 | 0 |
@@ -248,14 +248,16 @@ Per archetype, the PRIMARY-role inputs not yet built, split into: (a) accessible
 | NFL | season_awards | 9 | 2 | 0 |
 | NHL | season_awards_and_stats | 7 | 4 | 0 |
 | SOCCER | player_appearance_selection | 3 | 3 | 5 |
+| CBB | futures_champion | 9 | 1 | 0 |
 | CBB | futures_seed_other | 10 | 0 | 0 |
-| CBB | player_props | 5 | 4 | 1 |
-| CBB | polls_and_awards | 7 | 2 | 1 |
 | CFB | season_futures | 8 | 2 | 0 |
 | MLB | playoff_series_markets | 3 | 7 | 0 |
 | NBA | season_stat_markets | 8 | 2 | 0 |
 | NFL | fantasy_points_markets | 7 | 3 | 0 |
 | NFL | slate_extremes | 10 | 0 | 0 |
 | NHL | offfield_markets | 2 | 8 | 0 |
+| NHL | player_points_goals_assists | 4 | 6 | 0 |
+| NHL | season_futures | 7 | 3 | 0 |
+| SOCCER | tournament_bracket_composition | 8 | 2 | 0 |
 
 (25 archetypes with the most missing critical slots shown; the other 145 are in the JSON/CSV.)

@@ -234,12 +234,67 @@ def load_blocked() -> dict:
     return out
 
 
-def cap_extension_full(vs: str, ev: dict) -> tuple[str, dict]:
-    """Extension-gate policy (tests/test_extension_gate.py): an input built AFTER the earlier milestone is never certified FULL by this pipeline, however complete its definition and however clean its blind comparison.
-    A FULL claim that passes every gate is kept as VERIFIED_PARTIAL with `full_candidate` evidence so the owner can decide to lift the cap; nothing is silently promoted."""
-    if vs == "VERIFIED_FULL":
-        return "VERIFIED_PARTIAL", {**ev, "full_candidate": True, "limits": list(ev.get("limits", [])) + ["FULL candidate: whole catalog definition implemented, all gates and the blind exact match passed; capped at PARTIAL by the extension-gate policy (an owner decision to lift it is required)"]}
-    return vs, ev
+def load_full_certifications() -> dict:
+    """Owner-reviewable certification records (verification/full_certification/*.json): for each input, the catalog `measurement` clauses mapped to builder columns, the required history, timing statement and
+    the SOURCE-USE RIGHTS note. Rights are tracked here and never decide the status; a missing record means no certification."""
+    d = VD / "full_certification"; out: dict = {}
+    for f in (sorted(d.glob("*.json")) if d.exists() else []):
+        out.update(rd(f)["inputs"])
+    return out
+
+
+def certification_failures(row: dict, cols: list[str], rp_input: dict | None, ev: dict, cert: dict | None) -> list[str]:
+    """Why an extension input may NOT be certified FULL (empty list = every requirement met). Fail closed: anything absent is a failure.
+    Requirements: (1) a certification record exists and maps EVERY catalog measurement clause to implemented columns and covers exactly the replayed columns; (2) the builder declares nothing missing;
+    (3) every replay/leakage/provenance/non-vacuity check passes (pit_check_failures); (4) every column has a blind MATCH; (5) coverage >= 0.5 for every column with no constant column and no recorded limits;
+    (6) replayed history spans the catalog's stated history; (7) point-in-time class is pregame and the timing rule is recorded."""
+    bad: list[str] = []
+    if not cert:
+        return ["no certification record"]
+    clauses = cert.get("catalog_clauses") or []
+    if not clauses or any(not c.get("columns") or not c.get("implemented") for c in clauses):
+        bad.append("catalog clause not mapped to implemented columns")
+    mapped = {c for cl in clauses for c in (cl.get("columns") or [])}
+    if set(cols) != mapped:
+        bad.append("certified columns differ from replayed columns")
+    if cert.get("builder_missing"):
+        bad.append("builder declares missing components")
+    if not cert.get("timing_rule"):
+        bad.append("timing rule not recorded")
+    if not rp_input:
+        return bad + ["no extension replay"]
+    t = rp_input.get("tests") or {}
+    bad += ["replay:" + x for x in pit_check_failures(row["id"], t)]
+    if len({x.get("seed") for x in t.get("perturbation", [])}) < 3 or len(t.get("truncation", [])) < 3:
+        bad.append("fewer than 3 truncation cuts / perturbation seeds")
+    ind = ev.get("independent") or {}
+    if not cols or any(ind.get(c) != "MATCH" for c in cols):
+        bad.append("blind exact match missing for a column")
+    cov = (t.get("coverage_replay") or {})
+    if cov.get("min_coverage_new") is None or cov["min_coverage_new"] < 0.5 or cov.get("constant_columns") or ev.get("limits"):
+        bad.append("coverage/limits not clean")
+    h = row.get("history") or {}
+    first = (cov.get("first_new") or "")[:4]; last = (cov.get("last_new") or "")[:4]
+    try:
+        if not (h.get("complete") and int(first) <= int(h["first"]) and int(last) >= int(h["last"]) - 1):
+            bad.append("replayed history shorter than the catalog's required history")
+    except (ValueError, TypeError, KeyError):
+        bad.append("history not determinable")
+    if row.get("pit_verdict") != "PIT_SAFE" or row.get("pregame_knowable") != "yes":
+        bad.append("not recorded as pregame-knowable PIT_SAFE")
+    return bad
+
+
+def certify_extension_full(row: dict, cols: list[str], rp_input: dict | None, vs: str, ev: dict, cert: dict | None) -> tuple[str, dict]:
+    """Evidence-based FULL certification for an extension-built input (replaces the former unconditional cap). A VERIFIED_FULL claim is kept only when `certification_failures` is empty;
+    otherwise it is held at VERIFIED_PARTIAL with the reasons. Source-use rights are attached as separate evidence and never change the status."""
+    if vs != "VERIFIED_FULL":
+        return vs, ev
+    ev = {**ev, "source_use_rights": (cert or {}).get("source_use_rights", "unrecorded")}
+    bad = certification_failures(row, cols, rp_input, ev, cert)
+    if bad:
+        return "VERIFIED_PARTIAL", {**ev, "full_candidate": True, "certification_failures": bad, "limits": list(ev.get("limits", [])) + ["FULL not certified: " + "; ".join(bad)]}
+    return "VERIFIED_FULL", {**ev, "full_certified": True, "certification": {k: cert[k] for k in ("catalog_clauses", "timing_rule", "required_history", "reviewed_by", "excluded_model_steps") if k in cert}}
 
 
 # statuses a measured extension builder (replay gates + blind exact match) may promote from: no builder existed yet. DOWNGRADED_BY_VERIFIER is deliberately NOT promotable.
@@ -248,7 +303,7 @@ PROMOTABLE = ("REQUIRES_COLLECTION", "DATA_IN_HAND_CONFIRMED", "DATA_IN_HAND_SCH
 
 def build(write: bool = True) -> dict:
     rows = rd(DF / "input_audit.json")["rows"]
-    replays = load_replays(); exts = load_ext_replays(); ind = load_independent(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
+    replays = load_replays(); exts = load_ext_replays(); ind = load_independent(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); certs = load_full_certifications(); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
     prov = {sp: provenance_check(sp, rp) for sp, rp in replays.items()}
     out = []
     for r in rows:
@@ -285,15 +340,18 @@ def build(write: bool = True) -> dict:
                 gate, gev = independent_gate(r, exts[sp]["inputs"][r["id"]]["columns"], ind)
                 ev.update(gev)
                 if gate: vs = gate
-                else: vs, ev = cap_extension_full(vs, ev)
+                else: vs, ev = certify_extension_full(r, exts[sp]['inputs'][r['id']]['columns'], exts[sp]['inputs'][r['id']], vs, ev, certs.get(r['id']))
             ev["promoted_from"] = was
         if vs == "VERIFIED_PARTIAL" and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
             # an extension builder that completes the definition of an input the earlier milestone left PARTIAL: it must pass the same replay gates AND the blind exact-match gate; even then the status stays PARTIAL (extension-gate cap), with `full_candidate` evidence
             vs2, ev2 = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})
             gate, gev = independent_gate(r, exts[sp]["inputs"][r["id"]]["columns"], ind) if vs2 == "VERIFIED_FULL" else (None, {})
             if vs2 == "VERIFIED_FULL" and not gate:
-                _, ev3 = cap_extension_full(vs2, {**ev2, **gev})
-                ev = {**ev, "full_candidate": True, "full_candidate_evidence": ev3, "earlier_partial_missing": ev.get("limits")}
+                vs3, ev3 = certify_extension_full(r, exts[sp]["inputs"][r["id"]]["columns"], exts[sp]["inputs"][r["id"]], vs2, {**ev2, **gev}, certs.get(r["id"]))
+                if vs3 == "VERIFIED_FULL":
+                    vs, ev = vs3, {**ev3, "promoted_from": "VERIFIED_PARTIAL", "earlier_partial_missing": ev.get("limits")}
+                else:
+                    ev = {**ev, "full_candidate": True, "full_candidate_evidence": ev3, "earlier_partial_missing": ev.get("limits")}
         if r["computed_prior"] and not r["status"].startswith("COMPUTED") and r["status"] != "EXCLUDED_BENCHMARK_ONLY":
             ps, pe = assess_computed(r, replays.get(sp), prov.get(sp))   # the earlier milestone computed it but a reviewer/dependency later demoted it: keep what the replay found
             ev = {**ev, "earlier_computation_replay_status": ps, "earlier_computation_replay": pe}

@@ -124,6 +124,9 @@ def render_doc(now: list[dict], ref: str | None) -> str:
     if ref:
         gained = [r for r in now if r.get("baseline") and (r["FULL"] + r["PARTIAL"] + r["PROXY"]) > (r["baseline"]["FULL"] + r["baseline"]["PARTIAL"] + r["baseline"]["PROXY"])]
         o.append(sec(f"Change versus baseline `{ref}`"))
+        P = lambda r, b=False: sum((r["baseline"] if b else r).get(k, 0) for k in ("primary_FULL", "primary_PARTIAL", "primary_PROXY"))
+        both = [r for r in now if r.get("baseline")]
+        o.append(f"Counts of improved archetypes depend on the measure (all four are reported; none is a profitability claim): built-and-verified input slots up **{len(gained)}**; PRIMARY built slots up **{sum(P(r) > P(r, True) for r in both)}**; critical (primary) score up **{sum(r['critical_score'] > r['baseline']['critical_score'] for r in both)}**; primary slots still missing down **{sum(r['primary_missing_critical'] < r['baseline']['primary_missing_critical'] for r in both)}**. Unique PRIMARY slots unlocked (sum over archetypes): **{sum(P(r) - P(r, True) for r in both)}**.\n")
         o.append(f"{len(gained)} of 170 archetypes gained built-and-verified input slots; the largest gains:\n")
         o += ["| Archetype | slots built before | now | critical score before | now |", "|---|---|---|---|---|"]
         for r in sorted(gained, key=lambda r: -((r['FULL'] + r['PARTIAL'] + r['PROXY']) - (r['baseline']['FULL'] + r['baseline']['PARTIAL'] + r['baseline']['PROXY'])))[:20]:
@@ -151,7 +154,7 @@ def main(argv=None) -> int:
     now = rank(measure(load_status(None), audit)); base = {(r["sport"], r["archetype"]): r for r in measure(load_status(ref), audit)} if ref else {}
     for r in now:
         b = base.get((r["sport"], r["archetype"]))
-        if b: r["baseline"] = {k: b[k] for k in ("FULL", "PARTIAL", "PROXY", "completeness_score", "critical_score", "primary_missing_critical")}
+        if b: r["baseline"] = {k: b[k] for k in ("FULL", "PARTIAL", "PROXY", "completeness_score", "critical_score", "primary_missing_critical", "primary_FULL", "primary_PARTIAL", "primary_PROXY")}
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "market_completeness.json").write_text(json.dumps({"schema": "market-completeness-1.0", "status": "RESEARCH_ONLY", "n_archetypes": len(now), "baseline_ref": ref, "weights": W,
                                                            "note": "data completeness only; no profitability, edge or model-quality claim; agent verification, not human", "rows": now}, indent=1, default=str) + "\n")

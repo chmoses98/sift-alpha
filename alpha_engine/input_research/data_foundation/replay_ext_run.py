@@ -1,4 +1,4 @@
-"""Families: tennis, mlb_pitch, nba_team, nba_player (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
+"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
 Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
 
     python -m alpha_engine.input_research.data_foundation.replay_ext_run tennis RAW_DIR OUT.json [--quick]
@@ -41,6 +41,18 @@ def main(a=None) -> int:
         from ...features import nhl_ext as X
         raw = X.load_raw(a[1]); out = a[2]
         r = G.run(X, raw, "NHL", {"games": ("game_id", X.G_CONTENT), "mp": ("game_id", X.MP_CONTENT)}, games_table="games", games_date_col="game_date", quick=quick)
+    elif fam == "cbb":
+        from ...features import cbb_ext as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "CBB", {"team_box": ("game_id", X.TB_CONTENT), "schedule": ("game_id", X.SC_CONTENT), "player_box": ("game_id", X.PB_CONTENT)}, games_table="schedule", games_date_col="game_date", quick=quick)
+    elif fam == "soccer_of":
+        from ...features import soccer_of_ext as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "SOCCER", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="game_date", quick=quick)
+    elif fam == "cfb":
+        from ...features import cfb_ext as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "CFB", {"plays": ("game_id", X.PL_CONTENT), "schedule": ("game_id", X.SC_CONTENT)}, games_table="schedule", games_date_col="game_date", quick=quick)
     else:
         raise SystemExit("unknown family " + fam)
     Path(out).write_text(json.dumps(r, default=str, indent=0)); print("replayed", len(r["inputs"]), r["seconds"], "s"); return 0

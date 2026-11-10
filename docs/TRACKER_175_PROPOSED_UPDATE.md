@@ -18,3 +18,14 @@ Phase 5 (RESEARCH_ONLY, $0). Free-source mappings converted into replay- and ind
 - Blind verification caught a real tennis Elo ordering leak and two brief ambiguities before promotion; final comparison exact on 143 columns.
 - Market readiness: `docs/MARKET_COMPLETENESS.md` ranks all 170 archetypes by data completeness (not profitability).
 - CFB/CBB/MLB/soccer: +0. Owner requests, smallest first: (1) allow add_repo(read) for chmoses98/cfb-edge-finder and chmoses98/cbb-edge-finder (public repos; the session permission rule blocked it); (2) only if their archives lack the data: CFBD host api.collegefootballdata.com (alone unlocks 56 open CFB inputs); (3) historical-forecast-api.open-meteo.com for forecast vintages (53 open inputs list it, 5 unlocked alone); (4) a written decision on ESPN/NHL API/MoneyPuck upstream terms (20 built inputs are internal-only until then).
+
+## Phase 8 consolidated update (2026-11-10, TEXT ONLY - not posted; supersedes the per-phase asks above)
+- FULL certification is now evidence-based (cap removed, every replay/leakage/provenance/coverage/blind guard kept, negative tests added). Promoted exactly three: nhl.loser_point_rate, ten.major_winner_concentration, ten.second_serve_vulnerability. FULL 54 -> 57. No other PARTIAL promoted.
+- Access: read-only anonymous clones of cfb-edge-finder and cbb-edge-finder (public; no attach/secret/modification). They hold derived CFB tables, one raw 2026 ESPN season and pins to sportsdataverse assets, not raw CFBD/CBBD history. No CFBD/CBBD call, no new key.
+- Built and verified (all PARTIAL, blind exact match, replay gates pass): CFB +9, CBB +5 (sportsdataverse mirrors, rights UNRESOLVED, internal research only) and SOCCER +1 (OpenFootball, CC0, rights-cleared). PARTIAL 164 -> 176; verified_computable 260 -> 275; built-and-verified 237 -> 252. 40 unique PRIMARY market slots unlocked (CFB 19, CBB 15, soccer 6); 39 archetypes gained built slots, 24 gained a primary slot.
+- Blind verification caught a brief defect (CFB def ratings emitted for the wrong team); fixed, fresh agent matched exactly.
+- Phase 7 "21 vs 33": 33 archetypes gained built slots, 19 gained a primary slot; 21 not reproducible.
+- MLB/tennis/NBA/NHL: audited, nothing further built (one season of mixed PIT capture; remaining items are model/simulation outputs; point-charting is a sample).
+- Owner decisions: (1) confirm or revoke use of sportsdataverse mirrors for the 14 CBB/CFB inputs (I used them because the owner's own repos ingest them and no new access was needed); (2) whether captured Kalshi rules text may be an input (m.rules_text = 134 primary slots across 8 sports, the largest single item); (3) upstream terms for ESPN/CFBD/NHL/MoneyPuck/Savant; (4) prospective capture for lineups/injuries/goalie/QB status.
+- Details: docs/PHASE8_COLLEGE_SOCCER.md. Tests 947 Python + 52 JS pass; regeneration is a byte-for-byte fixpoint. Agent verification only, not human.
+

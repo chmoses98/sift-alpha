@@ -47,13 +47,15 @@ def test_replay_gates_all_pass_and_are_non_vacuous():
             assert t["pit_check_perturbation_not_vacuous"]["ok"], iid
 
 
-def test_promoted_inputs_in_matrix_and_full_candidates_capped():
-    """Extension inputs are never certified FULL (tests/test_extension_gate.py): a complete, blind-verified definition is recorded as full_candidate evidence on a VERIFIED_PARTIAL row."""
+def test_promoted_inputs_in_matrix_certified_only_with_evidence():
+    """Phase 8: the former unconditional cap is replaced by evidence-based certification (tests/test_extension_gate.py). The three full candidates are FULL with certification evidence; every other Phase 7 input stays PARTIAL."""
     rows = {r["id"]: r for r in json.loads((V / "verified_coverage.json").read_text())["rows"]}
     for s in _specs():
         r = rows[s.catalog_id]
-        assert r["verified_status"] == "VERIFIED_PARTIAL", s.catalog_id
-        assert bool(r["evidence"].get("full_candidate")) == (s.catalog_id in CANDIDATES), s.catalog_id
+        if s.catalog_id in CANDIDATES:
+            assert r["verified_status"] == "VERIFIED_FULL" and r["evidence"].get("full_certified"), s.catalog_id
+        else:
+            assert r["verified_status"] == "VERIFIED_PARTIAL" and not r["evidence"].get("full_certified"), s.catalog_id
 
 
 def _matches(rng, n=400):

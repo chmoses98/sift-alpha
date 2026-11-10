@@ -54,21 +54,42 @@ def test_every_built_input_gets_exactly_one_rights_tier():
 def test_rules_text_is_semantics_not_predictive_and_catalog_untouched():
     st = M.load_status(None); audit = {r["key"]: r for r in json.loads((DF / "input_audit.json").read_text())["rows"]}
     assert M.SEMANTIC_IDS == ("m.rules_text",)
-    # only rules text was moved (owner decision 2). Other settlement-adjacent market inputs that are NOT benchmark-excluded stay in the predictive denominator; this pins that documented set so a change is deliberate.
+    # Phase 10 (owner decision 1): settlement/operational metadata and the calibration benchmark also left the predictive denominator. Any OTHER market-derived input that is not benchmark-excluded would stay predictive; this pins that none is left.
     kept = set()
     for a in M.archetypes():
         for iid, _ in a["inputs"]:
-            if iid.startswith("m.") and iid != "m.rules_text" and M.category(st[f"{a['sport']}:{iid}"], (audit.get(f"{a['sport']}:{iid}") or {}).get("full_definition_status")) != "EXCLUDED_MARKET": kept.add(iid)
-    assert kept == {"m.stat_correction_risk", "m.strike_hit_rates", "m.settlement_truth", "m.lifecycle", "m.stat_source_mismatch"}
+            if iid.startswith("m.") and iid not in M.NON_PREDICTIVE_IDS and M.category(st[f"{a['sport']}:{iid}"], (audit.get(f"{a['sport']}:{iid}") or {}).get("full_definition_status")) != "EXCLUDED_MARKET": kept.add(iid)
+    assert kept == set()
+    assert M.SETTLEMENT_OPS_IDS == ("m.settlement_truth", "m.lifecycle", "m.stat_correction_risk", "m.stat_source_mismatch") and M.CALIBRATION_IDS == ("m.strike_hit_rates",)
     rows = _rows()
     assert sum(r["semantics_required"] for r in rows) == 144 and sum(r["semantics_primary"] for r in rows) == 134     # 134 primary + 10 context
+    assert sum(r["settlement_ops_required"] for r in rows) == 64 and sum(r["settlement_ops_primary"] for r in rows) == 3
+    assert sum(r["calibration_required"] for r in rows) == 23 and sum(r["calibration_primary"] for r in rows) == 0
     for r in rows:
         assert "m.rules_text" in r["input_categories"] or r["semantics_required"] == 0             # still listed in the archetype (catalog unchanged)
-        assert r["n_inputs_listed"] == r["n_required"] + r["n_excluded_market_inputs"] + r["semantics_required"]
-        assert r["n_required"] == sum(r[k] for k in M.PRED_KEYS)                                   # predictive denominator excludes rules text
+        assert r["n_inputs_listed"] == r["n_required"] + r["n_excluded_market_inputs"] + r["semantics_required"] + r["settlement_ops_required"] + r["calibration_required"]
+        assert r["n_required"] == sum(r[k] for k in M.PRED_KEYS)                                   # predictive denominator excludes every market-metadata slot
         assert r["semantics_built"] == 0 and (r["semantics_completeness"] in (None, 0.0))            # captured-unverified is never counted as completeness
         assert r["independently_complete"] is False
-    assert sum(r["n_required"] for r in rows) == 3899 - 144                                           # the Phase 8 denominator minus the rules-text slots
+    assert sum(r["n_required"] for r in rows) == 3899 - 144 - 80                                      # rules text, then 64 settlement/ops + 23 calibration minus 7 slots already benchmark-excluded
+
+
+def test_research_and_commercial_clearance_are_separate_and_nflverse_stays_wrapper_only():
+    reg = RT.registry()
+    assert reg["tier_aliases"]["WRAPPER_ONLY"] == "WRAPPER_LICENCE_UPSTREAM_CAVEAT"
+    assert RT.tier_of_source("nflverse pbp") == "WRAPPER_LICENCE_UPSTREAM_CAVEAT" and not RT.is_research_cleared("WRAPPER_LICENCE_UPSTREAM_CAVEAT") and not RT.is_commercial_cleared("WRAPPER_LICENCE_UPSTREAM_CAVEAT")
+    assert RT.is_research_cleared("CLEARED_NONCOMMERCIAL_RESEARCH") and not RT.is_commercial_cleared("CLEARED_NONCOMMERCIAL_RESEARCH")      # CC BY-NC-SA is research only
+    assert RT.is_research_cleared("CLEARED_OPEN_LICENCE") and RT.is_commercial_cleared("CLEARED_OPEN_LICENCE")
+    for s in reg["sources"]:
+        assert s["commercial_cleared"] <= s["research_cleared"]
+    rows = _rows()
+    assert all(r["built_commercial_cleared"] <= r["built_rights_cleared"] for r in rows)
+    fd = next(s for s in reg["sources"] if s["id"] == "football_data_co_uk"); assert fd["tier"] == "UNRESOLVED_INTERNAL_ONLY" and "private individuals only" in fd["evidence"]
+
+
+def test_rights_questions_ranking_is_deterministic():
+    from alpha_engine.input_research.data_foundation import rights_questions as RQ
+    assert json.loads(RQ.OUT.read_text()) == RQ.build()
 
 
 def test_rights_and_prospective_accounting_reconciles():
@@ -86,7 +107,7 @@ def test_full_promotion_audit_matches_matrix_and_has_no_uncertified_full():
     rms = next(x for x in a["rows"] if x["key"] == "TENNIS:ten.retirement_margin_state")     # the one Phase 9 candidate: refused because the catalog says pregame_knowable = partial
     assert rms["status"] == "VERIFIED_PARTIAL" and rms["first_failed_stage"] == "S2" and "NOT_FULL" in rms["review"]
     assert vc["TENNIS:ten.retirement_margin_state"]["verified_status"] == "VERIFIED_PARTIAL"
-    assert sum(r["verified_status"] == "VERIFIED_FULL" for r in vc.values()) == 57              # Phase 9 promotes nothing
+    assert sum(r["verified_status"] == "VERIFIED_FULL" for r in vc.values()) == 58              # Phase 10 promotes exactly one: ten.tiebreak_base_rate_by_event (certification phase10_round1)
     certs = VC.load_full_certifications()
     for k, r in vc.items():
         if r["verified_status"] == "VERIFIED_FULL" and r["evidence"].get("promoted_from") == "VERIFIED_PARTIAL":

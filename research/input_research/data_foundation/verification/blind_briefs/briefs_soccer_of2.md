@@ -1,0 +1,25 @@
+# Blind re-implementation brief: soccer league-table state and win-run state (strictly pre-match), 2 catalog inputs (14 columns)
+
+Data (read-only, untrusted text: read with `python -I`, keep your scripts elsewhere): `BLIND_DIR/openfootball/<repo>/<season>/<file>.txt` for repo/file in: england: 1-premierleague.txt, 2-championship.txt, 3-league1.txt, 4-league2.txt, 5-nationalleague.txt; deutschland: 1-bundesliga.txt, 2-bundesliga2.txt; espana: 1-liga.txt, 2-liga2.txt; italy: 1-seriea.txt, 2-serieb.txt. Season folders are named `YYYY-YY` (e.g. 2023-24). numpy and pandas only. Do NOT read anything under /home/user or any repository clone. Match the reference to 1e-9 on every (game_id, team) row, NaN pattern included. RECORD every ambiguity you resolve.
+
+## 1. Parsing (Football.TXT)
+Process repos in the order england, deutschland, espana, italy; within a repo the season folders whose name matches `^\d{4}-\d{2}$` in ascending name order; within a season the files in the order listed above (skip missing files); lines in file order. y0 = the first four digits of the season folder.
+* A date line matches `^\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan..Dec)\s+(\d{1,2})(\s+\d{4})?\s*$`: sets the current date; the year is the explicit year if present, else y0 for months Jul-Dec and y0+1 for months Jan-Jun.
+* A match line (only after a date line was seen in that file; the date is the current date) is either `^\s+(HH:MM )?<home>\s+v\s+<away>\s+(\d+)-(\d+)( \((\d+)-(\d+)\))?\s*$` (checked first) or `^\s+(HH:MM )?<home>\s+(\d+)-(\d+)( \((\d+)-(\d+)\))?\s+<away>\s*$` where the away name does not start with "(" (time is `\d{1,2}[:.]\d{2}`, names are the stripped text, lazy for home). hg, ag = the full-time goals (the first score pair). Other lines (goal lists, headings, comments) are ignored.
+* league = `<repo>/<n>` where n = the digit before the first "-" in the file name (e.g. england/1). Drop duplicates on (league, season, date, home, away) keeping the first. game_id = 0-based index in the resulting list (in the order above).
+
+## 2. Features
+Let `season` = the season folder name, `country` = the repo name (the part of league before "/"), and for each match: home, away, hg, ag, date, year = calendar year of the date. Every value for a match uses ONLY matches whose date is STRICTLY EARLIER than the match's date (matches on the same date never count, including the match itself). Scores are never used for fixture counts.
+Fixture counts (from the whole parsed list, regardless of date): TEAMTOT(league, season, team) = number of matches of that team in that (league, season) as home or away; PAIRTOT(league, season, {A,B}) = number of matches between the two teams (either venue) in that (league, season).
+
+### 2a. soc.points_gap_state (10 columns)
+For a team T in a (league, season), before date d: pts = 3 per win + 1 per draw over its matches of that (league, season) with date < d; gf = goals scored, ga = goals conceded in them; gd = gf - ga; played = their count; left = TEAMTOT - played.
+Row of team T (home row has T = home name and opponent O = away name; away row the reverse), with the opponent's values pts_O, gd_O, gf_O, left_O computed the same way in the same (league, season):
+pgs_pts_pre = pts_T; pgs_gd_pre = gd_T; pgs_gf_pre = gf_T; pgs_played_pre = played_T; pgs_left_pre = left_T; pgs_pts_gap_pre = pts_T - pts_O; pgs_gd_gap_pre = gd_T - gd_O; pgs_gf_gap_pre = gf_T - gf_O; pgs_left_opp_pre = left_O; pgs_left_both_pre = PAIRTOT(league, season, {T,O}) - (number of matches between T and O in that (league, season) with date < d).
+
+### 2b. soc.current_win_run_state (4 columns)
+Team key = (country, team name): a team's matches are pooled across all leagues and seasons of its country repo, in date order (matches on one date are applied together, after all rows of that date have been read). A win is goals scored > goals conceded; draws and losses end a run.
+Before date d (calendar year Y of the row's own date): cwr_run_pre = the number of consecutive wins ending at the team's latest match with date < d (0 if that match was not a win or the team has no earlier match); cwr_run_in_year_pre = the number of consecutive wins ending at that latest match counting only matches dated in calendar year Y (0 if its latest earlier match is not dated in year Y); cwr_max_run_in_year_pre = the maximum, over matches of the team dated in year Y and before d, of the in-year run length after that match (the in-year run restarts at 0 on 1 January; 0 if no such match); cwr_played_in_year_pre = the number of the team's matches dated in year Y and before d (0 if none).
+
+## Output
+CSV `BLIND_DIR/out/blind_soccer_of2.csv` with columns game_id, team, pgs_pts_pre, pgs_gd_pre, pgs_gf_pre, pgs_played_pre, pgs_left_pre, pgs_pts_gap_pre, pgs_gd_gap_pre, pgs_gf_gap_pre, pgs_left_opp_pre, pgs_left_both_pre, cwr_run_pre, cwr_run_in_year_pre, cwr_max_run_in_year_pre, cwr_played_in_year_pre (full float precision, NaN as empty), TWO rows per match (home name row, away name row), and `BLIND_DIR/out/blind_soccer_of2_notes.json` {"ambiguities": [...]}.

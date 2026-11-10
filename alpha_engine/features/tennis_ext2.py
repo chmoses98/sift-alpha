@@ -199,6 +199,13 @@ def compute(raw: dict) -> dict:
         ne = ec[:, j]; er = np.where(ne > 0, es_[:, j] / np.where(ne > 0, ne, 1), np.nan)
         m[nm] = np.where(ne > 0, (ne * er + 60 * tr[:, j]) / (ne + 60), tr[:, j])
     m["tbe_n_eff_pre"] = ec[:, 0]
+    # split by round AND best_of (catalog: "provide split by round and best_of"): same window (1095 days) and half-life (548 days) but the event cell is (tour, tourney_name, round, best_of); shrunk n_eff/(n_eff+60) to the same tour's UNWEIGHTED rate for that round and best_of over the same window
+    es2, ec2 = _wsum(m[["tour", "tourney_name", "round", "best_of"]], dd, ev, 1095, hl_days=548.0); ts2, tc2 = _wsum(m[["tour", "round", "best_of"]], dd, ev, 1095)
+    tr2 = np.where(tc2 > 0, ts2 / np.where(tc2 > 0, tc2, 1), np.nan)
+    for j, nm in enumerate(["tbe_tb_rate_rb_pre", "tbe_ss_rate_rb_pre"]):
+        ne = ec2[:, j]; er = np.where(ne > 0, es2[:, j] / np.where(ne > 0, ne, 1), np.nan)
+        m[nm] = np.where(ne > 0, (ne * er + 60 * tr2[:, j]) / (ne + 60), tr2[:, j])
+    m["tbe_n_eff_rb_pre"] = ec2[:, 0]
     # venue_speed_history: event vs tour-surface over the previous 3 years (window 1095 days, unweighted), shrunk n/(n+100) to 0
     aces = (m.w_ace + m.l_ace).to_numpy(float); svpt = (m.w_svpt + m.l_svpt).to_numpy(float); svg = (m.w_SvGms + m.l_SvGms).to_numpy(float)
     bpl = (m.w_bpFaced - m.w_bpSaved + m.l_bpFaced - m.l_bpSaved).to_numpy(float)
@@ -382,8 +389,8 @@ def specs() -> list[FeatureSpec]:
           ["completed sets", "retiring player = loser", "set-completion probabilities", "trailing share", "games distribution mean", "P(D>1.5)", "n/(n+30) shrink"], ["P(count>k) for every strike k", "explicit censoring flag for missing interrupted-set scores"]),
         F("ten.retirement_margin_state", ["rms_p_gt15_fav_retires_pre", "rms_p_gt15_dog_retires_pre", "rms_mean_d_fav_retires_pre", "rms_mean_d_dog_retires_pre"], "PARTIAL", "game margin at retirement (non-retiring minus retiring player) by tour and by whether the favourite or the underdog retired, P(D>1.5 | retirement) shrunk n/(n+30) to the tour pool",
           ["D at retirement", "by tour and which player retired", "P(D>1.5|retirement)", "n/(n+30) shrink"], ["censoring of rows without a partial score"]),
-        F("ten.tiebreak_base_rate_by_event", ["tbe_tb_rate_pre", "tbe_ss_rate_pre", "tbe_n_eff_pre"], "PARTIAL", "event tiebreak share and straight-set win share over the previous 3 editions (1095 days) with half-life 18 months, shrunk n_eff/(n_eff+60) to the tour x best_of rate",
-          ["last three editions", "half-life 18 months", "n/(n+60) shrink to tour rate"], ["split by round and best_of (best_of enters only the tour-rate prior)"]),
+        F("ten.tiebreak_base_rate_by_event", ["tbe_tb_rate_pre", "tbe_ss_rate_pre", "tbe_n_eff_pre", "tbe_tb_rate_rb_pre", "tbe_ss_rate_rb_pre", "tbe_n_eff_rb_pre"], "FULL", "event tiebreak share and straight-set win share over the previous 3 editions (1095 days) with half-life 18 months, shrunk n_eff/(n_eff+60) to the tour x best_of rate; plus the same two rates split by round and best_of (event x round x best_of cell, shrunk to the tour rate for that round and best_of)",
+          ["last three editions", "half-life 18 months", "n/(n+60) shrink to tour rate", "split by round and best_of"], []),
         F("ten.venue_speed_history", ["vsh_ace_dev_pre", "vsh_hold_dev_pre", "vsh_tb_dev_pre", "vsh_games_dev_pre", "vsh_n_pre"], "PARTIAL", "event ace%, hold%, tiebreak% and mean total games over the previous 3 years minus the tour-surface averages over the same window, shrunk n/(n+100) toward 0",
           ["event vs tour-surface deviations", "ace%, hold%, tiebreak%, mean total games"], ["shrink toward the previous-year event effect", "continuous speed index"]),
         F("ten.major_winner_concentration", ["mwc_hhi_pre", "mwc_top2_pre", "mwc_player_share_pre"], "FULL", "Herfindahl index and top-2 share of the last 12 majors' champions per tour with edition weights 0.9^k (k=0 most recent), a major counting only once 15 days after its start date have passed, and the player's own history-implied share",

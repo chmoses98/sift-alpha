@@ -32,6 +32,10 @@ W = {"FULL": 1.0, "PARTIAL": 0.5, "PROXY": 0.25}
 COVERED = ("FULL", "PARTIAL", "PROXY")
 SEM_EVIDENCE = DF / "semantics_capture_evidence.json"
 SEMANTIC_IDS = ("m.rules_text",)   # market semantics metadata (Kalshi rules/settlement text), excluded from the PREDICTIVE denominator and tracked as its own dimension
+# Phase 10 (owner decision 1): settlement / operational metadata and market-calibration benchmarks are NOT independent market-free sports predictors. Derived classification only: the catalog entries stay (baseline lock untouched).
+SETTLEMENT_OPS_IDS = ("m.settlement_truth", "m.lifecycle", "m.stat_correction_risk", "m.stat_source_mismatch")
+CALIBRATION_IDS = ("m.strike_hit_rates",)
+NON_PREDICTIVE_IDS = SEMANTIC_IDS + SETTLEMENT_OPS_IDS + CALIBRATION_IDS
 PRED_KEYS = ("FULL", "PARTIAL", "PROXY", "DATA_IN_HAND", "FREE_ACCESSIBLE", "PROSPECTIVE", "NO_FREE_SOURCE", "CONTESTED", "UNMAPPED")
 
 
@@ -88,18 +92,21 @@ def measure(status: dict, audit: dict) -> list[dict]:
                 cats.append((iid, role, "UNMAPPED")); continue
             cats.append((iid, role, category(status[k], (audit.get(k) or {}).get("full_definition_status"))))
         sem = [c for c in cats if c[0] in SEMANTIC_IDS and c[2] != "EXCLUDED_MARKET"]
-        req = [c for c in cats if c[2] not in ("EXCLUDED_MARKET",) and c[0] not in SEMANTIC_IDS]
+        sops = [c for c in cats if c[0] in SETTLEMENT_OPS_IDS and c[2] != "EXCLUDED_MARKET"]
+        calib = [c for c in cats if c[0] in CALIBRATION_IDS]          # includes the sports where the matrix already excluded it as benchmark-only
+        req = [c for c in cats if c[2] not in ("EXCLUDED_MARKET",) and c[0] not in NON_PREDICTIVE_IDS]
         prim = [c for c in req if c[1] == "primary"]
         cnt = Counter(c[2] for c in req); pcnt = Counter(c[2] for c in prim)
         score = lambda cs: (sum(W.get(c[2], 0.0) for c in cs) / len(cs)) if cs else None
         tier = lambda c: RT.input_tier(f"{a['sport']}:{c[0]}") if c[2] in COVERED else None
         cleared = [c for c in req if c[2] in COVERED and RT.is_cleared(tier(c))]; cleared_p = [c for c in prim if c[2] in COVERED and RT.is_cleared(tier(c))]
+        comm = [c for c in req if c[2] in COVERED and RT.is_commercial_cleared(tier(c))]; comm_p = [c for c in prim if c[2] in COVERED and RT.is_commercial_cleared(tier(c))]
         wrapper = [c for c in req if c[2] in COVERED and tier(c) == "WRAPPER_LICENCE_UPSTREAM_CAVEAT"]
         unres = [c for c in req if c[2] in COVERED and tier(c) == "UNRESOLVED_INTERNAL_ONLY"]
         rscore = lambda cs, base: (sum(W[c[2]] for c in cs) / len(base)) if base else None
         missing = [c[0] for c in prim if c[2] not in COVERED]
         sem_state = [sem_cap[a["sport"]] for c in sem]
-        rows.append({"sport": a["sport"], "archetype": a["name"], "kind": a["kind"], "label": a["label"], "n_inputs_listed": len(cats), "n_excluded_market_inputs": sum(c[2] == "EXCLUDED_MARKET" for c in cats), "n_required": len(req), "n_primary": len(prim),
+        rows.append({"sport": a["sport"], "archetype": a["name"], "kind": a["kind"], "label": a["label"], "n_inputs_listed": len(cats), "n_excluded_market_inputs": sum(c[2] == "EXCLUDED_MARKET" and c[0] not in NON_PREDICTIVE_IDS for c in cats), "n_required": len(req), "n_primary": len(prim),
                      "FULL": cnt["FULL"], "PARTIAL": cnt["PARTIAL"], "PROXY": cnt["PROXY"], "DATA_IN_HAND": cnt["DATA_IN_HAND"], "FREE_ACCESSIBLE": cnt["FREE_ACCESSIBLE"], "PROSPECTIVE": cnt["PROSPECTIVE"],
                      "NO_FREE_SOURCE": cnt["NO_FREE_SOURCE"], "CONTESTED": cnt["CONTESTED"], "UNMAPPED": cnt["UNMAPPED"],
                      "primary_FULL": pcnt["FULL"], "primary_PARTIAL": pcnt["PARTIAL"], "primary_PROXY": pcnt["PROXY"], "primary_missing_critical": len(missing), "missing_critical_ids": missing,
@@ -111,8 +118,10 @@ def measure(status: dict, audit: dict) -> list[dict]:
                      "predictive_required": len(req), "predictive_primary": len(prim),
                      "semantics_required": len(sem), "semantics_primary": sum(c[1] == "primary" for c in sem), "semantics_built": 0, "semantics_state": sem_state, "semantics_captured_unverified": sum(x == "CAPTURED_UNVERIFIED" for x in sem_state), "semantics_partial_capture": sum(x == "PARTIAL_CAPTURE_UNVERIFIED" for x in sem_state),
                      "semantics_completeness": (0.0 if sem else None),
+                     "settlement_ops_required": len(sops), "settlement_ops_primary": sum(c[1] == "primary" for c in sops), "settlement_ops_ids": sorted(c[0] for c in sops),
+                     "calibration_required": len(calib), "calibration_primary": sum(c[1] == "primary" for c in calib), "calibration_ids": sorted(c[0] for c in calib),
                      "built_rights_cleared": len(cleared), "built_wrapper_licence_only": len(wrapper), "built_rights_unresolved": len(unres),
-                     "primary_built_rights_cleared": len(cleared_p),
+                     "primary_built_rights_cleared": len(cleared_p), "built_commercial_cleared": len(comm), "primary_built_commercial_cleared": len(comm_p),
                      "rights_cleared_score": rscore(cleared, req), "rights_cleared_critical_score": rscore(cleared_p, prim),
                      "prospective_gap_slots": cnt["PROSPECTIVE"], "prospective_gap_primary": pcnt["PROSPECTIVE"],
                      "independently_complete": bool(req) and cnt["FULL"] == len(req) and len(cleared) == len(req) and not sem})
@@ -130,7 +139,7 @@ def render_doc(now: list[dict], ref: str | None) -> str:
     sec = lambda t: f"\n## {t}\n\n"
     by = defaultdict(Counter); n_arch = Counter(r["sport"] for r in now); cs = defaultdict(list); rcs = defaultdict(list)
     SUM = ("FULL", "PARTIAL", "PROXY", "DATA_IN_HAND", "FREE_ACCESSIBLE", "PROSPECTIVE", "NO_FREE_SOURCE", "CONTESTED", "UNMAPPED", "n_required", "n_primary", "primary_FULL", "primary_PARTIAL", "primary_PROXY", "primary_missing_critical", "primary_PROSPECTIVE",
-           "semantics_required", "semantics_primary", "semantics_built", "semantics_captured_unverified", "semantics_partial_capture", "built_rights_cleared", "built_wrapper_licence_only", "built_rights_unresolved", "primary_built_rights_cleared", "prospective_gap_slots", "prospective_gap_primary")
+           "semantics_required", "semantics_primary", "semantics_built", "semantics_captured_unverified", "semantics_partial_capture", "settlement_ops_required", "settlement_ops_primary", "calibration_required", "calibration_primary", "built_rights_cleared", "built_wrapper_licence_only", "built_rights_unresolved", "primary_built_rights_cleared", "built_commercial_cleared", "primary_built_commercial_cleared", "prospective_gap_slots", "prospective_gap_primary")
     for r in now:
         for k in SUM: by[r["sport"]][k] += r[k]
         by[r["sport"]]["sem_archetypes"] += r["semantics_required"] > 0
@@ -146,9 +155,9 @@ def render_doc(now: list[dict], ref: str | None) -> str:
          "**This ranks DATA COMPLETENESS only. It says nothing about edge, profitability or model quality; modelling experiments remain PAUSED.**", "",
          "Universe: 170 archetypes = 118 registered + 52 unregistered across 8 sports. Each lists catalog inputs with a role (primary / secondary / context). Market-derived benchmark inputs are excluded: they are not independent inputs. "
          "Input slots are counted per archetype, so one input shared by several archetypes is counted in each (slots, not distinct inputs).", "",
-         "**Four separate dimensions (Phase 9).** (1) *Predictive input completeness*: the score below, computed WITHOUT the Kalshi rules-text slots. (2) *Market semantics completeness*: whether the timestamped, contract-specific rules and settlement text each archetype's contracts need is captured (the `m.rules_text` slots: 144 slots, of which 134 are PRIMARY-role). "
+         "**Five separate dimensions (Phase 9, extended Phase 10).** (1) *Predictive input completeness*: the score below, computed WITHOUT any market-metadata slot (Kalshi rules text, settlement/operational metadata, calibration benchmarks; see section 2b). (2) *Market semantics completeness*: whether the timestamped, contract-specific rules and settlement text each archetype's contracts need is captured (the `m.rules_text` slots: 144 slots, of which 134 are PRIMARY-role). "
          "Rules text is market semantics metadata, mandatory for settling a contract correctly but not an independent predictive sports input, so it is removed from the predictive denominator and never counted as predictive coverage. The catalog still lists it in every archetype and the baseline lock is unchanged. "
-         "(3) *Rights-cleared availability*: built-and-verified predictive slots whose sources carry an explicit data licence covering this use (`CLEARED_*` tiers); wrapper-only licences (nflverse CC BY over NFL upstream terms) and unresolved upstream terms do not count. (4) *Prospective-capture gaps*: predictive slots that need vintages captured from now on.", "",
+         "(3) *Rights-cleared availability*, reported separately for non-commercial research clearance and for commercial-use clearance: built-and-verified predictive slots whose sources carry an explicit data licence (`CLEARED_*` tiers); wrapper-only licences (nflverse CC BY over NFL upstream terms, `WRAPPER_ONLY`) and unresolved upstream terms count for neither. (4) *Prospective-capture gaps*: predictive slots that need vintages captured from now on.", "",
          "Per predictive input (exactly one category): **FULL / PARTIAL / PROXY** = replayed + blind-verified builder; **DATA_IN_HAND** = real columns confirmed buildable, no builder yet; **FREE_ACCESSIBLE** = a permitted free source exists, nothing built or verified; "
          "**PROSPECTIVE** = needs capture from now on (no backfillable history, or point-in-time quarantined); **NO_FREE_SOURCE** = paid-only / none / sample-only / policy-blocked / blind-confirmed blocked; **CONTESTED** = blind rounds disagree on whether any permitted source exists. "
          "Score = (1.0 FULL + 0.5 PARTIAL + 0.25 PROXY) / required predictive inputs; critical score is the same over PRIMARY-role inputs. Ranking: critical score, then overall score."]
@@ -167,14 +176,21 @@ def render_doc(now: list[dict], ref: str | None) -> str:
     for sp in SPORTS:
         c = by[sp]; o.append(f"| {sp} | {st_[sp]} | {c['sem_archetypes']} | {c['semantics_required']} | {c['semantics_primary']} | {c['semantics_captured_unverified'] + c['semantics_partial_capture']} | {c['semantics_built']} | 0.000 |")
     o.append(f"| **all** | | {T['sem_archetypes']} | {T['semantics_required']} | {T['semantics_primary']} | {T['semantics_captured_unverified'] + T['semantics_partial_capture']} | {T['semantics_built']} | 0.000 |")
+    o.append(sec("2b. Settlement / operational metadata and market-calibration benchmarks (not predictors)"))
+    o.append("Owner decision (Phase 10): `m.settlement_truth`, `m.lifecycle`, `m.stat_correction_risk` and `m.stat_source_mismatch` are settlement/operational metadata (what settled, when a contract opened/closed, whether a stat later changed or disagrees across feeds); `m.strike_hit_rates` is a market-calibration / benchmark input (historical hit rates of Kalshi strikes, i.e. market-pricing information). "
+             "None is an independent market-free sports predictor, so none counts in the predictive denominator and none is ever scored as predictive coverage. The catalog entries are kept (baseline lock unchanged); this is a derived classification only, and historical point-in-time cutoffs are not touched.\n")
+    o += ["| Sport | settlement/ops slots | of which PRIMARY | calibration slots | of which PRIMARY |", "|---|---|---|---|---|"]
+    for sp in SPORTS:
+        c = by[sp]; o.append(f"| {sp} | {c['settlement_ops_required']} | {c['settlement_ops_primary']} | {c['calibration_required']} | {c['calibration_primary']} |")
+    o.append(f"| **all** | {T['settlement_ops_required']} | {T['settlement_ops_primary']} | {T['calibration_required']} | {T['calibration_primary']} |")
     o.append(sec("3. Rights-cleared availability (built-and-verified predictive slots)"))
-    o.append("Rights tiers come from `rights_registry.json` (weakest tier over a builder's raw sources; an unmatched source is UNRESOLVED). Strict measure: only CLEARED_OPEN_LICENCE (CC0) and CLEARED_NONCOMMERCIAL_RESEARCH (Sackmann CC BY-NC-SA, research only) count as rights-cleared. A repository CODE licence is not evidence about upstream data.\n")
-    o += ["| Sport | built (F+P+X) | rights-cleared | wrapper licence only (nflverse) | rights UNRESOLVED (internal only) | primary built | primary built rights-cleared | mean rights-cleared critical score | mean critical score |", "|---|---|---|---|---|---|---|---|---|"]
+    o.append("Rights tiers come from `rights_registry.json` (weakest tier over a builder's raw sources; an unmatched source is UNRESOLVED). Research clearance (internal, non-commercial): CLEARED_OPEN_LICENCE (CC0) and CLEARED_NONCOMMERCIAL_RESEARCH (Sackmann CC BY-NC-SA 4.0). Commercial clearance: CLEARED_OPEN_LICENCE only; CC BY-NC-SA is never commercial-cleared. nflverse stays `WRAPPER_ONLY` (CC BY on the wrapper repository, upstream NFL/FTN/NGS terms not evaluated) and counts for neither; its computational evidence is retained. A repository CODE licence is not evidence about upstream data.\n")
+    o += ["| Sport | built (F+P+X) | research-cleared | commercial-cleared | wrapper licence only (nflverse) | rights UNRESOLVED (internal only) | primary built | primary built rights-cleared | mean rights-cleared critical score | mean critical score |", "|---|---|---|---|---|---|---|---|---|---|"]
     for sp in SPORTS:
         c = by[sp]; b = c["FULL"] + c["PARTIAL"] + c["PROXY"]; pb = c["primary_FULL"] + c["primary_PARTIAL"] + c["primary_PROXY"]
-        o.append(f"| {sp} | {b} | {c['built_rights_cleared']} | {c['built_wrapper_licence_only']} | {c['built_rights_unresolved']} | {pb} | {c['primary_built_rights_cleared']} | {mean(rcs[sp]):.3f} | {mean(cs[sp]):.3f} |")
+        o.append(f"| {sp} | {b} | {c['built_rights_cleared']} | {c['built_commercial_cleared']} | {c['built_wrapper_licence_only']} | {c['built_rights_unresolved']} | {pb} | {c['primary_built_rights_cleared']} | {mean(rcs[sp]):.3f} | {mean(cs[sp]):.3f} |")
     b = T["FULL"] + T["PARTIAL"] + T["PROXY"]; pb = T["primary_FULL"] + T["primary_PARTIAL"] + T["primary_PROXY"]
-    o.append(f"| **all** | {b} | {T['built_rights_cleared']} | {T['built_wrapper_licence_only']} | {T['built_rights_unresolved']} | {pb} | {T['primary_built_rights_cleared']} | | |")
+    o.append(f"| **all** | {b} | {T['built_rights_cleared']} | {T['built_commercial_cleared']} | {T['built_wrapper_licence_only']} | {T['built_rights_unresolved']} | {pb} | {T['primary_built_rights_cleared']} | | |")
     o.append(sec("4. Prospective-capture gaps (predictive slots that need vintages captured from now on)"))
     o += ["| Sport | prospective slots | of which PRIMARY |", "|---|---|---|"]
     for sp in SPORTS: o.append(f"| {sp} | {by[sp]['PROSPECTIVE']} | {by[sp]['prospective_gap_primary']} |")
@@ -198,7 +214,7 @@ def render_doc(now: list[dict], ref: str | None) -> str:
     dist = defaultdict(set)
     for r in now:
         for iid, c in r["input_categories"].items():
-            if c != "EXCLUDED_MARKET" and iid not in SEMANTIC_IDS: dist[c].add((r["sport"], iid))
+            if c != "EXCLUDED_MARKET" and iid not in NON_PREDICTIVE_IDS: dist[c].add((r["sport"], iid))
     o.append("\nDistinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): " + ", ".join(f"{c} {len(dist[c])}" for c in PRED_KEYS if dist[c]) + ".")
     o.append(f"\nOf the {b} built slots, only {T['built_rights_cleared']} sit on rights-cleared sources; {T['built_wrapper_licence_only']} rest on a wrapper licence with upstream caveat and {T['built_rights_unresolved']} on unresolved upstream terms, so rights decisions gate a large share of what is already built. Separately, {T['semantics_required']} rules-text slots (134 primary) need timestamped capture.")
     if ref:
@@ -239,10 +255,10 @@ def main(argv=None) -> int:
         b = base.get((r["sport"], r["archetype"]))
         if b: r["baseline"] = {k: b[k] for k in ("FULL", "PARTIAL", "PROXY", "completeness_score", "critical_score", "primary_missing_critical", "primary_FULL", "primary_PARTIAL", "primary_PROXY")}
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "market_completeness.json").write_text(json.dumps({"schema": "market-completeness-2.0", "status": "RESEARCH_ONLY", "n_archetypes": len(now), "baseline_ref": ref, "weights": W,
+    (OUT / "market_completeness.json").write_text(json.dumps({"schema": "market-completeness-3.0", "status": "RESEARCH_ONLY", "n_archetypes": len(now), "baseline_ref": ref, "weights": W,
                                                            "note": "data completeness only; no profitability, edge or model-quality claim; agent verification, not human; predictive denominator excludes the m.rules_text market-semantics slots", "semantic_ids": list(SEMANTIC_IDS), "rows": now}, indent=1, default=str) + "\n")
     cols = ["rank", "sport", "archetype", "kind", "n_required", "n_primary", "FULL", "PARTIAL", "PROXY", "DATA_IN_HAND", "FREE_ACCESSIBLE", "PROSPECTIVE", "NO_FREE_SOURCE", "CONTESTED", "UNMAPPED", "primary_missing_critical", "critical_score", "completeness_score",
-            "semantics_required", "semantics_primary", "semantics_completeness", "built_rights_cleared", "built_wrapper_licence_only", "built_rights_unresolved", "rights_cleared_critical_score", "prospective_gap_slots", "prospective_gap_primary", "independently_complete"]
+            "semantics_required", "semantics_primary", "semantics_completeness", "settlement_ops_required", "settlement_ops_primary", "calibration_required", "calibration_primary", "built_rights_cleared", "built_commercial_cleared", "built_wrapper_licence_only", "built_rights_unresolved", "rights_cleared_critical_score", "prospective_gap_slots", "prospective_gap_primary", "independently_complete"]
     with open(OUT / "market_completeness.csv", "w", newline="") as f:
         w = csv.writer(f); w.writerow(cols)
         for r in now: w.writerow([r[c] if not isinstance(r[c], float) else round(r[c], 4) for c in cols])

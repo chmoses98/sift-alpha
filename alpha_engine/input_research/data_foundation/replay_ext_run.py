@@ -49,6 +49,10 @@ def main(a=None) -> int:
         from ...features import soccer_of_ext as X
         raw = X.load_raw(a[1]); out = a[2]
         r = G.run(X, raw, "SOCCER", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="game_date", quick=quick)
+    elif fam == "soccer_of2":
+        from ...features import soccer_of_ext2 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "SOCCER", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="game_date", quick=quick)
     elif fam == "cfb":
         from ...features import cfb_ext as X
         raw = X.load_raw(a[1]); out = a[2]

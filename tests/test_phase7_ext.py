@@ -10,7 +10,7 @@ from alpha_engine.input_research.data_foundation import market_completeness as M
 
 V = Path(__file__).resolve().parents[1] / "research/input_research/data_foundation"
 MODS = (nba_ext, nba_player_ext, nhl_ext, tennis_ext2, tennis_ext3)
-FULL_IDS = {"nhl.loser_point_rate", "ten.major_winner_concentration", "ten.home_slam_depth_prior", "ten.second_serve_vulnerability"}      # specs that claim FULL (whole definition implemented)
+FULL_IDS = {"nhl.loser_point_rate", "ten.major_winner_concentration", "ten.home_slam_depth_prior", "ten.second_serve_vulnerability", "ten.tiebreak_base_rate_by_event"}      # Phase 10 adds tiebreak_base_rate_by_event (round x best_of split)      # specs that claim FULL (whole definition implemented)
 CANDIDATES = FULL_IDS - {"ten.home_slam_depth_prior"}                                                                                  # home_slam_depth_prior is defined only for the four majors: coverage < 50 % is a recorded limit, so it is not a full candidate
 
 

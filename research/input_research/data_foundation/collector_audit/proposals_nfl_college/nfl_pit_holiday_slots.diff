@@ -1,0 +1,31 @@
+PROPOSAL (not applied) -- repo chmoses98/nfl-edge-finder, branch main. Two files must change together, otherwise the slot gate
+(scripts/ops/pit_availability_health.py::scheduled_slots) treats an unlisted cron time as already covered and skips it.
+Hours below are copied from the kickoff-derived planner hours in sift-alpha nfl-prospective-ops.yml (Thanksgiving Thu 11-26,
+Fri 11-27, Sat 12-05/12/26, Sat 12-19, Fri 12-25); the owner must verify them against the official 2026 schedule before applying.
+Measured motivation: all 4 games without a capture in T-6h (of 56) were non-Sunday/Monday/Thursday-night games before the 00:47 slot existed;
+only 16/56 games had a capture in T-95..T-60 and 18/55 within 30 min of kickoff.
+--- a/.github/workflows/pit-availability-nfl.yml
++++ b/.github/workflows/pit-availability-nfl.yml
+@@ on.schedule
+     - cron: '47 0 * * 1,2,5'
++    # holiday / Saturday extra slots (hour list = planner hours, :47)
++    - cron: '47 15,16,17,18,19,20,21,22,23 26 11 *'
++    - cron: '47 17,18,19,20 27 11 *'
++    - cron: '47 16,17,18,19,20,21,22,23 25 12 *'
++    - cron: '47 16,19,20,23 5,12,19,26 12 *'
+     # backups (+12 min)
++    - cron: '59 15,16,17,18,19,20,21,22,23 26 11 *'
++    - cron: '59 17,18,19,20 27 11 *'
++    - cron: '59 16,17,18,19,20,21,22,23 25 12 *'
++    - cron: '59 16,19,20,23 5,12,19,26 12 *'
+--- a/scripts/ops/pit_availability_health.py
++++ b/scripts/ops/pit_availability_health.py
+@@ def scheduled_slots(...)
++EXTRA_SLOTS = {  # (month, day): UTC hours at :47, mirrors the extra crons in pit-availability-nfl.yml
++    (11, 26): range(15, 24), (11, 27): (17, 18, 19, 20), (12, 25): range(16, 24),
++    (12, 5): (16, 19, 20, 23), (12, 12): (16, 19, 20, 23), (12, 19): (16, 19, 20, 23), (12, 26): (16, 19, 20, 23),
++}
+@@ inside the while loop, after the NIGHT_SLOT_FROM block
++        for h in EXTRA_SLOTS.get((day.month, day.day), ()):
++            if (h, 47) not in times:
++                times.append((h, 47))

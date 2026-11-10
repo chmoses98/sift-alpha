@@ -34,7 +34,16 @@ def tier_of_sources(raw: list[str]) -> str:
 
 
 def is_cleared(tier: str) -> bool:
+    """Research-cleared (explicit data licence permits internal non-commercial research use)."""
     return tier in registry()["rights_cleared_tiers"]
+
+
+is_research_cleared = is_cleared
+
+
+def is_commercial_cleared(tier: str) -> bool:
+    """Commercial-use cleared (explicit open licence only; CC BY-NC-SA and wrapper-only licences never qualify)."""
+    return tier in registry().get("commercial_cleared_tiers", [])
 
 
 @lru_cache(maxsize=1)

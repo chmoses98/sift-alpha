@@ -57,7 +57,7 @@ def build() -> dict:
         mine = [r for r in inv if r["sport"] == sp]; by = defaultdict(lambda: {"inputs": 0, "slots": 0})
         for r in mine: c = r["direct_api"]["class"]; by[c]["inputs"] += 1; by[c]["slots"] += r["primary_missing_slots"]
         seas = list(range(2014, 2026)); dom = sp.lower(); ep = set(e for r in mine if r["direct_api"]["class"] != "NOT_SERVICEABLE" for e in r["direct_api"]["endpoints"])
-        est = CD.estimate(dom, seas, sorted(ep)); calls = est["static_calls"]; pg = sum(est["per_game_calls_estimate"].values())
+        est = CD.estimate(dom, seas, sorted(ep)); calls = est["static_calls"]; pg = sum(est["dependent_calls_estimate"].values())
         months = {k: {"static_backfill_calls": calls, "per_game_calls": pg, "months_at_%d%%_share" % (SHARE * 100): round((calls + pg) / (v * SHARE), 2)} for k, v in QUOTA_SCENARIOS.items()}
         college[sp] = {"missing_primary_slots": per_sport[sp], "direct_api_serviceability": {k: dict(v) for k, v in by.items()}, "endpoints_needed": sorted(ep), "estimate_2014_2025": est, "months_to_complete_by_cap_scenario": months}
     cov = {k: sum(v["primary_missing_slots"] for v in inv if v["sport"] in ("CFB", "CBB") and v["direct_api"]["class"] == k) for k in ("FULLY_SERVICEABLE", "PARTLY_SERVICEABLE", "NOT_SERVICEABLE")}

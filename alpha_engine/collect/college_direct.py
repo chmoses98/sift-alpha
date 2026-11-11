@@ -1,6 +1,8 @@
-"""CFBD / CBBD direct-API ingestion scaffold (RESEARCH_ONLY). INACTIVE: it makes no request unless an owner-written authorization file exists.
+"""CFBD / CBBD direct-API collector (RESEARCH_ONLY). INACTIVE: it makes no request unless an owner-written authorization file exists.
 
-    python -m alpha_engine.collect.college_direct plan --domain cfb --seasons 2014-2025     # pure planning: no network, no key
+    python -m alpha_engine.collect.college_direct plan  --domain cbb --seasons 2014-2025      # pure planning: no network, no key
+    python -m alpha_engine.collect.college_direct probe --domain cbb --dry-run                # lists the <=10 probe calls, no network
+    python -m alpha_engine.collect.college_direct probe --domain cbb --out-dir D --ledger L    # real probe; runs from the manual workflow only
 
 Guards (each fails closed):
   1. `research/input_research/data_collection/college_direct_authorization.json` must exist, be owner-written (`authorized: true`, `monthly_call_cap`, `max_share_of_cap` <= 0.5,
@@ -9,8 +11,8 @@ Guards (each fails closed):
   3. A month-keyed call ledger (outside the repo) caps calls at max_share_of_cap * monthly_call_cap, because the quota is shared with other tools; the run stops at the first 401/403/429/non-200.
   4. Raw responses are written only outside the repository tree (no raw redistribution). Derived outputs only may be committed, tagged CLEARED_PROVIDER_TERMS_DIRECT_API
      (owner-reported terms; exact text not agent-verified).
-Endpoint names, start seasons and call-count formulas are from the public API surface as the agent knows it. The hosts were unreachable in Phase 12, so they are UNVERIFIED
-against the live OpenAPI document until the first authorised probe. `main` is deliberately not wired to a network transport.
+Endpoint names, start seasons and call-count formulas are from the public API surface as the agent knows it (plus owner-relayed facts: CBBD lineups start in 2024; /plays/date and /plays/team exist).
+The hosts were unreachable to the agent, so everything marked UNVERIFIED stays so until the first authorised probe records real status codes, row counts and the remaining-quota figure.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +31,10 @@ HOSTS = {"cfb": "https://api.collegefootballdata.com", "cbb": "https://api.colle
 KEY_ENV = {"cfb": "CFBD_API_KEY", "cbb": "CBBD_API_KEY"}
 W_CFB = 16              # regular-season weeks 1-15 (one call each) + one postseason call: upper bound per season for a per-week endpoint
 PER_GAME = 6200         # approx D-I games per season (one call per game for /plays/game and /lineups/game)
+TEAMS = 365             # approx D-I teams per season (one call per team for /plays/team and /lineups/team) + 1 /teams call to enumerate them
+DATES = 161             # game days per CBB season, Nov 1 - Apr 10 (one call per date for /plays/date)
+LINEUPS_FROM = 2024     # owner-relayed from the CBBD coverage page: lineup data starts in 2024, not 2013
+MAX_PROBE_CALLS = 10
 
 # domain -> endpoint -> {calls per season, first season (UNVERIFIED), served need/dataset, PIT note}
 ENDPOINTS = {
@@ -46,8 +52,11 @@ ENDPOINTS = {
         "/games":             {"calls": 2,        "from": 2002, "pit": "event-time; safe"},
         "/games/teams":       {"calls": 2,        "from": 2002, "pit": "event-time; safe"},
         "/games/players":     {"calls": 2,        "from": 2002, "pit": "event-time; safe"},
-        "/plays/game/{id}":   {"calls": PER_GAME, "from": 2013, "pit": "event-time; safe; one call per game: expensive"},
-        "/lineups/game/{id}": {"calls": PER_GAME, "from": 2013, "pit": "event-time; one call per game: expensive"},
+        "/plays/date":        {"calls": DATES,    "from": 2013, "pit": "event-time; one call per game day (UNVERIFIED param, response limit, incomplete fields); cheapest full-season path"},
+        "/plays/team?team={team}": {"calls": TEAMS,    "from": 2013, "pit": "event-time; one call per team-season; every game appears twice (both teams); needs /teams first"},
+        "/plays/game/{id}":   {"calls": PER_GAME, "from": 2013, "pit": "event-time; one call per game: fallback only for dates/teams whose response looks truncated"},
+        "/lineups/team?team={team}": {"calls": TEAMS,    "from": LINEUPS_FROM, "pit": "event-time; 2024+ only; per team-season"},
+        "/lineups/game/{id}": {"calls": PER_GAME, "from": LINEUPS_FROM, "pit": "event-time; 2024+ only; per game: fallback only"},
         "/rankings":          {"calls": 1,        "from": 2002, "pit": "poll week stamped; safe"},
     },
 }
@@ -59,7 +68,7 @@ DATASET_ENDPOINTS = {
 }
 # need types served by an endpoint when the catalog dataset is not one of the above
 NEED_ENDPOINTS = {"cfb": {"RESULTS": ["/games"], "TEAM_BOX": ["/games/teams"], "PLAYER_BOX": ["/games/players"], "EVENT": ["/plays", "/drives"]},
-                  "cbb": {"RESULTS": ["/games"], "TEAM_BOX": ["/games/teams"], "PLAYER_BOX": ["/games/players"], "EVENT": ["/plays/game/{id}"], "LINEUP": ["/lineups/game/{id}"]}}
+                  "cbb": {"RESULTS": ["/games"], "TEAM_BOX": ["/games/teams"], "PLAYER_BOX": ["/games/players"], "EVENT": ["/plays/date", "/plays/team?team={team}"], "LINEUP": ["/lineups/team?team={team}"]}}
 # datasets that are by definition not direct-API data (availability vintages, news, weather, rules, tracking, paid or third-party ratings)
 NEVER_DIRECT = ("availability", "news", "weather", "rules", "tracking", "pff", "kenpom", "barttorvik", "officials", "coaching_finance", "coordinator", "fcs_grants", "ncaa_", "d3_", "wcbb", "ap_poll", "net_bracket", "tourney")
 
@@ -98,12 +107,15 @@ class Req:
 
 
 def plan(domain: str, seasons: list[int], endpoints: list[str] | None = None) -> list[Req]:
-    """Deterministic static request list. Per-game ({id}) endpoints are excluded: their count needs the /games result first."""
+    """Deterministic static request list. Dependent endpoints ({id}/{team}) are excluded: their count needs a /games or /teams result first. CBB /plays/date is enumerable from the calendar."""
     yk = "year" if domain == "cfb" else "season"; out = []
     for y in seasons:
         for p, meta in ENDPOINTS[domain].items():
-            if (endpoints and p not in endpoints) or "{id}" in p or y < meta["from"]: continue
-            if domain == "cfb" and meta["calls"] == W_CFB:
+            if (endpoints and p not in endpoints) or "{" in p or y < meta["from"]: continue
+            if p == "/plays/date":
+                d = date(y - 1, 11, 1)                      # CBBD season = ending year (UNVERIFIED; the probe cross-checks game dates)
+                while d <= date(y, 4, 10): out.append(Req(domain, p, (("date", d.isoformat()),))); d += timedelta(days=1)
+            elif domain == "cfb" and meta["calls"] == W_CFB:
                 out += [Req(domain, p, ((yk, y), ("week", w), ("seasonType", "regular"))) for w in range(1, 16)] + [Req(domain, p, ((yk, y), ("seasonType", "postseason")))]
             elif meta["calls"] == 2:
                 out += [Req(domain, p, ((yk, y), ("seasonType", t))) for t in ("regular", "postseason")]
@@ -115,8 +127,18 @@ def plan(domain: str, seasons: list[int], endpoints: list[str] | None = None) ->
 def estimate(domain: str, seasons: list[int], endpoints: list[str] | None = None) -> dict:
     static = plan(domain, seasons, endpoints); per_ep: dict[str, int] = {}
     for r in static: per_ep[r.path] = per_ep.get(r.path, 0) + 1
-    per_game = {p: sum(PER_GAME for y in seasons if y >= m["from"]) for p, m in ENDPOINTS[domain].items() if "{id}" in p and (not endpoints or p in endpoints)}
-    return {"domain": domain, "seasons": [seasons[0], seasons[-1]], "static_calls": len(static), "static_by_endpoint": per_ep, "per_game_calls_estimate": per_game}
+    dep = {p: sum(m["calls"] for y in seasons if y >= m["from"])
+           for p, m in ENDPOINTS[domain].items() if "{" in p and (not endpoints or p in endpoints)}
+    return {"domain": domain, "seasons": [seasons[0], seasons[-1]], "static_calls": len(static), "static_by_endpoint": per_ep, "dependent_calls_estimate": dep}
+
+
+def cbb_event_strategies(seasons: list[int]) -> dict:
+    """Realistic CBB play-by-play cost per strategy (calls; all UNVERIFIED until the probe). Plays from 2013, lineups from 2024; +1 /teams call per season for team strategies."""
+    ps = [y for y in seasons if y >= ENDPOINTS["cbb"]["/plays/date"]["from"]]; ls = [y for y in seasons if y >= LINEUPS_FROM]
+    return {"plays_by_date": DATES * len(ps), "plays_by_team": (TEAMS + 1) * len(ps), "plays_by_game_fallback": PER_GAME * len(ps),
+            "lineups_by_team_2024plus": (TEAMS + 1) * len(ls), "lineups_by_game_2024plus": PER_GAME * len(ls),
+            "recommended": "plays_by_date + lineups_by_team; per-game only for responses that hit a limit", "recommended_calls": DATES * len(ps) + (TEAMS + 1) * len(ls),
+            "unverified": ["per-response row limit (a date with ~60 games may truncate)", "plays season start (2013 assumed)", "season numbering (ending year assumed)", "which play fields are populated in early seasons"]}
 
 
 class Refusal(RuntimeError):
@@ -170,10 +192,98 @@ def run(domain: str, reqs: list[Req], out_dir: Path, ledger_path: Path, transpor
     return {"requests_done": done, "stopped_on_status": stopped, "month": month, "used_this_month": led.used(month), "allowed": led.allowed}
 
 
+# ---- fail-closed initial probe (<= MAX_PROBE_CALLS calls) ----
+QUOTA_URL = HOSTS["cfb"] + "/info"        # CFBD reports remainingCalls here (UNVERIFIED field names); the quota is shared across tools/hosts under one key
+PROBE = {
+    "cfb": [("cfb", "/info", ()), ("cfb", "/games", (("year", 2024), ("week", 1), ("seasonType", "regular"))), ("cfb", "/games/teams", (("year", 2024), ("week", 1), ("seasonType", "regular"))),
+            ("cfb", "/plays", (("year", 2024), ("week", 1), ("seasonType", "regular")))],
+    "cbb": [("cfb", "/info", ()), ("cbb", "/data-availability", ()), ("cbb", "/games", (("season", 2025), ("seasonType", "regular"))), ("cbb", "/plays/date", (("date", "2025-02-01"),)),
+            ("cbb", "/plays/team", (("team", "Duke"), ("season", 2025))), ("cbb", "/lineups/team", (("team", "Duke"), ("season", 2025)))],
+}
+PROBE_FIELDS = ("authorized", "probe_authorized", "authorized_by", "date", "expires", "monthly_call_cap", "max_share_of_cap", "shared_quota_remaining", "quota_declared_on", "quota_reserve")
+
+
+def probe_requests(domain: str) -> list[Req]:
+    reqs = [Req(d, p, q) for d, p, q in PROBE[domain]]
+    assert len(reqs) <= MAX_PROBE_CALLS
+    return reqs
+
+
+def load_probe_authorization(path: Path = AUTH_FILE, today: date | None = None) -> dict:
+    """Owner authorization for a probe: base checks plus an owner-declared remaining shared quota, declared within 2 days, that covers the probe plus a reserve."""
+    a = load_authorization(path, today); today = today or datetime.now(timezone.utc).date()
+    for k in PROBE_FIELDS:
+        if k not in a: raise Refusal(f"authorization missing field {k}")
+    if a["probe_authorized"] is not True: raise Refusal("probe not authorized")
+    if not (0 <= (today - date.fromisoformat(a["quota_declared_on"])).days <= 2): raise Refusal("owner quota declaration is older than 2 days (or future-dated): quota uncertain")
+    if int(a["quota_reserve"]) < 100: raise Refusal("quota_reserve must be >= 100 calls left for other tools")
+    if int(a["shared_quota_remaining"]) < MAX_PROBE_CALLS + int(a["quota_reserve"]): raise Refusal("declared remaining shared quota does not cover the probe plus reserve")
+    return a
+
+
+def api_remaining(body: bytes) -> int | None:
+    try: d = json.loads(body)
+    except ValueError: return None
+    d = d[0] if isinstance(d, list) and d else d
+    v = d.get("remainingCalls", d.get("remaining_calls")) if isinstance(d, dict) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+
+def probe(domain: str, out_dir: Path, ledger_path: Path, transport, env: dict, auth_path: Path = AUTH_FILE, today: date | None = None, sleep=time.sleep, repo_is_private: bool = False) -> dict:
+    """<=10 calls. Order: authorization, key, private storage, then call 1 (/info) must return an integer remaining quota that covers the rest plus the reserve; any non-200 or doubt stops the run.
+    Every call is counted in the durable ledger BEFORE it is made and appended to a call log (url without secrets, status, bytes, sha256). Raw bodies stay in out_dir (outside the repo)."""
+    auth = load_probe_authorization(auth_path, today)
+    key = env.get(KEY_ENV[domain]) or env.get(KEY_ENV["cfb"])
+    if not key: raise Refusal("API key not set in the environment")
+    if not repo_is_private: raise Refusal("raw storage requires a private repository/runner: repo_is_private not asserted")
+    out_dir = Path(out_dir).resolve()
+    if out_dir == ROOT or ROOT in out_dir.parents: raise Refusal("raw provider data may not be stored inside the repository")
+    reqs = probe_requests(domain); month = (today or datetime.now(timezone.utc).date()).strftime("%Y-%m")
+    led = Ledger(ledger_path, min(MAX_PROBE_CALLS, int(auth["monthly_call_cap"] * float(auth["max_share_of_cap"]))))
+    if led.used(month + "-probe") + len(reqs) > led.allowed: raise Refusal("probe already run this month or probe budget exhausted")
+    out_dir.mkdir(parents=True, exist_ok=True); log = []; stopped = None; remaining = None
+    for n, r in enumerate(reqs):
+        led.spend(month + "-probe"); led.spend(month)                         # counted before the call: a crash can only over-count
+        try: status, body, _ = transport(r.url(), {"Authorization": f"Bearer {key}", "Accept": "application/json"})
+        except Exception as e: status, body = 0, type(e).__name__.encode()    # network error text never includes headers
+        row = {"n": n, "url": r.url(), "status": status, "bytes": len(body), "sha256": __import__("hashlib").sha256(body).hexdigest()}
+        if status == 200:
+            (out_dir / f"{n:02d}.json").write_bytes(body)
+            try: v = json.loads(body); row["rows"] = len(v) if isinstance(v, list) else None
+            except ValueError: row["rows"] = None
+        log.append(row)
+        if status != 200: stopped = f"access/availability status {status} on call {n}"; break
+        if n == 0:
+            remaining = api_remaining(body)
+            if remaining is None: stopped = "quota uncertain: /info gave no integer remaining-call count"; break
+            if remaining < len(reqs) - 1 + int(auth["quota_reserve"]): stopped = f"quota too low: {remaining} remaining"; break
+            if remaining > int(auth["shared_quota_remaining"]) * 2 + 100: stopped = "quota mismatch with the owner declaration: refuse to guess"; break
+        sleep(0.5)
+    summary = {"domain": domain, "month": month, "calls_made": len(log), "max_probe_calls": MAX_PROBE_CALLS, "stopped": stopped, "api_remaining_before": remaining, "used_this_month": led.used(month), "log": log}
+    (out_dir / "probe_summary.json").write_text(json.dumps(summary, indent=1)); return summary
+
+
+def urllib_transport(url: str, headers: dict):
+    import urllib.error, urllib.request
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as r: return r.status, r.read(), dict(r.headers)
+    except urllib.error.HTTPError as e: return e.code, b"", {}
+
+
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(); ap.add_argument("cmd", choices=["plan"]); ap.add_argument("--domain", choices=["cfb", "cbb"], required=True)
-    ap.add_argument("--seasons", required=True); ap.add_argument("--endpoints", nargs="*"); a = ap.parse_args(argv)
-    print(json.dumps(estimate(a.domain, parse_seasons(a.seasons), a.endpoints), indent=1)); return 0
+    ap = argparse.ArgumentParser(); ap.add_argument("cmd", choices=["plan", "probe"]); ap.add_argument("--domain", choices=["cfb", "cbb"], required=True)
+    ap.add_argument("--seasons"); ap.add_argument("--endpoints", nargs="*"); ap.add_argument("--out-dir"); ap.add_argument("--ledger"); ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--repo-private", action="store_true"); a = ap.parse_args(argv)
+    if a.cmd == "plan":
+        if not a.seasons: ap.error("--seasons required")
+        seas = parse_seasons(a.seasons); e = estimate(a.domain, seas, a.endpoints)
+        if a.domain == "cbb": e["cbb_event_strategies"] = cbb_event_strategies(seas)
+        print(json.dumps(e, indent=1)); return 0
+    if a.dry_run: print(json.dumps([r.url() for r in probe_requests(a.domain)], indent=1)); return 0
+    if not (a.out_dir and a.ledger): ap.error("--out-dir and --ledger required")
+    try: s = probe(a.domain, Path(a.out_dir), Path(a.ledger), urllib_transport, dict(__import__("os").environ), repo_is_private=a.repo_private)
+    except Refusal as e: print(f"REFUSED: {e}", file=sys.stderr); return 3
+    print(json.dumps({k: v for k, v in s.items() if k != "log"})); return 4 if s["stopped"] else 0
 
 
 if __name__ == "__main__":

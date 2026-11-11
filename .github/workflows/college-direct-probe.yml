@@ -1,0 +1,58 @@
+# MANUAL ONLY. Fail-closed <=10-call CFBD/CBBD probe. No schedule, no PR/push trigger. Spends shared provider quota, so it needs ALL of:
+#   1. the repository owner dispatching it, with the confirmation phrase typed in
+#   2. the protected environment `college-direct` (configure required reviewer = owner) holding the secret CFBD_API_KEY (existing key; never created/bought here)
+#   3. research/input_research/data_collection/college_direct_authorization.json written by the owner (cap, share <= 0.5, declared remaining quota <= 2 days old, reserve, expiry)
+#   4. a PRIVATE repository (raw responses go to a 1-day private artifact, never into git)
+# The probe itself stops on any non-200 and on quota uncertainty. Call counts (no data) persist on the branch `college-direct-ledger`.
+name: College direct-API probe (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      domain: {description: "Domain to probe", type: choice, options: [cbb, cfb], required: true}
+      confirm: {description: "Type AUTHORIZE-10-CALL-PROBE to spend up to 10 shared-quota calls", type: string, required: true}
+permissions:
+  contents: read
+concurrency: {group: college-direct-probe, cancel-in-progress: false}
+jobs:
+  probe:
+    if: github.actor == github.repository_owner && inputs.confirm == 'AUTHORIZE-10-CALL-PROBE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: college-direct
+    permissions:
+      contents: write        # only to push the counts-only ledger branch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Gate (private repo, authorization file, key present)
+        env: {PRIVATE: "${{ github.event.repository.private }}", KEY: "${{ secrets.CFBD_API_KEY }}"}
+        run: |
+          [ "$PRIVATE" = "true" ] || { echo "::error::repository is not private: raw storage refused"; exit 1; }
+          [ -f research/input_research/data_collection/college_direct_authorization.json ] || { echo "::error::no owner authorization file"; exit 1; }
+          [ -n "$KEY" ] || { echo "::error::secret CFBD_API_KEY missing in environment college-direct"; exit 1; }
+      - name: Restore durable call ledger
+        run: |
+          mkdir -p "$RUNNER_TEMP/ledger" "$RUNNER_TEMP/raw"
+          if git ls-remote --exit-code --heads origin college-direct-ledger >/dev/null; then
+            git fetch -q origin college-direct-ledger && git show FETCH_HEAD:ledger.json > "$RUNNER_TEMP/ledger/ledger.json"
+          fi
+      - name: Probe (stops on first denial or quota doubt)
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CBBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          python -m alpha_engine.collect.college_direct probe --domain "${{ inputs.domain }}" --repo-private \
+            --out-dir "$RUNNER_TEMP/raw" --ledger "$RUNNER_TEMP/ledger/ledger.json"
+      - name: Persist ledger (counts only)
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/ledger/ledger.json" ] || exit 0
+          cp "$RUNNER_TEMP/raw/probe_summary.json" "$RUNNER_TEMP/ledger/last_probe_summary.json" 2>/dev/null || true
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git checkout -q --orphan college-direct-ledger && git rm -rfq . >/dev/null 2>&1 || true
+          cp "$RUNNER_TEMP"/ledger/*.json . && git add ledger.json last_probe_summary.json 2>/dev/null
+          git commit -qm "college-direct call ledger (counts only)" && git push -f origin college-direct-ledger
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: college-direct-raw-private, path: "${{ runner.temp }}/raw", retention-days: 1, if-no-files-found: ignore}

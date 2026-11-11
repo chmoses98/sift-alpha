@@ -13,9 +13,9 @@ Every figure below comes from committed verification evidence under `research/in
 | Bucket | Inputs | Meaning |
 |---|---|---|
 | Full | 58 | computed AND replayed: every independent test passed, no forbidden-as-pregame field, whole definition implemented, coverage and provenance checked |
-| Partial | 177 | replayed and clean, but only part of the catalog definition is implemented or coverage is limited |
+| Partial | 179 | replayed and clean, but only part of the catalog definition is implemented or coverage is limited |
 | Proxy | 19 | replayed and clean, but measures a different quantity for the same mechanism |
-| Data In Hand | 23 | no builder yet; two blind verifiers confirmed from REAL re-read columns that it can be built point-in-time (a verdict resting on a table not re-read this session does not count) |
+| Data In Hand | 21 | no builder yet; two blind verifiers confirmed from REAL re-read columns that it can be built point-in-time (a verdict resting on a table not re-read this session does not count) |
 | Caveat | 0 | replayed; depends on schedule structure (e.g. games left) valid only if the fixture list is known before the event |
 | Unverified | 50 | a claim with no replay or real-column check (schema-only, or a blocked/computable dispute the two blind rounds did not settle) |
 | Failed | 60 | a replay or blind verifier showed the claim fails, or it depends on a field the point-in-time policy forbids (quarantined) |
@@ -23,7 +23,7 @@ Every figure below comes from committed verification evidence under `research/in
 | Blocked | 49 | no permitted usable source (policy-blocked, none found, sample-only, or blind-confirmed) |
 | Excluded | 81 | market-derived benchmark inputs |
 
-Total 1649 inputs. At the draft, **309** inputs were called potentially computable; **277** are verified computable now (FULL 58, PARTIAL 177, PROXY 19, DATA_IN_HAND 23). These are counted separately everywhere: a FULL is never averaged with a DATA_IN_HAND.
+Total 1649 inputs. At the draft, **309** inputs were called potentially computable; **277** are verified computable now (FULL 58, PARTIAL 179, PROXY 19, DATA_IN_HAND 21). These are counted separately everywhere: a FULL is never averaged with a DATA_IN_HAND.
 
 ### Verified status by sport
 
@@ -36,8 +36,8 @@ Total 1649 inputs. At the draft, **309** inputs were called potentially computab
 | NHL | 10 | 22 | 2 | 4 | 0 | 0 | 13 | 0 | 8 | 4 | 84 | 0 | 0 | 1 | 7 |
 | MLB | 2 | 18 | 1 | 0 | 0 | 0 | 0 | 0 | 2 | 5 | 214 | 0 | 0 | 1 | 8 |
 | SOCCER | 6 | 9 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 128 | 6 | 17 | 1 | 11 |
-| TENNIS | 18 | 31 | 2 | 12 | 0 | 0 | 0 | 0 | 5 | 0 | 54 | 3 | 0 | 9 | 9 |
-| **all** | **58** | **177** | **19** | **23** | **0** | **0** | **27** | **0** | **49** | **11** | **1132** | **19** | **30** | **23** | **81** |
+| TENNIS | 18 | 33 | 2 | 10 | 0 | 0 | 0 | 0 | 5 | 0 | 54 | 3 | 0 | 9 | 9 |
+| **all** | **58** | **179** | **19** | **21** | **0** | **0** | **27** | **0** | **49** | **11** | **1132** | **19** | **30** | **23** | **81** |
 
 ### Point-in-time policy and quarantine
 
@@ -98,7 +98,7 @@ A stratified blind sample of 95 inputs (verifiers saw only the catalog definitio
 
 **Two blind rechecks of every drafted-BLOCKED input (143); round 2 under the owner's explicit access policy (no restricted scraping, no paid services, no accounts):** BLOCKED_BY_POLICY 30, BLOCKED_CONFIRMED 19, BLOCKED_CONTESTED 23, RECLASSIFIED_TO_REQUIRES_COLLECTION 71. `BLOCKED_CONFIRMED` = both rounds say blocked; `BLOCKED_BY_POLICY` = round 2 finds the only route is one the policy forbids (round 1 had no policy); `RECLASSIFIED_TO_REQUIRES_COLLECTION` = both rounds find a permitted route; `BLOCKED_CONTESTED` = unresolved disagreement (counted as UNVERIFIED, never as blocked or computable). Round-2 verifiers reported low diligence on several keys (some did not open the catalog), so their answers are evidence, not proof.
 
-**Blind verification of the 132 data-in-hand inputs (no builder existed), two rounds:** DATA_IN_HAND_CONFIRMED 23, DATA_IN_HAND_SCHEMA_ONLY 27, DOWNGRADED_BY_VERIFIER 49, VERIFIED_FULL 3, VERIFIED_PARTIAL 30. NBA and NHL were re-judged in round 2 on REAL re-read columns (authorized read-only access to the owner's archive repos); a CONFIRMED that rests on a table whose rows were not re-read this session (NBA play-by-play and stints, NHL shot events) is downgraded to schema-only. For the others a downgrade in either round wins and CONFIRMED needs both.
+**Blind verification of the 132 data-in-hand inputs (no builder existed), two rounds:** DATA_IN_HAND_CONFIRMED 21, DATA_IN_HAND_SCHEMA_ONLY 27, DOWNGRADED_BY_VERIFIER 49, VERIFIED_FULL 3, VERIFIED_PARTIAL 32. NBA and NHL were re-judged in round 2 on REAL re-read columns (authorized read-only access to the owner's archive repos); a CONFIRMED that rests on a table whose rows were not re-read this session (NBA play-by-play and stints, NHL shot events) is downgraded to schema-only. For the others a downgrade in either round wins and CONFIRMED needs both.
 
 
 ## Draft buckets before verification (reconciliation only; superseded by the verified matrix above)

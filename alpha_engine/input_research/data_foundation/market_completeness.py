@@ -35,7 +35,15 @@ SEMANTIC_IDS = ("m.rules_text",)   # market semantics metadata (Kalshi rules/set
 # Phase 10 (owner decision 1): settlement / operational metadata and market-calibration benchmarks are NOT independent market-free sports predictors. Derived classification only: the catalog entries stay (baseline lock untouched).
 SETTLEMENT_OPS_IDS = ("m.settlement_truth", "m.lifecycle", "m.stat_correction_risk", "m.stat_source_mismatch")
 CALIBRATION_IDS = ("m.strike_hit_rates",)
-NON_PREDICTIVE_IDS = SEMANTIC_IDS + SETTLEMENT_OPS_IDS + CALIBRATION_IDS
+# Phase 11: inputs whose WHOLE catalog measurement is a parse of Kalshi rules text into contract flags (no sports measurement) are contract metadata. Inputs that MIX a rules-text part with an independent sports measurement are split component-wise and stay in the predictive denominator.
+RULES_PARSE_ONLY_IDS = ("soc.competition_scope_and_win_definition",)
+COMPONENT_SPLIT = {
+    "ten.retirement_settlement_rules": {"metadata_component": "rules_primary text parsed into settle_on_retirement / void_if_not_completed / min sets-games / count_partial_games flags", "predictive_component": "P(match completes) and P(retire by state) from the player retirement hazard (Sackmann RET/W-O history; overlaps ten.retirement_margin_state, ten.walkover_slot_hazard)", "denominator": "PREDICTIVE (retained)"},
+    "ten.ace_settlement_source": {"metadata_component": "named source of record parsed from rules text", "predictive_component": "historical disagreement rate between ace/double-fault counting sources (needs a second statistics feed: not free-accessible)", "denominator": "PREDICTIVE (retained)"},
+    "ten.short_format_rules": {"metadata_component": "event format coding (sets to win, games per set, tiebreak score, ad/no-ad) from the rulebook", "predictive_component": "no-ad hold formula, first-to-four set DP, best-of-five roll-up and the short-format variance inflation from past Next Gen Finals sets", "denominator": "PREDICTIVE (retained)"},
+    "soc.competition_scope_and_win_definition": {"metadata_component": "all of it: competitions_all / league_only, friendlies_count, shootout_win_counts, men_only, calendar window parsed from rules text", "predictive_component": "none", "denominator": "METADATA (removed from the predictive denominator)"},
+}
+NON_PREDICTIVE_IDS = SEMANTIC_IDS + SETTLEMENT_OPS_IDS + CALIBRATION_IDS + RULES_PARSE_ONLY_IDS
 PRED_KEYS = ("FULL", "PARTIAL", "PROXY", "DATA_IN_HAND", "FREE_ACCESSIBLE", "PROSPECTIVE", "NO_FREE_SOURCE", "CONTESTED", "UNMAPPED")
 
 
@@ -93,6 +101,7 @@ def measure(status: dict, audit: dict) -> list[dict]:
             cats.append((iid, role, category(status[k], (audit.get(k) or {}).get("full_definition_status"))))
         sem = [c for c in cats if c[0] in SEMANTIC_IDS and c[2] != "EXCLUDED_MARKET"]
         sops = [c for c in cats if c[0] in SETTLEMENT_OPS_IDS and c[2] != "EXCLUDED_MARKET"]
+        rpo = [c for c in cats if c[0] in RULES_PARSE_ONLY_IDS and c[2] != "EXCLUDED_MARKET"]     # Phase 11: pure rules-text contract flags
         calib = [c for c in cats if c[0] in CALIBRATION_IDS]          # includes the sports where the matrix already excluded it as benchmark-only
         req = [c for c in cats if c[2] not in ("EXCLUDED_MARKET",) and c[0] not in NON_PREDICTIVE_IDS]
         prim = [c for c in req if c[1] == "primary"]
@@ -106,7 +115,7 @@ def measure(status: dict, audit: dict) -> list[dict]:
         rscore = lambda cs, base: (sum(W[c[2]] for c in cs) / len(base)) if base else None
         missing = [c[0] for c in prim if c[2] not in COVERED]
         sem_state = [sem_cap[a["sport"]] for c in sem]
-        rows.append({"sport": a["sport"], "archetype": a["name"], "kind": a["kind"], "label": a["label"], "n_inputs_listed": len(cats), "n_excluded_market_inputs": sum(c[2] == "EXCLUDED_MARKET" and c[0] not in NON_PREDICTIVE_IDS for c in cats), "n_required": len(req), "n_primary": len(prim),
+        rows.append({"sport": a["sport"], "archetype": a["name"], "kind": a["kind"], "label": a["label"], "n_inputs_listed": len(cats), "n_excluded_market_inputs": sum(c[2] == "EXCLUDED_MARKET" and c[0] not in NON_PREDICTIVE_IDS for c in cats), "n_required": len(req), "n_primary": len(prim), "rules_parse_only_required": len(rpo), "rules_parse_only_primary": sum(c[1] == "primary" for c in rpo),
                      "FULL": cnt["FULL"], "PARTIAL": cnt["PARTIAL"], "PROXY": cnt["PROXY"], "DATA_IN_HAND": cnt["DATA_IN_HAND"], "FREE_ACCESSIBLE": cnt["FREE_ACCESSIBLE"], "PROSPECTIVE": cnt["PROSPECTIVE"],
                      "NO_FREE_SOURCE": cnt["NO_FREE_SOURCE"], "CONTESTED": cnt["CONTESTED"], "UNMAPPED": cnt["UNMAPPED"],
                      "primary_FULL": pcnt["FULL"], "primary_PARTIAL": pcnt["PARTIAL"], "primary_PROXY": pcnt["PROXY"], "primary_missing_critical": len(missing), "missing_critical_ids": missing,

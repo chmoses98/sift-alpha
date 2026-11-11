@@ -67,11 +67,11 @@ def test_rules_text_is_semantics_not_predictive_and_catalog_untouched():
     assert sum(r["calibration_required"] for r in rows) == 23 and sum(r["calibration_primary"] for r in rows) == 0
     for r in rows:
         assert "m.rules_text" in r["input_categories"] or r["semantics_required"] == 0             # still listed in the archetype (catalog unchanged)
-        assert r["n_inputs_listed"] == r["n_required"] + r["n_excluded_market_inputs"] + r["semantics_required"] + r["settlement_ops_required"] + r["calibration_required"]
+        assert r["n_inputs_listed"] == r["n_required"] + r["n_excluded_market_inputs"] + r["semantics_required"] + r["settlement_ops_required"] + r["calibration_required"] + r["rules_parse_only_required"]
         assert r["n_required"] == sum(r[k] for k in M.PRED_KEYS)                                   # predictive denominator excludes every market-metadata slot
         assert r["semantics_built"] == 0 and (r["semantics_completeness"] in (None, 0.0))            # captured-unverified is never counted as completeness
         assert r["independently_complete"] is False
-    assert sum(r["n_required"] for r in rows) == 3899 - 144 - 80                                      # rules text, then 64 settlement/ops + 23 calibration minus 7 slots already benchmark-excluded
+    assert sum(r["n_required"] for r in rows) == 3899 - 144 - 80 - 5                                      # rules text, then 64 settlement/ops + 23 calibration minus 7 slots already benchmark-excluded; Phase 11 removes the 5 soc.competition_scope_and_win_definition rules-parse slots
 
 
 def test_research_and_commercial_clearance_are_separate_and_nflverse_stays_wrapper_only():

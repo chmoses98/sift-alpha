@@ -20,7 +20,10 @@ QUESTIONS = {
     "espn_scoreboard_and_archives": ("Does Disney/ESPN grant any right to retain and analyse data pulled from its undocumented site.api.espn.com endpoints for internal non-commercial research (and, separately, commercial use)?", "https://disneytermsofuse.com/", "NOT_REACHED (DNS blocked here)"),
     "nflverse": ("Which upstream terms (NFL.com game feeds, NGS, FTN charting, ESPN) govern the nflverse releases, and does the wrapper CC BY 4.0 licence carry them?", "https://github.com/nflverse/nflverse-data (LICENSE.md and release notes) plus the NFL and FTN terms", "WRAPPER_LICENCE_READ_UPSTREAM_NOT_READ"),
     "sackmann_tennis": ("COMMERCIAL only: research use is cleared by CC BY-NC-SA 4.0. Is a commercial licence available from Tennis Abstract / Jeff Sackmann?", "tennisabstract.com / the tennis_atp README", "NC_LICENCE_READ_VERBATIM"),
-    "nhl_api_moneypuck": ("Two questions: NHL terms for api-web.nhle.com data, and MoneyPuck's data-use terms (attribution, redistribution, commercial).", "https://www.nhl.com/info/terms-of-service and https://www.moneypuck.com/about.htm", "NOT_REACHED (DNS blocked here)"),
+    "nhl_api_moneypuck": ("NHL terms for api-web.nhle.com data (MoneyPuck is now tracked separately).", "https://www.nhl.com/info/terms-of-service", "NOT_REACHED (DNS blocked here)"),
+    "moneypuck_listed_downloads": ("Research use of MoneyPuck's explicitly listed downloads is cleared non-commercially with attribution (owner-reported). Which exact files are listed, and is a commercial licence available?", "https://www.moneypuck.com/data.htm", "OWNER_REPORTED_NOT_AGENT_VERIFIED (host denied here)"),
+    "moneypuck_unlisted": ("MoneyPuck data not on the listed-downloads page needs MoneyPuck approval.", "https://www.moneypuck.com/data.htm", "OWNER_REPORTED_NOT_AGENT_VERIFIED"),
+    "cfbd_cbbd_direct_api": ("Direct CFBD/CBBD API terms (owner-reported): research and commercial derived outputs permitted within the shared quota, no raw redistribution. Quota measurement and an owner-authorised key workflow are needed before any collection.", "https://collegefootballdata.com/terms", "OWNER_REPORTED_NOT_AGENT_VERIFIED (host denied here)"),
     "mlb_stats_api": ("MLB Advanced Media terms for statsapi.mlb.com bulk reuse (the long-standing Gameday notice limits use to individual, non-commercial purposes; confirm the current text).", "https://www.mlb.com/official-information/terms-of-use", "NOT_REACHED (DNS blocked here)"),
     "football_data_co_uk": ("Provider states private-individual use only and no automated bots/scrapers/AI data training: is internal automated research use permitted, or is written permission needed?", "https://football-data.co.uk/data.php and /disclaimer.php", "PROVIDER_STATEMENT_READ_2026-11-10 (restrictive); disclaimer page not read"),
     "sportsdataverse_espn_mbb_cfb": ("ESPN terms (see ESPN) plus CollegeFootballData.com terms for the CFBD-derived tables and NCAA terms.", "https://collegefootballdata.com/ and https://www.ncaa.com/", "NOT_REACHED (DNS blocked here)"),
@@ -32,7 +35,9 @@ QUESTIONS = {
 def build() -> dict:
     vc = {r["key"]: r for r in json.loads((M.DF / "verified_coverage.json").read_text())["rows"]}
     reg = RT.registry(); raw = RT.raw_sources_by_key()
-    ids_of = lambda n: [s["id"] for s in reg["sources"] if any(t in n.lower() for t in s["tokens"])] or ["UNMATCHED"]
+    def ids_of(n):
+        m = [s for s in reg["sources"] if any(t in n.lower() for t in s["tokens"])]; sup = {x for s in m for x in s.get("supersedes", [])}      # same specificity rule as rights.tier_of_source
+        return [s["id"] for s in m if s["id"] not in sup] or ["UNMATCHED"]
     built = sorted(k for k, r in vc.items() if r["verified_status"] in BUILT)
     prim = defaultdict(int)
     for a in M.archetypes():

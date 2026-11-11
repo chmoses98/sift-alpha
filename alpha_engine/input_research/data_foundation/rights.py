@@ -24,7 +24,10 @@ def registry() -> dict:
 
 
 def tier_of_source(raw_name: str) -> str:
-    reg = registry(); order = reg["tier_order"]; name = raw_name.lower(); hits = [order.index(s["tier"]) for s in reg["sources"] if any(t in name for t in s["tokens"])]
+    reg = registry(); order = reg["tier_order"]; name = raw_name.lower()
+    matched = [s for s in reg["sources"] if any(t in name for t in s["tokens"])]
+    superseded = {x for s in matched for x in s.get("supersedes", [])}      # a more specific entry (e.g. MoneyPuck listed downloads) replaces only the entries it names
+    hits = [order.index(s["tier"]) for s in matched if s["id"] not in superseded]
     return order[min(hits)] if hits else order[0]
 
 

@@ -1,0 +1,38 @@
+diff --git a/.github/workflows/nba-starters-live-check.yml b/.github/workflows/nba-starters-live-check.yml
+index 8ccfd84..2739f66 100644
+--- a/.github/workflows/nba-starters-live-check.yml
++++ b/.github/workflows/nba-starters-live-check.yml
+@@ -8,11 +8,18 @@ on:
+       minutes:
+         description: "How long to poll"
+         default: "280"
++      interval_min:
++        description: "Poll interval in minutes (start-to-start; measured 181 s median with a 3 min loop)"
++        default: "3"
+   push:
+     paths:
+       - ".trigger-nba-starters"
+ permissions:
+   contents: read
++concurrency:
++  # one polling loop at a time: a second dispatch queues instead of doubling the request rate against ESPN
++  group: nba-starters-live-check
++  cancel-in-progress: false
+ jobs:
+   live:
+     runs-on: ubuntu-latest
+@@ -29,10 +36,13 @@ jobs:
+       - name: Poll ESPN core rosters inside the pre-tip window
+         env:
+           MINUTES: ${{ inputs.minutes || '280' }}
++          INTERVAL_MIN: ${{ inputs.interval_min || '3' }}
+         run: |
+           case "$MINUTES" in (*[!0-9]*|"") echo "minutes must be an integer" >&2; exit 1;; esac
++          case "$INTERVAL_MIN" in (*[!0-9.]*|"") echo "interval_min must be a number" >&2; exit 1;; esac
++          awk "BEGIN{exit !($INTERVAL_MIN >= 1)}" || { echo "interval_min must be >= 1 (do not hammer the source)" >&2; exit 1; }
+           git rev-parse HEAD
+-          python scripts/starters_live_check.py --archive "$RUNNER_TEMP/archive" --minutes "$MINUTES" --interval-min 4
++          python scripts/starters_live_check.py --archive "$RUNNER_TEMP/archive" --minutes "$MINUTES" --interval-min "$INTERVAL_MIN"
+       - name: Shipped CLI coverage report
+         if: always()
+         run: nba starters-coverage --archive "$RUNNER_TEMP/archive" || true

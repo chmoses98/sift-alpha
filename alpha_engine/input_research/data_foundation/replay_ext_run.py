@@ -41,6 +41,10 @@ def main(a=None) -> int:
         from ...features import tennis_ext4 as X
         raw = X.load_raw(a[1]); out = a[2]
         r = G.run(X, raw, "TENNIS", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="date", quick=quick)
+    elif fam == "tennis5":
+        from ...features import tennis_ext5 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "TENNIS", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="date", quick=quick)
     elif fam == "nhl":
         from ...features import nhl_ext as X
         raw = X.load_raw(a[1]); out = a[2]

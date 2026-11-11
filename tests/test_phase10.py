@@ -19,7 +19,7 @@ def test_phase10_statuses_and_counts():
     assert vc["TENNIS:ten.tiebreak_base_rate_by_event"]["verified_status"] == "VERIFIED_FULL"
     assert vc["SOCCER:soc.points_gap_state"]["verified_status"] == "VERIFIED_PARTIAL" and vc["SOCCER:soc.current_win_run_state"]["verified_status"] == "VERIFIED_PARTIAL"
     c = pd.Series([r["verified_status"] for r in vc.values()]).value_counts()
-    assert (c["VERIFIED_FULL"], c["VERIFIED_PARTIAL"], c["VERIFIED_PROXY"]) == (58, 179, 19)      # Phase 11 adds ten.games_per_set_distribution and ten.hold_gap_expected_margin (PARTIAL)
+    assert (c["VERIFIED_FULL"], c["VERIFIED_PARTIAL"], c["VERIFIED_PROXY"]) == (58, 180, 19)      # Phase 11 adds ten.games_per_set_distribution and ten.hold_gap_expected_margin (PARTIAL); Phase 12 adds ten.tiebreak_sweep_joint_table
 
 
 def test_tennis_tiebreak_has_round_best_of_split_and_no_declared_gap():

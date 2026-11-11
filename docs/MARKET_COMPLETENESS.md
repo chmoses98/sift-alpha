@@ -20,8 +20,8 @@ Per predictive input (exactly one category): **FULL / PARTIAL / PROXY** = replay
 | NHL | 15 | 336 | 39 | 74 | 5 | 13 | 103 | 98 | 3 | 1 | 128 | 16/22/3 | 87 | 0.227 |
 | MLB | 26 | 520 | 2 | 52 | 1 | 0 | 286 | 179 | 0 | 0 | 184 | 1/15/0 | 168 | 0.043 |
 | SOCCER | 23 | 459 | 30 | 41 | 13 | 0 | 118 | 74 | 180 | 3 | 154 | 4/19/2 | 129 | 0.109 |
-| TENNIS | 13 | 261 | 36 | 100 | 8 | 14 | 48 | 40 | 5 | 10 | 74 | 3/29/0 | 42 | 0.218 |
-| **all** | 170 | 3670 | 204 | 722 | 93 | 42 | 1562 | 743 | 268 | 36 | 1276 | 54/254/19 | 949 | |
+| TENNIS | 13 | 261 | 36 | 101 | 8 | 13 | 48 | 40 | 5 | 10 | 74 | 3/29/0 | 42 | 0.218 |
+| **all** | 170 | 3670 | 204 | 723 | 93 | 41 | 1562 | 743 | 268 | 36 | 1276 | 54/254/19 | 949 | |
 
 ## 2. Market semantics completeness (Kalshi rules text, `m.rules_text`)
 
@@ -71,8 +71,8 @@ Rights tiers come from `rights_registry.json` (weakest tier over a builder's raw
 | NHL | 118 | 0 | 0 | 0 | 118 | 41 | 0 | 0.000 | 0.227 |
 | MLB | 55 | 0 | 0 | 0 | 55 | 16 | 0 | 0.000 | 0.043 |
 | SOCCER | 84 | 11 | 11 | 0 | 73 | 25 | 8 | 0.038 | 0.109 |
-| TENNIS | 144 | 144 | 0 | 0 | 0 | 32 | 32 | 0.218 | 0.218 |
-| **all** | 1019 | 155 | 11 | 227 | 637 | 327 | 40 | | |
+| TENNIS | 145 | 145 | 0 | 0 | 0 | 32 | 32 | 0.218 | 0.218 |
+| **all** | 1020 | 156 | 11 | 227 | 637 | 327 | 40 | | |
 
 ## 4. Prospective-capture gaps (predictive slots that need vintages captured from now on)
 
@@ -97,26 +97,15 @@ An archetype is *independently complete* only when EVERY predictive slot is FULL
 | What it takes | predictive slots | share of slots | primary slots |
 |---|---|---|---|
 | already FULL (definition complete, replay + blind verified) | 204 | 5.6% | 54 |
-| PARTIAL: finish the definition (missing clauses, history, or model-side steps; each needs a new build, replay and blind verification) | 722 | 19.7% | 254 |
+| PARTIAL: finish the definition (missing clauses, history, or model-side steps; each needs a new build, replay and blind verification) | 723 | 19.7% | 254 |
 | PROXY: replace by a builder of the actual quantity | 93 | 2.5% | 19 |
-| DATA_IN_HAND: build, replay, blind-verify + FREE_ACCESSIBLE: permitted free source exists, nothing built (collect, build, replay, blind-verify) | 1604 | 43.7% | 545 |
+| DATA_IN_HAND: build, replay, blind-verify + FREE_ACCESSIBLE: permitted free source exists, nothing built (collect, build, replay, blind-verify) | 1603 | 43.7% | 545 |
 | PROSPECTIVE: capture vintages from now on, then build | 743 | 20.2% | 314 |
 | NO_FREE_SOURCE or CONTESTED: needs a paid/restricted source or an owner policy decision | 304 | 8.3% | 90 |
 
-Distinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): FULL 58, PARTIAL 179, PROXY 18, DATA_IN_HAND 21, FREE_ACCESSIBLE 748, PROSPECTIVE 357, NO_FREE_SOURCE 113, CONTESTED 22.
+Distinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): FULL 58, PARTIAL 180, PROXY 18, DATA_IN_HAND 20, FREE_ACCESSIBLE 748, PROSPECTIVE 357, NO_FREE_SOURCE 113, CONTESTED 22.
 
-Of the 1019 built slots, only 155 sit on rights-cleared sources; 227 rest on a wrapper licence with upstream caveat and 637 on unresolved upstream terms, so rights decisions gate a large share of what is already built. Separately, 144 rules-text slots (134 primary) need timestamped capture.
-
-## Change versus baseline `489a8b1` (predictive measure; baseline recomputed with the same rules-text exclusion)
-
-
-Predictive FULL slots changed by **+0**; archetypes gaining built-and-verified slots: **3**. (Phase 9 added no builder and promoted no input: the single FULL candidate reviewed was refused by the gate; the differences versus the Phase 8 document are the separation of rules text and the new rights, semantics and prospective dimensions.)
-
-| Archetype | slots built before | now | critical score before | now |
-|---|---|---|---|---|
-| TENNIS/total_games_and_sets | 14 | 15 | 0.357 | 0.429 |
-| TENNIS/set_and_game_spreads | 16 | 17 | 0.333 | 0.417 |
-| TENNIS/game_winner_inplay | 7 | 8 | 0.1 | 0.1 |
+Of the 1020 built slots, only 156 sit on rights-cleared sources; 227 rest on a wrapper licence with upstream caveat and 637 on unresolved upstream terms, so rights decisions gate a large share of what is already built. Separately, 144 rules-text slots (134 primary) need timestamped capture.
 
 ## All 170 archetypes ranked by predictive data completeness
 
@@ -135,9 +124,9 @@ Predictive FULL slots changed by **+0**; archetypes gaining built-and-verified s
 | 10 | TENNIS | total_games_and_sets | 23 | 5 | 9 | 1 | 1 | 4 | 2 | 0 | 1 | 1 | 0.429 | 0.424 |  | 15 | 0.429 |
 | 11 | TENNIS | set_and_game_spreads | 20 | 5 | 12 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0.417 | 0.550 |  | 17 | 0.417 |
 | 12 | TENNIS | player_aces_and_double_faults | 22 | 3 | 7 | 0 | 0 | 8 | 0 | 1 | 3 | 2 | 0.417 | 0.295 |  | 10 | 0.417 |
-| 13 | NFL | team_and_event_counting_specials | 18 | 3 | 8 | 1 | 0 | 5 | 1 | 0 | 0 | 2 | 0.400 | 0.403 | primary | 0 | 0.000 |
-| 14 | NHL | game_total_and_team_total | 25 | 4 | 11 | 1 | 0 | 3 | 5 | 1 | 0 | 4 | 0.400 | 0.390 | primary | 0 | 0.000 |
-| 15 | TENNIS | set_sweep_and_tiebreak_events | 20 | 3 | 9 | 1 | 3 | 3 | 1 | 0 | 0 | 2 | 0.400 | 0.388 |  | 13 | 0.400 |
+| 13 | TENNIS | set_sweep_and_tiebreak_events | 20 | 3 | 10 | 1 | 2 | 3 | 1 | 0 | 0 | 2 | 0.400 | 0.412 |  | 14 | 0.400 |
+| 14 | NFL | team_and_event_counting_specials | 18 | 3 | 8 | 1 | 0 | 5 | 1 | 0 | 0 | 2 | 0.400 | 0.403 | primary | 0 | 0.000 |
+| 15 | NHL | game_total_and_team_total | 25 | 4 | 11 | 1 | 0 | 3 | 5 | 1 | 0 | 4 | 0.400 | 0.390 | primary | 0 | 0.000 |
 | 16 | NBA | combo_props | 21 | 2 | 8 | 0 | 0 | 6 | 3 | 2 | 0 | 3 | 0.389 | 0.286 | primary | 0 | 0.000 |
 | 17 | NBA | player_points | 26 | 3 | 8 | 1 | 1 | 6 | 4 | 2 | 1 | 3 | 0.389 | 0.279 | primary | 0 | 0.000 |
 | 18 | NFL | first_score_team_time_race | 18 | 4 | 6 | 2 | 0 | 5 | 1 | 0 | 0 | 1 | 0.375 | 0.417 | primary | 0 | 0.000 |

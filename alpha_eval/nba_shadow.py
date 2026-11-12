@@ -294,7 +294,10 @@ def build(root: str, *, chain: Optional[dict] = None, game_identity: Optional[di
     info.update({f"outcome_xcheck[{k}]": v for k, v in xcheck.items()})
     outs = [o for rows in outcomes_by_market.values() for o in rows]
     drift = {f"{a}|{v}": len(h) for (a, v), h in hashes.items()}
+    listing_tickers = {t for (t, _) in quotes}
+    listing_games = {g for g, _, _, _, _ in lookup}
     return dict(forecasts=forecasts, outcomes=outs, quotes=list(quotes.values()), eligible=list(eligible.values()),
+                listing_tickers=listing_tickers, listing_games=listing_games, shadow_forecast_games=set(start_of),
                 info=dict(info), board=dict(status_board), model_hash_counts=drift,
                 chain={k: v for k, v in chain.items() if k not in ("verified_paths", "written_at")})
 

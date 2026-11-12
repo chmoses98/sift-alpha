@@ -56,10 +56,22 @@ def main(argv=None) -> int:
             gx = U.game_index(gi)
             cl = U.classify(U.load_board(a.board_dir), gx, window_start=min(k[0] for k in gx), horizon=b["info"]["data_horizon"][:10])
             eligible = U.eligible_rows(cl)
+            if pd:
+                from . import nba_games
+                gm = nba_games.build(pd, cl, settlements=nba_shadow.load_settlements(a.settlements) if a.settlements else None,
+                                     game_identity=gi)
+                b["forecasts"] = b["forecasts"] + gm["forecasts"]
+                b["outcomes"] = b["outcomes"] + gm["outcomes"]
+                b["quotes"] = b["quotes"] + gm["quotes"]
+                b["info"].update({f"games.{k}": v for k, v in gm["info"].items()})
         g = grade_all(b["forecasts"], b["outcomes"], b["quotes"], [], eligible_rows=eligible, as_of=b["info"]["data_horizon"])
         if a.board_dir:
-            recon = U.reconcile(cl, g["rows"], {f["market_id"] for f in b["forecasts"]}, {f["event_id"] for f in b["forecasts"]})
+            recon = U.reconcile(cl, g["rows"], {f["market_id"] for f in b["forecasts"]}, {(f["native_family"], f["event_id"]) for f in b["forecasts"]},
+                                evaluated_families=frozenset(U.EVALUATED_BY_ADAPTER | (U.GAME_LEVEL if pd else set())))
             recon.pop("detail")
+            ffg = {(f["native_family"], f["event_id"]) for f in b["forecasts"]}
+            recon["market_not_forecast_reasons"] = U.market_not_forecast_reasons(
+                cl, {f["market_id"] for f in b["forecasts"]}, b["listing_tickers"], b["listing_games"], ffg)
         rep = build_report(g, kind="cumulative", title=a.title or "NBA PURE shadow store postmortem")
         rep["source_accounting"] = dict(info=b["info"], board=b["board"], model_hash_counts=b["model_hash_counts"], chain=b["chain"],
                                         n_forecast_rows=len(b["forecasts"]), n_outcome_rows=len(b["outcomes"]), n_quote_rows=len(b["quotes"]),

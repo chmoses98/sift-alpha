@@ -30,6 +30,7 @@ FROZEN_INPUT_NOT_YET_EVALUATED = {                                              
     "game_total": "game_forecasts (frozen team-score pmfs)", "team_total": "game_forecasts (frozen team-score pmfs)",
     "player_pra": "projection-data forecasts[pra] (frozen player pmf)",
 }
+GAME_LEVEL = frozenset({"game_winner", "game_spread", "game_total", "team_total"})                # evaluated by nba_games (derived forecasts)
 
 # reconciliation categories (a partition of the universe)
 GRADED_C, NOT_GRADED_C = "FORECAST_AND_GRADED", "FORECAST_NOT_GRADED"
@@ -99,9 +100,11 @@ def eligible_rows(classified: dict) -> list:
             for t, r in classified.items() if r["cls"] == "IN_WINDOW"]
 
 
-def reconcile(classified: dict, graded_rows: Iterable[dict], forecast_market_ids: set, forecast_game_ids: set) -> dict:
+def reconcile(classified: dict, graded_rows: Iterable[dict], forecast_market_ids: set, forecast_family_games: set,
+              evaluated_families: frozenset = frozenset(EVALUATED_BY_ADAPTER)) -> dict:
     """Partition EVERY board ticker into exactly one category; returns totals, per-family and per-series tables.
-    ``graded_rows``: grade_all()["rows"] (accuracy status per forecast row). ``forecast_game_ids``: games with ANY forecast from the adapter."""
+    ``evaluated_families``: families for which Alpha has a forecast source wired in THIS run (a family not in it is never counted as covered).
+    ``graded_rows``: grade_all()["rows"] (accuracy status per forecast row). ``forecast_family_games``: {(native_family, game_id)} that have ANY forecast, so a game forecast for one family never excuses another."""
     graded_markets, forecast_markets = set(), set(forecast_market_ids)
     for r in graded_rows:
         if r["accuracy"]["status"] == GRADED:
@@ -114,8 +117,8 @@ def reconcile(classified: dict, graded_rows: Iterable[dict], forecast_market_ids
                 c = GRADED_C
             elif t in forecast_markets:
                 c = NOT_GRADED_C
-            elif r["family"] in EVALUATED_BY_ADAPTER:
-                c = MARKET_NOT_FC if r["game_id"] in forecast_game_ids else GAME_NOT_FC
+            elif r["family"] in evaluated_families:
+                c = MARKET_NOT_FC if (r["family"], r["game_id"]) in forecast_family_games else GAME_NOT_FC
             elif r["family"] in FROZEN_INPUT_NOT_YET_EVALUATED:
                 c = FROZEN_NOT_EVAL
             else:
@@ -131,3 +134,23 @@ def reconcile(classified: dict, graded_rows: Iterable[dict], forecast_market_ids
                        counts=dict(c)) for f, c in sorted(by_family.items(), key=lambda kv: -sum(kv[1].values()))}
     return dict(n_board_tickers=len(classified), totals={k: totals.get(k, 0) for k in CATEGORIES}, by_family=fam_tbl,
                 n_series=len(by_series), detail=detail)
+
+
+# why an adapter-family market has no forecast although its game was forecast (measured, never assumed)
+R_NO_LISTING_CAPTURE = "GAME_HAS_NO_LISTING_CAPTURE_SO_TICKER_NOT_LINKED_TO_A_PLAYER"
+R_TICKER_ABSENT = "GAME_HAS_LISTINGS_BUT_THIS_TICKER_ABSENT"
+R_LISTED_NOT_FORECAST = "LISTED_TICKER_BUT_NO_PROJECTION_FOR_PLAYER_OR_RUNG"
+
+
+def market_not_forecast_reasons(classified: dict, forecast_market_ids: set, listing_tickers: set, listing_games: set,
+                                forecast_family_games: set, families=EVALUATED_BY_ADAPTER) -> dict:
+    """Break the MARKET_NOT_FC category into exactly three reasons. A ticker can only be linked to a player (and so priced) if the
+    producer's listing archive saw it, which needs a listing capture for its game."""
+    out = Counter()
+    for t, r in classified.items():
+        if r["cls"] != "IN_WINDOW" or r["family"] not in families or t in forecast_market_ids:
+            continue
+        if (r["family"], r["game_id"]) not in forecast_family_games:
+            continue                                            # that is the GAME_NOT_FC category
+        out[R_LISTED_NOT_FORECAST if t in listing_tickers else R_TICKER_ABSENT if r["game_id"] in listing_games else R_NO_LISTING_CAPTURE] += 1
+    return dict(out)

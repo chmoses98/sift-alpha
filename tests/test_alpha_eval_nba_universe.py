@@ -74,7 +74,7 @@ class Universe(unittest.TestCase):
         cl = self.classify()
         T = {r["ticker"]: r for r in ROWS}
         F = [dict(forecast_id="f1", sport="NBA", event_id="espn:1", market_id=ROWS[0]["ticker"], accuracy=dict(status="GRADED", reason="OK"))]
-        rec = U.reconcile(cl, F, {ROWS[0]["ticker"]}, {"espn:1"})
+        rec = U.reconcile(cl, F, {ROWS[0]["ticker"]}, {("player_points", "espn:1")})
         self.assertEqual(sum(rec["totals"].values()), rec["n_board_tickers"], "partition must be exact")
         self.assertEqual(rec["totals"][U.GRADED_C], 1)
         self.assertEqual(rec["totals"][U.MARKET_NOT_FC], 1)                 # espn:1 has a forecast, the -15 rung does not
@@ -90,10 +90,28 @@ class Universe(unittest.TestCase):
         self.assertEqual(rec["by_family"]["game_spread"]["counts"], {U.FROZEN_NOT_EVAL: 1})
         self.assertEqual(rec["by_family"]["game_spread"]["support"], "MODELABLE")
 
+    def test_a_forecast_for_one_family_never_excuses_another_family_in_the_same_game(self):
+        cl = self.classify()
+        # espn:1 has a game-level forecast only; its player_points markets must be GAME_HAS_NO forecast, not "market not forecast"
+        rec = U.reconcile(cl, [], set(), {("game_spread", "espn:1")})
+        self.assertEqual(rec["by_family"]["player_points"]["counts"].get(U.GAME_NOT_FC), 3)
+        self.assertNotIn(U.MARKET_NOT_FC, rec["by_family"]["player_points"]["counts"])
+
+    def test_market_not_forecast_is_split_into_three_measured_reasons(self):
+        cl = self.classify()
+        ffg = {("player_points", "espn:1")}
+        out = U.market_not_forecast_reasons(cl, {ROWS[0]["ticker"]}, {ROWS[1]["ticker"]}, {"espn:1"}, ffg)
+        self.assertEqual(out, {U.R_LISTED_NOT_FORECAST: 1})                      # -15 rung was listed but not forecast
+        out = U.market_not_forecast_reasons(cl, {ROWS[0]["ticker"]}, set(), {"espn:1"}, ffg)
+        self.assertEqual(out, {U.R_TICKER_ABSENT: 1})                            # game has listings, ticker absent
+        out = U.market_not_forecast_reasons(cl, {ROWS[0]["ticker"]}, set(), set(), ffg)
+        self.assertEqual(out, {U.R_NO_LISTING_CAPTURE: 1})                       # game never listing-captured
+        self.assertEqual(U.market_not_forecast_reasons(cl, set(), set(), set(), set()), {})   # no forecast game -> a different category
+
     def test_forecast_not_graded_is_distinct_from_no_forecast(self):
         cl = self.classify()
         F = [dict(forecast_id="f1", sport="NBA", event_id="espn:1", market_id=ROWS[0]["ticker"], accuracy=dict(status="BLOCKED", reason="X"))]
-        rec = U.reconcile(cl, F, {ROWS[0]["ticker"]}, {"espn:1"})
+        rec = U.reconcile(cl, F, {ROWS[0]["ticker"]}, {("player_points", "espn:1")})
         self.assertEqual((rec["totals"][U.NOT_GRADED_C], rec["totals"][U.GRADED_C]), (1, 0))
 
     def test_eligible_rows_feed_the_standards_coverage_and_cover_only_in_window_games(self):

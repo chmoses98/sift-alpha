@@ -1,0 +1,80 @@
+name: Publish Alpha research desk to GitHub Pages
+
+# Research dashboard only. This is deliberately separate from the consumer
+# SIFT app and Vercel. It never reads exchange credentials or private ledgers.
+on:
+  push:
+    branches: [build/alpha-research-desk]
+    paths:
+      - ".github/workflows/alpha-pages.yml"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.mjs"
+      - "src/**"
+      - "research/audit/clv/clv_summary.json"
+      - "tests/*.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: alpha-github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/build/alpha-research-desk'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test the existing research desk
+        run: npm test
+      - name: Refuse non-aggregate CLV evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("research/audit/clv/clv_summary.json")
+          data = json.loads(path.read_text())
+          assert data.get("privacy") == "aggregates only; no stakes, P&L, ROI, tickers, prices or per-wager rows"
+          assert isinstance(data.get("real_wagers"), dict) and isinstance(data.get("hypothetical_selections"), dict)
+          forbidden = {"source_bet_key", "order_id", "fill_id", "recommendation_id", "market_ticker",
+                       "stake", "stake_dollars", "gross_return", "net_profit_loss", "actual_price",
+                       "execution_price", "ticker", "pnl", "roi"}
+          def walk(node):
+              if isinstance(node, dict):
+                  assert not (forbidden & set(node)), "private or per-wager field in public CLV dataset"
+                  for value in node.values():
+                      walk(value)
+              elif isinstance(node, list):
+                  for value in node:
+                      walk(value)
+          walk(data)
+          print("Public CLV dataset is aggregate-only; no order/contract identifiers or wager economics.")
+          PY
+      - name: Build static dashboard
+        run: npm run build
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Deploy static site
+        id: deployment
+        uses: actions/deploy-pages@v4

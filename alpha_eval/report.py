@@ -39,6 +39,7 @@ def build_report(graded: dict, *, kind: str = "cumulative", date: Optional[str] 
         sec = dict(overall=A.cell(er), model_vs_market_primary_grid=A.primary_grid(er),
                    by_sport={k: A.cell(v) for k, v in _slice(er, lambda r: r["sport"]).items()},
                    by_family={k: A.cell(v) for k, v in _slice(er, lambda r: r["family"]).items()},
+                   by_native_family={k: A.cell(v) for k, v in _slice(er, lambda r: r.get("native_family", "UNDECLARED")).items()},
                    by_sport_family={f"{k[0]}/{k[1]}": A.cell(v) for k, v in _slice(er, lambda r: (r["sport"], r["family"])).items()},
                    by_model_version={k: A.cell(v) for k, v in _slice(er, lambda r: r["model_version"] or "MISSING").items()},
                    by_horizon={k: A.cell(v) for k, v in _slice(er, lambda r: r["horizon"]).items()},
@@ -100,7 +101,7 @@ def to_markdown(rep: dict) -> str:
               f"- selection CLV: {c['selection_clv']['mean']} (n={c['selection_clv']['n']})",
               f"- quoted-execution CLV: {c['quoted_execution_clv']['mean']} (n={c['quoted_execution_clv']['n']})",
               f"- actual-fill CLV: {c['actual_fill_clv']['mean']} (n={c['actual_fill_clv']['n']})"]
-        for dim in ("by_sport", "by_family", "by_model_version", "by_horizon"):
+        for dim in ("by_sport", "by_family", "by_native_family", "by_model_version", "by_horizon"):
             L += ["", f"### Accuracy {dim.replace('_', ' ')}", "", "| slice | forecasts | graded | binary Brier | binary signed bias | calibration reading |", "|---|---|---|---|---|---|"]
             for k, v in sec[dim].items():
                 a = v["accuracy"]

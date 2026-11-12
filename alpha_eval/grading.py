@@ -174,7 +174,7 @@ def grade_all(forecast_rows: Iterable[dict], outcome_rows: Iterable[dict], quote
         acc = grade_accuracy(f, o, cls, seen=seen, as_of=as_of_ts, grace_h=outcome_grace_hours)
         seen.add(f.forecast_id)
         row = dict(forecast_id=f.forecast_id, sport=f.sport, event_id=f.event_id, group_id=f.group_id, market_id=f.market_id,
-                   family=cls["family"], base_kind=cls["base_kind"], period=cls["period"], line_role=f.line_role,
+                   family=cls["family"], native_family=f.native_family or "UNDECLARED", base_kind=cls["base_kind"], period=cls["period"], line_role=f.line_role,
                    model_id=f.model_id, model_version=f.model_version, independence=f.model_independence or "UNDECLARED",
                    evidence_class=f.evidence_class, scoring_type=f.scoring_type, horizon_hours=round(f.horizon_hours, 3),
                    horizon=horizon_bucket(f.horizon_hours), event_date=f.event_start.date().isoformat(),

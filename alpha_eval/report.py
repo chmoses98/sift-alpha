@@ -7,6 +7,7 @@ from collections import Counter, defaultdict
 from typing import Optional
 
 from . import aggregate as A
+from . import universe as U
 from .schema import BINARY, EVIDENCE_CLASSES, GRADED, SCHEMA_VERSION
 
 
@@ -27,6 +28,7 @@ def build_report(graded: dict, *, kind: str = "cumulative", date: Optional[str] 
                n_input_forecasts=graded["n_input_forecasts"], n_in_window=len(rows_sel), n_schema_rejects=len(graded["rejects"]),
                accounting=dict(accuracy=A.status_counts(rows_sel, "accuracy"), market=A.status_counts(rows_sel, "market"),
                                economics=A.status_counts(rows_sel, "economics"), clv=A.status_counts(rows_sel, "clv")),
+               coverage=U.coverage(graded.get('eligible'), rows_sel, date=date, kind=kind),
                auxiliary_input_rejects=_aux(graded.get("aux_rejects", [])),
                schema_rejects=[dict(forecast_id=r["forecast_id"], reason=r["accuracy"]["detail"]) for r in graded["rejects"]],
                by_evidence_class={})
@@ -63,6 +65,14 @@ def to_markdown(rep: dict) -> str:
          f"`{rep['schema']}` | status **{rep['status']}** | {rep['title']}", "",
          f"Forecast rows in input: {rep['n_input_forecasts']}; in window: {rep['n_in_window']}; schema rejects: {rep['n_schema_rejects']}; "
          f"auxiliary (outcome/quote/fill) rows rejected: {sum(rep['auxiliary_input_rejects']['counts'].values())}", ""]
+    cv = rep["coverage"]
+    L += ["## Coverage", "", f"- basis: **{cv['basis']}**; complete eligible-market coverage: **{cv['complete_eligible_market_coverage']}**"]
+    if cv["basis"] == U.FORECAST_ONLY:
+        L += [f"- forecast rows {cv['n_forecast_rows']} over {cv['n_forecast_markets']} markets. {cv['note']}"]
+    else:
+        L += [f"- eligible markets {cv['n_eligible_markets']}; forecast coverage {cv['forecast_coverage_of_eligible']}; graded coverage {cv['graded_coverage_of_eligible']}",
+              f"- status: {cv['status_counts']}", f"- forecast markets outside the eligible universe: {cv['n_forecast_markets_outside_universe']}"]
+    L += [""]
     L += ["## Accounting (nothing silently excluded)", "", "| evaluation | status | reason | n |", "|---|---|---|---|"]
     for dim, d in rep["accounting"].items():
         for st, rs in d.items():

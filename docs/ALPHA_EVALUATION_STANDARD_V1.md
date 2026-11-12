@@ -34,6 +34,9 @@ Families: MONEYLINE, SPREAD, ALT_SPREAD, TOTAL, ALT_TOTAL, TEAM_TOTAL, ALT_TEAM_
 | Freeze predictions and model version before outcomes | `frozen_at < event_start` and `< outcome.observed_at`, non-empty `model_version`, else BLOCKED (`FORECAST_NOT_FROZEN…`, `…AFTER_OUTCOME…`, `MODEL_VERSION_MISSING`). Timestamps only: v1 does **not** verify a hash-chained archive (see §8) |
 | Point-in-time joins | strict tz-aware UTC; entry quote ≤ freeze, close < start; later quotes never used (tested) |
 | Sports-only independence | a `sports_only` model listing `market_inputs_used` is BLOCKED; `market_informed` or undeclared models are scored for accuracy but cannot be independent evidence (verdict capped, market evaluation BLOCKED when undeclared) |
+| Outcome identity | outcomes join on `market_id` **and** `event_id`; a different `event_id` is BLOCKED `OUTCOME_EVENT_ID_DOES_NOT_MATCH_FORECAST`; disagreeing duplicate outcome rows for one market are BLOCKED `CONFLICTING_OUTCOME_ROWS_FOR_MARKET` (exact duplicates collapse) |
+| Valid, pre-event fills only | fills must be structurally valid (finite, price in (0,1), count > 0, fee ≥ 0, side YES/NO; otherwise counted as auxiliary rejects) and, per forecast, same `market_id`, `frozen_at ≤ filled_at < event_start`. Excluded fills are listed in `verified_fill.fills_rejected`, never enter verified ROI or actual-fill CLV, and fills naming no forecast are surfaced as `FILL_FORECAST_ID_UNKNOWN` |
+| Coverage basis | without `--eligible`, coverage is `FORECAST_ONLY` and complete market coverage is `NOT_ESTABLISHED`. With an independently sourced eligible-market universe (`alpha_eval/universe.py`), every eligible market is `FORECAST_AND_GRADED`, `FORECAST_NOT_GRADED`, `NO_FORECAST_FOR_ELIGIBLE_MARKET`, `FORECAST_EVENT_ID_MISMATCH` or id-conflict; `COMPLETE` only if none is unforecast/mismatched (and the universe is non-empty). Complete forecast coverage is reported separately from graded coverage |
 | Accuracy ≠ value | accuracy status/scores are computed without reading quotes (tested: identical with and without quotes) |
 | Clustered uncertainty, multiple comparisons | event-clustered bootstrap everywhere; Holm and BH over the primary sport × family × model_version × evidence-class grid. Other slices are descriptive |
 | Full eligible population | economics and market cells are built from all graded rows that have a quote; unpriced rows are counted as BLOCKED with a reason |
@@ -46,9 +49,10 @@ Families: MONEYLINE, SPREAD, ALT_SPREAD, TOTAL, ALT_TOTAL, TEAM_TOTAL, ALT_TEAM_
 * **forecast**: `forecast_id` (unique), `sport` (NFL CFB NBA CBB NHL MLB SOCCER TENNIS), `event_id`, `group_id` (cluster; default event_id), `market_id` (exchange ticker, threshold included), `native_family`, `line`, `line_role`, `model_id`, `model_version`, `model_independence` (`sports_only|market_informed`), `market_inputs_used[]`, `frozen_at`, `event_start`, `evidence_class`, `scoring_type`, `payload`.
   Payloads: BINARY `{p_yes}`; CONTINUOUS `{mean, quantiles{q:v}}`; ORDINAL_PMF `{pmf{k:p}}`; CATEGORICAL `{probs{label:p}}`.
 * **outcome**: `market_id`, `event_id`, `state` (`final|void|pending`), `observed_at`, `source` (`sports|market_settlement`), `value` (0/1, number or label).
+* **eligible** (optional universe, `--eligible`): `market_id`, `event_id`, `sport`, `event_start`[, `native_family`].
 * **quote**: `market_id`, `observed_at`, `yes_bid`, `yes_ask` (dollars). **fill**: `forecast_id`, `market_id`, `side`, `price` (fee-exclusive), `count`, `fee`, `is_taker`, `filled_at`.
 
-CLI: `python -m alpha_eval report --forecasts F --outcomes O [--quotes Q] [--fills X] --kind daily|cumulative [--date YYYY-MM-DD] --out-dir D`; `python -m alpha_eval coverage --out-dir docs/alpha_eval`; `python -m alpha_eval example --out-dir D`.
+CLI: `python -m alpha_eval report --forecasts F --outcomes O [--quotes Q] [--fills X] [--eligible E] --kind daily|cumulative [--date YYYY-MM-DD] --out-dir D`; `python -m alpha_eval coverage --out-dir docs/alpha_eval`; `python -m alpha_eval example --out-dir D`.
 
 ## 6. Reports
 

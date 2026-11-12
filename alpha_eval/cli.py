@@ -26,7 +26,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("report")
     r.add_argument("--forecasts", required=True); r.add_argument("--outcomes", required=True)
-    r.add_argument("--quotes"); r.add_argument("--fills")
+    r.add_argument("--quotes"); r.add_argument("--fills"); r.add_argument("--eligible", help="JSONL eligible-market universe; without it coverage is FORECAST_ONLY")
     r.add_argument("--kind", choices=("daily", "cumulative"), default="cumulative"); r.add_argument("--date")
     r.add_argument("--title", default=""); r.add_argument("--out-dir", required=True)
     c = sub.add_parser("coverage"); c.add_argument("--out-dir", required=True)
@@ -34,7 +34,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     out = Path(a.out_dir)
     if a.cmd == "report":
-        g = grade_all(_jsonl(a.forecasts), _jsonl(a.outcomes), _jsonl(a.quotes), _jsonl(a.fills))
+        g = grade_all(_jsonl(a.forecasts), _jsonl(a.outcomes), _jsonl(a.quotes), _jsonl(a.fills),
+                      eligible_rows=_jsonl(a.eligible) if a.eligible else None)
         _write(out, f"{a.kind}_{a.date or 'all'}", build_report(g, kind=a.kind, date=a.date, title=a.title))
     elif a.cmd == "coverage":
         m = cov.build()

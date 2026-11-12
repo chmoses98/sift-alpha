@@ -369,5 +369,140 @@ class Adapter(unittest.TestCase):
         self.assertEqual(rows[0]["market_inputs_used"], ["kalshi_mid"])
 
 
+def _fill(i, *, mid=None, hours_before=5, **kw):
+    d = dict(schema=SCHEMA_VERSION, forecast_id=f"KXNBAGAME-G{i}|6|v1", market_id=mid or f"KXNBAGAME-G{i}", side="YES", price=.52,
+             count=1, fee=.02, is_taker=True, filled_at=iso(T0 + timedelta(hours=i) - timedelta(hours=hours_before)))
+    d.update(kw)
+    return d
+
+
+class IntegrityGaps(unittest.TestCase):
+    """PR #64 review: outcome event identity, invalid/post-event fills, eligible-universe vs forecast-only coverage."""
+
+    def _g(self, F, O, Q=None, X=(), **kw):
+        return grade_all(F, O, Q if Q is not None else [qt(0, .48, .52)], X, **kw)
+
+    # -- 1. outcome join validates event identity
+    def test_outcome_with_different_event_id_is_blocked_not_graded(self):
+        o = out(0, 1); o["event_id"] = "SOME-OTHER-EVENT"
+        r = self._g([fc(0, .8)], [o])["rows"][0]
+        self.assertEqual(r["accuracy"]["status"], BLOCKED)
+        self.assertEqual(r["accuracy"]["reason"], "OUTCOME_EVENT_ID_DOES_NOT_MATCH_FORECAST")
+        self.assertEqual(r["market"]["status"], BLOCKED)           # value evaluations inherit the block
+
+    def test_matching_event_id_still_grades(self):
+        self.assertEqual(self._g([fc(0, .8)], [out(0, 1)])["rows"][0]["accuracy"]["status"], GRADED)
+
+    def test_conflicting_outcome_rows_for_one_market_block(self):
+        stale = out(0, 0); stale["event_id"] = "OLD-EVENT"          # recycled ticker: later row must not silently win
+        for rows in ([stale, out(0, 1)], [out(0, 1), stale], [out(0, 1), out(0, 0)]):
+            r = self._g([fc(0, .8)], rows)["rows"][0]
+            self.assertEqual(r["accuracy"]["reason"], "CONFLICTING_OUTCOME_ROWS_FOR_MARKET", rows)
+
+    def test_exact_duplicate_outcome_rows_collapse(self):
+        self.assertEqual(self._g([fc(0, .8)], [out(0, 1), out(0, 1)])["rows"][0]["accuracy"]["status"], GRADED)
+
+    def test_pending_outcome_for_wrong_event_is_not_pending(self):
+        o = out(0, None); o["state"] = "pending"; o["event_id"] = "OTHER"
+        self.assertEqual(self._g([fc(0, .8)], [o])["rows"][0]["accuracy"]["status"], BLOCKED)
+
+    # -- 2. invalid / post-event fills
+    def _verified(self, fill_rows, n=1):
+        g = self._g([fc(0, .9)], [out(0, 1)], [qt(0, .48, .52)], fill_rows)
+        return g, g["rows"][0]["economics"]["verified_fill"]
+
+    def test_structurally_invalid_fills_rejected_and_counted(self):
+        bad = [_fill(0, price=0), _fill(0, price=1.0), _fill(0, price=1.5), _fill(0, price=float("nan")), _fill(0, count=0),
+               _fill(0, count=-3), _fill(0, fee=-0.01), _fill(0, fee=float("inf")), _fill(0, side="MAYBE"), _fill(0, price="abc")]
+        for b in bad:
+            g, v = self._verified([b])
+            self.assertEqual(v["status"], BLOCKED, b)
+            self.assertEqual(v["reason"], "NO_VERIFIED_FILL", b)
+            self.assertEqual(sum(1 for k, _ in g["aux_rejects"] if k == "fill"), 1, b)
+
+    def test_post_event_fill_is_excluded_from_verified_and_clv(self):
+        late = _fill(0, hours_before=-1)                          # one hour after event start
+        g, v = self._verified([late])
+        self.assertEqual((v["status"], v["reason"]), (BLOCKED, "NO_VALID_FILL_AFTER_INTEGRITY_CHECKS"))
+        self.assertEqual(v["fills_rejected"], {"FILL_AT_OR_AFTER_EVENT_START": 1})
+        self.assertFalse(g["rows"][0]["clv"].get("actual_fill_verified"))
+        _, v0 = self._verified([_fill(0, hours_before=0)])        # exactly at start is not pre-event
+        self.assertEqual(v0["status"], BLOCKED)
+
+    def test_fill_before_freeze_and_wrong_market_excluded(self):
+        _, v = self._verified([_fill(0, hours_before=7)])
+        self.assertEqual(v["fills_rejected"], {"FILL_BEFORE_FORECAST_FREEZE": 1})
+        _, v = self._verified([_fill(0, mid="KXNBAGAME-G9")])
+        self.assertEqual(v["fills_rejected"], {"FILL_MARKET_ID_DOES_NOT_MATCH_FORECAST": 1})
+
+    def test_valid_fill_survives_alongside_invalid_and_rejection_is_reported(self):
+        g, v = self._verified([_fill(0), _fill(0, hours_before=-2)])
+        self.assertEqual(v["status"], GRADED)
+        self.assertEqual(v["contracts"], 1)
+        self.assertEqual(v["fills_rejected"], {"FILL_AT_OR_AFTER_EVENT_START": 1})
+        self.assertAlmostEqual(v["pnl"], 1 - .52 - .02)
+
+    def test_post_event_fills_cannot_create_profitability_claim(self):
+        n = 250
+        F = [fc(i, .9) for i in range(n)]; O = [out(i, 1) for i in range(n)]; Q = [qt(i, .48, .52) for i in range(n)]
+        X = [_fill(i, hours_before=-1) for i in range(n)]
+        e = A.econ_cell(grade_all(F, O, Q, X)["rows"])
+        self.assertEqual(e["verified_fills"]["n"], 0)
+        self.assertTrue(e["profitability_claim"].startswith("NO_PROFITABILITY_CLAIM"))
+
+    def test_orphan_fill_is_surfaced(self):
+        g = self._g([fc(0, .8)], [out(0, 1)], None, [_fill(0, forecast_id="NOPE|6|v1")])
+        self.assertTrue(any("FILL_FORECAST_ID_UNKNOWN" in m for k, m in g["aux_rejects"] if k == "fill"))
+
+    # -- 3. eligible-universe coverage vs forecast-only coverage
+    @staticmethod
+    def _el(i, **kw):
+        d = dict(schema=SCHEMA_VERSION, market_id=f"KXNBAGAME-G{i}", event_id=f"G{i}", sport="NBA", event_start=iso(T0 + timedelta(hours=i)))
+        d.update(kw)
+        return d
+
+    def test_without_universe_coverage_is_forecast_only_and_not_established(self):
+        g = self._g([fc(0, .8)], [out(0, 1)])
+        cv = build_report(g)["coverage"]
+        self.assertEqual(cv["basis"], "FORECAST_ONLY")
+        self.assertEqual(cv["complete_eligible_market_coverage"], "NOT_ESTABLISHED")
+        self.assertNotIn("graded_coverage_of_eligible", cv)
+        self.assertIn("FORECAST_ONLY", to_markdown(build_report(g)))
+
+    def test_universe_exposes_unforecast_markets(self):
+        el = [self._el(i) for i in range(4)]
+        g = self._g([fc(0, .8), fc(1, .7), fc(9, .6)], [out(0, 1)], eligible_rows=el)     # G9 is outside the universe
+        cv = build_report(g)["coverage"]
+        self.assertEqual(cv["basis"], "ELIGIBLE_UNIVERSE")
+        self.assertEqual(cv["n_eligible_markets"], 4)
+        self.assertEqual(cv["status_counts"], {"FORECAST_AND_GRADED": 1, "FORECAST_NOT_GRADED": 1, "NO_FORECAST_FOR_ELIGIBLE_MARKET": 2})
+        self.assertEqual(cv["forecast_coverage_of_eligible"], .5)
+        self.assertEqual(cv["graded_coverage_of_eligible"], .25)
+        self.assertEqual(cv["complete_eligible_market_coverage"], "INCOMPLETE")
+        self.assertEqual(cv["n_forecast_markets_outside_universe"], 1)
+
+    def test_complete_only_when_every_eligible_market_has_a_forecast(self):
+        el = [self._el(i) for i in range(2)]
+        cv = build_report(self._g([fc(0, .8), fc(1, .7)], [out(0, 1)], eligible_rows=el))["coverage"]
+        self.assertEqual(cv["complete_eligible_market_coverage"], "COMPLETE")
+        self.assertEqual(cv["graded_coverage_of_eligible"], .5)       # complete forecast coverage != complete grading
+
+    def test_eligible_event_id_mismatch_is_not_coverage(self):
+        cv = build_report(self._g([fc(0, .8)], [out(0, 1)], eligible_rows=[self._el(0, event_id="ELSEWHERE")]))["coverage"]
+        self.assertEqual(cv["status_counts"], {"FORECAST_EVENT_ID_MISMATCH": 1})
+        self.assertEqual(cv["complete_eligible_market_coverage"], "INCOMPLETE")
+
+    def test_empty_universe_is_never_complete(self):
+        cv = build_report(self._g([fc(0, .8)], [out(0, 1)], eligible_rows=[]))["coverage"]
+        self.assertEqual(cv["complete_eligible_market_coverage"], "INCOMPLETE")
+
+    def test_daily_window_restricts_universe(self):
+        el = [self._el(0), self._el(30)]                               # second event is on a later UTC date
+        g = self._g([fc(0, .8)], [out(0, 1)], eligible_rows=el)
+        cv = build_report(g, kind="daily", date=iso(T0)[:10])["coverage"]
+        self.assertEqual(cv["n_eligible_markets"], 1)
+        self.assertEqual(cv["complete_eligible_market_coverage"], "COMPLETE")
+
+
 if __name__ == "__main__":
     unittest.main()

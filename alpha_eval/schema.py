@@ -11,6 +11,7 @@ Status vocabulary (every forecast ends in exactly one, with a reason code - noth
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -52,6 +53,10 @@ R = type("R", (), dict(
     STALE_QUOTE="PIT_QUOTE_TOO_OLD", ONE_SIDED="PIT_QUOTE_ONE_SIDED_OR_CROSSED", NO_CLOSE="NO_VALID_CLOSING_QUOTE",
     NO_FILL="NO_VERIFIED_FILL", DUPLICATE="DUPLICATE_FORECAST_ID", NOT_APPLICABLE="NOT_APPLICABLE_NONBINARY",
     MULTI_FREEZE="OUTCOME_OBSERVED_BEFORE_FREEZE_TIMESTAMP_UNVERIFIABLE",
+    EVENT_MISMATCH="OUTCOME_EVENT_ID_DOES_NOT_MATCH_FORECAST", OUTCOME_CONFLICT="CONFLICTING_OUTCOME_ROWS_FOR_MARKET",
+    FILL_MARKET="FILL_MARKET_ID_DOES_NOT_MATCH_FORECAST", FILL_POST_EVENT="FILL_AT_OR_AFTER_EVENT_START",
+    FILL_PRE_FREEZE="FILL_BEFORE_FORECAST_FREEZE", FILL_INVALID="FILL_INVALID_VALUES", FILL_ORPHAN="FILL_FORECAST_ID_UNKNOWN",
+    NO_VALID_FILL="NO_VALID_FILL_AFTER_INTEGRITY_CHECKS",
 ))
 
 
@@ -189,7 +194,22 @@ def quote_from_row(row: dict) -> QuoteRow:
 
 
 def fill_from_row(row: dict) -> FillRow:
+    """Structural validity only (finite, price strictly inside (0,1), count > 0, fee >= 0, side YES|NO). Context checks
+    (market identity, fill time vs the forecast's freeze and event start) happen in grading where the forecast is known."""
     _need(row, ("forecast_id", "market_id", "side", "price", "count", "filled_at"), "fill")
-    return FillRow(str(row["forecast_id"]), str(row["market_id"]), str(row["side"]).upper(), float(row["price"]),
-                   float(row["count"]), None if row.get("fee") is None else float(row["fee"]),
+    try:
+        price, count = float(row["price"]), float(row["count"])
+        fee = None if row.get("fee") is None else float(row["fee"])
+    except (TypeError, ValueError) as e:
+        raise SchemaError(f"fill: non-numeric price/count/fee ({e})") from e
+    side = str(row["side"]).upper()
+    if side not in ("YES", "NO"):
+        raise SchemaError(f"fill: side {row['side']!r} not YES|NO")
+    if not (math.isfinite(price) and 0.0 < price < 1.0):
+        raise SchemaError(f"fill: price {price!r} outside (0,1)")
+    if not (math.isfinite(count) and count > 0):
+        raise SchemaError(f"fill: count {count!r} must be > 0")
+    if fee is not None and not (math.isfinite(fee) and fee >= 0):
+        raise SchemaError(f"fill: fee {fee!r} must be finite and >= 0")
+    return FillRow(str(row["forecast_id"]), str(row["market_id"]), side, price, count, fee,
                    row.get("is_taker"), parse_ts(row["filled_at"], "filled_at"))

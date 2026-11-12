@@ -4,6 +4,11 @@
 
 Forecast rows in input: 908; in window: 48; schema rejects: 0; auxiliary (outcome/quote/fill) rows rejected: 0
 
+## Coverage
+
+- basis: **FORECAST_ONLY**; complete eligible-market coverage: **NOT_ESTABLISHED**
+- forecast rows 48 over 40 markets. no eligible-market universe supplied: this accounts for forecasts only and says nothing about how many eligible markets were never forecast
+
 ## Accounting (nothing silently excluded)
 
 | evaluation | status | reason | n |

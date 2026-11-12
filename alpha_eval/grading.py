@@ -13,6 +13,7 @@ from sift_clv import canonical as C
 
 from . import scoring as S
 from .families import classify_contract
+from .universe import normalise_eligible
 from .schema import (BINARY, BLOCKED, CATEGORICAL, CONTINUOUS, GRADED, MARKET_INFORMED, ORDINAL_PMF, PENDING, R, SPORTS_ONLY,
                      UNSUPPORTED, FillRow, Forecast, Outcome, QuoteRow, SchemaError, forecast_from_row, fill_from_row,
                      outcome_from_row, quote_from_row)
@@ -20,6 +21,9 @@ from .schema import (BINARY, BLOCKED, CATEGORICAL, CONTINUOUS, GRADED, MARKET_IN
 HORIZONS = ((2.0, "le_2h"), (6.0, "2h_6h"), (24.0, "6h_24h"), (72.0, "24h_72h"))
 DEFAULT_MAX_QUOTE_AGE_S = 3600
 DEFAULT_MAX_CLOSE_AGE_S = 3600
+
+
+CONFLICT = object()     # sentinel: >1 non-identical outcome rows for one market_id (cannot know which is true)
 
 
 def horizon_bucket(h: float) -> str:
@@ -49,6 +53,10 @@ def grade_accuracy(f: Forecast, o: Optional[Outcome], cls: dict, *, seen: set) -
         return _st(BLOCKED, R.INDEPENDENCE, detail=",".join(f.market_inputs_used))
     if o is None:
         return _st(PENDING, R.NO_OUTCOME)
+    if o is CONFLICT:
+        return _st(BLOCKED, R.OUTCOME_CONFLICT)
+    if o.event_id != f.event_id:        # outcome joins on market AND event identity; a reused/recycled ticker must not grade
+        return _st(BLOCKED, R.EVENT_MISMATCH, detail=f"forecast event {f.event_id!r} != outcome event {o.event_id!r}")
     if o.state == "pending":
         return _st(PENDING, R.EVENT_NOT_FINAL)
     if o.state == "void":
@@ -116,7 +124,7 @@ def hypothetical_roi_row(q: C.Quote, side: str, y: int, role: str = "taker") -> 
 
 # ------------------------------------------------------------------ full grading pass
 def grade_all(forecast_rows: Iterable[dict], outcome_rows: Iterable[dict], quote_rows: Iterable[dict] = (),
-              fill_rows: Iterable[dict] = (), *, max_quote_age_s: int = DEFAULT_MAX_QUOTE_AGE_S,
+              fill_rows: Iterable[dict] = (), *, eligible_rows: Optional[Iterable[dict]] = None, max_quote_age_s: int = DEFAULT_MAX_QUOTE_AGE_S,
               max_close_age_s: int = DEFAULT_MAX_CLOSE_AGE_S, edge_threshold: float = 0.0) -> dict:
     """-> {rows: [...one per input forecast...], rejects: [...], accounting: {...}}.  ``len(rows)+len(rejects)`` always equals
     the number of input forecast rows (asserted by the conformance suite)."""
@@ -125,7 +133,13 @@ def grade_all(forecast_rows: Iterable[dict], outcome_rows: Iterable[dict], quote
     for r in outcome_rows:
         try:
             o = outcome_from_row(r)
-            outcomes[o.market_id] = o
+            prev = outcomes.get(o.market_id)
+            if prev is None or prev is o:
+                outcomes[o.market_id] = o
+            elif prev is CONFLICT or (prev.event_id, prev.state, prev.value) != (o.event_id, o.state, o.value):
+                # a second row for the same market that disagrees (incl. a different event_id): refuse to pick one.
+                # Exact duplicates (same event/state/value) are harmless and collapse.
+                outcomes[o.market_id] = CONFLICT
         except SchemaError as e:
             ev_errors.append(("outcome", str(e)))
     for r in quote_rows:
@@ -158,12 +172,15 @@ def grade_all(forecast_rows: Iterable[dict], outcome_rows: Iterable[dict], quote
                    model_id=f.model_id, model_version=f.model_version, independence=f.model_independence or "UNDECLARED",
                    evidence_class=f.evidence_class, scoring_type=f.scoring_type, horizon_hours=round(f.horizon_hours, 3),
                    horizon=horizon_bucket(f.horizon_hours), event_date=f.event_start.date().isoformat(),
-                   outcome_source=o.source if o else None, accuracy=acc)
+                   outcome_source=o.source if (o and o is not CONFLICT) else None, accuracy=acc)
         row.update(_value_evals(f, o, acc, quotes.get(f.market_id, []), fills.get(f.forecast_id, []),
                                 max_quote_age_s, max_close_age_s, edge_threshold))
         rows.append(row)
     assert len(rows) + len(rejects) == n_in
-    return dict(rows=rows, rejects=rejects, aux_rejects=ev_errors, n_input_forecasts=n_in)
+    for fid in sorted(set(fills) - seen):       # fills that attach to no forecast are surfaced, not ignored
+        ev_errors.append(("fill", f"{R.FILL_ORPHAN}: {fid} ({len(fills[fid])} fill rows)"))
+    return dict(rows=rows, rejects=rejects, aux_rejects=ev_errors, n_input_forecasts=n_in,
+                eligible=normalise_eligible(eligible_rows))
 
 
 def _value_evals(f, o, acc, qs, fills, max_q_age, max_c_age, thr) -> dict:
@@ -200,7 +217,7 @@ def _value_evals(f, o, acc, qs, fills, max_q_age, max_c_age, thr) -> dict:
     # --- CLV: signed, close strictly before start, same ticker; fills measured separately
     cq = [C.Quote.of(x.market_id, x.yes_bid, x.yes_ask, x.observed_at) for x in qs]
     close = C.select_close(cq, ticker=f.market_id, start=f.event_start)
-    cfills = [C.Fill.of(x.price, x.count, x.fee, x.is_taker) for x in fills if x.side == side]
+    cfills = [C.Fill.of(x.price, x.count, x.fee, x.is_taker) for x in screen_fills(f, fills)[0] if x.side == side]
     res = C.evaluate(ticker=f.market_id, side=side, recommendation=q, close=close, start=f.event_start, fills=cfills,
                      max_close_age_seconds=max_c_age)
     if res.status != C.OK:
@@ -214,7 +231,35 @@ def _value_evals(f, o, acc, qs, fills, max_q_age, max_c_age, thr) -> dict:
     return out
 
 
+def screen_fills(f: Forecast, fills: list):
+    """Context integrity for fills attributed to forecast ``f``: same market; not before the freeze it claims to follow;
+    strictly before the event starts (a post-start fill is in-play, not the pre-event entry being evaluated).
+    -> (valid fills, {reason: n} for the excluded ones). Excluded fills are counted, never silently dropped."""
+    ok, bad = [], {}
+    for x in fills:
+        if x.market_id != f.market_id:
+            why = R.FILL_MARKET
+        elif x.filled_at >= f.event_start:
+            why = R.FILL_POST_EVENT
+        elif x.filled_at < f.frozen_at:
+            why = R.FILL_PRE_FREEZE
+        else:
+            ok.append(x)
+            continue
+        bad[why] = bad.get(why, 0) + 1
+    return ok, bad
+
+
 def _verified(f: Forecast, fills: list, y: int) -> dict:
+    fills, bad = screen_fills(f, fills)
+    if bad:
+        r = _verified_valid(f, fills, y) if fills else _st(BLOCKED, R.NO_VALID_FILL)
+        r["fills_rejected"] = bad
+        return r
+    return _verified_valid(f, fills, y)
+
+
+def _verified_valid(f: Forecast, fills: list, y: int) -> dict:
     if not fills:
         return _st(BLOCKED, R.NO_FILL)
     n = sum(x.count for x in fills)

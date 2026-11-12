@@ -33,6 +33,12 @@ def classify_contract(sport: str, native_family: str, ticker: str = "", line_rol
         return dict(family=UNCLASSIFIED, base_kind="unclassified", period="FULL", allowed_scoring=(), support="UNSUPPORTED",
                     reason=R.UNKNOWN_SPORT)
     c = classify(sport, native_family, ticker)
+    if native_family:
+        # A producer-declared family beats substring hits in the ticker (alpha_engine's season_award rule matches "hart"
+        # inside player codes such as NYKJHART3). The ticker is then used only for period detection.
+        n = classify(sport, native_family, "")
+        if n["kind"] != "unclassified":
+            c = dict(n, period=c["period"])
     kind, period = c["kind"], c["period"]
     family, allowed = _KIND.get(kind, (UNCLASSIFIED, ()))
     if kind in _GAME_KINDS and period != "FULL":

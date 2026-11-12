@@ -16,7 +16,7 @@ from .families import classify_contract
 from .universe import normalise_eligible
 from .schema import (BINARY, BLOCKED, CATEGORICAL, CONTINUOUS, GRADED, MARKET_INFORMED, ORDINAL_PMF, PENDING, R, SPORTS_ONLY,
                      UNSUPPORTED, FillRow, Forecast, Outcome, QuoteRow, SchemaError, forecast_from_row, fill_from_row,
-                     outcome_from_row, quote_from_row)
+                     outcome_from_row, parse_ts, quote_from_row)
 
 HORIZONS = ((2.0, "le_2h"), (6.0, "2h_6h"), (24.0, "6h_24h"), (72.0, "24h_72h"))
 DEFAULT_MAX_QUOTE_AGE_S = 3600
@@ -38,7 +38,7 @@ def _st(status, reason, **kw):
 
 
 # ------------------------------------------------------------------ accuracy
-def grade_accuracy(f: Forecast, o: Optional[Outcome], cls: dict, *, seen: set) -> dict:
+def grade_accuracy(f: Forecast, o: Optional[Outcome], cls: dict, *, seen: set, as_of=None, grace_h: float = 24.0) -> dict:
     if f.forecast_id in seen:
         return _st(BLOCKED, R.DUPLICATE)
     if cls["support"] != "SCORABLE":
@@ -52,6 +52,8 @@ def grade_accuracy(f: Forecast, o: Optional[Outcome], cls: dict, *, seen: set) -
     if f.model_independence == SPORTS_ONLY and f.market_inputs_used:
         return _st(BLOCKED, R.INDEPENDENCE, detail=",".join(f.market_inputs_used))
     if o is None:
+        if as_of is not None and f.event_start + timedelta(hours=grace_h) < as_of:
+            return _st(BLOCKED, R.OVERDUE, detail=f"event_start {f.event_start.isoformat()} + {grace_h}h < data horizon {as_of.isoformat()}")
         return _st(PENDING, R.NO_OUTCOME)
     if o is CONFLICT:
         return _st(BLOCKED, R.OUTCOME_CONFLICT)
@@ -125,9 +127,13 @@ def hypothetical_roi_row(q: C.Quote, side: str, y: int, role: str = "taker") -> 
 # ------------------------------------------------------------------ full grading pass
 def grade_all(forecast_rows: Iterable[dict], outcome_rows: Iterable[dict], quote_rows: Iterable[dict] = (),
               fill_rows: Iterable[dict] = (), *, eligible_rows: Optional[Iterable[dict]] = None, max_quote_age_s: int = DEFAULT_MAX_QUOTE_AGE_S,
-              max_close_age_s: int = DEFAULT_MAX_CLOSE_AGE_S, edge_threshold: float = 0.0) -> dict:
-    """-> {rows: [...one per input forecast...], rejects: [...], accounting: {...}}.  ``len(rows)+len(rejects)`` always equals
+              max_close_age_s: int = DEFAULT_MAX_CLOSE_AGE_S, edge_threshold: float = 0.0, as_of=None,
+              outcome_grace_hours: float = 24.0) -> dict:
+    """-> {rows: [...one per input forecast...], rejects: [...], accounting: {...}}.  ``as_of`` (data horizon) makes a missing outcome row for an event that started more than ``outcome_grace_hours`` earlier BLOCKED
+    ``NO_OUTCOME_ROW_EVENT_OVERDUE`` instead of PENDING (a finished event with no outcome is a data gap, not "not yet").
+    ``len(rows)+len(rejects)`` always equals
     the number of input forecast rows (asserted by the conformance suite)."""
+    as_of_ts = None if as_of is None else parse_ts(as_of, "as_of")   # data horizon; None => no overdue judgement (PENDING only)
     outcomes, quotes, fills = {}, defaultdict(list), defaultdict(list)
     ev_errors = []
     for r in outcome_rows:
@@ -165,7 +171,7 @@ def grade_all(forecast_rows: Iterable[dict], outcome_rows: Iterable[dict], quote
             continue
         cls = classify_contract(f.sport, f.native_family, f.market_id, f.line_role)
         o = outcomes.get(f.market_id)
-        acc = grade_accuracy(f, o, cls, seen=seen)
+        acc = grade_accuracy(f, o, cls, seen=seen, as_of=as_of_ts, grace_h=outcome_grace_hours)
         seen.add(f.forecast_id)
         row = dict(forecast_id=f.forecast_id, sport=f.sport, event_id=f.event_id, group_id=f.group_id, market_id=f.market_id,
                    family=cls["family"], base_kind=cls["base_kind"], period=cls["period"], line_role=f.line_role,

@@ -504,5 +504,32 @@ class IntegrityGaps(unittest.TestCase):
         self.assertEqual(cv["complete_eligible_market_coverage"], "COMPLETE")
 
 
+class RealDataFindings(unittest.TestCase):
+    """Defects found while running the first real (NBA PURE shadow store) postmortem."""
+
+    def test_declared_native_family_beats_ticker_substring_collision(self):
+        # alpha_engine's season_award rule matches 'hart' inside the player code NYKJHART3
+        c = classify_contract("NBA", "player_points", "KXNBAPTS-26OCT20PHINYK-NYKJHART3-10", "LADDER_RUNG")
+        self.assertEqual((c["family"], c["base_kind"]), ("PLAYER_PROP", "player_stat"))
+        self.assertEqual(classify_contract("NBA", "player_points", "KXNBAPTS-26OCT20PHINYK-NYKJSMITH3-10")["family"], "PLAYER_PROP")
+
+    def test_unknown_native_family_stays_visibly_unclassified_not_guessed(self):
+        c = classify_contract("NBA", "zzz_unknown", "KXNBAPTS-26OCT20PHINYK-NYKJSMITH3-10")
+        self.assertEqual((c["family"], c["support"]), ("UNCLASSIFIED", "UNSUPPORTED"))
+        self.assertEqual(classify_contract("NBA", "game_winner", "KXNBAGAME-26OCT20PHINYK-NYK")["family"], "MONEYLINE")
+
+    def test_missing_outcome_is_pending_without_horizon_overdue_with_horizon(self):
+        F = [fc(0, .8)]
+        self.assertEqual(grade_all(F, [], [qt(0, .48, .52)])["rows"][0]["accuracy"]["reason"], "NO_OUTCOME_ROW")
+        late = grade_all(F, [], [qt(0, .48, .52)], as_of=iso(T0 + timedelta(hours=40)))["rows"][0]
+        self.assertEqual((late["accuracy"]["status"], late["accuracy"]["reason"]), (BLOCKED, "NO_OUTCOME_ROW_EVENT_OVERDUE"))
+        early = grade_all(F, [], [qt(0, .48, .52)], as_of=iso(T0 + timedelta(hours=10)))["rows"][0]   # inside the 24h grace
+        self.assertEqual(early["accuracy"]["status"], PENDING)
+
+    def test_overdue_never_overrides_a_real_outcome(self):
+        r = grade_all([fc(0, .8)], [out(0, 1)], [qt(0, .48, .52)], as_of=iso(T0 + timedelta(days=30)))["rows"][0]
+        self.assertEqual(r["accuracy"]["status"], GRADED)
+
+
 if __name__ == "__main__":
     unittest.main()

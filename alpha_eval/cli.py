@@ -29,6 +29,8 @@ def main(argv=None) -> int:
     r.add_argument("--quotes"); r.add_argument("--fills"); r.add_argument("--eligible", help="JSONL eligible-market universe; without it coverage is FORECAST_ONLY")
     r.add_argument("--kind", choices=("daily", "cumulative"), default="cumulative"); r.add_argument("--date")
     r.add_argument("--title", default=""); r.add_argument("--out-dir", required=True)
+    n = sub.add_parser("nba-shadow", help="read-only postmortem from a LOCAL checkout of the NBA PURE shadow store")
+    n.add_argument("--root", required=True); n.add_argument("--out-dir", required=True); n.add_argument("--title", default="")
     c = sub.add_parser("coverage"); c.add_argument("--out-dir", required=True)
     e = sub.add_parser("example"); e.add_argument("--out-dir", required=True)
     a = ap.parse_args(argv)
@@ -37,6 +39,15 @@ def main(argv=None) -> int:
         g = grade_all(_jsonl(a.forecasts), _jsonl(a.outcomes), _jsonl(a.quotes), _jsonl(a.fills),
                       eligible_rows=_jsonl(a.eligible) if a.eligible else None)
         _write(out, f"{a.kind}_{a.date or 'all'}", build_report(g, kind=a.kind, date=a.date, title=a.title))
+    elif a.cmd == "nba-shadow":
+        from . import nba_shadow
+        b = nba_shadow.build(a.root)
+        g = grade_all(b["forecasts"], b["outcomes"], b["quotes"], [], eligible_rows=b["eligible"], as_of=b["info"]["data_horizon"])
+        rep = build_report(g, kind="cumulative", title=a.title or "NBA PURE shadow store postmortem")
+        rep["source_accounting"] = dict(info=b["info"], board=b["board"], model_hash_counts=b["model_hash_counts"], chain=b["chain"],
+                                        n_forecast_rows=len(b["forecasts"]), n_outcome_rows=len(b["outcomes"]), n_quote_rows=len(b["quotes"]),
+                                        n_eligible_rows=len(b["eligible"]))
+        _write(out, "nba_shadow_cumulative", rep)
     elif a.cmd == "coverage":
         m = cov.build()
         out.mkdir(parents=True, exist_ok=True)

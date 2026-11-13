@@ -187,7 +187,8 @@ def load_nhl_api(cache_dir: str) -> dict:
 
 def check_identity(ticker: str, game: Optional[dict], player: Optional[tuple] = None) -> str:
     """-> IDENTITY_VERIFIED | IDENTITY_UNVERIFIABLE_NO_GAME_RECORD | IDENTITY_UNPARSEABLE_TICKER | MISMATCH_DATE | MISMATCH_TEAMS |
-    MISMATCH_PLAYER (team code / sweater / surname) | PLAYER_NOT_IN_OFFICIAL_BOX (unverifiable, not a mismatch)."""
+    MISMATCH_PLAYER (team code / sweater / surname) | PLAYER_NOT_IN_OFFICIAL_BOX (unverifiable, not a mismatch; outcome is VOID) |
+    MISMATCH_PLAYER_TICKER_NOT_RESOLVED (the producer's player played, but the ticker does not resolve to them independently)."""
     t = parse_ticker(ticker)
     if t is None:
         return "IDENTITY_UNPARSEABLE_TICKER"
@@ -201,6 +202,8 @@ def check_identity(ticker: str, game: Optional[dict], player: Optional[tuple] = 
     if player is not None:
         if player == "ABSENT":
             return "PLAYER_NOT_IN_OFFICIAL_BOX"
+        if player == "UNRESOLVED_PRODUCER_IN_BOX":
+            return "MISMATCH_PLAYER_TICKER_NOT_RESOLVED"
         team, sweater, name = player
         code = t["rest"].split("-")[0]
         tc = k(team)
@@ -435,9 +438,15 @@ def build(root: str, api_cache: str, git_log_text: str, *, cross_check: bool = T
             pp = r.get("player_id")
             pid = resolve_player(t, g["game"], g["roster"])
             if pid is None:
-                pl = "ABSENT"
-                ident_c["player_resolution[NOT_IN_OFFICIAL_BOX_OR_AMBIGUOUS]"] += 1
                 pid = int(pp) if pp is not None else None          # absent from the box -> derive_outcome returns VOID for it
+                if pid is not None and pid in g["roster"]:
+                    # the producer's player IS in the official box, but the ticker (team code + sweater + surname) does not resolve
+                    # to them independently: identity rests on the producer alone -> fail closed (outcome blocked by the join).
+                    pl = "UNRESOLVED_PRODUCER_IN_BOX"
+                    ident_c["player_resolution[TICKER_UNRESOLVED_PRODUCER_PLAYER_IN_BOX]"] += 1
+                else:
+                    pl = "ABSENT"
+                    ident_c["player_resolution[NOT_IN_OFFICIAL_BOX_OR_AMBIGUOUS]"] += 1
             else:
                 pl = g["roster"][pid]
                 ident_c["player_resolution[" + ("PRODUCER_ID_AGREES" if pp is not None and int(pp) == pid else

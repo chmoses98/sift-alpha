@@ -169,16 +169,18 @@ export function MarketInputMap() {
       (sport===ALL||m.sport===sport)&&
       (!marketQuery||safeLower(m.label+" "+m.id).includes(safeLower(marketQuery)))&&
       (!query&&!primary&&!free&&!prospective&&!commercial&&status===ALL||
-       m.inputs.some(i=>visibleInputs.has(i))));
+       graph.edges.some(e=>e.market===m.id&&visibleInputs.has(e.input)&&(!primary||e.primary))));
     if(view==="datasets")return graph.datasets.filter(d=>
       (!query||safeLower(d.title+" "+d.id+" "+d.sources.join(" ")).includes(safeLower(query))||d.inputs.some(k=>visibleInputs.has(k)))&&
       (!sport||sport===ALL||d.sports.includes(sport))&&
+      (!marketQuery||d.inputs.some(k=>visibleInputs.has(k)))&&
       (!free||freeDatasetIds.has(d.id))&&(!commercial||commercialDatasetIds.has(d.id))&&
       (!primary||d.inputs.some(i=>primaryInputs.has(i)))&&(!prospective||d.inputs.some(i=>prospectiveInputs.has(i)))&&
       (status===ALL||d.inputs.some(i=>inputIndex.get(i)?.status===status)));
     return graph.queue.filter(q=>
       (!query||safeLower(q.title+" "+q.dataset).includes(safeLower(query))||q.impactedInputs.some(k=>visibleInputs.has(k)))&&
       (sport===ALL||q.impactedInputs.some(k=>inputIndex.get(k)?.sport===sport))&&
+      (!marketQuery||q.impactedInputs.some(k=>visibleInputs.has(k)))&&
       (!free||q.cost==="free")&&(!commercial||q.commercialPath)&&
       (!prospective||q.impactedInputs.some(k=>prospectiveInputs.has(k)))&&
       (status===ALL||q.impactedInputs.some(k=>inputIndex.get(k)?.status===status)));

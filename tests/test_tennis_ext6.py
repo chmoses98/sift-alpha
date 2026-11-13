@@ -109,6 +109,19 @@ class Sensitivity(unittest.TestCase):
         self.assertGreater(late(hi).wmd_overdisp_pre.mean(), late(lo).wmd_overdisp_pre.mean())
 
 
+class RealDataAnomalies(unittest.TestCase):
+    def test_dirty_rows_do_not_crash_and_stay_pit(self):
+        # found by the blind dirty-fixture run: a missing best_of crashed the builder (tennis_ext2._match_outcome int(NaN))
+        d = D.copy(); rng = np.random.default_rng(3); ix = rng.choice(len(d), 300, replace=False)
+        d.loc[ix[:30], "best_of"] = np.nan; d.loc[ix[30:60], "score"] = "W/O"; d.loc[ix[60:90], "score"] = "6-4 3-6 12-10"
+        d.loc[ix[90:120], "score"] = "6-3 2-1 RET"; d.loc[ix[120:150], ["w_svpt", "w_1stWon"]] = np.nan; d.loc[ix[150:180], "l_SvGms"] = 0; d.loc[ix[180:210], "surface"] = np.nan
+        raw = X.prepare(d); out = X.compute(raw)["team"]
+        self.assertEqual(len(out), 2 * len(d))
+        r = G.run(X, raw, "TENNIS", {"matches": ("game_id", X.CONTENT)}, games_table="matches", games_date_col="date", quick=True)
+        for cid, v in r["inputs"].items():
+            self.assertTrue(all(x["ok"] for x in v["tests"]["truncation"] + v["tests"]["perturbation"]), cid); self.assertTrue(v["tests"]["own_game"]["ok"], cid)
+
+
 class Labelling(unittest.TestCase):
     def test_never_full_and_rights_stated(self):
         for s in X.specs():

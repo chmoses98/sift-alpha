@@ -6,7 +6,7 @@ Input: a pandas DataFrame of Sackmann-format match rows with columns `tour` ('at
 Output: one row per (match, player) with keys `game_id`, `team` and the columns named below. NaN where undefined.
 
 ## Keys and cleaning
-- Drop rows with missing `tourney_date`, `winner_id` or `loser_id`. `date` = `tourney_date` parsed as YYYYMMDD.
+- Drop rows with missing `tourney_date`, `winner_id` or `loser_id`. (Clarified after the blind run, which chose the same: a missing `best_of` is treated as 3 everywhere.) `date` = `tourney_date` parsed as YYYYMMDD.
 - `game_id` = `tour|tourney_id|match_num|k`, where k = 0,1,… numbers repeated (tour|tourney_id|match_num) in file order.
 - Player key `team` = `tour:int(id)`. `opp` = the other player's key.
 - **Point-in-time rule, everywhere:** any aggregate for a row uses only rows whose `date` is strictly earlier than the row's own `date`. Windows of W days include dates d with row_date - W <= d < row_date.

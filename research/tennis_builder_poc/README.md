@@ -76,3 +76,28 @@ Only if both pass may a status change be *proposed*, and the owner approves it. 
 - WTA serve statistics are missing in about 34% of rows;
 - final sets played as advantage sets, and match tiebreaks, are excluded by `_sets_ok`;
 - event renames break the `tourney_name` key of the pace index.
+
+## Update 2026-11-13: authorized real-data replay attempt and blind verification
+
+**Real-data replay: FAILED CLOSED, not run.** See `real_data_attempt_20261113.json`.
+- **Retrieval:** the owner authorized a one-time read-only retrieval of the 54 files from `tennis-edge-finder` `tennis-data` `…/20261109T145505Z/sackmann/`. All 54 were retrieved.
+- **Hash check:** **0 of 54** match the pinned SHA-256 manifest, compared both as gzip bytes and as decompressed CSV.
+- **Likely cause:** every daily snapshot on that branch holds different blobs, because the gzip header embeds a timestamp. The ledger says the manifest came from snapshot 2026-11-06, which is probably `20261106T134626Z`. That directory was not retrieved, because it is outside the authorized path.
+- **Cleanup:** the staged files and the clone were deleted. No raw data is committed.
+- **What remains unmeasured:** missingness, calibration, real-data PIT leakage, anomalies and coverage on real data. They are **not measured**. Nothing below substitutes for them.
+
+**Blind verification: synthetic only.** See `blind_verification_synthetic.json`, `blind/`.
+- **Setup:** an independent agent implemented all five inputs from `blind_brief.md` alone, with no repository access.
+- **Clean fixture (4,464 matches):** identical keys, identical NaN patterns, and every column of all five inputs **MATCHes** at 1e-9.
+- **Dirty fixture:** RET, W/O, ABD, advantage final sets, match tiebreaks, missing serve stats, SvGms of 0, missing surface or best_of, duplicate match numbers, and messy event names.
+  - The first run **found a defect**: `tennis_ext6` crashed on a missing `best_of`. It is fixed (missing → 3, matching the blind choice), with a regression test.
+  - After the fix, all five inputs MATCH.
+- **Limits:** this shows the code implements the brief. It does not validate the brief against the catalog, and it says nothing about real data.
+
+**Status: unchanged.** All five stay `PARTIAL` (the definition gaps are listed in `specs().missing`). None is verified, built or FULL in any registry.
+
+**To finish, choose one:**
+- (a) authorize the same read-only retrieval from `20261106T134626Z` and verify it against the existing manifest; or
+- (b) authorize re-pinning the manifest to `20261109T145505Z`.
+
+Then rerun `replay_ext_run tennis6`, and run the blind comparison on the real files.

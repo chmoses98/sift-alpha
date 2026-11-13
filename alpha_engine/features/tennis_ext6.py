@@ -115,7 +115,8 @@ def _long(m: pd.DataFrame) -> pd.DataFrame:
     for me in ("w", "l"):
         op = "l" if me == "w" else "w"; sv, ov = m[f"{me}_svpt"], m[f"{op}_svpt"]; sw, ow = (ws, ls) if me == "w" else (ls, ws)
         rows.append(pd.DataFrame({"game_id": m.game_id, "team": m.wkey if me == "w" else m.lkey, "opp": m.lkey if me == "w" else m.wkey, "tour": m.tour, "date": m.date, "season": m.season,
-                                  "best_of": m.best_of, "surface": m.surface.fillna("NA"), "event": m.tour + "|" + m.tourney_name.astype(str).str.strip().str.lower(),
+                                  "best_of": m.best_of.fillna(3),   # missing format -> best of 3 everywhere (cells, set-count pmf, completion test)
+                                   "surface": m.surface.fillna("NA"), "event": m.tour + "|" + m.tourney_name.astype(str).str.strip().str.lower(),
                                   "won": 1.0 if me == "w" else 0.0, "p_win": m.p_w if me == "w" else 1 - m.p_w, "rating": rw if me == "w" else rl,
                                   "s_won": np.where(ok, sw, np.nan), "s_pts": np.where(ok, sv, np.nan), "r_won": np.where(ok, ov - ow, np.nan), "r_pts": np.where(ok, ov, np.nan),
                                   "svgms": m[f"{me}_SvGms"], "bpf": m[f"{me}_bpFaced"], "bps": m[f"{me}_bpSaved"], "score": m.score, "fav_is_me": m.fav_is_w if me == "w" else ~m.fav_is_w,
@@ -136,6 +137,7 @@ def _long(m: pd.DataFrame) -> pd.DataFrame:
 
 def _sets_ok(score, best_of):
     """Completed-match set list [(row player's winner-view games)...] or None (RET/DEF/W-O/unparsable/advantage final sets/match tiebreaks)."""
+    best_of = 3 if pd.isna(best_of) else best_of          # tennis_ext2._match_outcome cannot take NaN (found by the blind dirty-fixture run)
     o = X2._match_outcome(score, best_of)
     if not o["ok"]: return None
     sets, _ = X2._parse(score)

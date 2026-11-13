@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import "./market-input-map.css";
 
 const ALL = "all";
@@ -87,7 +87,7 @@ function Detail({view,item,graph,onNavigate}) {
       <div className="mim-section-label">Proposed raw sources · rights</div>
       {item.sourceLinks.map(s=><div className="mim-cross" key={s.id}>
         <b>{s.name}</b><small>{s.id} · {s.cost}</small>
-        {s.proposedUrl ? <a href={s.proposedUrl} target="_blank" rel="noreferrer">Provider URL (proposed) ↗</a> : <small>Exact provider URL not recorded; do not infer one.</small>}
+        {s.proposedUrl ? <a href={s.proposedUrl} target="_blank" rel="noreferrer">Example probed source URL (not permission) ↗</a> : <small>Exact provider URL not recorded; do not infer one.</small>}
         <small>{s.rights.length?s.rights.map(r=>r.tier + (r.collection_allowed?" (conditional access)":" (collection not approved)")).join("; "):"Licence unresolved / no mapped authoritative rights record"}</small>
       </div>)}
       {q && <p><b>Potential missing PRIMARY slots:</b> {q.potentialPrimarySlots} (nonadditive); <ButtonLink onClick={()=>onNavigate("queue",q.dataset)}>View acquisition decision</ButtonLink></p>}
@@ -130,6 +130,8 @@ export function MarketInputMap() {
   const [commercial,setCommercial] = useState(false);
   const [limit,setLimit] = useState(PAGE);
   const [notice,setNotice] = useState("");
+  const detailRef = useRef(null);
+  useEffect(()=>{if(!selected)return;requestAnimationFrame(()=>detailRef.current?.scrollIntoView({behavior:"smooth",block:"start"}));},[selected]);
   useEffect(()=>{
     if(!open || graph) return;
     let active=true;
@@ -216,6 +218,7 @@ export function MarketInputMap() {
           <label><input type="checkbox" checked={commercial} onChange={e=>setCommercial(e.target.checked)}/> Commercial-rights candidate</label></div>
         <button className="mim-clear" type="button" onClick={()=>{setSport(ALL);setQuery("");setMarketQuery("");setStatus(ALL);setPrimary(false);setFree(false);setProspective(false);setCommercial(false);}}>Clear filters</button>
       </div>
+      {selectedItem&&<div ref={detailRef}><Detail view={view} item={selectedItem} graph={graph} onNavigate={navigate}/></div>}
       <div className="mim-list-header"><strong>{count(candidates.length)} {view==="queue"?"dataset acquisition options":view}</strong><span>Tap any row to explore</span></div>
       <div className="mim-results">
         {list.map(item=>{
@@ -235,7 +238,6 @@ export function MarketInputMap() {
       </div>
       {candidates.length>limit&&<button type="button" className="mim-more" onClick={()=>setLimit(x=>x+PAGE)}>Show {Math.min(PAGE,candidates.length-limit)} more</button>}
       {notice&&<p className="mim-fine" role="status">{notice}</p>}
-      <Detail view={view} item={selectedItem} graph={graph} onNavigate={navigate}/>
       <details className="mim-reconcile"><summary>Evidence, counts and unmapped records</summary>
         <p>Original classification: FULL {count(graph.summary.statuses.FULL)} · PARTIAL {count(graph.summary.statuses.PARTIAL)} · PROXY {count(graph.summary.statuses.PROXY)} · DATA_IN_HAND {count(graph.summary.statuses.DATA_IN_HAND)} · REQUIRES_COLLECTION {count(graph.summary.statuses.REQUIRES_COLLECTION)} · BLOCKED {count(graph.summary.statuses.BLOCKED)} · FAILED {count(graph.summary.statuses.FAILED)} · UNVERIFIED {count(graph.summary.statuses.UNVERIFIED)} · EXCLUDED {count(graph.summary.statuses.EXCLUDED)}.</p>
         <p>Rows: {count(graph.summary.marketEdges)} market-input edges, {count(graph.summary.datasetEdges)} dataset-input candidates; {count(graph.summary.datasets)} distinct datasets. Strict human validation is not claimed.</p>

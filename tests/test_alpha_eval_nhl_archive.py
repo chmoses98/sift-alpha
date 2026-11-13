@@ -101,3 +101,15 @@ def test_independent_player_resolution():
     assert H.resolve_player("KXNHLAST-26NOV12NYILA-LAAKEMPE9-1", GAME, roster) == 8477960
     assert H.resolve_player("KXNHLAST-26NOV12NYILA-LAAKEMPE10-1", GAME, roster) is None        # sweater not in box
     assert H.resolve_player("KXNHLAST-26NOV12NYILA-NYIBNELSON9-1", GAME, roster) == 2          # same sweater, other team
+
+
+def test_unresolved_ticker_with_producer_player_in_box_is_blocked():
+    # Ticker sweater (8) differs from the official box (10): the ticker does not resolve independently. The producer's player id is in
+    # the box, so grading would rest on the producer alone -> the identity is a mismatch and the outcome must not grade.
+    t = "KXNHLAST-26NOV12NYILA-LAJMILLER8-1"
+    assert H.resolve_player(t, GAME, {7: ("LAK", 10, "J. Miller")}) is None
+    ident = H.check_identity(t, GAME, "UNRESOLVED_PRODUCER_IN_BOX")
+    assert ident.startswith("MISMATCH")
+    assert H.check_identity(t, GAME, "ABSENT") == "PLAYER_NOT_IN_OFFICIAL_BOX"                 # absent player stays VOID-only
+    rows = H.outcome_rows("T", C_ML, "g1", _api(), None, ident, Counter())
+    assert rows and all(r["event_id"].endswith("#TICKER_IDENTITY_MISMATCH") for r in rows)

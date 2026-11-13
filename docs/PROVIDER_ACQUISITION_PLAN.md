@@ -12,7 +12,7 @@ Nothing here was collected, probed, purchased, registered, scheduled or cleared.
 `priority_recalc.py` now also requires every upstream input (`input_audit.json` `depends_on`) to be built and verified, and treats `DOWNGRADED_BY_VERIFIER` as not ready.
 Build-ready inputs: **7 → 5**. `ten.joint_event_correlation` is `BLOCKED_BY_UPSTREAM_INPUT`: it needs `ten.path_difficulty_sim` and `ten.health_persistence_between_events`, both unbuilt.
 `ten.service_points_scenario_mixture` is `VERIFIER_DOWNGRADED`: the pre-match fitness flag has no source.
-Proof-of-concept builders for the five remaining inputs, and their status, are in `research/tennis_builder_poc/README.md`. They are not run on real data and not promoted.
+Proof-of-concept builders for the five remaining inputs, and their status, are in `research/tennis_builder_poc/README.md`. They are not run on real data and not promoted. **Tennis is paused (2026-11-13); see `docs/TENNIS_HANDOFF.md`.**
 The Kalshi usage inventory is in `docs/KALSHI_RIGHTS_IMPACT_AUDIT.md`.
 
 ## Revision 2 (2026-11-13): correction and readiness review

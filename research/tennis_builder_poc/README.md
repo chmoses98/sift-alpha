@@ -1,5 +1,7 @@
 # Tennis builder proof of concept (RESEARCH_ONLY)
 
+> **PAUSED 2026-11-13 (owner decision; priority moved to NBA, CBB, NFL, CFB, NHL).** State `PAUSED_PARTIAL`: all five inputs PARTIAL, synthetic-tested only, **not real-data verified**. Handoff, unresolved issues and resume steps: `docs/TENNIS_HANDOFF.md`; record: `CLOSURE_20261113.json`.
+
 Branch `claude/provider-licensing-research-k7d0tj`, 2026-11-13. Sackmann data is CC BY-NC-SA 4.0: **non-commercial research only**.
 No data was downloaded, no collection, no registry, catalog, map or baseline change, no status promotion.
 

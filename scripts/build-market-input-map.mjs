@@ -206,8 +206,7 @@ export function buildMap({ catalog, completeness, coverage, coverageRows, datase
   const datasetsOut = [...datasetById.values()].map((d)=>({
     ...d, inputs:unq(d.inputs), markets:unq(d.markets),
     // A dataset is NOT cleared for use just because a source appears as a free candidate.
-    provenanceReady:d.access === "COLLECTED_ARCHIVE" && d.rowsCollected != null &&
-      d.sourceLinks.some((s)=>s.rights.some((r)=>r.research_cleared && r.collection_allowed)),
+    provenanceReady:false, // dataset metadata alone never proves the exact raw collection lineage and licence
   })).sort((a,b)=>a.id.localeCompare(b.id));
   const primaryMissingEdges = edges.filter(e=>e.primary && isMissing(e.verifiedStatus));
   const missingByInput = new Map();

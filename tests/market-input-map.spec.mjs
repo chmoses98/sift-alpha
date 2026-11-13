@@ -1,9 +1,24 @@
 import { test, expect } from "@playwright/test";
 import { measureOverflow } from "./overflow-helper.mjs";
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, info) => {
+  if (info.title.startsWith("initial load")) return;
   await page.goto("/");
   await page.waitForSelector("[data-testid=mim-summary]", { timeout: 60000 });
+  await page.getByTestId("market-input-map").scrollIntoViewIfNeeded();
+  await page.waitForSelector("[data-testid=market-input-map][data-ready=yes]", { timeout: 60000 });
+});
+
+test("initial load: summary renders from the small reconciliation file without fetching the map index", async ({ page }) => {
+  const urls = [];
+  page.on("request", r => urls.push(r.url()));
+  await page.goto("/");
+  await expect(page.getByTestId("mim-summary")).toContainText("1,649");
+  await page.waitForTimeout(1000);
+  expect(urls.filter(u => /market_input_map\/map\.json|\/map-[^/]*\.js/.test(u))).toEqual([]);
+  await expect(page.locator("[data-testid=market-input-map]")).toHaveAttribute("data-ready", "no");
+  await page.getByTestId("market-input-map").scrollIntoViewIfNeeded();
+  await expect(page.locator("[data-testid=market-input-map]")).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
 });
 
 test("summary separates distinct inputs, predictive slots and missing PRIMARY slots", async ({ page }) => {
@@ -47,4 +62,47 @@ test("no horizontal overflow with a market and an input expanded", async ({ page
   await expect(map.locator(".mim-focus [data-testid=mim-input] h4").first()).toBeVisible();
   const o = await measureOverflow(page);
   expect(o.scroll, JSON.stringify(o)).toBeLessThanOrEqual(o.view);
+});
+
+test("queue action groups: five groups, exact committed counts, rank order kept inside a group", async ({ page }) => {
+  const map = page.getByTestId("market-input-map");
+  await map.getByRole("tab", { name: "Queue" }).click();
+  await expect(map.getByTestId("mim-group-ARCHIVED_BUILD_NEXT")).toContainText("1 datasets");
+  await expect(map.getByTestId("mim-group-RIGHTS_APPROVAL_NEEDED")).toContainText("86 datasets");
+  await expect(map.getByTestId("mim-group-FREE_COLLECTION_POSSIBLE")).toContainText("0 datasets");
+  await expect(map.getByTestId("mim-group-PROSPECTIVE_CAPTURE_REQUIRED")).toContainText("26 datasets");
+  await expect(map.getByTestId("mim-group-BLOCKED_OR_PAID")).toContainText("8 datasets");
+  await map.getByTestId("mim-group-PROSPECTIVE_CAPTURE_REQUIRED").click();
+  await expect(page.getByTestId("mim-queue-count")).toContainText("26 of 26");
+  const ranks = await map.locator("[data-testid=mim-queue-row] .mim-qrank").allTextContents();
+  const n = ranks.map(t => Number(t.match(/#(\d+)/)[1]));
+  expect(n).toEqual([...n].sort((a, b) => a - b));
+  await map.getByTestId("mim-group-FREE_COLLECTION_POSSIBLE").click();
+  await expect(map.getByTestId("mim-group-empty")).toBeVisible();
+});
+
+test("linked filters persist across Markets, Inputs, Datasets and Queue and each view states its scope", async ({ page }) => {
+  const map = page.getByTestId("market-input-map");
+  await map.getByLabel("Sport").selectOption("NBA");
+  await map.getByLabel("missing PRIMARY only").check();
+  for (const tab of ["Markets", "Inputs", "Datasets", "Queue"]) {
+    await map.getByRole("tab", { name: tab }).click();
+    await expect(map.getByTestId("mim-scope")).toContainText("sport NBA · missing PRIMARY");
+  }
+  await expect(page.getByTestId("mim-queue-count")).toContainText("distinct missing PRIMARY slots match");
+  const row = map.locator("[data-testid=mim-queue-row]").first();
+  await expect(row).toContainText(/\d+ of \d+ missing PRIMARY slots match/);
+  await row.getByRole("button", { name: /Show the \d+ matching slots/ }).click();
+  const slots = await row.locator(".mim-list li").allTextContents();
+  expect(slots.length).toBeGreaterThan(0);
+  for (const t of slots) expect(t.startsWith("NBA:")).toBeTruthy();
+  await map.getByRole("tab", { name: "Datasets" }).click();
+  await expect(map.locator("[data-testid=mim-dataset]").first()).toContainText(/linked inputs? match filters/);
+});
+
+test("queue groups are shown in the action order", async ({ page }) => {
+  const map = page.getByTestId("market-input-map");
+  await map.getByRole("tab", { name: "Queue" }).click();
+  const ids = await map.locator(".mim-groups button[data-testid]").evaluateAll(els => els.map(e => e.dataset.testid.replace("mim-group-", "")));
+  expect(ids).toEqual(["ARCHIVED_BUILD_NEXT", "RIGHTS_APPROVAL_NEEDED", "FREE_COLLECTION_POSSIBLE", "PROSPECTIVE_CAPTURE_REQUIRED", "BLOCKED_OR_PAID"]);
 });

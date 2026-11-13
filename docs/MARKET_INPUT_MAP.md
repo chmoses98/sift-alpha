@@ -41,6 +41,35 @@ are not a slot total (distinct slots covered: 949; slots without a dataset: 0). 
 `access_rank` (datasets.json) → rights tier (strongest first) → `pit_rank` → cost → missing PRIMARY slots → id.
 “Sole outstanding” is an ESTIMATE (every other satisfying dataset already archived; n/a for archived datasets). Next actions are proposals; none is executed.
 
+### Action groups (follow-up)
+
+Each queue dataset gets exactly one `action_group`, by the first matching rule in this precedence (recorded access status + rights only; ranks unchanged):
+BLOCKED_OR_PAID (PAID_ONLY / SAMPLE_ONLY / NO_FREE_SOURCE) → PROSPECTIVE_CAPTURE_REQUIRED (PROSPECTIVE_CAPTURE_ONLY) → RIGHTS_APPROVAL_NEEDED (rights do not permit research use)
+→ ARCHIVED_BUILD_NEXT (COLLECTED_ARCHIVE, research use permitted) → FREE_COLLECTION_POSSIBLE (any other free path, research use permitted). `also_needs_rights_approval` flags
+blocked/prospective rows whose rights are also pending.
+
+| Group | datasets | distinct slots | only in this group | by access status |
+|---|---|---|---|---|
+| Already archived · build next | 1 | 21 | 8 | archived 1 (ten.matches, Sackmann, non-commercial) |
+| Rights approval needed | 86 | 857 | 542 | archived 14 · free reachable 20 · unprobed 39 · host-blocked 7 · unconfirmed 1 · reference doc 5 |
+| Free collection possible | 0 | 0 | 0 | — every free path is on a source whose rights do not yet permit research use |
+| Prospective capture required | 26 | 332 | 66 | prospective 26 (all also need rights) |
+| Blocked / paid | 8 | 91 | 4 | paid 3 · sample-only 2 · no free source 3 (7 also need rights) |
+
+Per-group slot counts overlap (329 slots need datasets in several groups); the “only in this group” counts plus 329 equal the 949 distinct slots. In `reconciliation.json` → `queue_groups`.
+
+### Filters (follow-up)
+
+One linked model drives every view: filters select matching market→input edges/inputs; Markets show markets owning a matching edge, Inputs the matching inputs,
+Datasets those feeding a matching input (commercial-use also requires the dataset itself to be commercial-cleared), Queue the rows with ≥1 matching missing-PRIMARY slot
+(“n of N slots match”; ranks, groups and committed totals never change). Each view prints its rule. Tested by brute-force recomputation in `tests/market-input-map.test.mjs`.
+
+### Mobile loading (follow-up)
+
+The summary renders from `reconciliation.json` (≈4 KB gz in the main bundle); the 2.9 MB index (`map.json`, ≈280 KB gz) loads only when the section is within ~1,200 px of the
+viewport or on “Load the map now”. iPhone 13 emulation, production build, 1.6 Mbps / 150 ms RTT / 4× CPU (median of 3): map summary 8.9 s → 6.0 s, bytes at summary
+1,140 KB → 627 KB, index no longer fetched at first load; scroll-to-interactive ≈2.9 s. The page shell (~5.7 s) is bounded by the existing main bundle, unchanged here.
+
 ## Unmapped / unlinked (reported, not hidden)
 
 0 catalog edges with an unknown input · 0 unknown dataset references · 0 missing PRIMARY slots without a dataset · 0 in-scope live series (of 2,610) unmapped to an archetype ·

@@ -102,6 +102,40 @@ class Queue(unittest.TestCase):
             self.assertEqual((q["access_rank"], q["pit_rank"], q["access_status"]), (d["access_rank"], d["pit_rank"], d["access_status"]))
 
 
+class QueueGroups(unittest.TestCase):
+    G = R["queue_groups"]
+
+    def test_every_dataset_in_exactly_one_group_rank_preserved(self):
+        self.assertEqual(sum(v["datasets"] for v in self.G["groups"].values()), len(M["queue"]))
+        self.assertEqual(sorted(r for v in self.G["groups"].values() for r in v["ranks"]), list(range(1, len(M["queue"]) + 1)))
+        for q in M["queue"]:
+            self.assertEqual(q["action_group"], MIM.action_group(q))
+            self.assertIn(q["rank"], self.G["groups"][q["action_group"]]["ranks"])
+
+    def test_group_counts_exact_and_not_double_counted(self):
+        self.assertEqual(self.G["distinct_slots"], 949)
+        self.assertEqual(sum(v["slots_exclusive_to_group"] for v in self.G["groups"].values()) + self.G["slots_spanning_groups"], 949)
+        self.assertEqual(sum(v["slot_dataset_pairs"] for v in self.G["groups"].values()), R["queue_slot_dataset_pairs"])
+        for g, v in self.G["groups"].items():
+            rows = [q for q in M["queue"] if q["action_group"] == g]
+            self.assertEqual(v["distinct_slots"], len({tuple(s) for q in rows for s in q["slots"]}), g)
+            self.assertEqual(sum(v["by_access_status"].values()), v["datasets"], g)
+
+    def test_group_rules_use_recorded_fields_only(self):
+        for q in M["queue"]:
+            g, a, ok = q["action_group"], q["access_status"], q["rights_use_status"] == "RESEARCH_USE_PERMITTED"
+            if g == "ARCHIVED_BUILD_NEXT": self.assertTrue(a == "COLLECTED_ARCHIVE" and ok)
+            if g == "RIGHTS_APPROVAL_NEEDED": self.assertFalse(ok); self.assertNotIn(a, ("PAID_ONLY", "SAMPLE_ONLY", "NO_FREE_SOURCE", "PROSPECTIVE_CAPTURE_ONLY"))
+            if g == "FREE_COLLECTION_POSSIBLE": self.assertTrue(ok and a != "COLLECTED_ARCHIVE")
+            if g == "PROSPECTIVE_CAPTURE_REQUIRED": self.assertEqual(a, "PROSPECTIVE_CAPTURE_ONLY")
+            if g == "BLOCKED_OR_PAID": self.assertIn(a, ("PAID_ONLY", "SAMPLE_ONLY", "NO_FREE_SOURCE"))
+            self.assertEqual(q["also_needs_rights_approval"], (not ok) and g != "RIGHTS_APPROVAL_NEEDED")
+
+    def test_pinned_group_counts(self):
+        self.assertEqual({g: v["datasets"] for g, v in self.G["groups"].items()},
+                         {"ARCHIVED_BUILD_NEXT": 1, "RIGHTS_APPROVAL_NEEDED": 86, "FREE_COLLECTION_POSSIBLE": 0, "PROSPECTIVE_CAPTURE_REQUIRED": 26, "BLOCKED_OR_PAID": 8})
+
+
 class Rights(unittest.TestCase):
     def test_usable_only_when_cleared_and_collection_allowed(self):
         reg = {s["id"]: s for s in D["reg"]["sources"]}

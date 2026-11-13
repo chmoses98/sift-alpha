@@ -56,7 +56,42 @@ RULES_SETTLEMENT_IDS = set(MC.SEMANTIC_IDS) | set(MC.RULES_PARSE_ONLY_IDS) | {"m
 OPERATIONAL_IDS = {"m.lifecycle", "m.fees", "m.orderbook_depth", "m.trade_tape", "m.volume_oi"}
 CALIBRATION_IDS = set(MC.CALIBRATION_IDS)
 COST_ORDER = {"free": 0, "free (key needed)": 1, "paid": 2}
-OUTSTANDING_EXEMPT = {"COLLECTED_ARCHIVE"}      # a requirement whose dataset is already archived is not an outstanding acquisition
+OUTSTANDING_EXEMPT = {"COLLECTED_ARCHIVE"}
+# Actionable queue groups. Each dataset row gets exactly ONE group, assigned by the first matching rule in this precedence order, from recorded
+# access_status (datasets.json) and rights use status (rights_registry via rights.py) only. Display order is the dict order below.
+ACTION_GROUPS = {
+    "ARCHIVED_BUILD_NEXT": "already archived in a repository AND research use permitted: write + blind-verify builders next",
+    "RIGHTS_APPROVAL_NEEDED": "obtainable without paid or prospective capture (archived or free), but the rights tier does not permit research use: owner rights decision first",
+    "FREE_COLLECTION_POSSIBLE": "free path recorded (reachable, unprobed, unconfirmed, host-blocked or reference document) AND research use permitted: owner-approved collection/probe next",
+    "PROSPECTIVE_CAPTURE_REQUIRED": "no backfillable history (PROSPECTIVE_CAPTURE_ONLY): needs capture from now on; rights may also be pending (see flag)",
+    "BLOCKED_OR_PAID": "PAID_ONLY, SAMPLE_ONLY or NO_FREE_SOURCE: owner cost/permission decision; nothing purchased",
+}
+ACTION_GROUP_PRECEDENCE = ("BLOCKED_OR_PAID", "PROSPECTIVE_CAPTURE_REQUIRED", "RIGHTS_APPROVAL_NEEDED", "ARCHIVED_BUILD_NEXT", "FREE_COLLECTION_POSSIBLE")
+
+
+def action_group(q: dict) -> str:
+    a, permitted = q["access_status"], q["rights_use_status"] == "RESEARCH_USE_PERMITTED"
+    if a in ("PAID_ONLY", "SAMPLE_ONLY", "NO_FREE_SOURCE"): return "BLOCKED_OR_PAID"
+    if a == "PROSPECTIVE_CAPTURE_ONLY": return "PROSPECTIVE_CAPTURE_REQUIRED"
+    if not permitted: return "RIGHTS_APPROVAL_NEEDED"
+    if a == "COLLECTED_ARCHIVE": return "ARCHIVED_BUILD_NEXT"
+    return "FREE_COLLECTION_POSSIBLE"
+
+
+def group_stats(Q: list[dict]) -> dict:
+    """Per group: datasets, slot-dataset pairs, distinct slots in the group, and slots EXCLUSIVE to the group (every queue dataset of the slot is in it).
+    Exclusive counts partition: their sum plus slots_spanning_groups equals the distinct missing PRIMARY slots."""
+    slot_groups = defaultdict(set)
+    for q in Q:
+        for s in q["slots"]: slot_groups[tuple(s)].add(q["action_group"])
+    out = {}
+    for g in ACTION_GROUPS:
+        rows = [q for q in Q if q["action_group"] == g]; slots = {tuple(s) for q in rows for s in q["slots"]}
+        out[g] = {"datasets": len(rows), "slot_dataset_pairs": sum(q["missing_primary_slots"] for q in rows), "distinct_slots": len(slots),
+                  "slots_exclusive_to_group": sum(1 for s in slots if slot_groups[s] == {g}), "also_needs_rights_approval": sum(q["also_needs_rights_approval"] for q in rows), "by_access_status": dict(sorted(Counter(q["access_status"] for q in rows).items())),
+                  "ranks": [q["rank"] for q in rows]}
+    return {"groups": out, "distinct_slots": len(slot_groups), "slots_spanning_groups": sum(1 for v in slot_groups.values() if len(v) > 1),
+            "definitions": ACTION_GROUPS, "precedence": list(ACTION_GROUP_PRECEDENCE)}      # a requirement whose dataset is already archived is not an outstanding acquisition
 
 
 def edge_class(iid: str, category: str) -> tuple[str, str]:
@@ -260,7 +295,9 @@ def build(D: dict) -> dict:
                   "history": d["history"], "collection_plan_class": d["collection_plan_class"], "source_group": d["source_group"], "source_group_siblings": d["source_group_siblings"],
                   "slots": [list(s) for s in slots], "next_actions": next_actions(did, d, len(slots), len({s[1] for s in slots}))})
     Q.sort(key=lambda q: (q["access_rank"], -tier_rank[q["rights_tier"]], q["pit_rank"], COST_ORDER.get(q["cost"], 9), -q["missing_primary_slots"], q["dataset"]))
-    for n, q in enumerate(Q, 1): q["rank"] = n
+    for n, q in enumerate(Q, 1):
+        q["rank"] = n; q["action_group"] = action_group(q)
+        q["also_needs_rights_approval"] = q["rights_use_status"] != "RESEARCH_USE_PERMITTED" and q["action_group"] != "RIGHTS_APPROVAL_NEEDED"
 
     recon = reconcile(A, E, I, DS, DE, Q, missing, no_ds, unresolved_ds, series_unmapped, D)
     return {"archetypes": A, "edges": E, "inputs": I, "datasets": DS, "sources": S, "dataset_edges": DE, "queue": Q,
@@ -313,6 +350,7 @@ def reconcile(A, E, I, DS, DE, Q, missing, no_ds, unresolved_ds, series_unmapped
         "unresolved_dataset_references": unresolved_ds,
         "queue_datasets": len(Q), "queue_slot_dataset_pairs": sum(q["missing_primary_slots"] for q in Q),
         "queue_distinct_slots_covered": len(queued), "queue_slots_without_dataset": no_ds,
+        "queue_groups": group_stats(Q),
         "queue_covers_every_missing_primary_slot": queued | {(x["archetype"], x["input"]) for x in no_ds} == {(e["a"], e["i"]) for e in missing},
         "series_in_scope": sum(1 for r in D["series"]["rows"] if r["scope"] == "IN_SCOPE"), "series_in_scope_unmapped_to_archetype": len(series_unmapped),
         "archetypes_with_no_in_scope_series": sorted(a["k"] for a in A if not a["series"]),
@@ -341,8 +379,8 @@ def render(M: dict, D: dict) -> dict[str, str]:
                                               DS[e["d"]]["sources"], DS[e["d"]]["proposed_links"], I[e["i"]]["n_markets"]] for e in M["dataset_edges"]],
                                             ["dataset_id", "dataset_title", "input_key", "input_label", "edge_type", "need", "trigger", "pit", "requirement_access_status", "dataset_access_status", "dataset_rights_tier", "dataset_use_status", "source_ids", "proposed_raw_links", "input_n_markets"])
     files["acquisition_queue.csv"] = _csv([[q["rank"], q["dataset"], q["title"], q["sports"], q["missing_primary_slots"], q["distinct_inputs"], q["distinct_archetypes"], q["slots_where_only_outstanding_dataset"], q["alternative_candidate_slots"],
-                                            q["access_status"], q["access_rank"], q["rights_tier"], q["rights_use_status"], q["commercial_cleared"], q["pit"], q["pit_rank"], q["cost"], q["tos_risk"], q["collection_plan_class"], q["source_group"], " || ".join(q["next_actions"])] for q in M["queue"]],
-                                          ["rank", "dataset_id", "title", "sports", "missing_primary_slots", "distinct_inputs", "distinct_archetypes", "slots_where_only_outstanding_dataset_ESTIMATE", "alternative_candidate_slots", "access_status", "access_rank", "rights_tier", "rights_use_status", "commercial_cleared", "pit", "pit_rank", "cost", "tos_risk", "collection_plan_class", "source_group", "next_actions"])
+                                            q["access_status"], q["access_rank"], q["rights_tier"], q["rights_use_status"], q["commercial_cleared"], q["pit"], q["pit_rank"], q["cost"], q["tos_risk"], q["collection_plan_class"], q["source_group"], " || ".join(q["next_actions"]), q["action_group"], q["also_needs_rights_approval"]] for q in M["queue"]],
+                                          ["rank", "dataset_id", "title", "sports", "missing_primary_slots", "distinct_inputs", "distinct_archetypes", "slots_where_only_outstanding_dataset_ESTIMATE", "alternative_candidate_slots", "access_status", "access_rank", "rights_tier", "rights_use_status", "commercial_cleared", "pit", "pit_rank", "cost", "tos_risk", "collection_plan_class", "source_group", "next_actions", "action_group", "also_needs_rights_approval"])
     meta = {"schema": SCHEMA, "status": "RESEARCH_ONLY",
             "notice": "Read-only join of the approved catalog and the latest data-foundation artifacts. No new research, collection, scoring or ranking; agent-built, not independently or human verified. A source is never shown as usable unless its rights tier is research-cleared AND the registry allows collection.",
             "classes": CLASSES, "buckets": list(BUCKETS),

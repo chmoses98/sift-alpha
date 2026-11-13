@@ -31,7 +31,7 @@ test("panel is mounted", () => {
 
 test("summary never presents unmerged build artifacts as live evidence", () => {
   assert.match(s.evidence_status.dashboard_panel, /NOT_VIEWED/);
-  assert.match(s.evidence_status.prospective_workflow, /INERT|NOT_MERGED/);
+  assert.match(s.evidence_status.prospective_workflow, /PUBLISHED_LEDGERS_ARE_AUTHORITATIVE/);
   assert.ok(["INSUFFICIENT_N", "FAIL", "PASS_PROVISIONAL"].includes(s.prospective_2026.gate));
 });
 

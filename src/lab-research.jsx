@@ -13,7 +13,7 @@ export function LabResearch() {
     <section className="lab-research" data-testid="lab-research" aria-label="Independent prediction laboratory">
       <h2>Independent prediction laboratory</h2>
       <p className="lab-note">{s.claim_boundary}</p>
-      <p className="lab-note lab-warn" data-testid="lab-evidence-status">Build artifact of an unmerged draft PR ({nice(s.evidence_status.dashboard_panel)}; workflow {nice(s.evidence_status.prospective_workflow)}). Not live production evidence.</p>
+      <p className="lab-note lab-warn" data-testid="lab-evidence-status">Static build snapshot ({nice(s.evidence_status.dashboard_panel)}; workflow {nice(s.evidence_status.prospective_workflow)}). Not live production evidence: the ledgers published on prospective-data are authoritative.</p>
       <div className="lab-scroll">
         <table>
           <thead><tr><th>Family</th><th>Games (before → after repairs)</th><th>Log-loss gain vs market (after)</th><th>95% CI</th><th>Verdict</th></tr></thead>

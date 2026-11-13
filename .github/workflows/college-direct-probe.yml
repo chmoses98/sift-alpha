@@ -1,0 +1,96 @@
+# MANUAL ONLY. Fail-closed <=10-call CFBD/CBBD probe. The repository is PUBLIC: no response body is ever written to disk, uploaded as an artifact or committed.
+# No schedule, no push/pull_request trigger. Runs only when ALL of these hold:
+#   1. dispatched (and re-run) by the repository owner from `main`, with the confirmation phrase typed in
+#   2. research/input_research/data_collection/college_direct_authorization.json written by the owner on main (cap, share <= 0.5, declared remaining quota <= 2 days old, reserve, expiry)
+#   3. GitHub environment `college-direct` (deployment branches: main only) holding the secret CFBD_API_KEY. Only the `probe` job uses that environment, so only it can read the key.
+# Jobs: reserve (no key, pushes a full-size reservation to the ledger before any call) -> probe (key, read-only token, no raw on disk)
+#       -> reconcile (no key; refunds unused calls from a validated summary; on crash/cancel/missing summary the reservation stays charged in full).
+# Ledger (counts, sha256, field names, row counts only) is append-only on branch `college-direct-ledger`, pushed without force.
+name: College direct-API probe (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      domain: {description: "Domain to probe", type: choice, options: [cbb, cfb], required: true}
+      confirm: {description: "Type AUTHORIZE-10-CALL-PROBE to spend up to 10 shared-quota calls", type: string, required: true}
+permissions: {}
+concurrency: {group: college-direct-probe, cancel-in-progress: false}
+env:
+  AUTH_FILE: research/input_research/data_collection/college_direct_authorization.json
+jobs:
+  reserve:
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+      github.actor == github.repository_owner && github.triggering_actor == github.repository_owner &&
+      inputs.confirm == 'AUTHORIZE-10-CALL-PROBE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {contents: write}          # ledger branch only; this job has no secret
+    outputs:
+      run_id: ${{ steps.reserve.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5   # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with: {python-version: '3.12'}
+      - name: Gate (owner authorization file)
+        run: '[ -f "$AUTH_FILE" ] || { echo "::error::no owner authorization file on main"; exit 1; }'
+      - name: Reserve the full probe size and push it before any call
+        id: reserve
+        env: {DOMAIN: "${{ inputs.domain }}", RUN: "${{ github.run_id }}-${{ github.run_attempt }}"}
+        run: |
+          L="$RUNNER_TEMP/ledger"
+          .github/scripts/college_ledger.sh fetch "$L"
+          python -m alpha_engine.collect.college_direct reserve --domain "$DOMAIN" --ledger "$L/ledger.json" --run-id "$RUN"
+          .github/scripts/college_ledger.sh push "$L" "reserve $RUN $DOMAIN"
+          echo "run_id=$RUN" >> "$GITHUB_OUTPUT"
+
+  probe:
+    needs: reserve
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner && github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: college-direct             # the ONLY job that can read CFBD_API_KEY
+    permissions: {contents: read}
+    outputs:
+      summary: ${{ steps.export.outputs.summary }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5   # v4.3.1
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with: {python-version: '3.12'}
+      - name: Probe (needs this attempt's pushed reservation; refuses without the key; stops on first denial or quota doubt; no retries)
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          DOMAIN: ${{ inputs.domain }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          L="$RUNNER_TEMP/ledger"; .github/scripts/college_ledger.sh fetch "$L"
+          python -m alpha_engine.collect.college_direct probe --domain "$DOMAIN" --ledger "$L/ledger.json" --run-id "$RUN" --out-dir "$RUNNER_TEMP/college-direct"
+      - name: Export safe summary (counts, hashes, field names; no response data)
+        id: export
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/college-direct/probe_summary.json"
+          if [ -f "$f" ]; then echo "summary=$(base64 -w0 "$f")" >> "$GITHUB_OUTPUT"; fi
+      - name: Delete runner scratch
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/college-direct" "$RUNNER_TEMP/ledger"
+
+  reconcile:
+    needs: [reserve, probe]
+    if: always() && needs.reserve.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {contents: write}          # ledger branch only; this job has no secret
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5   # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with: {python-version: '3.12'}
+      - name: Reconcile (refund only from a validated summary of this run) and push
+        env: {RUN: "${{ needs.reserve.outputs.run_id }}", SUMMARY_B64: "${{ needs.probe.outputs.summary }}"}
+        run: |
+          L="$RUNNER_TEMP/ledger"; .github/scripts/college_ledger.sh fetch "$L"
+          S=""; if [ -n "$SUMMARY_B64" ] && printf '%s' "$SUMMARY_B64" | base64 -d > "$L/s.json" 2>/dev/null; then S="$L/s.json"; fi
+          python -m alpha_engine.collect.college_direct reconcile --ledger "$L/ledger.json" --run-id "$RUN" ${S:+--summary "$S"} | tee "$L/h.json"
+          extra=()
+          if [ -n "$S" ] && ! grep -q UNRECONCILED "$L/h.json"; then mkdir -p "$L/summaries"; cp "$S" "$L/summaries/$RUN.json"; extra=("summaries/$RUN.json"); fi
+          .github/scripts/college_ledger.sh push "$L" "reconcile $RUN" "${extra[@]}"

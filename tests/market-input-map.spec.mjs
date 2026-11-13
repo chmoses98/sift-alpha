@@ -51,7 +51,7 @@ test("filters, queue and exports", async ({ page }) => {
   await map.getByRole("tab", { name: "Queue" }).click();
   await expect(map.locator("[data-testid=mim-queue-row]").first()).toContainText("missing PRIMARY slots");
   await map.getByRole("tab", { name: "Export" }).click();
-  for (const n of ["market_input_edges.csv", "distinct_inputs.csv", "dataset_input_edges.csv", "acquisition_queue.csv"]) await expect(map.getByRole("link", { name: n })).toBeVisible();
+  for (const n of ["market_input_edges.csv", "distinct_inputs.csv", "dataset_input_edges.csv", "acquisition_queue.csv", "reconciliation.json"]) await expect(map.getByTestId("mim-exports")).toContainText("research/input_research/market_input_map/" + n);
   await expect(page.getByTestId("mim-recon")).toContainText("per archetype match");
 });
 

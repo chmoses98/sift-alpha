@@ -8,7 +8,8 @@ import RECON from "../research/input_research/market_input_map/reconciliation.js
 // Nothing is hand-typed, scored or re-ranked here. Statuses are shown verbatim; unknown values say UNKNOWN.
 const MAP = import.meta.glob("../research/input_research/market_input_map/map.json");
 const DETAILS = import.meta.glob("../research/input_research/market_input_map/input_details_*.json");
-const EXPORTS = import.meta.glob(["../research/input_research/market_input_map/*.csv", "../research/input_research/market_input_map/reconciliation.json"], {query: "?url", import: "default", eager: true});
+// Export files are NOT bundled: the repository's public-build gate (dashboard-ci.yml) forbids .csv/.json data files in dist/. They are listed by committed path instead.
+const EXPORT_DIR = "research/input_research/market_input_map/";
 const EXPORT_LABEL = {
   "market_input_edges.csv": "Market → input edges (all 4,243 catalog listings, every class)",
   "distinct_inputs.csv": "Distinct inputs (1,649 SPORT:input rows, with every market using each)",
@@ -362,10 +363,10 @@ function Queue({ix, f, nav}) {
 
 // ---------------------------------------------------------------- Exports + reconciliation
 function Exports({r, m}) {
-  const files = Object.entries(EXPORTS).map(([p, url]) => [p.split("/").pop(), url]).sort();
+  const files = Object.keys(EXPORT_LABEL).sort();
   return <div>
-    <p className="ir-fine">Exports are the committed, generated files (byte-identical to what the tests regenerate), not a client-side re-computation.</p>
-    <ul className="mim-list">{files.map(([n, url]) => <li key={n}><a href={url} download={n} className="mim-dl-link">{n}</a><div className="ir-why">{EXPORT_LABEL[n] || n}</div></li>)}</ul>
+    <p className="ir-fine">Exports are the committed, generated files in the repository (byte-identical to what the tests regenerate), not a client-side re-computation. They are deliberately not served from this page: the public build carries no raw data files. Regenerate with <code>python -m alpha_engine.input_research.data_foundation.market_input_map</code>.</p>
+    <ul className="mim-list" data-testid="mim-exports">{files.map(n => <li key={n}><code className="mim-dl-link">{EXPORT_DIR + n}</code><div className="ir-why">{EXPORT_LABEL[n]}</div></li>)}</ul>
     <h4>Reconciliation</h4>
     <dl className="mim-dl" data-testid="mim-recon">
       <dt>archetypes</dt><dd>{r.archetypes}</dd>

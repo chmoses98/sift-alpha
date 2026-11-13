@@ -10,6 +10,7 @@ Nothing is researched, collected, probed, built, verified or scored anew. Agent-
 
 UI: `src/market-input-map.jsx`, mounted in the existing Input Research section directly under Catalog Completeness. Views: Markets, Inputs, Datasets, Queue, Export.
 Navigation: Market → Input → Raw dataset → Affected markets (with Back).
+The Export view lists the committed CSV/JSON paths rather than serving them: the public build must contain no raw data files (gate in `.github/workflows/dashboard-ci.yml`).
 
 ## Units (never conflated)
 

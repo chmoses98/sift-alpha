@@ -72,9 +72,16 @@ class BuildReadiness(unittest.TestCase):
                 self.assertTrue(r["rights_blockers_of_best_path"])
 
     def test_build_ready_counts(self):
-        self.assertEqual(RES["build_ready_input_count"], 7)
+        self.assertEqual(RES["build_ready_input_count"], 5)
         self.assertEqual(RES["build_ready_today"]["build_ready_archived"]["slots"], 8)
         self.assertEqual(len(RES["first_10_zero_cost_inputs"]), 10)
+
+    def test_readiness_conflicts_not_promoted(self):
+        tiers = {r["input"]: r for r in PR.ranked}
+        self.assertEqual(tiers["TENNIS:ten.joint_event_correlation"]["tier"], "BLOCKED_BY_UPSTREAM_INPUT")
+        self.assertEqual(tiers["TENNIS:ten.joint_event_correlation"]["upstream_blockers"],
+                         ["TENNIS:ten.health_persistence_between_events", "TENNIS:ten.path_difficulty_sim"])
+        self.assertEqual(tiers["TENNIS:ten.service_points_scenario_mixture"]["tier"], "VERIFIER_DOWNGRADED")
 
     def test_openfootball_snapshot_label(self):
         J = json.loads((DIR / "soc_fixtures_intl_openfootball.json").read_text())

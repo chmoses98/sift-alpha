@@ -219,17 +219,27 @@ def input_readiness(i):
     elif all(b["access"] == "COLLECTED_ARCHIVE" for b in bests): tier = "BUILD_READY_ARCHIVED"
     elif all(b["access"] in ("COLLECTED_ARCHIVE", "FREE_REACHABLE") for b in bests): tier = "BUILD_READY_AFTER_FREE_COLLECTION"
     else: tier = "ACCESS_UNCONFIRMED"
+    if tier.startswith("BUILD_READY"):          # rev 3: data access alone is not readiness
+        if inp[i].get("vstatus") == "DOWNGRADED_BY_VERIFIER": tier = "VERIFIER_DOWNGRADED"
+        elif upstream_blockers(i): tier = "BLOCKED_BY_UPSTREAM_INPUT"
     return tier, nr
+
+# rev 3: inputs derived from other inputs (input_audit depends_on) are build-ready only if every upstream input is built and verified
+AUDIT = {r["key"]: r for r in json.loads((ROOT / "research/input_research/data_foundation/input_audit.json").read_text())["rows"]}
+def upstream_blockers(i):
+    sp = i.split(":")[0]
+    return sorted(f"{sp}:{u}" for u in AUDIT.get(i, {}).get("depends_on", [])
+                  if not (inp.get(f"{sp}:{u}", {}).get("built") and str(inp.get(f"{sp}:{u}", {}).get("vstatus", "")).startswith("VERIFIED")))
 
 cand_inputs = sorted({s[1] for s in all_queue_slots})
 slots_per_input = collections.Counter(s[1] for s in all_queue_slots)
-TIER_ORDER = ["BUILD_READY_ARCHIVED", "BUILD_READY_AFTER_FREE_COLLECTION", "ACCESS_UNCONFIRMED", "NOT_ZERO_COST", "RIGHTS_BLOCKED"]
+TIER_ORDER = ["BUILD_READY_ARCHIVED", "BUILD_READY_AFTER_FREE_COLLECTION", "VERIFIER_DOWNGRADED", "BLOCKED_BY_UPSTREAM_INPUT", "ACCESS_UNCONFIRMED", "NOT_ZERO_COST", "RIGHTS_BLOCKED"]
 ranked = []
 for i in cand_inputs:
     tier, nr = input_readiness(i)
     blockers = sorted({b for r in nr for b in r["best"]["blockers"]})
     pit_ok = inp[i]["pit_verdict"] == "PIT_SAFE" and all(r["best"]["strict_pit"] for r in nr)
-    ranked.append({"input": i, "tier": tier, "missing_primary_slots": slots_per_input[i],
+    ranked.append({"input": i, "tier": tier, "upstream_inputs": AUDIT.get(i, {}).get("depends_on", []), "upstream_blockers": upstream_blockers(i), "missing_primary_slots": slots_per_input[i],
                    "queue_groups": sorted({gname for s in all_queue_slots if s[1] == i for gname in slot_group[s]}),
                    "input_pit_verdict": inp[i]["pit_verdict"], "pit_supported_by_best_datasets": pit_ok,
                    "rights_blockers_of_best_path": blockers, "n_blocking_providers": len(blockers),

@@ -7,6 +7,14 @@ Licensing evidence: `docs/PROVIDER_LICENSING_EVIDENCE.md`. Reproducible numbers:
 Nothing here was collected, probed, purchased, registered, scheduled or cleared. No licence approval is asserted; the registry is unchanged.
 "Accessible" (data in hand or reachable) is never the same as "cleared" (rights registry permits research use + collection).
 
+## Revision 3 (2026-11-13): readiness correction
+
+`priority_recalc.py` now also requires every upstream input (`input_audit.json` `depends_on`) to be built and verified, and treats `DOWNGRADED_BY_VERIFIER` as not ready.
+Build-ready inputs: **7 → 5**. `ten.joint_event_correlation` is `BLOCKED_BY_UPSTREAM_INPUT`: it needs `ten.path_difficulty_sim` and `ten.health_persistence_between_events`, both unbuilt.
+`ten.service_points_scenario_mixture` is `VERIFIER_DOWNGRADED`: the pre-match fitness flag has no source.
+Proof-of-concept builders for the five remaining inputs, and their status, are in `research/tennis_builder_poc/README.md`. They are not run on real data and not promoted.
+The Kalshi usage inventory is in `docs/KALSHI_RIGHTS_IMPACT_AUDIT.md`.
+
 ## Revision 2 (2026-11-13): correction and readiness review
 
 Reproduce with `python3 research/provider_licensing/priority_recalc.py`. Check with `python3 -m unittest tests/test_provider_priority_recalc.py`

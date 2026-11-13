@@ -43,7 +43,7 @@ def test_budget_stops_before_cap_and_is_resumable_and_key_never_in_url_or_files(
     def t(url, h): seen.append((url, h)); return 200, b'{"ok":1}', {}
     env = {"CFBD_API_KEY": "SECRETKEY123"}; a = auth(tmp_path, monthly_call_cap=100, max_share_of_cap=0.05)      # allowed = 5 calls
     with pytest.raises(CD.Refusal): CD.run("cfb", reqs(8), tmp_path / "o", tmp_path / "l.json", t, env, a, TODAY, sleep=lambda s: None)
-    assert len(seen) == 5 and json.loads((tmp_path / "l.json").read_text())["2026-11"] == 5
+    assert len(seen) == 5 and json.loads((tmp_path / "l.json").read_text())["months"]["2026-11"]["calls"] == 5
     assert all("SECRETKEY123" not in u for u, _ in seen) and all(h["Authorization"] == "Bearer SECRETKEY123" for _, h in seen)
     assert not any("SECRETKEY123" in f.read_text() for f in (tmp_path / "o").iterdir())
     with pytest.raises(CD.Refusal): CD.run("cfb", reqs(8), tmp_path / "o", tmp_path / "l.json", t, env, a, TODAY, sleep=lambda s: None)     # files exist -> only new calls spend, and the cap is already reached

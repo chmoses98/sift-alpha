@@ -109,6 +109,17 @@ Graded 902 of 908 forecasts across 181 events.
 | PLAYER_PROP | 160 | 160 | – | – | – |
 | TOTAL | 80 | 80 | 0.081143 | -0.005686250000000004 | UNDERCONFIDENT |
 
+### Accuracy by native family
+
+| slice | forecasts | graded | binary Brier | binary signed bias | calibration reading |
+|---|---|---|---|---|---|
+| GAME | 80 | 80 | 0.202207 | 0.048534999999999995 | UNDERCONFIDENT |
+| game_winner | 246 | 242 | 0.238954 | -0.05435950413223134 | OVERCONFIDENT |
+| match_result_3way | 21 | 20 | – | – | – |
+| parlay | 1 | 0 | – | – | – |
+| player_points | 160 | 160 | – | – | – |
+| total | 400 | 400 | 0.078987 | -0.011865999999999932 | UNDERCONFIDENT |
+
 ### Accuracy by model version
 
 | slice | forecasts | graded | binary Brier | binary signed bias | calibration reading |

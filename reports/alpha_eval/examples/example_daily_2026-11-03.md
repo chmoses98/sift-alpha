@@ -78,6 +78,16 @@ Graded 48 of 48 forecasts across 12 events.
 | PLAYER_PROP | 8 | 8 | – | – | – |
 | TOTAL | 4 | 4 | 0.125028 | 0.08925000000000005 | INSUFFICIENT_DATA |
 
+### Accuracy by native family
+
+| slice | forecasts | graded | binary Brier | binary signed bias | calibration reading |
+|---|---|---|---|---|---|
+| GAME | 4 | 4 | 0.259001 | 0.07965 | INSUFFICIENT_DATA |
+| game_winner | 12 | 12 | 0.168348 | -0.2504833333333334 | INSUFFICIENT_DATA |
+| match_result_3way | 4 | 4 | – | – | – |
+| player_points | 8 | 8 | – | – | – |
+| total | 20 | 20 | 0.098727 | 0.038999999999999924 | UNDERCONFIDENT |
+
 ### Accuracy by model version
 
 | slice | forecasts | graded | binary Brier | binary signed bias | calibration reading |

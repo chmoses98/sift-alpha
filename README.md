@@ -47,6 +47,10 @@ The separate GitHub Actions CI workflow builds and runs unit tests on PRs. It ha
 
 The dashboard's **Input research** section lets you pick any sport and market family and see every candidate predictive input with its rationale, data source/completeness/freshness, current-model use, learned importance/weight, evidence for or against it, performance against the relevant benchmark, remaining gaps and the ranked next questions. **RESEARCH_ONLY**: hypotheses and availability audits are not evidence; only the NFL game total/spread/winner (vs the near-close line) and NFL QB passing yards (vs the QB's own history) have predictive tests so far, and nothing is above L2. See [docs/INPUT_RESEARCH.md](docs/INPUT_RESEARCH.md).
 
+## Universal evaluation standard
+
+[Alpha Universal Evaluation Standard v1](docs/ALPHA_EVALUATION_STANDARD_V1.md) (`alpha_eval/`, `python -m alpha_eval ...`) scores every sport, model and market on accuracy, directional calibration, model-vs-market, fee-adjusted hypothetical economics and signed CLV, with explicit GRADED / PENDING / UNSUPPORTED / BLOCKED accounting. See the generated [coverage and adoption matrix](docs/alpha_eval/COVERAGE_MATRIX.md). RESEARCH_ONLY; example reports are synthetic.
+
 ## Research standards
 
 A measured projection discrepancy is **not** a proven +EV bet. Strategies must be evaluated against contemporaneous market prices, honest fees and fills, calibrated probabilities, independent out-of-sample observations, and explicit uncertainty. The research lab may reject every candidate.

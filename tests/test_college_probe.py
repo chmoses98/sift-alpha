@@ -301,3 +301,39 @@ def test_ledger_branch_script_end_to_end(tmp_path):
     L("fetch", str(d1), cwd=ws[0]); assert json.loads((d1 / "ledger.json").read_text())["history"][0]["charged"] == 6
     assert int(g("rev-list", "--count", "college-direct-ledger", cwd=origin).stdout) == 2                           # append-only history
     g("remote", "set-url", "origin", str(tmp_path / "missing.git"), cwd=ws[0]); L("fetch", str(tmp_path / "d3"), cwd=ws[0], ok=False)
+
+
+def test_cbb_probe_uses_json_operations_only_and_stays_six_calls():
+    urls = [r.url() for r in CD.probe_requests("cbb")]
+    assert len(urls) == 6 and urls[1] == CD.HOSTS["cbb"] + "/plays/types" and not any("data-availability" in u for u in urls)
+
+
+HTML = b"<!DOCTYPE html><html><head><title>Data availability</title></head><body>docs</body></html>"
+
+
+@pytest.mark.parametrize("body,headers", [
+    (HTML, {"Content-Type": "text/html; charset=utf-8"}),          # documentation page served with 200
+    (HTML, {}),                                                      # no header: body must still parse as JSON
+    (b'[{"id": 1}]', {"content-type": "text/html"}),                 # JSON-looking body but non-JSON content type
+    (b'"ok"', {"Content-Type": "application/json"}),                 # JSON scalar is not an API record set
+])
+def test_html_or_non_json_200_is_not_a_successful_api_call(tmp_path, body, headers):
+    n = []
+    def t(u, h):
+        n.append(u)
+        return (200, INFO, {"Content-Type": "application/json; charset=utf-8"}) if u.endswith("/info") else (200, body, headers)
+    s = run(tmp_path, t)
+    assert len(n) == 2 and s["calls_made"] == 2 and s["outcome"] == "STOPPED" and "non-JSON 200 on call 1" in s["stopped"]
+    assert CD.check_summary(s) is None and "DOCTYPE" not in json.dumps(s) and "docs" not in json.dumps(s["log"])
+    assert CD.reconcile(tmp_path / "l.json", RUN, tmp_path / "out/probe_summary.json")["charged"] == 2
+
+
+def test_html_200_on_quota_call_stops_before_any_data_call(tmp_path):
+    n = []
+    s = run(tmp_path, lambda u, h: (n.append(u) or 200, HTML, {"Content-Type": "text/html"}))
+    assert len(n) == 1 and s["api_remaining_before"] is None and "non-JSON" in s["stopped"]
+
+
+def test_json_content_type_with_parameters_is_accepted(tmp_path):
+    s = run(tmp_path, lambda u, h: (200, INFO, {"Content-Type": "application/json; charset=utf-8"}))
+    assert s["outcome"] == "COMPLETED" and s["calls_made"] == 6 and s["log"][1]["content_type"] == "application/json"

@@ -21,7 +21,7 @@ The owner's existing key is the secret `CFBD_API_KEY` in GitHub environment `col
   - `expires`, not yet passed.
 - At most **10 probe calls per calendar month across both domains** (cbb = 6 calls, cfb = 4), and the general monthly cap `monthly_call_cap * max_share_of_cap`.
 - Call 1 is CFBD `/info`. It must return an integer remaining count that covers the rest of the probe plus the reserve and agrees with the owner's declaration; otherwise the probe stops.
-- Any non-200 response or transport error stops the probe. There are no retries; a retry is a new owner dispatch that must still fit within 10 calls.
+- Any non-200 response or transport error stops the probe. So does a 200 that is not a JSON object or array, or that carries a non-JSON `Content-Type` (for example an HTML documentation page); such a response never counts as API validation. The CBB probe calls `/info`, `/plays/types`, `/games`, `/plays/date`, `/plays/team` and `/lineups/team`, all JSON operations. There are no retries; a retry is a new owner dispatch that must still fit within 10 calls.
 
 ## Durable ledger (branch `college-direct-ledger`: counts, hashes and safe summaries only)
 | Job | Key | Token | Role |

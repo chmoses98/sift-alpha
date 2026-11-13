@@ -242,13 +242,20 @@ QUOTA_URL = HOSTS["cfb"] + "/info"        # CFBD reports remainingCalls here (UN
 PROBE = {
     "cfb": [("cfb", "/info", ()), ("cfb", "/games", (("year", 2024), ("week", 1), ("seasonType", "regular"))), ("cfb", "/games/teams", (("year", 2024), ("week", 1), ("seasonType", "regular"))),
             ("cfb", "/plays", (("year", 2024), ("week", 1), ("seasonType", "regular")))],
-    "cbb": [("cfb", "/info", ()), ("cbb", "/data-availability", ()), ("cbb", "/games", (("season", 2025), ("seasonType", "regular"))), ("cbb", "/plays/date", (("date", "2025-02-01"),)),
+    "cbb": [("cfb", "/info", ()), ("cbb", "/plays/types", ()), ("cbb", "/games", (("season", 2025), ("seasonType", "regular"))), ("cbb", "/plays/date", (("date", "2025-02-01"),)),
             ("cbb", "/plays/team", (("team", "Duke"), ("season", 2025))), ("cbb", "/lineups/team", (("team", "Duke"), ("season", 2025)))],
 }
 PROBE_FIELDS = ("authorized", "probe_authorized", "authorized_by", "date", "expires", "monthly_call_cap", "max_share_of_cap", "shared_quota_remaining", "quota_declared_on", "quota_reserve")
 RUN_ID = re.compile(r"\d{1,20}-\d{1,4}")                 # github.run_id-github.run_attempt: a re-run attempt never inherits an earlier attempt's reservation
 SUMMARY_KEYS = {"run_id", "domain", "month", "reserved", "calls_made", "max_probe_calls", "stopped", "outcome", "api_remaining_before", "log"}
-LOG_KEYS = {"n", "url", "status", "bytes", "sha256", "json", "type", "rows", "fields", "non_null"}
+LOG_KEYS = {"n", "url", "status", "bytes", "sha256", "json", "type", "rows", "fields", "non_null", "content_type"}
+
+
+def is_json_response(headers, summary: dict) -> bool:
+    """A 200 counts as API validation only if the body parses as JSON (an object or array) and any Content-Type header says JSON.
+    An HTML 200 (documentation page, captive portal, login or error page) is never a successful API call."""
+    ct = next((str(v) for k, v in (headers or {}).items() if str(k).lower() == "content-type"), None)
+    return summary.get("json") is True and summary.get("type") in ("list", "dict") and (ct is None or "json" in ct.lower())
 
 
 class Interrupted(BaseException):
@@ -339,13 +346,17 @@ def probe(domain: str, summary_dir: Path, ledger_path: Path, run_id: str, transp
             stopped, outcome = f"refused before any call: {e}", "REFUSED"; raise
         for n, r in enumerate(reqs):
             made += 1                                                            # counted before the call: interruption can only over-count
-            try: status, body, _ = transport(r.url(), {"Authorization": f"Bearer {key}", "Accept": "application/json"})
-            except Exception as e: status, body = 0, type(e).__name__.encode()  # exception class name only; never headers
+            try: status, body, rh = transport(r.url(), {"Authorization": f"Bearer {key}", "Accept": "application/json"})
+            except Exception as e: status, body, rh = 0, type(e).__name__.encode(), {}  # exception class name only; never headers
             row = {"n": n, "url": r.url(), "status": status, **(validation_summary(body) if status == 200 else {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()})}
-            if n == 0 and status == 200: remaining = api_remaining(body)
+            ct = next((str(v) for k, v in (rh or {}).items() if str(k).lower() == "content-type"), None)
+            if ct is not None: row["content_type"] = ct.split(";")[0].strip()[:80]
+            ok_json = status == 200 and is_json_response(rh, row)
+            if n == 0 and ok_json: remaining = api_remaining(body)
             del body                                                             # raw response dropped here; never persisted
             log.append(row)
             if status != 200: stopped = f"access/availability status {status} on call {n}"; break
+            if not ok_json: stopped = f"non-JSON 200 on call {n} ({row.get('content_type') or 'unparseable body'}): not an API response"; break
             if n == 0:
                 if remaining is None: stopped = "quota uncertain: /info gave no integer remaining-call count"; break
                 if remaining < len(reqs) - 1 + int(auth["quota_reserve"]): stopped = f"quota too low: {remaining} remaining"; break

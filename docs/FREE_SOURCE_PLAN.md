@@ -60,3 +60,6 @@ Rights: licence-explicit research use only for the 14 tennis inputs; the 20 NBA/
 
 ## Phase 13 (2026-11-13): market-first acquisition for the evaluated NBA/NHL game families
 See `docs/PHASE13_MARKET_FIRST_ACQUISITION.md`. Of 50 non-covered (sport, input) pairs in the five NBA/NHL game archetypes: 4 VERIFIED_ACQUIRABLE (Kalshi official settlements and rules text via the anonymous public API, cross-checked against NHL API and ESPN final scores; NHL settlement goal convention: shootout goal counts), 9 BLOCKED (6 network, 3 no free point-in-time source), 1 partial, 36 not addressed. All rights tiers unchanged (UNRESOLVED_INTERNAL_ONLY: Kalshi/NBA/NHL/ESPN terms unreadable here). Catalog and computed coverage untouched.
+
+## Phase 14 (2026-11-13): market-first acquisition, continued
+See `docs/PHASE14_MARKET_FIRST_ACQUISITION.md`. Same 50 pairs: 15 VERIFIED_ACQUIRABLE, 4 partial, 3 blocked (no free PIT source), 0 blocked by network (the NBA stint family is acquirable from ESPN summaries, verified against ESPN box minutes and plus-minus; the official NBA hosts remain blocked), 28 not addressed. Kalshi hourly bid/ask candlesticks are retrievable after settlement for every sampled NBA/NHL game market (evaluation prices, not model inputs). NBA spread/total settlement depth is from 2025-10-22. Rights tiers unchanged; catalog and computed coverage untouched.

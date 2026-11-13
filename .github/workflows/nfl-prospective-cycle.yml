@@ -1,0 +1,58 @@
+name: NFL prospective refresh + capture backstop (research-only, no orders)
+
+# MANUAL ONLY (schedules removed: scheduled capture/refresh now run from .github/workflows/nfl-prospective-ops.yml on main; keeping both would double-write).
+# Former description: BACKSTOP ONLY.  The primary capture path is the kickoff-aware `capture-window` sessions (see docs/PROSPECTIVE_NFL.md): GitHub starts scheduled runs hours late under load and runs schedules only
+# from the DEFAULT branch, so this workflow is inert until merged and can never be the sole capture guarantee.
+#   capture : cheap, every 30 min, ticks only when a pre-registered decision window is open; writes immutable shards to `prospective-data` (new files only)
+#   refresh : expensive, once a day, SINGLE WRITER: fetch published state, ingest shards into the hash-chained ledgers, verify the frozen model, append new predictions, evaluate, publish append-only
+# No credentials, no order endpoints, no trading authority.  Missed captures are reported, never reconstructed.
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: capture or refresh
+        default: capture
+
+permissions:
+  contents: write              # ONLY to add files / append to the prospective-data branch
+
+concurrency:
+  group: nfl-prospective-${{ github.event.schedule || github.event.inputs.job || 'capture' }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: ${{ github.event.schedule == '*/30 * * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.job != 'refresh') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 62
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn pyarrow pytest
+      - name: Offline tests (mock-API capture, shards, publication)
+        run: python -m pytest tests/test_capture_window.py tests/test_prospective.py -q
+      - name: Capture inside decision windows only
+        env:
+          CAPTURE_RUN_ID: gha-${{ github.run_id }}
+        run: python -m alpha_engine.lab.prospective capture-window --stage "$RUNNER_TEMP/stage" --repo "$GITHUB_WORKSPACE" --span 28 --interval 300
+
+  refresh:
+    if: ${{ github.event.schedule == '7 8 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'refresh') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn pyarrow pytest
+      - run: python -m pytest tests/test_prospective.py tests/test_capture_window.py -q
+      - run: python -m alpha_engine.lab.prospective refresh --repo "$GITHUB_WORKSPACE" --work "$RUNNER_TEMP/work" --data-dir "$RUNNER_TEMP/nflverse"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nfl-prospective-refresh-${{ github.run_id }}
+          path: ${{ runner.temp }}/work/pv/REPORT.json
+          retention-days: 30

@@ -88,7 +88,7 @@ const preference = (x) => {
 };
 
 export function buildMap({ catalog, completeness, coverage, coverageRows, datasets, sources, rights, audit = {},
-    seriesAssignments = {}, seriesReconciliation = {}, baselineLock = null }) {
+    seriesAssignments = {}, seriesReconciliation = {}, probes = {}, baselineLock = null }) {
   const reports = {
     unmappedMarketArchetypes: [], unmappedMarketInputs: [], unmappedCoverageInputs: [],
     unmatchedDatasetIds: [], unmappedFields: [], unknownSeriesAssignments: [],
@@ -121,6 +121,15 @@ export function buildMap({ catalog, completeness, coverage, coverageRows, datase
   }
   const markets = [], edges = [];
   const reconciliation = seriesReconciliation.sports || {};
+  const assignedRows = Array.isArray(seriesAssignments.rows) ? seriesAssignments.rows : [];
+  const probeById = new Map((probes.probes || []).map(p => [p.id,p]));
+  const assignmentGroups = new Map();
+  for(const a of assignedRows){
+    if(!SPORTS.includes(a.sport) || a.scope!=="IN_SCOPE")continue;
+    const k=a.sport+":"+a.final;
+    if(!assignmentGroups.has(k))assignmentGroups.set(k,[]);
+    assignmentGroups.get(k).push(a);
+  }
   for (const row of marketRows) {
     const id = row.sport + ":" + row.archetype;
     const arch = catalog[row.sport]?.archetypes?.[row.archetype] ||
@@ -128,8 +137,11 @@ export function buildMap({ catalog, completeness, coverage, coverageRows, datase
     if (!arch) reports.unmappedMarketArchetypes.push(id);
     const roles = new Map((arch?.inputs || []).map((i) => [i.id, i]));
     const counts = {primary:0, missingPrimary:0, predictive:0};
-    const series = (reconciliation[row.sport] || []).filter((r) => r.archetype === row.archetype)
-      .map((r) => ({kind:r.type_period || "", count:r.series || 0, examples:(r.examples || []).slice(0,3)}));
+    const assigned = assignmentGroups.get(id) || [];
+    const series = assigned.length ? [...Map.groupBy(assigned, a=>a.basis||"UNKNOWN").entries()]
+      .map(([kind,rows])=>({kind, count:rows.length,examples:rows.slice(0,3).map(x=>x.title)}))
+      : (reconciliation[row.sport] || []).filter((r) => r.archetype === row.archetype)
+        .map((r) => ({kind:r.type_period || "", count:r.series || 0, examples:(r.examples || []).slice(0,3)}));
     const market = {id, sport:row.sport, archetype:row.archetype, label:row.label || arch?.label || row.archetype,
       target:arch?.target || "", mechanism:arch?.mechanism || "", kind:row.kind,
       primary:row.predictive_primary, primaryCovered:row.primary_FULL + row.primary_PARTIAL + row.primary_PROXY,
@@ -158,6 +170,9 @@ export function buildMap({ catalog, completeness, coverage, coverageRows, datase
     }
     markets.push(market);
   }
+  const marketKeys = new Set(markets.map(m=>m.id));
+  for(const [id,rows] of assignmentGroups.entries()) if(!marketKeys.has(id))
+    for(const a of rows)reports.unknownSeriesAssignments.push({ticker:a.ticker,sport:a.sport,final:a.final,basis:a.basis});
   for (const inp of inputByKey.values()) {
     inp.markets = unq(inp.markets);
     inp.marketRoles.sort((a,b)=>a.market.localeCompare(b.market));
@@ -170,7 +185,7 @@ export function buildMap({ catalog, completeness, coverage, coverageRows, datase
     evidence:d.evidence_grade || "UNKNOWN", pit:d.pit || "UNKNOWN",
     history:d.history || {}, sources:d.sources || [],
     sourceLinks:(d.sources || []).map((s)=>({id:s, name:srcObjects[s]?.name || s,
-      proposedUrl:srcObjects[s]?.url || "", cost:srcObjects[s]?.cost || "unknown",
+      proposedUrl:srcObjects[s]?.url || probeById.get(srcObjects[s]?.probe)?.url || "", cost:srcObjects[s]?.cost || "unknown",
       rights:rightsFor(s,rights)})),
     inputs:[], markets:[], fieldMappings:[], rowsCollected:d.rows_collected, missingness:d.missingness || ""
   }]));
@@ -240,6 +255,7 @@ export function buildMap({ catalog, completeness, coverage, coverageRows, datase
     primaryMissing:marketRows.reduce((n,r)=>n+r.predictive_primary-r.primary_FULL-r.primary_PARTIAL-r.primary_PROXY,0),
     statuses:statusBuckets, marketEdges:edges.length,datasetEdges:datasetEdges.length,
     datasets:datasetsOut.length, sourceCount:Object.keys(srcObjects).length, queue:queue.length,
+    assignmentRows:assignedRows.length,assignedInScope:[...assignmentGroups.values()].reduce((n,r)=>n+r.length,0),
     baselineLockPresent:baselineLock != null, unassignedSeriesGroups:
       Object.values(reconciliation).flat().filter(x=>!x.archetype).length
   };
@@ -263,6 +279,7 @@ function loadAll() {
     audit:readJSON(DATA+"input_audit.json"),
     seriesAssignments:readJSON(BASE+"market_universe/series_assignment.json"),
     seriesReconciliation:readJSON(BASE+"market_universe/reconciliation.json"),
+    probes:readJSON(DATA+"probes.json"),
     baselineLock:readJSON(BASE+"baseline_lock.json"),
   });
 }

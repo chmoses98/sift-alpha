@@ -4,6 +4,7 @@ import queue from "../research/audit/input_research/queue.json";
 import {ComputableInputsPanel, ScaledSearchPanel} from "./research-milestone2.jsx";
 import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch, UnregisteredArchetypes, DataReadinessPanel} from "./research-experiments.jsx";
 import {CatalogCompleteness} from "./catalog-completeness.jsx";
+import {MarketInputMap} from "./market-input-map.jsx";
 import "./input-research.css";
 
 // Everything is rendered from research/audit/input_research/*.json (alpha_engine.input_research). Nothing is hand-typed.
@@ -54,6 +55,7 @@ export function InputResearch() {
   const idx = index.sports[sport];
 
   return <>
+  <MarketInputMap/>
   <CatalogCompleteness/>
   <section className="ir" aria-label="Input research: what predicts each market">
     <div className="eyebrow">INPUT RESEARCH / WHAT PREDICTS EACH MARKET</div>

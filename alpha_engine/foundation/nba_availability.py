@@ -126,25 +126,29 @@ def select_pit_status(report_rows: pd.DataFrame, games: pd.DataFrame, freeze_min
                       max_age_h: float = MAX_REPORT_AGE_H):
     """Point-in-time injury status per (game, player).
 
-    ``report_rows``: game_id, team_id, nba_id (NaN = unmatched / team-level), status, report_time_utc.
+    ``report_rows``: game_id, team_id, nba_id (NaN = unmatched / team-level), status, report_time_utc and optionally
+    published_utc (when the file became public; the later of the two is the availability time).
     ``games``: game_id, tip_utc. For each game the LATEST report carrying >=1 row for that game with
-    report_time_utc <= tip - freeze_min (and not older than ``max_age_h``) is selected; later reports are ignored.
-    Returns (sel, players, teams): sel[game_id, report_ts, cutoff_ts, lead_min] (report_ts = -1 when no report),
+    availability time <= tip - freeze_min (and not older than ``max_age_h``) is selected; later reports are ignored.
+    Returns (sel, players, teams): sel[game_id, report_ts, avail_ts, cutoff_ts, lead_min] (report_ts = -1 when no report),
     players[game_id, nba_id, status] (worst status when duplicated) and teams[game_id, team_id] for
     ``not_yet_submitted`` team rows in the selected report."""
     g = games[["game_id", "tip_utc"]].drop_duplicates("game_id").copy()
     g["cutoff_ts"] = _epoch_s(g["tip_utc"]) - freeze_min * 60
-    r = report_rows[["game_id", "team_id", "nba_id", "status", "report_time_utc"]].copy()
+    cols = ["game_id", "team_id", "nba_id", "status", "report_time_utc"] + (["published_utc"] if "published_utc" in report_rows else [])
+    r = report_rows[cols].copy()
     r["report_ts"] = _epoch_s(r["report_time_utc"])
+    r["avail_ts"] = np.maximum(r.report_ts, _epoch_s(r["published_utc"].fillna(r["report_time_utc"]))) if "published_utc" in r else r.report_ts
     r = r.merge(g[["game_id", "cutoff_ts"]], on="game_id", how="inner")
-    r = r[(r.report_ts <= r.cutoff_ts) & (r.cutoff_ts - r.report_ts <= max_age_h * 3600)]
-    last = r.groupby("game_id")["report_ts"].max().rename("sel_ts").reset_index()
+    r = r[(r.avail_ts <= r.cutoff_ts) & (r.cutoff_ts - r.report_ts <= max_age_h * 3600)]
+    last = r.groupby("game_id").agg(sel_ts=("report_ts", "max"), sel_avail=("avail_ts", "max")).reset_index()
     r = r.merge(last, on="game_id")
     r = r[r.report_ts == r.sel_ts]
     sel = g.merge(last, on="game_id", how="left")
     sel["report_ts"] = sel["sel_ts"].fillna(-1).astype("int64")
     sel["lead_min"] = np.where(sel.report_ts >= 0, (_epoch_s(sel["tip_utc"]) - sel.report_ts) / 60.0, np.nan)
-    sel = sel[["game_id", "report_ts", "cutoff_ts", "lead_min"]].reset_index(drop=True)
+    sel["avail_ts"] = sel["sel_avail"].fillna(-1).astype("int64")
+    sel = sel[["game_id", "report_ts", "avail_ts", "cutoff_ts", "lead_min"]].reset_index(drop=True)
     teams = r[r.status == "not_yet_submitted"][["game_id", "team_id"]].drop_duplicates().reset_index(drop=True)
     p = r[r.nba_id.notna() & r.status.isin(list(SEVERITY))].copy()
     p["sev"] = p.status.map(SEVERITY)
@@ -230,16 +234,27 @@ def crps_rows(pmf: np.ndarray, y) -> np.ndarray:
     return np.array([C.crps_pmf(pmf[i], int(y[i])) for i in range(len(y))])
 
 
-def fit_logit(x, y, ridge: float = 1e-2, iters: int = 60):
-    """Ridge-stabilised logistic y ~ a + b*x (penalty pulls (a, b) to (0, 1)). Returns (a, b)."""
-    x = np.asarray(x, float); y = np.asarray(y, float); a, b = 0.0, 1.0
+def fit_logit(x, y, ridge: float = 1e-2, iters: int = 200):
+    """Ridge-stabilised logistic y ~ a + b*x (penalty pulls (a, b) to (0, 1)); Newton with step halving. Returns (a, b)."""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+
+    def nll(a, b):
+        z = np.clip(a + b * x, -30, 30)
+        return float(np.sum(np.log1p(np.exp(z)) - y * z) + 0.5 * ridge * (a * a + (b - 1) ** 2))
+    a, b = 0.0, 1.0; cur = nll(a, b)
     for _ in range(iters):
         q = 1 / (1 + np.exp(-np.clip(a + b * x, -30, 30))); w = np.clip(q * (1 - q), 1e-9, None)
         g = np.array([np.sum(y - q) - ridge * a, np.sum((y - q) * x) - ridge * (b - 1)])
         H = np.array([[np.sum(w) + ridge, np.sum(w * x)], [np.sum(w * x), np.sum(w * x * x) + ridge]])
-        step = np.linalg.solve(H, g); step = np.clip(step, -2, 2); a += step[0]; b += step[1]
-        if np.max(np.abs(step)) < 1e-10:
+        step = np.linalg.solve(H, g); t = 1.0
+        while t > 1e-6 and nll(a + t * step[0], b + t * step[1]) > cur:
+            t *= 0.5
+        if t <= 1e-6:
             break
+        a += t * step[0]; b += t * step[1]; new = nll(a, b)
+        if cur - new < 1e-12:
+            break
+        cur = new
     return float(a), float(b)
 
 
@@ -472,10 +487,10 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     dev = (ts.m - (240 + 25 * ts.ot)).abs()
     ok5 = float((dev <= 5).mean())
     checks_box.append(_chk("team_minutes_sum_240_plus_25_per_ot", ok5 >= 0.98,
-                           f"{len(ts)} team-games: share within +-5 min of 240*(1+OT/4*... )=240+25*n_ot is {ok5:.4f}; within +-2 is {float((dev <= 2).mean()):.4f}; "
+                           f"{len(ts)} team-games: share within +-5 min of 240+25*n_ot is {ok5:.4f}; within +-2 is {float((dev <= 2).mean()):.4f}; "
                            f"max abs deviation {float(dev.max()):.0f} (ESPN minutes are whole-minute rounded per player)"))
 
-    hls = [1.5, 2.5, 4.0, 6.0, 10.0]
+    hls = [0.5, 1.0, 1.5, 2.0, 2.5, 4.0, 6.0, 10.0]
     states = player_states(pg, hls)
     pop = build_population(pg)
     n_cand = len(pop)
@@ -494,10 +509,6 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     # independent recomputation of the minutes EWM for a deterministic sample from strictly-earlier games only
     samp = pop.iloc[np.linspace(0, N - 1, 300).astype(int)]
     pl = pg[pg.minutes > 0]
-    maxdiff = 0.0
-    for r in samp.itertuples():
-        h = pl[(pl.nba_id == r.nba_id) & (pl.date < r.date)].sort_values(["date", "game_id"]).minutes
-        maxdiff = max(maxdiff, abs(float(h.ewm(halflife=4.0, adjust=True).mean().iloc[-1]) - float(r._asdict()["em_4.0"]) if "em_4.0" in r._asdict() else 0.0))
     em4 = samp["em_4.0"].to_numpy()
     re4 = np.array([float(pl[(pl.nba_id == a) & (pl.date < d)].sort_values(["date", "game_id"]).minutes.ewm(halflife=4.0, adjust=True).mean().iloc[-1])
                     for a, d in zip(samp.nba_id, samp.date)])
@@ -518,6 +529,9 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     reports = pd.read_parquet(_hist(repo) / "injury_reports" / f"reports_{SEASON}.parquet")
     snaps = pd.read_parquet(_hist(repo) / "injury_reports" / f"game_snapshots_{SEASON}.parquet")
     games = pop[["game_id", "start_time_utc"]].drop_duplicates("game_id").rename(columns={"start_time_utc": "tip_utc"})
+    rr = rr.merge(reports[["report_time_utc", "last_modified_utc"]].drop_duplicates("report_time_utc").rename(columns={"last_modified_utc": "published_utc"}),
+                  on="report_time_utc", how="left")
+    n_nopub = int(rr.published_utc.isna().sum())
     sel, pstat, tstat = select_pit_status(rr, games)
     prow = rr[rr.status != "not_yet_submitted"]
     m_rate = float(prow.nba_id.notna().mean())
@@ -534,9 +548,10 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     checks_inj.append(_chk("injury_rows_duplicates_within_report", drr == 0,
                            f"{drr} duplicate (report, game, player) rows; duplicates are resolved to the most severe status"))
     n_games = len(sel); has_rep = sel.report_ts >= 0
-    viol = int((sel.report_ts[has_rep] > sel.cutoff_ts[has_rep]).sum())
+    viol = int((sel.avail_ts[has_rep] > sel.cutoff_ts[has_rep]).sum())
     checks_inj.append(_chk("leak_guard_report_time_le_tip_minus_60", viol == 0,
-                           f"{int(has_rep.sum())}/{n_games} games have a selected report; {viol} selected reports are later than tip-60min; "
+                           f"{int(has_rep.sum())}/{n_games} games have a selected report; {viol} selected reports were published (max of header time and file last-modified) later than tip-60min; "
+                           f"{n_nopub} report rows lack a last-modified time and fall back to the header time; "
                            f"median lead {float(sel.lead_min.median()):.0f} min, max {float(sel.lead_min.max()):.0f} min"))
     sn = snaps[["game_id", "tip_utc", "t_minus_60_report_time_utc", "t_minus_60_pit_ok"]].merge(sel, on="game_id", how="inner")
     pit_ok_share = float(snaps[snaps.game_id.isin(set(games.game_id))].t_minus_60_pit_ok.mean())
@@ -610,8 +625,6 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     m1 = np.clip(m0 * rho, 0.5, CAP)
 
     # ------------------------------------------------------------------ A2 (TRAIN fit): redistribution
-    order = np.lexsort((pop.team_id.to_numpy(), gid))
-    assert np.array_equal(order, np.arange(N)) or True
     grp_key = pd.factorize(pd.Series(gid).astype(str) + "|" + pop.team_id.astype(str))[0]
     groups = [np.where(grp_key == k)[0] for k in range(grp_key.max() + 1)]
 
@@ -624,7 +637,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
         return out
 
     bestg = None; gamma_grid = {}
-    for gamma in (0.0, 0.5, 1.0, 1.5, 2.0):
+    for gamma in (-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0):
         mg = redistribute_all(gamma, only=train)
         e = float(np.abs(mg - y_min)[train & played].mean())
         gamma_grid[str(gamma)] = e
@@ -813,7 +826,6 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
         ticker_strike_equals_floor_strike_plus_half=strike_ok,
         by_series={sr: dict(total=int((mk.series == sr).sum()), matched=int(((mk.series == sr) & mk.matched).sum()),
                             scalar_dnp=int(((mk.series == sr) & (mk.result == "scalar")).sum())) for sr in SERIES})
-    t = mk[mk.is_test | (mk.game_id.isna())]
     tt = mk[mk.is_test]
     yn = tt.result.isin(["yes", "no"])
     counts_test = dict(markets_in_test_window=int(len(tt)), yes_no=int(yn.sum()), scalar_dnp_excluded=int((tt.result == "scalar").sum()),
@@ -973,20 +985,31 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     inc = [r for r in rows if r["headline"] and r["reference"].startswith("incumbent")]
     mkt = [r for r in rows if r["headline"] and r["reference"] == "market:kalshi_mid_T-60"]
     vs = [r["verdict"] for r in inc]
-    if vs and all(v == "VALIDATED_IMPROVEMENT" for v in vs):
+    vm = [r["verdict"] for r in mkt]
+    a0k = [r for r in rows if r["headline"] and r["metric"] == "kalshi_brier" and r["reference"] == "A0 no-report proxy"]
+    v3k = [r for r in rows if r["cohort"] == POOLED and r["metric"] == "kalshi_brier" and "prop_walk_forward_v3" in r["reference"] and r["market_family"] in FAMILY.values()]
+    inc_better = bool(vs) and all(v in ("VALIDATED_IMPROVEMENT", "IMPROVED_NOT_VALIDATED") for v in vs)
+    # pre-specified conservative rule: VALIDATED overall needs every incumbent row validated AND no family worse than the market
+    if inc_better and all(v == "VALIDATED_IMPROVEMENT" for v in vs) and not any(v == "NOT_IMPROVED" for v in vm) and all(v == "VALIDATED_IMPROVEMENT" for v in vm):
         overall = "VALIDATED_IMPROVEMENT"
-    elif any(v in ("VALIDATED_IMPROVEMENT", "IMPROVED_NOT_VALIDATED") for v in vs) and not any(v == "NOT_IMPROVED" for v in vs):
+    elif inc_better:
         overall = "IMPROVED_NOT_VALIDATED"
     elif vs and all(v == "NOT_IMPROVED" for v in vs):
         overall = "NOT_IMPROVED"
     else:
         overall = "INCONCLUSIVE"
-    fmt = lambda rs: "; ".join(f"{r['market_family']} {r['diff']:+.4f} [{r['ci95'][0]:+.4f}, {r['ci95'][1]:+.4f}] {r['verdict']}" for r in rs)
-    reason = ("Overall verdict is taken from the headline Kalshi Brier rows of A2 versus the incumbent walk-forward reproduction (market_table_scored.p_data_only): "
-              + fmt(inc) + ". Versus the Kalshi T-60 mid: " + fmt(mkt) + ". PIT injury gate ablation verdicts: " + ", ".join(v_gate)
-              + "; redistribution ablation verdicts: " + ", ".join(v_red)
-              + ". The incumbent is retained: this is research-only evidence against re-implemented/reproduced references, not against the live frozen forecasts, "
-                "and the challenger is not shown to beat the market mid.")
+    fmt = lambda rs: "; ".join(f"{r['market_family']} {r['diff']:+.4f} [{r['ci95'][0]:+.4f}, {r['ci95'][1]:+.4f}] n={r['n_rows']} {r['verdict']}" for r in rs)
+    reason = ("Overall rule (fixed in code): VALIDATED_IMPROVEMENT only if A2 is validated against the incumbent reproduction AND against the Kalshi T-60 mid in every prop family; "
+              "better than the incumbent reproduction but not than the market reads IMPROVED_NOT_VALIDATED. Kalshi Brier, pooled TEST, A2 minus reference (negative = A2 better). "
+              "Versus incumbent reproduction market_table_scored.p_data_only (both cohorts, about 100 games): " + fmt(inc)
+              + ". Versus the later incumbent reproduction prop_walk_forward_v3.p_sim (12 dates in cohort 2 only, non-headline): " + fmt(v3k)
+              + ". Versus the Kalshi T-60 candle mid: " + fmt(mkt)
+              + ". Versus the own no-report proxy A0 on the same ladders: " + fmt(a0k)
+              + ". On Kalshi ladders (which settle yes/no only for players who entered the game) the availability features add nothing measurable over A0, so the gain over the "
+                "incumbent reproduction comes from the base rate/minutes/dispersion model and its later information cutoff, not from the injury gate. "
+                "Where the features do work is on the full rotation population: PIT injury gate ablation verdicts " + ", ".join(v_gate)
+              + "; redistribution ablation verdicts " + ", ".join(v_red)
+              + ". The incumbent is retained: research-only evidence against reproduced references, not the live frozen forecasts, and no edge over the market mid is shown.")
 
     # ------------------------------------------------------------------ data manifest
     def ds(dataset_id, rel, rows_, first, last, kind):
@@ -1018,7 +1041,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
              checks=checks_box + [checks_min[0], checks_min[2]]),
         dict(feature_id="nba_injury_status_t60", catalog_inputs=["NBA:nba.injuries_pit", "NBA:nba.status_resolution_prob"],
              description="Player's own official injury-report status in the latest report carrying the game with report_time_utc <= tip-60min; mapped to P(play | status, recent share) and a status minutes multiplier, both fitted on TRAIN (2025-26 games before 2026-01-15).",
-             pit_rule="Report rows are used only when report_time_utc <= start_time_utc - 60 minutes and not older than 30 hours; later reports are never read for that game. Parameters fitted on TRAIN only.",
+             pit_rule="Report rows are used only when both report_time_utc and the file last-modified (publication) time are <= start_time_utc - 60 minutes and the report is not older than 30 hours; later reports are never read for that game. Parameters fitted on TRAIN only.",
              checks=checks_inj),
         dict(feature_id="nba_minutes_redistribution_240", catalog_inputs=["NBA:nba.teammate_absence_shift", "NBA:nba.replacement_level_minutes_absorption", "NBA:nba.usage"],
              description="Conditional minutes m' = clip(m + c*m**gamma, 0, 48) with c solved per team-game so that sum(P(play)*m') equals the team budget; gamma, the overtime allowance and the out-of-population allowance are fitted on TRAIN. Optional points bump from vacated usage share.",

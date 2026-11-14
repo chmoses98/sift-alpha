@@ -16,7 +16,7 @@ The Market & Input Map (PR #71) and data-foundation Phases 1–14 were never on 
 `claude/funny-einstein-5trimq` (123 commits ahead of `main`, 6 behind). This branch merges that tip into current `main`.
 Three add/add conflicts (the college direct-API probe) were resolved in favour of `main`, whose copy is the later rewrite merged as PR #69.
 After the merge the full suites pass unchanged (1,072 Python tests, 61 probe tests, 74 Node tests), and the map's own counts are unchanged:
-170 archetypes, 1,649 distinct inputs, 949 missing PRIMARY slots.
+170 archetypes, 1,649 distinct inputs, 949 missing PRIMARY slots (888 after the Phase 15 builders, section 10.7).
 
 Not merged, and why: `claude/sift-alpha-eval-catalog-38ni9g` (open PR #66) and `claude/adoring-archimedes-8htgcn` (open draft PR #68) are two
 competing NHL evaluation adapters still under review; `claude/quirky-darwin-zv0rwc` is a docs-only incident record. They are untouched.
@@ -289,3 +289,21 @@ information the model lacks. One parameter (mismatch scale) was added after a fi
 * PRs #66 and #68 are reconciled on this branch: #66 is the adapter, #68's Kalshi settlements are a second outcome source with a per-market
   cross-check (`alpha_eval/nhl_kalshi_settlement.py`), its postmortem is `NHL_POSTMORTEM_002_KALSHI_SETTLEMENTS.md`. The direct cross-check has not
   run on real data because neither raw input is local.
+
+### 10.7 Phase 15: thirty inputs built from the archive, replayed and blind-matched
+Details in `docs/PHASE15_NBA_NHL_ARCHIVE_BUILDERS.md`. A slot listed under several datasets needs **all** of them, so only slots whose datasets are
+all archived are buildable without new data. Thirty NBA and NHL inputs (29 PARTIAL, 1 PROXY, none FULL; each lists what is missing) passed the
+replay gate and an exact blind re-implementation match (118 columns, identical keys and NaN patterns; `nhl.ixg_player` matched after a float32
+summation defect was fixed).
+
+| Distinct missing PRIMARY slots | Before | After |
+|---|---|---|
+| All eight sports | 949 | 888 |
+| NBA / NHL / CBB | 163 / 87 / 108 | 138 / 51 / 108 |
+| P0 with at least one archived dataset | 264 | 203 |
+| P0 with archived datasets only | 69 | 49 |
+
+* CBB: none built. The archived raw rows are not in any repository this session can read, and the college collector is frozen in the rights registry.
+* Inputs marked downgraded or point-in-time quarantined (for example `nhl.goalie_quality`) were not resurrected.
+* Built is not used: none of the thirty is yet in a challenger. Process note: the blind re-implementations were written by separate headless agent
+  sessions that saw only the briefs and the raw data paths.

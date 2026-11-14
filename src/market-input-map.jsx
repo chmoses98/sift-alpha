@@ -62,7 +62,7 @@ export function MarketInputMap() {
     <h2>Market & input map</h2>
     <p className="ir-fine"><b>RESEARCH ONLY.</b> {r.notice}</p>
     <Summary r={r}/>
-    <details className="mim-units"><summary><b>Counting units</b> — why 1,649, 3,670 and 949 are different things</summary>
+    <details className="mim-units"><summary><b>Counting units</b> — why 1,649, 3,670 and {fmt(RECON.missing_primary_predictive_slots)} are different things</summary>
       <ul className="ir-fine">
         <li><b>{fmt(r.distinct_inputs)} distinct inputs</b> = rows of the verified-coverage matrix (one per sport × input id; {fmt(r.distinct_input_ids_across_sports)} ids across sports). {fmt(r.distinct_inputs_referenced_by_an_archetype)} are listed under at least one market; {r.distinct_inputs_with_no_archetype_edge.length} are catalog inputs with no market edge.</li>
         <li><b>{fmt(r.catalog_edges_all_classes)} catalog edges</b> = every (market, input) listing, of every class: {Object.entries(r.edges_by_class).map(([k, v]) => `${fmt(v)} ${CLS_LABEL[k]}`).join(" · ")}.</li>

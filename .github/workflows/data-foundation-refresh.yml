@@ -1,0 +1,67 @@
+name: Data foundation refresh (manual only, research-only, no commits)
+
+# One bounded pass of the research feedback loop (alpha_engine.foundation.loop): optional Kalshi series-list check (ONE public request),
+# optional re-run of the NBA/NHL challenger evaluations against the owner's public sport repositories (read-only checkout),
+# then the pipeline ledger rebuild and its tests. Results are uploaded as an artifact for review and land through a normal PR.
+#
+# INACTIVE BY DESIGN: there is NO schedule and no push/workflow_run trigger. It runs only when a person presses "Run workflow".
+# It cannot start a successor run: it has read-only permissions, does not commit, push, or dispatch anything.
+# Adding a schedule is an owner decision (see docs/DATA_FOUNDATION_OPS.md).
+# Cost: $0 (standard hosted runner; hard 30-minute timeout; artifact kept 14 days).
+on:
+  workflow_dispatch:
+    inputs:
+      market_watch:
+        description: "Read the public Kalshi series listing once and diff it against the committed universe"
+        type: boolean
+        default: false
+      challengers:
+        description: "Re-run the NBA and NHL challenger evaluations (checks out the sport repos read-only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-foundation-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas pyarrow scipy scikit-learn pytest
+      - name: Read-only checkout of the NBA repo
+        if: ${{ inputs.challengers }}
+        uses: actions/checkout@v4
+        with:
+          repository: chmoses98/nba-edge-finder
+          path: _repos/nba-edge-finder
+          persist-credentials: false
+      - name: Read-only checkout of the NHL repo
+        if: ${{ inputs.challengers }}
+        uses: actions/checkout@v4
+        with:
+          repository: chmoses98/NHL-edge-finder
+          path: _repos/NHL-edge-finder
+          persist-credentials: false
+      - name: One loop pass (fail-closed health)
+        env:
+          SIFT_REPOS_DIR: ${{ github.workspace }}/_repos
+        run: python -m alpha_engine.foundation.loop ${{ inputs.market_watch && '--market-watch' || '' }} ${{ inputs.challengers && '--challengers' || '' }}
+      - name: Validate artifacts (contract, reconciliation, determinism)
+        run: python -m unittest tests.test_foundation_ops -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: data-foundation-ops
+          path: research/data_foundation_ops/
+          retention-days: 14

@@ -5,6 +5,7 @@ import {ComputableInputsPanel, ScaledSearchPanel} from "./research-milestone2.js
 import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch, UnregisteredArchetypes, DataReadinessPanel} from "./research-experiments.jsx";
 import {CatalogCompleteness} from "./catalog-completeness.jsx";
 import {MarketInputMap} from "./market-input-map.jsx";
+import {DataFoundation} from "./data-foundation.jsx";
 import "./input-research.css";
 
 // Everything is rendered from research/audit/input_research/*.json (alpha_engine.input_research). Nothing is hand-typed.
@@ -55,6 +56,7 @@ export function InputResearch() {
   const idx = index.sports[sport];
 
   return <>
+  <DataFoundation/>
   <CatalogCompleteness/>
   <MarketInputMap/>
   <section className="ir" aria-label="Input research: what predicts each market">

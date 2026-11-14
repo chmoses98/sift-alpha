@@ -60,6 +60,8 @@ FAMILY = {"points": "player_points", "rebounds": "player_rebounds", "assists": "
           "pra": "player_pra"}
 KMAX = {"points": 70, "rebounds": 35, "assists": 30, "threes": 15, "pra": 100, "minutes": 60}
 SEED = 7
+# Family names used in this module that are not catalog archetypes, mapped to the approved Market & Input Map archetype.
+CATALOG_ARCH = {"NBA:player_pra": "NBA:combo_props", "NBA:player_minutes": "NBA:player_availability", "NBA:game_spread": "NBA:game_moneyline_spread"}
 
 
 # =============================================================================================== git object access
@@ -446,6 +448,7 @@ class Results:
 
     def add(self, family, archetypes, metric, arm, reference, chal, ref, clusters, masks, headline=False, min_n=30, note=None):
         chal = np.asarray(chal, float); ref = np.asarray(ref, float); clusters = np.asarray(clusters)
+        archetypes = [CATALOG_ARCH.get(a, a) for a in archetypes]      # only archetypes of the approved catalog are ever written
         for cohort, mk in masks.items():
             mk = np.asarray(mk, bool) & np.isfinite(chal) & np.isfinite(ref)
             if int(mk.sum()) < min_n:

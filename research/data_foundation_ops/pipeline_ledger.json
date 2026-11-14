@@ -1597,6 +1597,520 @@
     "NOT_IMPROVED": 2
    }
   },
+  "CBB:alpha-cbb-venue-prior-0.1": {
+   "ablations": [],
+   "archetypes": [
+    "CBB:game_moneyline_spread",
+    "CBB:game_total"
+   ],
+   "data": [
+    {
+     "dataset_id": "cbb.projections_archive.pure-0.2.0",
+     "first": "2026-11-02 08:00:00+00:00",
+     "kind": "PROSPECTIVE_CAPTURE",
+     "last": "2026-11-14 03:00:00+00:00",
+     "path": "origin/projections-archive:projections/<season>/<date>/<game_id>/<as_of>.json",
+     "repo": "chmoses98/cbb-edge-finder",
+     "rights_tier": "UNRESOLVED_INTERNAL_ONLY",
+     "rows": 542
+    },
+    {
+     "dataset_id": "cbb.period_scores_archive",
+     "first": "2026-11-02 08:00:00+00:00",
+     "kind": "PROSPECTIVE_CAPTURE",
+     "last": "2026-11-13 03:00:00+00:00",
+     "path": "origin/period-scores-archive:periods/...",
+     "repo": "chmoses98/cbb-edge-finder",
+     "rights_tier": "UNRESOLVED_INTERNAL_ONLY",
+     "rows": 489
+    },
+    {
+     "dataset_id": "cbb.schedule_archive.finals",
+     "first": "2026-11-13 20:00:00+00:00",
+     "kind": "PROSPECTIVE_CAPTURE",
+     "last": "2026-11-14 03:00:00+00:00",
+     "path": "origin/schedule-archive:rows/...",
+     "repo": "chmoses98/cbb-edge-finder",
+     "rights_tier": "UNRESOLVED_INTERNAL_ONLY",
+     "rows": 53
+    },
+    {
+     "dataset_id": "cbb.model_checkpoint.finals_2006_2026",
+     "first": "2006",
+     "kind": "HISTORICAL_BACKFILL",
+     "last": "2026",
+     "path": "main:models/pure/checkpoints/pure-0.5.0/boundary_2026/finals.parquet",
+     "repo": "chmoses98/cbb-edge-finder",
+     "rights_tier": "UNRESOLVED_INTERNAL_ONLY (derived from sportsdataverse bulk)",
+     "rows": 7356
+    },
+    {
+     "dataset_id": "cbb.model_checkpoint.preseason_2027",
+     "first": "2027",
+     "kind": "HISTORICAL_BACKFILL",
+     "last": "2027",
+     "path": "main:models/pure/checkpoints/pure-0.5.0/boundary_2026/preseason.parquet",
+     "repo": "chmoses98/cbb-edge-finder",
+     "rights_tier": "UNRESOLVED_INTERNAL_ONLY (derived from sportsdataverse bulk)",
+     "rows": 366
+    },
+    {
+     "dataset_id": "cbb.kalshi_panel_archive",
+     "first": "20261005T004055Z",
+     "kind": "PROSPECTIVE_CAPTURE",
+     "last": "20261114T005119Z",
+     "path": "origin/kalshi-panel-archive:panels/...",
+     "repo": "chmoses98/cbb-edge-finder",
+     "rights_tier": "KALSHI_PUBLIC_MARKET_DATA_INTERNAL",
+     "rows": 8501
+    }
+   ],
+   "design": {
+    "arms": {
+     "FULL": "all four",
+     "P": "prior-season net fade",
+     "R": "returning-minutes fade",
+     "S": "SD scale",
+     "V": "neutral-site offset"
+    },
+    "cohort_cut": "2026-11-07",
+    "cohorts": "slates before / on-or-after the cut",
+    "contract_probabilities": "P(D>t) = 1 - Phi((t-m)/s) in the projection frame, t = 0 for winner; the incumbent reference uses its own m and frozen margin_sd (its documented spread formula)",
+    "headline_rule": "Holm across all headline rows; verdict_from(); non-headline rows Bonferroni-adjusted by the headline count",
+    "loss_metrics": "normal negative log density of the realised margin / total (nats); absolute margin error; Brier (home win, Kalshi contracts)",
+    "market_note": "Kalshi mid only when 0 < bid < ask < 1 and ask - bid <= 0.10; ask reported separately; fees not modelled; no profitability claim",
+    "walk_forward": "slate-by-slate; training = earlier slates with the final first observed before the slate's first tip"
+   },
+   "features": [
+    {
+     "catalog_inputs": [
+      "CBB:cbb.score_resid"
+     ],
+     "checks_failed": [
+      "score_plausibility: 1 of 686 games outside final 20-160 (home 30-160) / first-half 5-90 (home 8-90), of which 0 have an incumbent projection (kept: scores verified and cross-checked); min final 17, max final 143"
+     ],
+     "checks_passed": 29,
+     "checks_total": 30,
+     "description": "walk-forward SD scale k for margin and total (N0=60 pseudo-games at k=1)",
+     "feature_id": "early_season_sigma_scale",
+     "pit_rule": "fitted on finals first observed before the slate's first tip"
+    },
+    {
+     "catalog_inputs": [
+      "CBB:cbb.neutral_site",
+      "CBB:cbb.venue"
+     ],
+     "checks_failed": [],
+     "checks_passed": 3,
+     "checks_total": 3,
+     "description": "neutral-minus-home residual offset (margin, total), shrunk by 30 pseudo-games",
+     "feature_id": "neutral_site_offset",
+     "pit_rule": "same walk-forward clock; site flag from the frozen forecast"
+    },
+    {
+     "catalog_inputs": [
+      "CBB:cbb.preseason_prior"
+     ],
+     "checks_failed": [],
+     "checks_passed": 3,
+     "checks_total": 3,
+     "description": "w_h*net_h - w_a*net_a, net = 2026 end-of-season o-d from the frozen checkpoint, w = exp(-games_seen/6); ridge 100",
+     "feature_id": "prior_season_net_fade",
+     "pit_rule": "checkpoint table frozen at the 2026 boundary (before every forecast); games_seen from the frozen forecast file"
+    },
+    {
+     "catalog_inputs": [
+      "CBB:cbb.recruit_exp",
+      "CBB:cbb.roster_minutes"
+     ],
+     "checks_failed": [],
+     "checks_passed": 3,
+     "checks_total": 3,
+     "description": "w_h*ret_h - w_a*ret_a, ret = expected returning-minutes share (preseason.parquet ret_min); ridge 100",
+     "feature_id": "returning_minutes_fade",
+     "pit_rule": "checkpoint table frozen at the 2026 boundary; expected (not realised) returners"
+    }
+   ],
+   "id": "alpha-cbb-venue-prior-0.1",
+   "incumbent": "pure-0.2.0",
+   "limitations": [
+    "542 games over 13 slates of one season; 38 neutral-site games. Results are immature by construction.",
+    "No multi-season GAME-level lake is committed: the prior-season study uses end-of-season team ratings frozen in the model checkpoint, not a historical chronological backtest of early-season games.",
+    "Returning minutes are the checkpoint's EXPECTED returners (return-probability model), not the realised 2026-27 roster.",
+    "The incumbent's win probability is a logit of the margin; the challenger uses Phi(m/s). Moneyline comparisons are against the incumbent's normal-implied probability (headline) and its frozen home_win_prob (non-headline).",
+    "Extension outcomes come from schedule-archive finals (not half-verified period scores); their first-observation time is the walk-forward clock.",
+    "Kalshi quotes are latest pre-tip snapshots; mids are not executable; fees not modelled; nothing here is a profitability claim."
+   ],
+   "path": "research/data_foundation_ops/CBB/alpha-cbb-venue-prior-0.1/evaluation.json",
+   "results": [
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 3.965393,
+     "ci95": [
+      -0.003308,
+      0.004407
+     ],
+     "cohort": "pooled",
+     "diff": 0.000708,
+     "market_family": "game_margin",
+     "metric": "margin_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 3.964685,
+     "replicated": false,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_total"
+     ],
+     "challenger": 4.25965,
+     "ci95": [
+      -0.002089,
+      0.005895
+     ],
+     "cohort": "pooled",
+     "diff": 0.001958,
+     "market_family": "game_total",
+     "metric": "total_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 4.257691,
+     "replicated": true,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 3.963575,
+     "ci95": [
+      -0.00298,
+      0.000569
+     ],
+     "cohort": "pooled",
+     "diff": -0.00111,
+     "market_family": "game_margin",
+     "metric": "margin_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 3.964685,
+     "replicated": true,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_total"
+     ],
+     "challenger": 4.256395,
+     "ci95": [
+      -0.005622,
+      0.003168
+     ],
+     "cohort": "pooled",
+     "diff": -0.001296,
+     "market_family": "game_total",
+     "metric": "total_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 4.257691,
+     "replicated": true,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 3.963063,
+     "ci95": [
+      -0.008451,
+      0.005013
+     ],
+     "cohort": "pooled",
+     "diff": -0.001622,
+     "market_family": "game_margin",
+     "metric": "margin_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 3.964685,
+     "replicated": false,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 3.964718,
+     "ci95": [
+      -0.00222,
+      0.002096
+     ],
+     "cohort": "pooled",
+     "diff": 3.3e-05,
+     "market_family": "game_margin",
+     "metric": "margin_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 3.964685,
+     "replicated": false,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 3.963293,
+     "ci95": [
+      -0.010051,
+      0.006847
+     ],
+     "cohort": "pooled",
+     "diff": -0.001392,
+     "market_family": "game_margin",
+     "metric": "margin_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 3.964685,
+     "replicated": false,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_total"
+     ],
+     "challenger": 4.258513,
+     "ci95": [
+      -0.005582,
+      0.006801
+     ],
+     "cohort": "pooled",
+     "diff": 0.000821,
+     "market_family": "game_total",
+     "metric": "total_nll",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 4.257691,
+     "replicated": false,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 0.130957,
+     "ci95": [
+      -0.000727,
+      0.001224
+     ],
+     "cohort": "pooled",
+     "diff": 0.000225,
+     "market_family": "game_moneyline",
+     "metric": "brier",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0(normal)",
+     "reference_value": 0.130732,
+     "replicated": true,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 0.131177,
+     "ci95": [
+      -0.000739,
+      0.001236
+     ],
+     "cohort": "pooled",
+     "diff": 0.000226,
+     "market_family": "game_moneyline",
+     "metric": "brier",
+     "n_clusters": 541,
+     "n_rows": 1082,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0(normal)",
+     "reference_value": 0.130951,
+     "replicated": true,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 0.151361,
+     "ci95": [
+      0.00895,
+      0.024476
+     ],
+     "cohort": "pooled",
+     "diff": 0.01642,
+     "market_family": "game_moneyline",
+     "metric": "brier",
+     "n_clusters": 465,
+     "n_rows": 925,
+     "p_holm": 0.0065,
+     "reference": "market:kalshi_mid",
+     "reference_value": 0.134941,
+     "replicated": true,
+     "tested": true,
+     "verdict": "NOT_IMPROVED"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 0.146195,
+     "ci95": [
+      -0.001311,
+      0.000729
+     ],
+     "cohort": "pooled",
+     "diff": -0.000273,
+     "market_family": "game_spread",
+     "metric": "brier",
+     "n_clusters": 541,
+     "n_rows": 7419,
+     "p_holm": 1.0,
+     "reference": "incumbent:pure-0.2.0(normal)",
+     "reference_value": 0.146468,
+     "replicated": true,
+     "tested": true,
+     "verdict": "INCONCLUSIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 0.157501,
+     "ci95": [
+      0.012545,
+      0.022777
+     ],
+     "cohort": "pooled",
+     "diff": 0.017681,
+     "market_family": "game_spread",
+     "metric": "brier",
+     "n_clusters": 541,
+     "n_rows": 6573,
+     "p_holm": 0.0065,
+     "reference": "market:kalshi_mid",
+     "reference_value": 0.13982,
+     "replicated": true,
+     "tested": true,
+     "verdict": "NOT_IMPROVED"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 9.982184,
+     "ci95": [
+      -0.027809,
+      0.015093
+     ],
+     "cohort": "pooled",
+     "diff": -0.006053,
+     "market_family": "game_margin",
+     "metric": "margin_abs_err",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": null,
+     "reference": "incumbent:pure-0.2.0",
+     "reference_value": 9.988237,
+     "replicated": true,
+     "tested": false,
+     "verdict": "DESCRIPTIVE"
+    },
+    {
+     "archetypes": [
+      "CBB:game_moneyline_spread"
+     ],
+     "challenger": 0.130957,
+     "ci95": [
+      -0.003072,
+      0.00065
+     ],
+     "cohort": "pooled",
+     "diff": -0.001163,
+     "market_family": "game_moneyline",
+     "metric": "brier",
+     "n_clusters": 542,
+     "n_rows": 542,
+     "p_holm": null,
+     "reference": "incumbent:pure-0.2.0(frozen home_win_prob)",
+     "reference_value": 0.13212,
+     "replicated": true,
+     "tested": false,
+     "verdict": "DESCRIPTIVE"
+    }
+   ],
+   "results_total_rows": 72,
+   "source_commits": {
+    "cbb-edge-finder": "5ba7daa5c0daaa527e3aeb77ac23fd7ea1ba13b2",
+    "cbb-edge-finder@origin/kalshi-panel-archive": "3288f41a997c8b4eba1ce1cd223fa15582e18204",
+    "cbb-edge-finder@origin/period-scores-archive": "ccae205d279e20e3168c994256fae5ca0a1c907d",
+    "cbb-edge-finder@origin/projections-archive": "17d0ef97d28e60925ed9a91ade448bcc4ac15efb",
+    "cbb-edge-finder@origin/schedule-archive": "9f27f052b08813ee824d8d7b3786b4c7aea4c8c3"
+   },
+   "sport": "CBB",
+   "verdict": {
+    "favourable": [],
+    "headline_counts": {
+     "IMPROVED_NOT_VALIDATED": 0,
+     "INCONCLUSIVE": 11,
+     "NOT_IMPROVED": 2,
+     "REJECTED": 0,
+     "VALIDATED_IMPROVEMENT": 0
+    },
+    "overall": "INCONCLUSIVE",
+    "reason": "13 headline pooled comparisons (Holm): {'VALIDATED_IMPROVEMENT': 0, 'IMPROVED_NOT_VALIDATED': 0, 'INCONCLUSIVE': 11, 'NOT_IMPROVED': 2, 'REJECTED': 0}. Two weeks of one season; most rows cannot reach significance. Components without a favourable verdict are rejected for now: ['S', 'V', 'P', 'R'].",
+    "rejected_components": [
+     "S",
+     "V",
+     "P",
+     "R"
+    ],
+    "unfavourable": [
+     "FULL:game_moneyline/brier vs market:kalshi_mid",
+     "FULL:game_spread/brier vs market:kalshi_mid"
+    ]
+   },
+   "verdict_counts": {
+    "DESCRIPTIVE": 2,
+    "INCONCLUSIVE": 11,
+    "NOT_IMPROVED": 2
+   }
+  },
   "NBA:alpha-nba-avail-0.1": {
    "ablations": [
     {
@@ -13730,6 +14244,7 @@
  },
  "evaluations": [
   "research/data_foundation_ops/CBB/alpha-cbb-joint-periods-0.1/evaluation.json",
+  "research/data_foundation_ops/CBB/alpha-cbb-venue-prior-0.1/evaluation.json",
   "research/data_foundation_ops/NBA/alpha-nba-avail-0.1/evaluation.json",
   "research/data_foundation_ops/NHL/alpha-nhl-joint-0.1/evaluation.json"
  ],
@@ -17735,7 +18250,7 @@
    }
   },
   "CBB:cbb.neutral_site": {
-   "at": 4,
+   "at": 6,
    "category": "environment",
    "chain": [
     "OK",
@@ -17743,11 +18258,13 @@
     "OK",
     "OK",
     "OK",
-    "MISSING",
-    "MISSING",
+    "OK",
+    "PARTIAL",
     "MISSING"
    ],
-   "challengers": [],
+   "challengers": [
+    "alpha-cbb-venue-prior-0.1"
+   ],
    "classes": [
     "PREDICTIVE"
    ],
@@ -17759,16 +18276,16 @@
     "candidate dataset(s): cbb.games_espn",
     "verified bucket FULL: data in an owner archive",
     "replayed and blind-verified (VERIFIED_FULL)",
-    "builder replayed in the data-foundation verification",
-    "no research challenger uses this input",
-    "no chronological evaluation has been run",
-    "no validated improvement"
+    "feature(s) built for challenger: neutral_site_offset",
+    "alpha-cbb-venue-prior-0.1",
+    "alpha-cbb-venue-prior-0.1: Neutral-site offset (arm V) on 38 neutral games: margin NLL 3.9636 vs 3.9647, diff -0.0011 [-0.0030, +0.0006], p_holm 1.000, INCONCLUSIVE.",
+    "alpha-cbb-venue-prior-0.1: evaluated, not validated"
    ],
    "id": "cbb.neutral_site",
    "label": "Neutral/tournament-site effects and travel distance",
    "n_markets": 4,
    "n_primary_markets": 0,
-   "next_action": "Integrate the built feature into an isolated challenger for a market that lists it.",
+   "next_action": "Evaluated but not validated: extend the sample / replicate on an independent cohort before any promotion.",
    "pit": "PIT_COARSE",
    "predictive": true,
    "production_active": "UNKNOWN",
@@ -17778,8 +18295,8 @@
    "sport": "CBB",
    "stop": {
     "outcome": "MISSING",
-    "stage": "CHALLENGER_INTEGRATED",
-    "why": "no research challenger uses this input"
+    "stage": "VALIDATED_IMPROVEMENT",
+    "why": "alpha-cbb-venue-prior-0.1: evaluated, not validated"
    }
   },
   "CBB:cbb.news": {
@@ -19261,11 +19778,13 @@
     "MISSING",
     "MISSING",
     "OK",
-    "MISSING",
-    "MISSING",
+    "OK",
+    "PARTIAL",
     "MISSING"
    ],
-   "challengers": [],
+   "challengers": [
+    "alpha-cbb-venue-prior-0.1"
+   ],
    "classes": [
     "PREDICTIVE"
    ],
@@ -19280,10 +19799,10 @@
     "candidate dataset(s): cbb.box_player, cbb.games_espn, cbb.recruiting_portal, cbb.coaching_staff_history",
     "not collected (dataset access: COLLECTED_ARCHIVE, FREE_PATH_UNCONFIRMED, FREE_UNPROBED)",
     "no verification record",
-    "builder replayed in the data-foundation verification",
-    "no research challenger uses this input",
-    "no chronological evaluation has been run",
-    "no validated improvement"
+    "feature(s) built for challenger: prior_season_net_fade",
+    "alpha-cbb-venue-prior-0.1",
+    "alpha-cbb-venue-prior-0.1: Prior-season net fade (arm P): margin NLL 3.9631 vs 3.9647, diff -0.0016 [-0.0085, +0.0050], p_holm 1.000, INCONCLUSIVE. Season ratings from the frozen checkpoint, not a multi-season game backtest.",
+    "alpha-cbb-venue-prior-0.1: evaluated, not validated"
    ],
    "id": "cbb.preseason_prior",
    "label": "Preseason prior (returning production, recruiting, portal, coach)",
@@ -19847,12 +20366,14 @@
     "OK",
     "MISSING",
     "MISSING",
-    "MISSING",
-    "MISSING",
-    "MISSING",
+    "OK",
+    "OK",
+    "PARTIAL",
     "MISSING"
    ],
-   "challengers": [],
+   "challengers": [
+    "alpha-cbb-venue-prior-0.1"
+   ],
    "classes": [
     "PREDICTIVE"
    ],
@@ -19866,10 +20387,10 @@
     "candidate dataset(s): cbb.box_player, cbb.games_espn, cbb.recruiting_portal",
     "not collected (dataset access: COLLECTED_ARCHIVE, FREE_PATH_UNCONFIRMED, FREE_UNPROBED)",
     "no verification record",
-    "no model-ready feature has been built",
-    "no research challenger uses this input",
-    "no chronological evaluation has been run",
-    "no validated improvement"
+    "feature(s) built for challenger: returning_minutes_fade",
+    "alpha-cbb-venue-prior-0.1",
+    "alpha-cbb-venue-prior-0.1: Expected returning-minutes fade (arm R): margin NLL 3.9647 vs 3.9647, diff +0.0000 [-0.0022, +0.0021], p_holm 1.000, INCONCLUSIVE.",
+    "alpha-cbb-venue-prior-0.1: evaluated, not validated"
    ],
    "id": "cbb.recruit_exp",
    "label": "Experience, recruiting and returning minutes",
@@ -20189,7 +20710,7 @@
     "OK",
     "MISSING",
     "MISSING",
-    "MISSING",
+    "OK",
     "MISSING",
     "MISSING",
     "MISSING"
@@ -20208,7 +20729,7 @@
     "candidate dataset(s): cbb.box_player, cbb.games_espn, cbb.recruiting_portal",
     "not collected (dataset access: COLLECTED_ARCHIVE, FREE_PATH_UNCONFIRMED, FREE_UNPROBED)",
     "no verification record",
-    "no model-ready feature has been built",
+    "feature(s) built for challenger: returning_minutes_fade",
     "no research challenger uses this input",
     "no chronological evaluation has been run",
     "no validated improvement"
@@ -20342,7 +20863,8 @@
     "MISSING"
    ],
    "challengers": [
-    "alpha-cbb-joint-periods-0.1"
+    "alpha-cbb-joint-periods-0.1",
+    "alpha-cbb-venue-prior-0.1"
    ],
    "classes": [
     "MARKET_BENCHMARK"
@@ -20356,10 +20878,10 @@
     "candidate dataset(s): cbb.box_player, cbb.games_espn",
     "market-derived benchmark; excluded from predictive collection",
     "benchmark-only input; not part of predictive verification",
-    "feature(s) built for challenger: cbb.joint_half_score_distribution",
+    "feature(s) built for challenger: cbb.joint_half_score_distribution, early_season_sigma_scale",
     "alpha-cbb-joint-periods-0.1",
-    "alpha-cbb-joint-periods-0.1: Walk-forward 4x4 residual covariance (team-score SD, home-away and half correlations) built and scored. team_total: Brier 0.2280 vs naive 0.2281, diff -0.0000 [-0.0002, +0.0001], INCONCLUSIVE; overtime: Brier 0.0430 vs naive 0.0436, diff -0.0006 [-0.0013, +0.0000], INCONCLUSIVE. Total-vs-margin error correlation +0.064 [-0.023, +0.152].",
-    "alpha-cbb-joint-periods-0.1: evaluated, not validated"
+    "alpha-cbb-venue-prior-0.1: Early-season SD scale (arm S): margin NLL 3.9654 vs 3.9647, diff +0.0007 [-0.0033, +0.0044], p_holm 1.000, INCONCLUSIVE; total NLL 4.2596 vs 4.2577, diff +0.0020 [-0.0021, +0.0059], p_holm 1.000, INCONCLUSIVE.",
+    "alpha-cbb-venue-prior-0.1: evaluated, not validated"
    ],
    "id": "cbb.score_resid",
    "label": "Score residual distribution (key numbers, halves)",
@@ -22125,7 +22647,7 @@
     "candidate dataset(s): cbb.games_espn",
     "verified bucket PARTIAL: archived data covers part of the requirement",
     "VERIFIED_PARTIAL",
-    "builder replayed in the data-foundation verification",
+    "feature(s) built for challenger: neutral_site_offset",
     "no research challenger uses this input",
     "no chronological evaluation has been run",
     "no validated improvement"
@@ -95773,9 +96295,9 @@
     19,
     0,
     0,
-    3,
+    2,
     0,
-    0,
+    1,
     0
    ],
    "at_counts_primary": [
@@ -96209,9 +96731,9 @@
     24,
     0,
     0,
-    10,
+    9,
     0,
-    0,
+    1,
     0
    ],
    "at_counts_primary": [
@@ -96225,7 +96747,8 @@
     0
    ],
    "challengers": [
-    "CBB:alpha-cbb-joint-periods-0.1"
+    "CBB:alpha-cbb-joint-periods-0.1",
+    "CBB:alpha-cbb-venue-prior-0.1"
    ],
    "incumbent_evaluation": {
     "cells": {
@@ -96512,7 +97035,8 @@
     0
    ],
    "challengers": [
-    "CBB:alpha-cbb-joint-periods-0.1"
+    "CBB:alpha-cbb-joint-periods-0.1",
+    "CBB:alpha-cbb-venue-prior-0.1"
    ],
    "incumbent_evaluation": {
     "cells": {
@@ -96707,9 +97231,9 @@
     16,
     0,
     0,
-    7,
+    6,
     0,
-    0,
+    1,
     0
    ],
    "at_counts_primary": [
@@ -98166,9 +98690,9 @@
     14,
     0,
     0,
-    8,
+    7,
     0,
-    0,
+    1,
     0
    ],
    "at_counts_primary": [
@@ -127475,7 +127999,7 @@
   {
    "access_status": "COLLECTED_ARCHIVE",
    "action_group": "RIGHTS_APPROVAL_NEEDED",
-   "basis": "HYPOTHESIS",
+   "basis": "EVIDENCE_BACKED",
    "cost": "free",
    "dataset": "cbb.games_espn",
    "distinct_archetypes": 16,
@@ -127753,7 +128277,7 @@
   {
    "access_status": "FREE_PATH_UNCONFIRMED",
    "action_group": "RIGHTS_APPROVAL_NEEDED",
-   "basis": "HYPOTHESIS",
+   "basis": "EVIDENCE_BACKED",
    "cost": "free",
    "dataset": "cbb.box_player",
    "distinct_archetypes": 17,
@@ -128031,7 +128555,7 @@
   {
    "access_status": "FREE_UNPROBED",
    "action_group": "RIGHTS_APPROVAL_NEEDED",
-   "basis": "HYPOTHESIS",
+   "basis": "EVIDENCE_BACKED",
    "cost": "free",
    "dataset": "cbb.coaching_staff_history",
    "distinct_archetypes": 5,
@@ -128079,7 +128603,7 @@
   {
    "access_status": "FREE_UNPROBED",
    "action_group": "RIGHTS_APPROVAL_NEEDED",
-   "basis": "HYPOTHESIS",
+   "basis": "EVIDENCE_BACKED",
    "cost": "free",
    "dataset": "cbb.recruiting_portal",
    "distinct_archetypes": 4,
@@ -130414,16 +130938,18 @@
     156,
     0,
     0,
-    12,
+    11,
     0,
-    1,
+    2,
     0
    ],
    "challenger_verdicts": {
-    "alpha-cbb-joint-periods-0.1": "INCONCLUSIVE"
+    "alpha-cbb-joint-periods-0.1": "INCONCLUSIVE",
+    "alpha-cbb-venue-prior-0.1": "INCONCLUSIVE"
    },
    "challengers": [
-    "CBB:alpha-cbb-joint-periods-0.1"
+    "CBB:alpha-cbb-joint-periods-0.1",
+    "CBB:alpha-cbb-venue-prior-0.1"
    ],
    "inputs_all": 184,
    "inputs_predictive": 169,
@@ -130442,8 +130968,8 @@
     13,
     13,
     13,
-    1,
-    1,
+    2,
+    2,
     0
    ],
    "stop_outcomes": {
@@ -130862,12 +131388,12 @@
    1281,
    101,
    0,
-   241,
+   240,
    2,
-   13,
+   14,
    0
   ],
-  "challengers": 3,
+  "challengers": 4,
   "datasets": 165,
   "inputs": 1649,
   "inputs_predictive": 1536,

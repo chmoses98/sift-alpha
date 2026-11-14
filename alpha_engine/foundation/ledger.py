@@ -25,7 +25,7 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .contract import OPS, ROOT, STAGES, reference_kind, validate_evaluation, write_json
+from .contract import OPS, OUTCOMES, ROOT, STAGES, reference_kind, validate_evaluation, write_json
 
 MAP = ROOT / "research/input_research/market_input_map/map.json"
 AUDIT = ROOT / "research/audit/input_research"
@@ -222,7 +222,16 @@ def build() -> tuple:
             "results": [{k: r.get(k) for k in ("market_family", "archetypes", "metric", "reference", "cohort", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "replicated", "verdict", "tested")} | {"reference_kind": reference_kind(r["reference"])} for r in headline],
             "data_through": max((_day(d.get("last")) for d in e["data"]), default=""),
             "results_total_rows": len(e["results"]), "verdict_counts": dict(Counter(r["verdict"] for r in headline)),
-            "ablations": e.get("ablations", []), "design": e.get("design", {})}
+            "ablations": e.get("ablations", []),
+            # the full design block stays in the evaluation file (``path``); the ledger is loaded on phones and must stay small
+            "design_keys": sorted(e.get("design", {}))}
+    # Input-information probes (not challengers): their claims enter the chain, the probe is not counted as a challenger.
+    probes = []
+    for f in sorted(glob.glob(str(OPS / "*" / "*_probe.json"))):
+        pr = json.loads(Path(f).read_text()); probes.append(str(Path(f).relative_to(ROOT)))
+        for c in pr.get("input_stage_claims", []):
+            if c.get("stage") in STAGES and c.get("outcome") in OUTCOMES:
+                claims[c["input"]].append({**c, "challenger": pr["probe_id"], "overall": "INCONCLUSIVE"})
     unknown_claims = sorted(set(claims) - set(m["inputs"]))
     unknown_arch = sorted(set(ch_arch) - {a["k"] for a in m["archetypes"]})
 
@@ -329,13 +338,46 @@ def build() -> tuple:
         sports[sp]["new_series_unresolved"] = (mw or {}).get("new_in_scope_by_sport", {}).get(sp, 0) if mw else None
     head = {"schema": "sift-foundation-ledger/1", "status": "RESEARCH_ONLY", "notice": NOTICE, "stages": STAGES, "chain": CHAIN, "sports_order": SPORTS,
             "map_inputs_sha256": m["inputs_sha256"], "evaluations": [e["_path"] for e in evals], "totals": totals, "reconciliation": recon}
-    ledger = {**head, "inputs": inputs, "markets": markets, "datasets": datasets, "challengers": challengers, "queue": queue, "sports": sports}
+    ledger = {**head, "probes": probes, "inputs": inputs, "markets": markets, "datasets": datasets, "challengers": challengers, "queue": queue, "sports": sports}
     scoreboard = {s: _scoreboard([c for c in challengers.values() if c["sport"] == s]) for s in SPORTS}
     ledger["scoreboard"] = scoreboard
     summary = {**head, "sports": sports, "market_watch": mw, "scoreboard": scoreboard,
                "challengers": {k: {x: v[x] for x in ("sport", "id", "incumbent", "verdict", "archetypes", "verdict_counts", "results", "limitations", "path", "data_through")} for k, v in challengers.items()},
-               "queue_top": {t: [q for q in queue if q["tier"] == t][:8] for t in ("P0", "P1", "P2")}}
+               "queue_top": {t: [q for q in queue if q["tier"] == t][:8] for t in ("P0", "P1", "P2")},
+               "built_inputs": _built_inputs(inputs, claims, feats)}
     return ledger, summary
+
+
+PHASE15 = {"NBA_nba_team3": "alpha_engine/features/nba_ext3.py", "NBA_nba_player3": "alpha_engine/features/nba_player_ext3.py",
+           "NHL_nhl2": "alpha_engine/features/nhl_ext2.py", "NHL_nhl_ev2": "alpha_engine/features/nhl_ev_ext2.py", "NHL_nhl_player2": "alpha_engine/features/nhl_player_ext3.py"}
+
+
+def _built_inputs(inputs: dict, claims: dict, feats: dict) -> list:
+    """The Phase 15 archive-built inputs with EVERY recorded use, not only the strongest claim: built, used by a challenger or
+    probe, evaluated, validated. Evidence paths point at the replay, the blind match, the builder and the claiming evaluations."""
+    ver = ROOT / "research" / "input_research" / "data_foundation" / "verification"
+    out = []
+    for fam, builder in PHASE15.items():
+        ind = json.loads((ver / "independent" / f"{fam}.json").read_text())
+        sport = fam.split("_")[0]
+        for iid, rec in ind["inputs"].items():
+            k = f"{sport}:{iid}"; inp = inputs.get(k, {}); cols = rec.get("columns", {})
+            # an earlier challenger may claim the same catalog input with its OWN implementation; only a feature whose id names the
+            # Phase 15 builder (or a probe of the builder columns) counts as use of the archive-built feature
+            p15 = {ch for f, ch in feats.get(k, []) if "phase15" in f}
+            uses = [{"by": c["challenger"], "kind": "probe" if str(c["challenger"]).startswith("probe:") else "challenger", "stage": c["stage"], "outcome": c["outcome"],
+                     "uses_phase15_builder": str(c["challenger"]).startswith("probe:") or c["challenger"] in p15,
+                     "evidence": str(c.get("evidence", ""))[:400]} for c in claims.get(k, [])]
+            out.append({"key": k, "sport": sport, "id": iid, "label": inp.get("label", iid), "at": inp.get("at"), "chain": inp.get("chain"),
+                        "blind_match": all(v.get("verdict") == "MATCH" for v in cols.values()) and bool(cols), "n_columns": len(cols),
+                        "builder": builder if (ROOT / builder).exists() else builder.replace("nhl_player_ext3", "nhl_player_ext2"),
+                        "replay": f"research/input_research/data_foundation/verification/replay_ext/{fam}.json",
+                        "blind": f"research/input_research/data_foundation/verification/independent/{fam}.json",
+                        "uses": uses, "used_in_challenger": any(u["kind"] == "challenger" and u["uses_phase15_builder"] for u in uses),
+                        "evaluated": any(u["uses_phase15_builder"] and u["stage"] in ("EVALUATED", "VALIDATED_IMPROVEMENT") for u in uses),
+                        "selected_by_challenger": any(u["kind"] == "challenger" and u["uses_phase15_builder"] and u["outcome"] in ("OK", "PARTIAL") for u in uses),
+                        "validated": inp.get("chain", [None] * 8)[7] == "OK" if inp else False})
+    return out
 
 
 def _day(x) -> str:

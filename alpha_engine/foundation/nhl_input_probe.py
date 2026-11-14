@@ -103,6 +103,22 @@ def game_features(hist_dir) -> pd.DataFrame:
     return h.merge(a, on="game_id", how="inner")
 
 
+PROBE_ID = "probe:nhl-phase15-inputs-on-alpha-nhl-joint-0.3"
+
+
+def claims_from_rows(rows: list) -> list:
+    """Ledger claims: one per catalog input. OK = a validated row; PARTIAL = favourable but not validated; REJECTED = no
+    measurable information beyond 0.3 in any probed family (stage EVALUATED either way)."""
+    out = []
+    for inp in dict.fromkeys(r["input"] for r in rows):
+        rs = [r for r in rows if r["input"] == inp]; v = [r["verdict"] for r in rs]
+        oc = "OK" if "VALIDATED_IMPROVEMENT" in v else "PARTIAL" if "IMPROVED_NOT_VALIDATED" in v else "REJECTED"
+        ev = "; ".join(f"{r['column']} on {r['market_family']}: pooled {r['cohorts']['pooled']['diff']:+.5f} [{r['cohorts']['pooled']['ci95'][0]:+.5f}, "
+                       f"{r['cohorts']['pooled']['ci95'][1]:+.5f}] {r['verdict']}" for r in rs)
+        out.append(dict(input=inp, stage="EVALUATED", outcome=oc, evidence=f"one-parameter residual probe on 0.3 (fit 2021-23, test 2024 and 2025): {ev}"))
+    return out
+
+
 def run(log=print) -> dict:
     cap = {}
 
@@ -167,7 +183,7 @@ def run(log=print) -> dict:
                                     "Phase 15 event tables cover 2021-2025; the 2026-27 prospective cohort is not probed",
                                     "market references (Kalshi) are not used here; this measures information beyond 0.3, not beyond the market",
                                     "0.3 conditions on the actual starting goalie, so pre-confirmation starter features can only add information through the starter's expected workload"]),
-               checks=checks, rows=rows,
+               checks=checks, rows=rows, probe_id=PROBE_ID, input_stage_claims=claims_from_rows(rows),
                summary=dict(n_probes=len(rows), validated=n_val, improved_not_validated=sum(r["verdict"] == "IMPROVED_NOT_VALIDATED" for r in rows),
                             not_improved=sum(r["verdict"] == "NOT_IMPROVED" for r in rows),
                             conclusion=("none of the probed Phase 15 inputs adds validated information to 0.3" if n_val == 0 else

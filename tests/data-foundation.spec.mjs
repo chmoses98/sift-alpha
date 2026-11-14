@@ -120,11 +120,31 @@ test("Models shows every sport's status, freshness and gap to the market without
   await expect(df.getByTestId("df-challengers")).toContainText(nba.id, { timeout: 60000 });
 });
 
+test("Built inputs separates built, used, evaluated, selected and validated for the 30 archive inputs", async ({ page }) => {
+  const df = page.getByTestId("data-foundation");
+  const B = S.built_inputs;
+  await expect(df.getByTestId("df-built-NBA")).toContainText(`${B.filter(x => x.sport === "NBA").length} built`);
+  await df.getByRole("tab", { name: "Built inputs" }).click();
+  const v = df.getByTestId("df-built");
+  await expect(v.getByTestId("df-built-row")).toHaveCount(B.length);
+  const t = v.getByTestId("df-built-totals");
+  await expect(t).toContainText(`${B.filter(x => x.used_in_challenger).length}used by a challenger`);
+  await expect(t).toContainText(`${B.filter(x => x.validated).length}validated improvements`);
+  expect(B.filter(x => x.validated).length).toBe(0);
+  // an earlier challenger's own implementation is not counted as use of the built feature
+  const srp = B.find(x => x.id === "nba.stat_rate_posterior");
+  expect(srp.uses.some(u => !u.uses_phase15_builder)).toBe(true);
+  await expect(v.getByTestId("df-built-row").filter({ hasText: "nba.stat_rate_posterior" })).toContainText("Also claimed with a different implementation");
+  // navigation into the input's pipeline chain
+  await v.getByRole("button", { name: "input nba.stat_rate_posterior" }).click();
+  await expect(df.getByTestId("df-input-detail")).toBeVisible({ timeout: 60000 });
+});
+
 test("no horizontal overflow in any view (desktop and iPhone)", async ({ page }) => {
   const df = page.getByTestId("data-foundation");
-  for (const tab of ["Summary", "Models", "Markets", "Challengers", "Queue", "Sources"]) {
+  for (const tab of ["Summary", "Models", "Built inputs", "Markets", "Challengers", "Queue", "Sources"]) {
     await df.getByRole("tab", { name: tab }).click();
-    if (tab !== "Summary" && tab !== "Sources" && tab !== "Models") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
+    if (tab !== "Summary" && tab !== "Sources" && tab !== "Models" && tab !== "Built inputs") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
     const o = await measureOverflow(page);
     expect(o.scroll, tab + " " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
   }

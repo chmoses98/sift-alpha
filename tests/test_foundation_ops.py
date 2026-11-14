@@ -168,6 +168,8 @@ class LedgerArtifactTests(unittest.TestCase):
         for p in self.ledger["evaluations"]:
             d = json.loads((ROOT / p).read_text()); self.assertEqual(C.validate_evaluation(d), [])
             claimed |= {c["input"] for c in d["input_stage_claims"]}
+        for p in self.ledger.get("probes", []):          # input-information probes record EVALUATED claims without being challengers
+            claimed |= {c["input"] for c in json.loads((ROOT / p).read_text())["input_stage_claims"]}
         for k, v in self.ledger["inputs"].items():
             if v["at"] >= 5:
                 self.assertIn(k, claimed, f"{k} shows a challenger stage without an evaluation claim")

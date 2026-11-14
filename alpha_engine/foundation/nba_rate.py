@@ -936,7 +936,7 @@ def version_lineage(S: dict) -> dict:
                 row["commits_since_previous_run_revision"] = int(gt("rev-list", "--count", f"{prev}..{full}"))
                 ch = [x for x in gt("diff", "--name-only", prev, full, "--", *MODEL_PATHS).splitlines() if x]
                 row["model_files_changed_since_previous"] = [c.replace("research/projection_foundation/", "") for c in ch]
-                row["commits_touching_model_source"] = [x[:120] for x in gt("log", "--no-merges", "--format=%h %s", f"{prev}..{full}", "--", *MODEL_PATHS).splitlines()]
+                row["commits_touching_model_source"] = [x[:120] for x in gt("log", "--no-merges", "--abbrev=11", "--format=%h %s", f"{prev}..{full}", "--", *MODEL_PATHS).splitlines()]
             else:
                 row["commits_since_previous_run_revision"] = None; row["model_files_changed_since_previous"] = []; row["commits_touching_model_source"] = []
             row["forecast_code_changed"] = bool(prev_dig is not None and dig != prev_dig)

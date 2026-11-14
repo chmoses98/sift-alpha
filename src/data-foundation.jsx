@@ -85,6 +85,7 @@ function SportCard({s, d, chs, onOpen}) {
       <div><b>{fmt(d.missing_primary_slots)}</b><small>missing PRIMARY slots</small></div>
     </div>
     <Ladder chain={SUMMARY.chain} at={d.at_counts} testid={"df-ladder-" + s}/>
+    {(() => { const B = (SUMMARY.built_inputs || []).filter(x => x.sport === s); return B.length ? <p className="ir-fine" data-testid={"df-built-" + s}><b>Archive-built inputs (Phase 15):</b> {B.length} built · {B.filter(x => x.used_in_challenger).length} used by a challenger · {B.filter(x => x.evaluated).length} evaluated · {B.filter(x => x.selected_by_challenger).length} selected · {B.filter(x => x.validated).length} validated.</p> : null; })()}
     {chs.length ? chs.map(c => <ChallengerCard key={c.id} ch={c}/>) : <p className="ir-fine">No research challenger is attached to this sport yet.</p>}
     <p className="ir-fine"><b>Next:</b> {d.top_queue.length ? <>highest-ranked datasets — {d.top_queue.join(", ")}.</> : "no queued dataset."} <Link onClick={() => onOpen(s)}>Open {s} markets</Link></p>
   </div>;
@@ -215,6 +216,32 @@ function ModelsView({onChallenger}) {
 }
 const REF = {CURRENT_MODEL: "current model", MARKET: "market price", PRIOR_CHALLENGER: "earlier challenger", BASELINE: "simple baseline"};
 
+const REPO = "https://github.com/chmoses98/sift-alpha/blob/main/";
+const Ev = ({path, children}) => <a className="mim-link" href={REPO + path} target="_blank" rel="noopener noreferrer">{children}</a>;
+function BuiltView({go}) {
+  const B = SUMMARY.built_inputs || [];
+  const n = f => B.filter(f).length;
+  return <div data-testid="df-built">
+    <p className="ir-fine">The {B.length} inputs built from the owner's NBA and NHL archives in Phase 15 (replay-gated and blind exact-matched; all PARTIAL or PROXY, none FULL). Each line separates
+      <b> built</b> from <b>used by a challenger</b>, <b>evaluated</b>, <b>selected</b> (kept by the challenger's training-window selection) and <b>validated</b>. An earlier challenger that claims the same catalog input with its own implementation is listed but not counted as use of the built feature.</p>
+    <div className="mim-cards df-cards4" data-testid="df-built-totals">
+      <div><b>{n(x => x.blind_match)}</b><small>built and blind-matched</small></div>
+      <div><b>{n(x => x.used_in_challenger)}</b><small>used by a challenger</small></div>
+      <div><b>{n(x => x.evaluated)}</b><small>evaluated (challenger or information probe)</small></div>
+      <div><b>{n(x => x.selected_by_challenger)}</b><small>selected by a challenger</small></div>
+      <div><b>{n(x => x.validated)}</b><small>validated improvements</small></div>
+    </div>
+    {["NBA", "NHL"].map(sp => <div key={sp}><h3>{sp}</h3><ul className="mim-list">{B.filter(x => x.sport === sp).map(x => { const u = x.uses.filter(y => y.uses_phase15_builder); const o = x.uses.filter(y => !y.uses_phase15_builder);
+      return <li key={x.key} data-testid="df-built-row"><button className="mim-link" onClick={() => go("input", x.key)} aria-label={"input " + x.id}>{x.label}</button> <code>{x.id}</code>
+        <div className="mim-stats"><Chip k={x.blind_match ? "ok" : "unv"}>{x.blind_match ? "built · blind match" : "built · match not recorded"}</Chip>
+          {u.length ? u.map((y, i) => <Chip key={i} k={OUTCOME_KIND[y.outcome]}>{y.kind === "probe" ? "probe" : y.by}: {y.stage.replaceAll("_", " ").toLowerCase()} · {OUTCOME_LABEL[y.outcome] || y.outcome}</Chip>) : <Chip k="plain">not used yet</Chip>}
+          <Chip k={x.validated ? "ok" : "plain"}>{x.validated ? "validated" : "not validated"}</Chip></div>
+        {u.map((y, i) => <div key={i} className="ir-why">{y.by}: {y.evidence}</div>)}
+        {o.length > 0 && <div className="ir-why">Also claimed with a different implementation by: {o.map(y => y.by + " (" + (OUTCOME_LABEL[y.outcome] || y.outcome) + ")").join(", ")}</div>}
+        <div className="ir-why">Evidence: <Ev path={x.builder}>builder</Ev> · <Ev path={x.replay}>replay gate</Ev> · <Ev path={x.blind}>blind match</Ev></div></li>; })}</ul></div>)}
+  </div>;
+}
+
 export function DataFoundation() {
   const [L, setL] = useState(null); const [err, setErr] = useState(null); const [want, setWant] = useState(false);
   const [view, setView] = useState("summary"); const [sport, setSport] = useState("NBA"); const [focus, setFocus] = useState(null); const [stack, setStack] = useState([]);
@@ -222,7 +249,7 @@ export function DataFoundation() {
   const top = useRef(null);
   useEffect(() => { if (!want) return; let live = true; Object.values(LEDGER)[0]().then(x => live && setL(x.default || x)).catch(e => live && setErr(String(e))); return () => { live = false; }; }, [want]);
   const S = SUMMARY; const chs = Object.values(S.challengers);
-  const open = v => { setView(v); setFocus(null); if (v !== "summary" && v !== "sources" && v !== "models") setWant(true); };
+  const open = v => { setView(v); setFocus(null); if (v !== "summary" && v !== "sources" && v !== "models" && v !== "built") setWant(true); };
   const go = (kind, key) => { setStack(s => [...s, {view, focus}].slice(-20)); setFocus({kind, key}); setWant(true); if (kind === "challenger") setView("challengers"); else setView("markets"); requestAnimationFrame(() => top.current?.scrollIntoView({block: "start"})); };
   const back = () => setStack(s => { if (!s.length) { setFocus(null); return s; } const p = s[s.length - 1]; setView(p.view); setFocus(p.focus); return s.slice(0, -1); });
   const markets = useMemo(() => L ? sportMarkets(L, sport, {q, sort, onlyChallenger: onlyCh}) : [], [L, sport, q, sort, onlyCh]);
@@ -249,7 +276,7 @@ export function DataFoundation() {
         <li>A challenger is “validated” only when its 95% interval excludes zero, the Holm-adjusted p-value is below 0.05 and the sign repeats in both chronological test cohorts. Nothing here is a profitability claim.</li>
       </ul></details>
     <div className="mim-tabs df-tabs" role="tablist" aria-label="Data foundation view">
-      {[["summary", "Summary"], ["models", "Models"], ["markets", "Markets"], ["challengers", "Challengers"], ["queue", "Queue"], ["sources", "Sources"]].map(([v, l]) => <button key={v} role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => open(v)}>{l}</button>)}
+      {[["summary", "Summary"], ["models", "Models"], ["built", "Built inputs"], ["markets", "Markets"], ["challengers", "Challengers"], ["queue", "Queue"], ["sources", "Sources"]].map(([v, l]) => <button key={v} role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => open(v)}>{l}</button>)}
     </div>
     {err && <p className="ir-warn">Could not load the pipeline ledger: {err}</p>}
     {(focus || stack.length > 0) && view !== "summary" && <button className="mim-back" onClick={back} data-testid="df-back">← Back</button>}
@@ -268,7 +295,7 @@ export function DataFoundation() {
       <p className="ir-fine" data-testid="df-recon">Reconciles to the Market & Input Map: {fmt(S.reconciliation.map_archetypes)} archetypes, {fmt(S.reconciliation.map_inputs)} inputs, {fmt(S.reconciliation.map_datasets)} datasets, {fmt(S.reconciliation.map_missing_primary)} missing PRIMARY slots — {S.reconciliation.ok ? "all totals match" : "MISMATCH, do not trust this view"}.</p>
     </div>}
 
-    {view !== "summary" && view !== "sources" && view !== "models" && !L && !err && <p className="ir-fine" data-testid="df-loading">Loading the pipeline ledger…</p>}
+    {view !== "summary" && view !== "sources" && view !== "models" && view !== "built" && !L && !err && <p className="ir-fine" data-testid="df-loading">Loading the pipeline ledger…</p>}
 
     {view === "markets" && L && (focus?.kind === "market" ? <MarketDetail L={L} k={focus.key} go={go}/> : focus?.kind === "input" ? <InputDetail L={L} k={focus.key} go={go}/> : <div>
       <div className="ir-sports" role="tablist" aria-label="Sport">{L.sports_order.map(s => <button key={s} role="tab" aria-selected={s === sport} className={"ir-sport" + (s === sport ? " on" : "")} onClick={() => { setSport(s); setN(PAGE); }}>
@@ -294,6 +321,7 @@ export function DataFoundation() {
 
     {view === "sources" && <SourcesView/>}
     {view === "models" && <ModelsView onChallenger={k => go("challenger", k)}/>}
+    {view === "built" && <BuiltView go={go}/>}
 
     {view === "queue" && L && <div data-testid="df-queue">
       <p className="ir-fine">Ranked by recorded factors only, in this order: sport priority → action group (archived build → free collection → rights approval → prospective capture → blocked/paid) → already archived → missing PRIMARY slots → markets affected. No composite score and no predicted model gain. “Evidence-backed” means a committed challenger ablation tested an input this dataset feeds; everything else is a hypothesis.</p>

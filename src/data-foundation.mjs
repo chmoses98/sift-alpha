@@ -64,3 +64,11 @@ export function reconcile(ledger) {
   }
   return {inputs: inputs.length, markets: Object.keys(ledger.markets).length, datasets: Object.keys(ledger.datasets).length, bySport};
 }
+
+// Short tally for a challenger card: per kind of reference, how many pooled result rows got each verdict (computed, never typed).
+export function referenceTally(ch) {
+  const kind = r => r.startsWith("market") ? "the market price" : r.startsWith("incumbent") || r.startsWith("shadow") ? "the current model" : "a simple baseline";
+  const out = {};
+  for (const r of ch.results) { const k = kind(String(r.reference)); (out[k] ||= {}); out[k][r.verdict] = (out[k][r.verdict] || 0) + 1; }
+  return ["the current model", "the market price", "a simple baseline"].filter(k => out[k]).map(k => ({against: k, rows: Object.values(out[k]).reduce((a, b) => a + b, 0), verdicts: out[k]}));
+}

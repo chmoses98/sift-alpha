@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
-import {OUTCOME_KIND, OUTCOME_LABEL, P0, STAGE_LABEL, VERDICT_KIND, VERDICT_LABEL, challengerResults, fmt, inputStatus, marketInputs, signed, num, sportMarkets, stageRows} from "./data-foundation.mjs";
+import {OUTCOME_KIND, OUTCOME_LABEL, P0, STAGE_LABEL, VERDICT_KIND, VERDICT_LABEL, challengerResults, referenceTally, fmt, inputStatus, marketInputs, signed, num, sportMarkets, stageRows} from "./data-foundation.mjs";
 // The ~35 KB summary renders the executive view immediately; the 2.9 MB ledger loads only when the explorer is opened or scrolled to.
 import SUMMARY from "../research/data_foundation_ops/summary.json";
 
@@ -30,7 +30,7 @@ function ResultRow({r}) {
   return <li className="df-res">
     <div><b>{r.market_family}</b> · {r.metric} vs <code>{r.reference}</code> <Verdict v={r.verdict}/></div>
     <div className="ir-why">challenger {num(r.challenger)} · reference {num(r.reference_value)} · difference <b>{signed(r.diff)}</b> ({better ? "challenger lower" : "challenger higher"}; lower is better)
-      · 95% CI [{signed(r.ci95?.[0])}, {signed(r.ci95?.[1])}] · Holm p {num(r.p_holm, 3)} · {fmt(r.n_rows)} rows / {fmt(r.n_clusters)} games{r.replicated == null ? "" : r.replicated ? " · same sign in both cohorts" : " · sign not replicated across cohorts"}</div>
+      · 95% CI [{signed(r.ci95?.[0])}, {signed(r.ci95?.[1])}] · Holm p {num(r.p_holm, 3)} · {fmt(r.n_rows)} rows / {fmt(r.n_clusters)} games · cohort {String(r.cohort).replaceAll("_", " ")}{r.replicated == null ? "" : r.replicated ? " · same sign in both cohorts" : " · sign not replicated across cohorts"}</div>
   </li>;
 }
 
@@ -40,9 +40,11 @@ function ChallengerCard({ch, archetype, open: open0 = false}) {
   return <div className="mim-card" data-testid="df-challenger">
     <button className="mim-title" onClick={() => setOpen(o => !o)} aria-expanded={open}>{ch.sport} · {ch.id}</button>
     <div className="mim-stats"><Verdict v={ch.verdict.overall}/> <Chip>vs {ch.incumbent}</Chip> {ch.verdict.retain_incumbent !== false && <Chip k="plain">incumbent retained</Chip>}</div>
-    <p className="ir-fine">{ch.verdict.reason}</p>
+    <ul className="mim-list df-tally" data-testid="df-tally">{referenceTally(ch).map(t => <li key={t.against}>Against {t.against} ({t.rows} comparisons): {Object.entries(t.verdicts).map(([v, c]) => <Chip key={v} k={VERDICT_KIND[v]}>{c} {VERDICT_LABEL[v]}</Chip>)}</li>)}</ul>
+    {!open && <p className="ir-fine">Tap the name for results, limitations and the full reasoning.</p>}
     {open && <div className="mim-body">
-      <h4>Results{archetype ? " for this market" : ""} (pooled test cohorts; {rows.length} of {ch.results.length} rows shown)</h4>
+      <details className="mim-units"><summary>Full reasoning behind the overall verdict</summary><p className="ir-fine">{ch.verdict.reason}</p></details>
+      <h4>Results{archetype ? " for this market" : ""} ({rows.length} of {ch.results.length} comparisons; the widest test cohort available for each)</h4>
       {rows.length ? <ul className="mim-list">{rows.map((r, i) => <ResultRow key={i} r={r}/>)}</ul> : <p className="ir-fine">No pooled result row for this market.</p>}
       <h4>Limitations</h4>
       <ul className="mim-actions">{ch.limitations.map((l, i) => <li key={i}>{l}</li>)}</ul>

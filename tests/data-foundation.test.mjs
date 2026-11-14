@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {STAGE_LABEL, OUTCOME_KIND, challengerResults, inputStatus, marketInputs, reconcile, sportMarkets, stageRows} from "../src/data-foundation.mjs";
+import {STAGE_LABEL, OUTCOME_KIND, challengerResults, referenceTally, inputStatus, marketInputs, reconcile, sportMarkets, stageRows} from "../src/data-foundation.mjs";
 
 const L = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/pipeline_ledger.json", import.meta.url)));
 const S = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/summary.json", import.meta.url)));
@@ -70,5 +70,13 @@ test("challenger results shown for a market are only rows that name that market"
     const rows = challengerResults(ch, a);
     assert.ok(rows.every(r => r.archetypes.includes(a)));
     assert.ok(L.markets[a], a);
+  }
+});
+
+test("challenger tally counts every pooled result row exactly once", () => {
+  for (const ch of Object.values(L.challengers)) {
+    const t = referenceTally(ch);
+    assert.equal(t.reduce((a, x) => a + x.rows, 0), ch.results.length, ch.id);
+    for (const x of t) assert.equal(Object.values(x.verdicts).reduce((a, b) => a + b, 0), x.rows);
   }
 });

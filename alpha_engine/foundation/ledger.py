@@ -198,7 +198,7 @@ def build() -> tuple:
         arch = sorted({a for r in e["results"] for a in r["archetypes"]})
         for a in arch:
             ch_arch[a].append(cid)
-        headline = [r for r in e["results"] if r.get("cohort", "pooled") == "pooled"]
+        headline = _shown_rows(e["results"])
         challengers[cid] = {
             "sport": e["sport"], "id": e["challenger_id"], "incumbent": e["incumbent_id"], "path": e["_path"], "verdict": e["verdict"],
             "archetypes": arch, "source_commits": e["source_commits"], "limitations": e["limitations"],
@@ -320,6 +320,25 @@ def build() -> tuple:
                "challengers": {k: {x: v[x] for x in ("sport", "id", "incumbent", "verdict", "archetypes", "verdict_counts", "results", "limitations", "path")} for k, v in challengers.items()},
                "queue_top": {t: [q for q in queue if q["tier"] == t][:8] for t in ("P0", "P1", "P2")}}
     return ledger, summary
+
+
+def _shown_rows(results: list) -> list:
+    """Rows shown on the dashboard: the evaluation's own headline rows (pooled test cohorts), plus, for every other
+    (family, metric, reference) that has no headline row, its widest cohort (a pooled cohort if one exists, else the
+    largest). This keeps market comparisons visible when the market reference exists for one season only."""
+    pooled = lambda r: "pooled" in str(r.get("cohort", "pooled"))
+    key = lambda r: (r["market_family"], r["metric"], r["reference"])
+    head = [r for r in results if r.get("headline") or (not any("headline" in x for x in results) and pooled(r))]
+    seen = {key(r) for r in head}
+    rest = {}
+    for r in results:
+        k = key(r)
+        if k in seen:
+            continue
+        best = rest.get(k)
+        if best is None or (pooled(r), r["n_rows"]) > (pooled(best), best["n_rows"]):
+            rest[k] = r
+    return head + [rest[k] for k in sorted(rest)]
 
 
 def _market_next(mk: dict, prim: list, inputs: dict) -> str:

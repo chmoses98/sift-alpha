@@ -78,3 +78,75 @@ test("the research section never forces sideways page scrolling", async ({ page 
   const sizes = await measureOverflow(page);
   expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
 });
+
+test("market-universe audit is shown with its series-level caveat and unsupported sports", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Market universe audit/)).toBeVisible();
+  await expect(ir.getByText(/Series-level only/)).toBeVisible();
+  await expect(ir.getByText(/unsupported/i).first()).toBeVisible();
+});
+
+test("Kalshi passing-yards experiment is shown with its limits and no edge claim", async ({ page }) => {
+  await page.locator(".ir-pick select").first().selectOption("NFL/PLAYER_STAT");
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Experiment NFL-PASSYDS-1/)).toBeVisible();
+  await expect(ir.getByText(/NOT promoted/)).toBeVisible();
+  await expect(ir.getByText(/no demonstrated edge/i)).toBeVisible();
+  await expect(ir.getByText(/hypothetical/i).first()).toBeVisible();
+  const text = await ir.innerText();
+  expect(text).not.toMatch(/profitable strategy|guaranteed|proven edge/i);
+});
+
+test("NFL game-winner family shows the Kalshi-vs-book experiment without an edge claim", async ({ page }) => {
+  await page.locator(".ir-pick select").first().selectOption("NFL/GAME_WINNER");
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Experiment NFL-GAME-1/)).toBeVisible();
+  await expect(ir.getByText(/No mispricing relative to the book is demonstrated/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});
+
+test("foundation audit states the market-free policy and the readiness table; search result is shown for QB passing yards", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Input foundation audit/)).toBeVisible();
+  await expect(ir.getByText(/primary prediction models may not use sportsbook lines/i)).toBeVisible();
+  await expect(ir.locator("table").first().locator("tbody tr")).toHaveCount(8);
+  await page.locator(".ir-pick select").first().selectOption("NFL/PLAYER_STAT");
+  await expect(ir.getByText(/Systematic input search/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});
+
+test("soccer shows the market-free search with an explicit no-Kalshi-comparison statement", async ({ page }) => {
+  await page.locator(".ir-sport", { hasText: /^SOCCER/ }).click();
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Systematic input search — soccer/)).toBeVisible();
+  await expect(ir.getByText(/No Kalshi comparison has been run for soccer/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});
+
+test("reconciliation, adjudication and measured source findings are shown; unregistered contract types are listed for soccer", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Kalshi series ledger/)).toBeVisible();
+  await expect(ir.getByText(/Measured source findings/)).toBeVisible();
+  await page.locator(".ir-sport", { hasText: /^SOCCER/ }).click();
+  await expect(ir.getByText(/Kalshi contract types listed but not in the registry/)).toBeVisible();
+  await ir.getByText(/Kalshi contract types listed but not in the registry/).click();
+  await expect(ir.getByText(/Soccer player goals, assists, hat tricks/)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});
+
+test("data coverage panel shows the measured class matrix, per-sport archetype readiness and the exact series ledger", async ({ page }) => {
+  const ir = page.locator("section.ir");
+  await expect(ir.getByText(/Data coverage and research readiness/)).toBeVisible();
+  await expect(ir.getByText(/Raw data class × sport/)).toBeVisible();
+  await expect(ir.getByText(/archetype readiness/).first()).toBeVisible();
+  await page.locator(".ir-sport", { hasText: /^NBA/ }).click();
+  await expect(ir.getByText(/NBA: archetype readiness/)).toBeVisible();
+  await ir.getByText(/Series ledger by sport/).click();
+  await expect(ir.getByText(/rules-text series were read from actual Kalshi contract rules/i)).toBeVisible();
+  const sizes = await measureOverflow(page);
+  expect(sizes.scroll, JSON.stringify(sizes)).toBeLessThanOrEqual(sizes.view);
+});

@@ -57,7 +57,9 @@ OUT_DIR = C.OPS / "CBB" / CHALLENGER_ID
 
 # ------------------------------------------------------------------ documented priors (used alone on the first slates)
 # sd_team / rho_home_away: WAVE13_GAME_NUMBER.md section 4 ("implied team-score SD 10.38 ... implied home/away error
-# correlation 0.32", the incumbent family's own score_distribution on 242 games ending 2026-11-11). The share, the
+# correlation 0.32", the incumbent family's own score_distribution). Those two numbers are functions of the FROZEN
+# margin_sd / total_sd only (sqrt((16.95^2 + 12.02^2)/4) = 10.39, (16.95^2 - 12.02^2)/(16.95^2 + 12.02^2) = 0.33), so
+# they carry no outcome information even though the report was written inside the evaluation window. The share, the
 # independence of the two halves and both continuity factors have NO number in the owner's reports; they are stated
 # structural assumptions, given a small pseudo-count so the walk-forward data replace them within a few slates.
 PRIOR = dict(
@@ -868,7 +870,7 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
         design=dict(
             question="Can the incumbent's frozen full-game projection be extended, without touching its means, into one coherent joint distribution that gives calibrated probabilities for first-half, team-total and overtime contracts?",
             model="X=(h1,a1,h2,a2) ~ N(mean, Sigma4). mean=(s_h*mu_home, s_a*mu_away, (1-s_h)*mu_home, (1-s_a)*mu_away) with mu from the frozen incumbent; Sigma4 = walk-forward uncentred second moments of the four residuals. Totals/team totals: normal tail at the half-integer strike. Margins: the zero cell is re-weighted by kappa (first half: walk-forward tie factor; full game: 0, a final cannot be tied) and other cells rescaled; overtime probability = kappa_ot x normal mass of the full-game margin in (-0.5, 0.5). Second-half contracts (Kalshi: overtime included) are the remainder final - first half.",
-            priors=dict(values=PRIOR, source="sd_team 10.38 and rho_home_away 0.32: WAVE13_GAME_NUMBER.md section 4 (owner's check of the incumbent family's score_distribution on 242 games). share_1h 0.47, rho_1h_2h 0, kappa 1.0 and ot_base_rate 0.05 are this slice's structural ASSUMPTIONS (no number in the owner's reports); pseudo-count 30 games (kappa: 3 expected ties)."),
+            priors=dict(values=PRIOR, source="sd_team 10.38 and rho_home_away 0.32: WAVE13_GAME_NUMBER.md section 4 (the values IMPLIED by the incumbent's frozen margin_sd / total_sd; they depend on no game result, so quoting a report written inside the evaluation window leaks nothing). share_1h 0.47, rho_1h_2h 0, kappa 1.0 and ot_base_rate 0.05 are this slice's structural ASSUMPTIONS (no number in the owner's reports); pseudo-count 30 games (kappa: 3 expected ties)."),
             point_in_time="Latest incumbent projection with as_of < scheduled tip; scheduled tip = min(last pre-game ESPN schedule observation, the projection's own listed start). Walk-forward by slate day; a training game must also have had its period score archived before the first tip of the slate (the first three slates therefore run on the prior alone).",
             universes=dict(all_games="Every used game, outcome-scored on a fixed synthetic ladder: strikes = floor(center)+0.5 + offsets, center from the frozen incumbent mean (first half: 0.47 x mean), offsets (-6,-3,0,3,6) for spreads / team totals / first-half lines and (-8,-4,0,4,8) for the game total; first-half winner = home / away / tie rows; one moneyline row and one overtime row per game.",
                            kalshi_listed="Contracts Kalshi actually listed, at their listed strikes, restricted to rows with a usable mid at the latest pre-tip snapshot."),
@@ -897,7 +899,7 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
         limitations=[
             f"{a['used']} games on {len(params)} slate days ({sorted(params)[0]} to {sorted(params)[-1]}): about two weeks of early-season play. Every interval here is wide and no result should be read as settled.",
             "November-only, mostly non-conference schedule with many mismatches; first-half share, half correlations and tie rates may differ in conference play and in March.",
-            "The first three slates are forecast from the documented prior alone because no verified period score had been archived before those tips; several prior values are this slice's assumptions, not owner-published numbers.",
+            "The first three slates are forecast from the documented prior alone because no verified period score had been archived before those tips; several prior values (first-half share 0.47, independent halves, continuity factors 1.0) are this slice's assumptions, not owner-published numbers, and they were chosen by the author after the season had started.",
             "The incumbent publishes no probability for first-half, team-total or overtime contracts, so against the incumbent the challenger adds coverage, not accuracy. Accuracy claims are only relative to a naive construction and to the Kalshi mid.",
             "The Kalshi reference is a snapshot mid (two-sided, spread at most 10 cents) from the last capture before tip, typically minutes before tip, while the challenger uses a projection frozen hours earlier. A mid is not an executable fill; no fees, depth or slippage are modelled and nothing here is a betting result.",
             "Kalshi lists first-half spread / total, team-total and overtime contracts for only a small subset of games, so those market comparisons rest on a few dozen games or fewer.",

@@ -145,6 +145,7 @@ def run(data_dir: Path, quick: bool = False, no_download: bool = False, n_boot: 
 
 
 if __name__ == "__main__":
+    from .phase import assert_predictive_allowed; assert_predictive_allowed('refresh')
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True)
     ap.add_argument("--quick", action="store_true")

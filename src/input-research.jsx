@@ -1,6 +1,10 @@
 import React, {useEffect, useMemo, useState} from "react";
 import index from "../research/audit/input_research/index.json";
 import queue from "../research/audit/input_research/queue.json";
+import {ComputableInputsPanel, ScaledSearchPanel} from "./research-milestone2.jsx";
+import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch, UnregisteredArchetypes, DataReadinessPanel} from "./research-experiments.jsx";
+import {CatalogCompleteness} from "./catalog-completeness.jsx";
+import {MarketInputMap} from "./market-input-map.jsx";
 import "./input-research.css";
 
 // Everything is rendered from research/audit/input_research/*.json (alpha_engine.input_research). Nothing is hand-typed.
@@ -50,10 +54,15 @@ export function InputResearch() {
   const myQueue = queue.items.filter(q => q.sport === sport).slice(0, 5);
   const idx = index.sports[sport];
 
-  return <section className="ir" aria-label="Input research: what predicts each market">
+  return <>
+  <CatalogCompleteness/>
+  <MarketInputMap/>
+  <section className="ir" aria-label="Input research: what predicts each market">
     <div className="eyebrow">INPUT RESEARCH / WHAT PREDICTS EACH MARKET</div>
     <h2>Which inputs predict the market, how much, and does the combination beat the price?</h2>
     <p className="ir-fine"><b>RESEARCH ONLY.</b> {index.notice} Data vintage: latest completed game {index.vintage.latest_completed_game}; generated {index.generated_utc}. Evidence levels: {Object.values(LV).join(" › ")}.</p>
+    <FoundationAudit/>
+    <MarketUniverse/>
     <div className="ir-sports" role="tablist" aria-label="Sport">
       {sports.map(s => {
         const d = index.sports[s]; const tested = d.families - d.levels.L0_INVENTORY_ONLY;
@@ -61,6 +70,11 @@ export function InputResearch() {
           <strong>{s}</strong><small>{d.families} families · {d.catalog.inputs} candidate inputs</small><small>{tested} with a predictive test</small></button>;
       })}
     </div>
+    {sport === "SOCCER" && <SoccerSearch/>}
+    {doc && <UnregisteredArchetypes doc={doc} sport={sport}/>}
+    <DataReadinessPanel sport={sport}/>
+    <ComputableInputsPanel sport={sport}/>
+    <ScaledSearchPanel/>
     {!doc ? <p className="ir-fine">Loading {sport}…</p> : <>
       <div className="ir-pick">
         <label>Market family
@@ -76,6 +90,8 @@ export function InputResearch() {
         {(arch || bp) && <p className="ir-mech"><b>Mechanism.</b> {arch ? arch.mechanism : bp.mechanism}</p>}
         {(arch || bp) && <p className="ir-fine"><b>Settles on:</b> {arch ? arch.target : bp.target}. {level === "L0_INVENTORY_ONLY" ? "No predictive test has been run for this family: the list below is a hypothesis inventory with an availability audit." : ""}</p>}
         {paths.map(p => <PathCard key={p.id} p={p}/>)}
+        {fam === "NFL/PLAYER_STAT" && archName === "qb_passing_yards" && <><KalshiExperiment/><SearchResult/></>}
+        {fam === "NFL/GAME_WINNER" && <GameWinnerExperiment/>}
         {level === "L0_INVENTORY_ONLY" && archPaths.length > 0 && <p className="ir-fine ir-warn">Related tested paths for this archetype ({archPaths.map(p => p.title).join("; ")}) cover other families; their results are NOT transferred to {fam}.</p>}
         <h4>Candidate inputs ({inputs.length}) — rationale, availability, model use and evidence</h4>
         <p className="ir-fine"><b>How to read this:</b> every input is a <b>hypothesis</b> unless it carries a verdict. <i>Untested</i> = no predictive test exists. A verdict only ever refers to the benchmark named on the path card (a near-close sportsbook line or a QB's own history), <b>never to a Kalshi price</b>. {inputs.filter(i => i.tested).length} of {inputs.length} inputs here have been tested; {inputs.filter(i => i.evidence.some(e => e.verdict === "DEMONSTRATED_INCREMENTAL")).length} show a demonstrated incremental effect against that benchmark; 0 beat a Kalshi price (not tested).</p>
@@ -103,7 +119,8 @@ export function InputResearch() {
         {bp && <details className="ir-fine"><summary><b>Parent blueprint "{rec.blueprint}"</b>: {bp.inputs.length} candidate inputs and {bp.interactions.length} interactions hypothesised for the whole class of markets (hypotheses only)</summary>
           <p>{bp.mechanism}</p>
           <ul>{bp.inputs.map(i => <li key={i.id}><b>{defs[i.id]?.label || i.id}</b> ({i.role || "–"}): {i.why}</li>)}</ul>
-          <ul>{bp.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul></details>}
+          <ul>{bp.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul>
+          {arch && arch.blueprint_exclusions && arch.blueprint_exclusions.length > 0 && <p data-testid="blueprint-exclusions"><b>Parent-blueprint interactions that do NOT apply to this archetype ({arch.blueprint_exclusions.length}):</b> {arch.blueprint_exclusions.map(x => x.inputs.join(" × ") + " (" + x.reason + ")").join("; ")}</p>}</details>}
         {arch && <><h4>Interactions hypothesised ({arch.interactions.length})</h4><ul className="ir-fine">{arch.interactions.map((x, k) => <li key={k}><b>{x.inputs.join(" × ")}</b>: {x.hypothesis}</li>)}</ul></>}
         <h4>Gaps and what Alpha should research next</h4>
         <ul className="ir-fine">
@@ -116,7 +133,8 @@ export function InputResearch() {
       <ol>{queue.items.slice(0, 15).map(q => <li key={q.id}><b>{q.sport} · {q.label}</b> — score {q.score}: {q.question}</li>)}</ol></details>
     <p className="ir-fine">Catalog quality ({sport}): {doc ? pct(doc.catalog_quality.share_formulaic) : "–"} of per-market rationale strings are formulaic/machine-padded; treat the catalog as hypotheses to review, not settled reasoning.</p>
     <p className="ir-fine">{idx.families} {sport} families · {idx.markets_now.toLocaleString()} live markets in the last inventory · levels: {Object.entries(idx.levels).filter(([, n]) => n).map(([k, n]) => `${n} ${LV[k].split(" ").slice(0, 2).join(" ")}`).join(", ")}</p>
-  </section>;
+  </section>
+  </>;
 }
 
 function PathCard({p}) {

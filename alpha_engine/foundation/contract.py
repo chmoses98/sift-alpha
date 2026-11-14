@@ -133,6 +133,19 @@ def verdict_from(ci_lo, ci_hi, p_holm, replicated: bool) -> str:
     return "INCONCLUSIVE"
 
 
+CHECK_BASES = ("COMPUTED", "ATTESTED")
+ATTESTED = "ATTESTED"   # pass as ``passed`` for a design statement that the run does not independently compute
+
+
+def check(name, passed, detail, basis="COMPUTED") -> dict:
+    """One data/feature check. ``basis`` says how ``passed`` was obtained: COMPUTED = derived from the data in this run;
+    ATTESTED = a statement about the design (e.g. "fitted on train only") that the code does not independently verify.
+    Attested checks are reported separately everywhere and never counted as verified evidence."""
+    if passed is ATTESTED or basis == ATTESTED:
+        return {"name": name, "passed": True, "detail": str(detail), "basis": ATTESTED}
+    return {"name": name, "passed": bool(passed), "detail": str(detail), "basis": "COMPUTED"}
+
+
 def validate_evaluation(doc: dict) -> list:
     """Return a list of contract violations (empty = valid)."""
     errs = []
@@ -158,8 +171,10 @@ def validate_evaluation(doc: dict) -> list:
             if k not in f:
                 errs.append(f"feature {f.get('feature_id')}: missing {k}")
         for c in f.get("checks", []):
-            if not {"name", "passed", "detail"} <= set(c):
-                errs.append(f"feature {f.get('feature_id')}: malformed check")
+            if not {"name", "passed", "detail", "basis"} <= set(c) or c.get("basis") not in CHECK_BASES:
+                errs.append(f"feature {f.get('feature_id')}: malformed check (needs name, passed, detail, basis in {CHECK_BASES})")
+            elif c["basis"] == "ATTESTED" and c["passed"] is not True:
+                errs.append(f"feature {f.get('feature_id')}: an attested check cannot fail; compute it instead")
     for r in doc["results"]:
         for k in ("market_family", "archetypes", "metric", "reference", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "verdict"):
             if k not in r:

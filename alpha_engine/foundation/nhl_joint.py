@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import contract as C
 from .contract import (EVAL_SCHEMA, OPS, brier_rows, calibration_slope, crps_pmf, holm, logloss_rows,
                        paired_cluster_bootstrap, repos_dir, sha256_file, validate_evaluation, verdict_from, write_json)
 
@@ -470,7 +471,7 @@ def reliability(p, y, bins=10):
 
 
 def check(name, passed, detail):
-    return {"name": name, "passed": bool(passed), "detail": str(detail)}
+    return C.check(name, passed, detail)
 
 
 # ====================================================================== model wrapper
@@ -636,7 +637,7 @@ def run(log=print):
     xg_all = tg["xGoalsFor_all"].dropna()
     data_checks = [
         check("games_no_duplicate_game_id", games["game_id"].duplicated().sum() == 0, f"{len(games)} rows, 0 duplicate game_id"),
-        check("games_non_final_rows_excluded", True, f"{n_nonfinal} non-final placeholder rows (unplayed if-necessary playoff games, score 0-0) dropped; "
+        check("games_non_final_rows_excluded", C.ATTESTED, f"{n_nonfinal} non-final placeholder rows (unplayed if-necessary playoff games, score 0-0) dropped; "
               f"{len(reg_games)} final regular-season games kept"),
         check("regulation_score_derivable", int((extra & (mar != 1)).sum()) == 0 and int((~extra & (mar == 0)).sum()) == 0,
               f"OT/SO finals with margin != 1: {int((extra & (mar != 1)).sum())}; REG finals tied: {int((~extra & (mar == 0)).sum())} of {len(fin)} final games"),
@@ -693,7 +694,7 @@ def run(log=print):
         check("leak_guard_future_perturbation", same_day_ok < 1e-12 and first_day_ok < 1e-12,
               f"perturbing all stats/outcomes from the first test date onward changes no earlier feature (max diff {same_day_ok:.1e}) and no "
               f"feature of games ON that first date (max diff {first_day_ok:.1e}; row {int(first_test)} onward perturbed)"),
-        check("parameters_fitted_on_train_only", True, f"GLM/joint/OT parameters use seasons {FIT_FIRST}-{TRAIN_LAST}; hyper-parameters chosen on "
+        check("parameters_fitted_on_train_only", C.ATTESTED, f"GLM/joint/OT parameters use seasons {FIT_FIRST}-{TRAIN_LAST}; hyper-parameters chosen on "
               f"validation seasons {VAL_FIRST}-{TRAIN_LAST} with the GLM fitted on {FIT_FIRST}-{VAL_FIRST - 1}; search_hyper asserts max season <= {TRAIN_LAST}"),
     ]
 
@@ -708,7 +709,7 @@ def run(log=print):
     gid = G["game_id"][ti]; coh = G["season"][ti].astype(str)
     y = {"home_win": G["home_win"][ti], "ot": G["extra"][ti], "total": G["total"][ti], "margin": G["margin"][ti], "hs": G["hs"][ti], "as": G["as"][ti]}
     inc_checks = [
-        check("incumbent_csv_same_games", True, f"{len(v1)} games in both incumbent CSVs, identical order; all present in the challenger frame; "
+        check("incumbent_csv_same_games", C.ATTESTED, f"{len(v1)} games in both incumbent CSVs, identical order; all present in the challenger frame; "
               f"cohorts {dict((str(a), int(b)) for a, b in zip(*np.unique(coh, return_counts=True)))}"),
         check("incumbent_csv_outcomes_match_official", bool((v1["y_home_win"].values == y["home_win"]).all() and (v1["y_total"].values == y["total"]).all()
               and (v1["y_overtime"].values == y["ot"]).all()), "y_home_win / y_total / y_overtime in the incumbent CSV equal the official record for every game"),
@@ -898,7 +899,7 @@ def run(log=print):
         check("goalies_no_duplicate_game_player", gdup == 0, f"{len(gl)} regular-season goalie-game rows, {gdup} duplicates"),
         check("goalies_exactly_one_starter_per_team_game", bool((st_per == 1).all()), f"{int((st_per == 1).sum())}/{len(st_per)} team-games have exactly one starter flag"),
         check("goalies_starter_coverage_of_test_games", bool(has_g[ti].mean() > 0.99), f"{int(has_g[ti].sum())}/{len(ti)} test games have both starters"),
-        check("goalie_rating_uses_prior_games_only", True, "save/shot sums are cumulative over the goalie's strictly earlier game rows; the league save% uses strictly earlier dates"),
+        check("goalie_rating_uses_prior_games_only", C.ATTESTED, "save/shot sums are cumulative over the goalie's strictly earlier game rows; the league save% uses strictly earlier dates"),
         check("starter_flag_is_point_in_time", False, "FAILED BY DESIGN: `starter` is the as-played flag recorded after the game; a pregame projection could not know it. "
               "Ablation (d) is therefore labelled ORACLE_NOT_PIT and excluded from the headline challenger"),
     ]
@@ -965,7 +966,7 @@ def run(log=print):
         check("joint_distribution_coherence", coh_err < 1e-9, f"max abs error {coh_err:.1e} over: final pmf sums to 1, total pmf sums to 1, "
               "P(home -1.5) + P(away +1.5) = 1, E[final total] = E[regulation total] + P(tie)"),
         check("lambda_plausibility", bool(lam_tot.min() > 3.5 and lam_tot.max() < 9), f"test regulation lambda sum min/mean/max {lam_tot.min():.2f}/{lam_tot.mean():.2f}/{lam_tot.max():.2f}"),
-        check("truncation_mass", True, f"regulation support 0..{K - 1} per team; observed max regulation goals in all seasons {int(max(G['rh'].max(), G['ra'].max()))}"),
+        check("truncation_mass", C.ATTESTED, f"regulation support 0..{K - 1} per team; observed max regulation goals in all seasons {int(max(G['rh'].max(), G['ra'].max()))}"),
     ]
 
     # ---------------------------------------------------------------- documents

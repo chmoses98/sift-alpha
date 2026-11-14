@@ -60,7 +60,7 @@ function ChallengerFull({ch}) {
     <ul className="mim-list">{ch.data.map(d => <li key={d.dataset_id + d.path}><b>{d.dataset_id}</b> <Chip>{d.kind === "PROSPECTIVE_CAPTURE" ? "prospective capture" : d.kind === "WALK_FORWARD_REPRODUCTION" ? "walk-forward reproduction" : "historical backfill"}</Chip>
       <div className="ir-why">{fmt(d.rows)} rows · {d.first || "?"} → {d.last || "?"} · {d.repo} · <code>{d.path}</code> · rights: {d.rights_tier}</div></li>)}</ul>
     <h4>Features and checks</h4>
-    <ul className="mim-list">{ch.features.map(f => <li key={f.feature_id}><b>{f.feature_id}</b> <Chip k={f.checks_passed === f.checks_total ? "ok" : "chipwarn"}>{f.checks_passed}/{f.checks_total} checks passed</Chip>
+    <ul className="mim-list">{ch.features.map(f => <li key={f.feature_id}><b>{f.feature_id}</b> <Chip k={f.checks_failed.length ? "chipwarn" : "ok"}>{f.checks_passed} of {f.checks_total} checks computed and passed</Chip>{f.checks_attested.length ? <Chip k="unv" title={f.checks_attested.join(", ")}>{f.checks_attested.length} attested, not independently computed</Chip> : null}
       <div className="ir-why">{f.description}</div><div className="ir-why">Point-in-time rule: {f.pit_rule}</div>
       <div className="ir-why">Catalog inputs: {f.catalog_inputs.join(", ") || "none"}</div>
       {f.checks_failed.map((c, i) => <div key={i} className="ir-why mim-missing">Failed check — {c}</div>)}</li>)}</ul>
@@ -152,26 +152,40 @@ const low = x => String(x).replaceAll("_", " ").toLowerCase();
 // Source acquisition board: which single source decision unlocks the most missing PRIMARY slots. Reachable is not permission.
 function SourcesView() {
   const [p0, setP0] = useState(true); const [n, setN] = useState(PAGE);
-  const rows = SOURCES.sources.filter(r => !p0 || r.p0_missing_primary_slots > 0);
+  const rows = SOURCES.sources.filter(r => !p0 || r.p0_missing_primary_slots > 0); const D = SOURCES.p0_distinct;
   return <div data-testid="df-sources">
     <p className="ir-fine">{SOURCES.notice}</p>
     <div className="mim-cards">
       <div><b>{fmt(SOURCES.new_external_records_acquired)}</b><small>new external records acquired in the latest pass</small></div>
-      <div><b>{fmt(SOURCES.sources.filter(r => r.terms_read).length)}</b><small>of {fmt(SOURCES.sources.length)} sources with provider terms read</small></div>
+      <div><b>{fmt(SOURCES.sources.filter(r => r.terms_read).length)}</b><small>of {fmt(SOURCES.sources.length)} sources whose governing terms were read directly ({fmt(SOURCES.sources.filter(r => r.terms_status === "SEARCH_SNIPPET_ONLY").length)} more from search summaries only)</small></div>
       <div><b>{fmt(SOURCES.sources.filter(r => r.reachability === "REACHABLE").length)}</b><small>reachable from the research environment (not permission)</small></div>
     </div>
-    <h4>Why NBA, CBB and NHL primary slots are missing</h4>
+    <h4>NBA, CBB and NHL: missing PRIMARY slots, each counted once</h4>
+    <div className="mim-cards" data-testid="df-p0-distinct">
+      <div><b>{fmt(D.missing_primary_slots)}</b><small>missing PRIMARY slots ({P0.map(s => s + " " + D.by_sport[s]).join(" · ")})</small></div>
+      <div><b>{fmt(D.with_an_archived_dataset)}</b><small>list at least one dataset already in an owner archive ({P0.map(s => s + " " + D.with_an_archived_dataset_by_sport[s]).join(" · ")})</small></div>
+      <div><b>{fmt(D.archived_datasets_only)}</b><small>need archived data only: buildable now ({P0.map(s => s + " " + D.archived_datasets_only_by_sport[s]).join(" · ")})</small></div>
+    </div>
+    <p className="ir-fine">{D.note} Earlier per-dataset sum: {fmt(D.per_dataset_sum_previously_reported)}.</p>
+    <h4>What stands between those slots and a built input</h4>
     <ul className="mim-list" data-testid="df-blockers">{Object.entries(SOURCES.p0_slots_by_blocker).map(([k, v]) => <li key={k}><b>{fmt(v)}</b> slots · {low(k)}</li>)}</ul>
-    <p className="ir-fine">{SOURCES.terms_reading} Reachability observed {SOURCES.probe_observed_utc}. {SOURCES.counting_note}</p>
+    <p className="ir-fine">{SOURCES.terms_reading} Terms read {SOURCES.terms_fetched_utc}; reachability observed {SOURCES.probe_observed_utc}. {SOURCES.counting_note}</p>
+    <details className="mim-units"><summary>Free alternatives checked ({SOURCES.free_alternatives.length})</summary>
+      <p className="ir-fine">{SOURCES.free_alternatives_note}</p>
+      <ul className="mim-list">{SOURCES.free_alternatives.map(a => <li key={a.url}><b>{a.name}</b><div className="ir-why">{a.licence} · {a.caveat} · <code>{a.url}</code></div></li>)}</ul></details>
     <label className="mim-tog"><input type="checkbox" checked={p0} onChange={e => { setP0(e.target.checked); setN(PAGE); }}/> only sources behind NBA, CBB or NHL slots</label>
     <ul className="mim-queue">{rows.slice(0, n).map(r => <li key={r.source} className="mim-card" data-testid="df-source-row">
       <span className="mim-qrank">#{r.rank} · {r.sports.join(", ")}</span>
       <div className="mim-title"><code>{r.source}</code></div>
       <div className="mim-stats"><Chip>{fmt(r.p0_missing_primary_slots)} P0 missing PRIMARY slots</Chip> <Chip>{fmt(r.missing_primary_slots)} all sports</Chip> <Chip>{r.datasets.length} datasets</Chip>
-        {r.archived_slots ? <Chip k="ok">{fmt(r.archived_slots)} already archived</Chip> : null} <Chip k={REACH_KIND[r.reachability] || "plain"}>{low(r.reachability)}</Chip>
-        <Chip k="unv">terms {r.terms_read ? "read" : "not read"}</Chip> <Chip>rights: {r.rights_tiers.join(", ")}</Chip> <Chip>{r.costs.join(", ")}</Chip></div>
+        {r.p0_archived_slots ? <Chip k="ok">{fmt(r.p0_archived_slots)} P0 slots behind archived data</Chip> : null} <Chip k={REACH_KIND[r.reachability] || "plain"}>{low(r.reachability)}</Chip>
+        <Chip k={r.terms_read ? "ok" : "unv"}>terms: {low(r.terms_status)}</Chip> <Chip>rights: {r.rights_tiers.join(", ")}</Chip> <Chip>{r.costs.join(", ")}</Chip></div>
       <div className="ir-why">Collector: {r.collector.collector || "none recorded"} — {low(r.collector.state)}{r.collector.repo ? " (" + r.collector.repo + ")" : ""}</div>
-      <div className="ir-why"><b>Decision needed:</b> {r.decision_needed}</div>
+      <div className="ir-why"><b>Next step:</b> {r.decision_needed}</div>
+      {r.terms && <details className="mim-units"><summary>Terms reading ({r.terms.provider})</summary>
+        <p className="ir-fine">Internal research: {low(r.terms.assessment.internal_noncommercial_research)} · automated collection: {low(r.terms.assessment.automated_collection)} · raw redistribution: {low(r.terms.assessment.raw_redistribution)} · commercial use: {low(r.terms.assessment.commercial_use)}. {r.terms.assessment.reasoning}</p>
+        {r.terms.lead_note && <p className="ir-fine">{r.terms.lead_note}</p>}
+        {r.terms.owner_decision_needed && <p className="ir-fine"><b>Owner decision:</b> {r.terms.owner_decision_needed}</p>}</details>}
       <details className="mim-units"><summary>Datasets</summary><p className="ir-fine">{r.datasets.join(", ")}</p></details></li>)}</ul>
     {rows.length > n && <button className="mim-more" onClick={() => setN(x => x + PAGE)}>Show more ({rows.length - n} left)</button>}
   </div>;

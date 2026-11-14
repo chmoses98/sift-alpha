@@ -439,7 +439,7 @@ def _reliability(p, y, bins=10):
 
 
 def _chk(name, passed, detail):
-    return dict(name=name, passed=bool(passed), detail=str(detail))
+    return C.check(name, passed, detail)
 
 
 def _scenario_table(m_pred, y_min, train_played):
@@ -541,7 +541,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
     boxkeys = set(zip(pg_raw.game_id, pg_raw.nba_id))
     sel_rows = pstat.merge(sel[sel.report_ts >= 0][["game_id"]], on="game_id")
     inbox = np.array([(g, i) in boxkeys for g, i in zip(sel_rows.game_id, sel_rows.nba_id)])
-    checks_inj.append(_chk("selected_report_rows_found_in_box_score_ids", True,
+    checks_inj.append(_chk("selected_report_rows_found_in_box_score_ids", C.ATTESTED,
                            f"{int(inbox.sum())}/{len(inbox)} ({float(inbox.mean()):.4f}) of T-60-selected matched player rows have a box-score row (played or DNP) "
                            f"for that game; the rest are inactive players ESPN does not list. Informational."))
     drr = int(rr[rr.nba_id.notna()].duplicated(["report_time_utc", "game_id", "nba_id"]).sum())
@@ -566,7 +566,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
                            f"selected report time equals the owner's t_minus_60_report_time_utc for {agree:.4f} of {len(snok)} pit_ok games; "
                            f"box-score tip equals snapshot tip (+-60s) for {tipdiff:.4f}"))
     hdr = float(reports.header_time_matches_slot.mean())
-    checks_inj.append(_chk("report_header_time_matches_slot", True,
+    checks_inj.append(_chk("report_header_time_matches_slot", C.ATTESTED,
                            f"reports table: {len(reports)} reports, header_time_matches_slot share {hdr:.4f} (report_time_utc from the PDF header is used, "
                            f"which is 30 min after the nominal slot; informational)"))
 

@@ -34,6 +34,10 @@ def main(argv=None) -> int:
     n.add_argument("--projection-data", help="local checkout of nba-edge-finder@projection-data (game identity + official availability)")
     n.add_argument("--board-dir", help="local dir of full-board Kalshi checkpoints (data-archive/kalshi/markets): eligible universe = ALL NBA game-bound families")
     n.add_argument("--settlements", help="local dir of producer settle-engine files (data-archive/settlements) for the independent outcome cross-check")
+    h = sub.add_parser("nhl-archive", help="read-only postmortem from a LOCAL sparse checkout of NHL-edge-finder@data-archive + Kalshi settled pages")
+    h.add_argument("--root", required=True); h.add_argument("--file-adds", required=True, help="git log --diff-filter=A --name-only --format='C %%H %%cI' output")
+    h.add_argument("--kalshi-dir", required=True); h.add_argument("--as-of", required=True, help="data horizon (archive head commit time)")
+    h.add_argument("--out-dir", required=True); h.add_argument("--title", default="")
     c = sub.add_parser("coverage"); c.add_argument("--out-dir", required=True)
     e = sub.add_parser("example"); e.add_argument("--out-dir", required=True)
     a = ap.parse_args(argv)
@@ -78,6 +82,22 @@ def main(argv=None) -> int:
                                         n_eligible_rows=len(eligible), universe_basis="ALL_BOARD_GAME_BOUND" if a.board_dir else "SHADOW_LISTING_ARCHIVE_ONLY",
                                         market_reconciliation=recon)
         _write(out, "nba_shadow_cumulative", rep)
+    elif a.cmd == "nhl-archive":
+        from . import nhl_archive as H
+        b = H.build(a.root, H.load_file_adds(a.file_adds), H.load_kalshi_settled(a.kalshi_dir), as_of=a.as_of)
+        g = grade_all(b["forecasts"], b["outcomes"], b["quotes"], [], eligible_rows=b["eligible"], as_of=a.as_of)
+        rep = build_report(g, kind="cumulative", title=a.title or "NHL archive postmortem")
+        rep["source_accounting"] = dict(info=b["info"], identity=b["identity"], producer_crosscheck=b["producer_crosscheck"],
+                                        n_games_scheduled=b["n_games_scheduled"], n_producer_contracts=b["n_producer_contracts"],
+                                        n_forecast_rows=len(b["forecasts"]), n_outcome_rows=len(b["outcomes"]), n_quote_rows=len(b["quotes"]),
+                                        n_eligible_rows=len(b["eligible"]), duplicate_file_adds=b["duplicate_file_adds"], as_of=a.as_of,
+                                        universe_basis="KALSHI_SETTLED_GAME_BOUND_PLUS_PRODUCER_LISTING",
+                                        market_reconciliation=H.reconcile(b["eligible"], g["rows"], b["forecasts"]),
+                                        market_not_forecast_reasons=b["market_not_forecast_reasons"])
+        rep["secondary_native_family"] = H.native_family_cells(g["rows"], b["forecasts"])
+        _write(out, "nhl_archive_cumulative", rep)
+        with open(out / "nhl_archive_cumulative.md", "a") as fh:
+            fh.write(H.native_family_markdown(rep["secondary_native_family"]))
     elif a.cmd == "coverage":
         m = cov.build()
         out.mkdir(parents=True, exist_ok=True)

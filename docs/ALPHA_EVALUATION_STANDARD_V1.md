@@ -67,12 +67,47 @@ Incremental integration plan (no engine rewrites; each step is a read-only expor
 2. **NHL, CFB, MLB, Soccer, Tennis** after their start-time/outcome blockers in the matrix are addressed by their owners.
 3. Wire `sift_clv.executable` depth-walk and verified fills into the economics step, and pure-contract scorecard outputs into the prop sections.
 
+Status at the v1 closeout (2026-11-13): NBA and NHL are integrated and baselined; NFL, CFB, MLB, Soccer, Tennis and CBB remain on the roadmap (see the `status` column of the adoption matrix). The closeout deliberately starts no new sport integration.
+
+**Kalshi data rights: UNRESOLVED.** The quote, board and settlement data that model-vs-market, hypothetical economics and CLV rely on come from Kalshi. Several things are open questions, and no legal authorization is claimed:
+* whether storing that data, evaluating models against it, and publishing aggregate reports derived from it are permitted under Kalshi's Developer Agreement and Data Terms;
+* any future commercial use.
+
+Predictive accuracy and calibration against official league outcomes do not depend on Kalshi data. Until the question is resolved, no new public Kalshi-derived publication should be added on the strength of this standard.
+
 ## 8. Operational vs still blocked (honest summary)
 
 **Operational and tested:** schema + strict parsing; family/scoring routing; all four scoring types; signed calibration; PIT quote join; paired model-vs-market with collapse + clustered CI + Holm/BH; hypothetical economics with fees; signed CLV with actual-fill separation; verified-fill ROI with claim gating; daily/cumulative reports; coverage + adoption generator; `pure_forecast.v1` adapter.
 
-**Not done / blocked:** (a) **no real producer yet exports `sift-alpha-eval/1`, so no real postmortem exists**; examples are synthetic. (b) Producer repos other than sift-sports-intelligence were not accessible in this session; their adoption rows rely on Alpha's archived audits. (c) Non-binary contracts are scored for accuracy but have **no priced model-vs-market/economics** (needs per-outcome quotes; reason `NOT_APPLICABLE_NONBINARY`); Kalshi `scalar` contracts are not supported. (d) Hypothetical economics is top-of-book taker size 1; depth-walk and maker scenarios exist in `sift_clv`/`sift_research` but are not wired in. (e) Market probability is the raw mid, not de-vigged. (f) Freeze is checked by timestamps; ledger-attested freezes (hash chains like the Tennis ledger) and `evidence_class` verification are not yet implemented. (g) PIT-histogram and quantile-coverage diagnostics remain in pure-contract. (h) Existing outcome-intel results (calibrated-market log-loss gain) are not recomputed and use a different baseline; their ledger shows 0 validated cells across all sports. (i) Two pre-existing unrelated tests (`test_capture_dashboard_authority`, `test_nfl_totals_incremental`) error on the base branch.
+**Not done / blocked:** (a) ~~no real postmortem exists~~ superseded at closeout: two real postmortems exist through read-only adapters (`NBA_POSTMORTEM_001`, merged in PR #65; `NHL_POSTMORTEM_001` revision 1, PR #66). No producer yet exports `sift-alpha-eval/1` natively. (b) Producer repos other than sift-sports-intelligence were not accessible in this session; their adoption rows rely on Alpha's archived audits. (c) Non-binary contracts are scored for accuracy but have **no priced model-vs-market/economics** (needs per-outcome quotes; reason `NOT_APPLICABLE_NONBINARY`); Kalshi `scalar` contracts are not supported. (d) Hypothetical economics is top-of-book taker size 1; depth-walk and maker scenarios exist in `sift_clv`/`sift_research` but are not wired in. (e) Market probability is the raw mid, not de-vigged. (f) Freeze is checked by timestamps; ledger-attested freezes (hash chains like the Tennis ledger) and `evidence_class` verification are not yet implemented. (g) PIT-histogram and quantile-coverage diagnostics remain in pure-contract. (h) Existing outcome-intel results (calibrated-market log-loss gain) are not recomputed and use a different baseline; their ledger shows 0 validated cells across all sports. (i) Two pre-existing unrelated tests (`test_capture_dashboard_authority`, `test_nfl_totals_incremental`) error on the base branch.
 
 ## 9. Boundaries
 
 No paid APIs, orders, authority, promotion, scheduler or infrastructure changes. `conductor.yml` and `worker/run.py` are untouched. The 1,649-input market catalog and CBB model research are neither modified nor delayed. The only existing file edited besides docs is the path filter of `research-tests.yml`, so PRs touching `alpha_eval/**` run the unit suite.
+
+## 10. v1 closeout (2026-11-13)
+
+**FOUNDATION COMPLETE, conditional on the owner approving and merging PR #66.** Merging PR #66 makes it final; until then NHL-001 is a reviewed draft.
+
+**Baselines of record (versioned; do not overwrite in place):**
+* `docs/alpha_eval/NBA_POSTMORTEM_001.md` + `reports/alpha_eval/nba/` (PR #65, merged);
+* `docs/alpha_eval/NHL_POSTMORTEM_001.md` revision 1 + `reports/alpha_eval/nhl/` (PR #66).
+
+A later run is a new numbered postmortem (002, …) or an explicit revision with a before/after section, never a silent regeneration.
+
+**Each report keeps five measures apart:** predictive accuracy, calibration, model versus market (paired, Holm-adjusted), hypothetical economics (`NO_PROFITABILITY_CLAIM` without verified fills) and CLV (selection / quoted-execution / actual-fill).
+
+**Coverage is recorded as INCOMPLETE in both sports:**
+* NBA: 23.2% of in-window game-bound markets graded;
+* NHL: 87.2% graded.
+
+Unsupported families and their reasons are listed in each postmortem and in the adoption matrix.
+
+**Open, carried forward (not blockers for the foundation):**
+* NHL freeze clock checked against GitHub on 6 of 371 capture runs;
+* 39 NHL shootout totals blocked (settlement semantics unestablished);
+* Kalshi official results absent;
+* T−6h horizon not graded;
+* Kalshi data rights unresolved (§7).
+
+**Next:** improving models and acquiring missing sports inputs, not more evaluation infrastructure. The baselines point to model calibration (NBA props overconfident, NBA moneyline underconfident) and sharpness against the market (NHL), and the 1,649-input catalog continues on its own branch.

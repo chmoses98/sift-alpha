@@ -155,7 +155,9 @@ class RefreshWorkflowIsResearchOnly(unittest.TestCase):
         raw = (ROOT / ".github/workflows/input-research-refresh.yml").read_text()
         wf = yaml.safe_load(raw)
         trig = wf.get("on") or wf.get(True)
-        self.assertEqual(sorted(trig), ["schedule", "workflow_dispatch"])                    # never on push / pull_request
+        from alpha_engine.input_research.phase import predictive_paused
+        # never on push / pull_request; while predictive experimentation is paused (catalog-completeness phase) there is no schedule at all
+        self.assertEqual(sorted(trig), ["workflow_dispatch"] if predictive_paused() else ["schedule", "workflow_dispatch"])
         self.assertEqual(wf["permissions"], {"contents": "read"})                            # cannot push, deploy or write anything
         job = wf["jobs"]["refresh"]
         self.assertLessEqual(job["timeout-minutes"], 60)
@@ -274,7 +276,7 @@ class PublishedArtifacts(unittest.TestCase):
             cat = C.load(s)
             fam += len(d["families"])
             # every input the catalog defines is reachable through some blueprint or archetype shown by the dashboard
-            self.assertEqual(sorted(d["inputs"]), sorted(cat["inputs"]), s)
+            self.assertEqual(sorted(d["inputs"]), sorted(k for k, v in cat["inputs"].items() if not v.get("retired")), s)   # retired inputs are kept in the catalog for traceability, never shown
             inp += len(d["inputs"])
             ix += sum(len(a["interactions"]) for a in d["archetypes"].values()) + sum(len(b["interactions"]) for b in d["blueprints"].values())
             reg_bps = C.registry_blueprints(s)
@@ -284,7 +286,7 @@ class PublishedArtifacts(unittest.TestCase):
             for a, rec in d["archetypes"].items():
                 for f in rec["families"]:
                     self.assertIn(a, d["families"][f]["archetypes"], f)
-        self.assertEqual((fam, inp, ix), (275, 672, 679))       # documented totals; a catalog change must update these consciously
+        self.assertEqual((fam, inp, ix), (275, 1639, 1351))     # documented totals (672 inputs at #53; +12 gap adjudication, +5 unregistered contract types = 691; +949 from the catalog-completeness review via completeness.integrate; interactions 679 -> 1351 after merging the reviews' interactions); a catalog change must update these consciously
 
     def test_every_path_states_its_claim_boundary_and_never_implies_a_kalshi_edge(self):
         for d in self.docs.values():

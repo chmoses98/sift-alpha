@@ -1,0 +1,575 @@
+{
+ "player_milestones": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain before reading the record: (1) enters game or voided (inactive/never-entered settles at a fair price); (2) minutes scenario mixture (normal, blowout cut, foul trouble, early exit, OT); (3) team possession and miss pool; (4) lineup-conditional shares of boards, assists and points; (5) joint overdispersed counts of pts/reb/ast/stl/blk with the common-minutes dependence; (6) discrete crossing of 10 in two or three categories; (7) box-score credit. Required inputs: minutes distribution, category-pair rates, rebound and assist opportunity shares, teammate absence, joint covariance, blowout probability from ratings, early-exit hazard. The author's s1-s5 matches this and adds exit hazard, category-pair mix and late stat-gifting, which I had not listed. Rules verified: DD/TD definition, void for inactive/never-entered and 48h postponement are verbatim; OT is correctly flagged as unstated. Differences found are about fair-price semantics, market-derived garbage input, source feasibility and one unsupported assumption.",
+  "verdict": "PASS_WITH_OPEN_GAPS",
+  "findings": [
+   {
+    "id": "pm-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pm-fair-price-semantics",
+    "severity": "MINOR",
+    "text": "Settlement text says inactive/never-entered 'settles to a fair price' and the record repeatedly calls this a 'refund' / 'voided'. The rules sample does not define the fair price (the REBPROT sample ties it to the pre-opening-tip price, the DD sample does not). Whether the payout equals a pre-tip price that already embeds P(inactive) is not disclosed as CONTRACT_AMBIGUOUS; unresolved only covers OT and source agencies.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:pm-fair-price-definition",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pm-status-resolution-undefined",
+    "severity": "MINOR",
+    "text": "Stage s1 lists nba.status_resolution_prob but it is not in input_audit or new_inputs of this archetype (only defined in other archetypes). Meanwhile the contract text means P(active) has no payoff effect, so listing it as a stage input contradicts the author's own variant note that unconditional participation modelling is unnecessary.",
+    "resolution": "RESOLVED: reviewer correct; nba.status_resolution_prob removed from stage s1, category_coverage and the injury-vintage feeds list because void-on-inactive settlement makes P(active) irrelevant to the conditional payoff; stage s1 keeps injuries_pit and midgame_exit_hazard.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pm-late-gifting-primary-evidence",
+    "severity": "MINOR",
+    "text": "nba.late_threshold_assist_rebound_gifting is asserted from sparse 8-9 count late-blowout situations; unresolved item pm-stat-chase-size admits no verified estimate, yet the input sits in s2 and an interaction. Keep as hypothesis, not required input.",
+    "resolution": "RESOLVED: nba.late_threshold_assist_rebound_gifting role changed from secondary to context and its why text now labels it a hypothesis only, not a required input; pm-stat-chase-size already records the unverified size.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pm-source-tracking",
+    "severity": "MINOR",
+    "text": "reb_chances and pot_ast (potential assists) rely on tracking endpoints (playerdashptreb / passing) that are season/split aggregates, not per-game rows with as-of timestamps; unresolved pm-tracking-access discloses this, but the free_scrape label on boxscoretraditionalv2 is SOURCE_UNVERIFIED: I could not confirm V2 box-score endpoints remain populated for 2026-27 (v3 successors exist).",
+    "resolution": "DEFERRED_TO_UNRESOLVED:pm-boxscore-endpoint-source",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "player_points": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: availability and minutes mixture (starter load, blowout, foul trouble, early exit, OT) -> possessions on court -> usage/attempt share given on-court unit -> shot mix and conversion vs scheme -> free-throw trips -> game-script truncation -> settlement form. Because the archetype holds PRA/PR/PA, H2H and escalator series I also expected rebound and assist component marginals, a joint two-player law and a full-distribution (cubic payoff) treatment. Rules checked: escalator formula floor(10000*(y/50)^3)/10000 with y=min(50,max(0,2*floor(s/2))), H2H PRA 50/50 tie and two-week postponement, ladder fair-price-for-inactive are all verbatim and correct. The author's s1-s6 covers the points chain well. Gaps vs my derivation: no input supplies rebounds or assists marginals for the combined ladders, OT inclusion assumed rather than shown, and one data-source claim looks wrong.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "pp-combined-stat-no-components",
+    "severity": "MAJOR",
+    "text": "KXNBAPRA, KXNBAPR, KXNBAPA and KXNBAH2HPRA (rules-sampled combined stats) require marginal rebound and assist models, but no input in this archetype (nba.reb_chances, potential assists, rebound_pool, frontcourt competition, nba.pot_ast) supplies them; the only coverage is nba.cross_player_points_dependence mentioning correlation with 'own rebounds+assists residuals'. The input list cannot price 4 of the verified series from this archetype alone; either add the component inputs or declare cross-archetype dependency on player_rebounds/assists explicitly.",
+    "resolution": "RESOLVED: added new_input nba.combo_component_marginals (rebound/assist marginals and copula with points, exact rate and shrinkage formulas), wired into stage s6, distribution coverage, a new interaction and the box-score dataset (reb/oreb/dreb fields); combo series also recorded in series_mapping_issues as belonging in combo_props.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pp-ot-assumed",
+    "severity": "MINOR",
+    "text": "Stage s1 states 'overtime adding about five' minutes as fact for ladders. None of the sampled ladder texts (KXNBAPRA, escalator) mention overtime; unresolved pp-titleonly only discusses TITLE_ONLY series. OT inclusion for the sampled series should be listed CONTRACT_AMBIGUOUS.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:pp-ot-inclusion",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pp-defender-distance-source",
+    "severity": "MAJOR",
+    "text": "required_data row 2 lists nba_api shotchartdetail with field closest_defender_distance, and nba.player_xpts_per_shot is hierarchical on player x shot type x defender-distance bin. To my knowledge shotchartdetail returns location, zone, action type and distance, not closest-defender distance; public dashboards give defender-distance bins aggregated and not crossed with shot location (my search could not confirm either way). pp-defender-distance flags it SOURCE_UNVERIFIED but the new input is still role secondary with registry-free 'yes' pregame and the field is asserted in the table. The input as specified may be unobtainable without paid tracking.",
+    "resolution": "RESOLVED: reviewer correct, shotchartdetail has no closest-defender field; removed it from the shot-level dataset fields, rebased nba.player_xpts_per_shot on zone x action type, made defender bins an optional aggregate (SOURCE_UNVERIFIED) and rewrote unresolved pp-defender-distance accordingly.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pp-series-mismapping",
+    "severity": "MAJOR",
+    "text": "Archetype lists 19 live series including KXNBA3PTCONTEST (All-Star contest), KXNBAPTSLEADER, KXNBARACE, KXNBAFIRST50PTS, KXNBAPTSALLGAMES, KXNBASERIESPTSLEADER, bench-points and playoffs/summer points. Disclosed as pp-bucket-mixing, but no inputs are added for leader/race/first-to-50/all-games conjunction, and the race_to_and_points_leader archetype is reviewed with zero live series. Series-to-archetype remapping is needed for the required-input list to be meaningful.",
+    "resolution": "RESOLVED: contract.series_mapping_issues now lists 14 misfiled series with target archetypes (combo_props, player_h2h_series_stats, player_escalator_payout, race_to_and_points_leader, three NEW_ARCHETYPE_NEEDED), and a variants entry limits this record to single-game points ladders; pp-bucket-mixing remains in unresolved.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pp-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage retains 'from spread' definition at KEEP_PRIMARY (audit says rebuild from ratings and rotation history) yet no ratings input (nba.ratings/off_rtg/def_rtg) or replacement definition exists in this archetype; market-derived value remains a primary input by default.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pp-protected-inference",
+    "severity": "MINOR",
+    "text": "KXNBAPTSPROT is TITLE_ONLY; the protected-contract refund rule is only visible in the KXNBAREBPROT sample, which could be cited as evidence of the likely points form while keeping it unverified.",
+    "resolution": "RESOLVED: no inference applied; KXNBAPTSPROT stays TITLE_ONLY in the record (pp-titleonly) and the protected rule is cited only from KXNBAREBPROT/KXNBAASTPROT, which are sampled rules of other archetypes, so no points-protected settlement is claimed as verified.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "player_rebounds": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: appearance/minutes (foul and blowout sensitive) -> total missed shots by both teams -> creditable pool after team rebounds/dead balls -> OREB/DREB split by crash policy -> player share given who else is on the floor -> conversion/credit -> overdispersed count crossing N. Protected variant must be modelled as a distinct payoff. Rules: KXNBAREB ladder (10+ with floor 9.5) verified; KXNBAREBPROT refund when player enters in first half but not after the half (including OT) unless threshold already reached, at the fair price prior to the opening tip. The author's s1-s5 and the five new inputs (creditable pool, pairing-adjusted share, glass strategy, exit/protection state) match and exceed my list. Differences are small: pool-leakage numbers and tracking source feasibility, and a mislabel of the protection hazard.",
+  "verdict": "PASS_WITH_OPEN_GAPS",
+  "findings": [
+   {
+    "id": "pr-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pr-protected-hazard-incomplete",
+    "severity": "MINOR",
+    "text": "nba.big_exit_protection_state models 'plays only first half' as injury/foul-out, but the rule's refund branch is any player who does not enter after halftime, including a rested starter in a blowout and a player ejected/injured in Q2. Blowout-driven second-half DNP (rare for starters, common for bench bigs) should be a named cause, and it interacts with nba.garbage.",
+    "resolution": "RESOLVED: nba.big_exit_protection_state mechanism and measurement now split the refund branch by cause (injury/ejection, foul-out, whole-second-half blowout rest), and a new conditional interaction ties it to nba.rating_blowout_minutes_curve; KXNBAREBPROT text confirms refund for any non-entry after halftime including overtime.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pr-leakage-claim",
+    "severity": "MINOR",
+    "text": "creditable_pool states team-rebound/out-of-bounds leakage 'about 6-10% of misses' without a source; unresolved pr-leakage-source admits the team/individual split is unverified. Treat the number as a hypothesis.",
+    "resolution": "RESOLVED: the 6-10% leakage figure in nba.creditable_rebound_pool rationale is relabelled a hypothesis to be estimated, and unresolved pr-leakage-source now states the figure is unsourced.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pr-tracking-access",
+    "severity": "MINOR",
+    "text": "reb_chances KEEP_PRIMARY depends on tracking rebound-chance fields that are season/split aggregates in public nba_api dashboards; disclosed as DATA_UNAVAILABLE, but the input is still primary, so the primary rebound-share driver may only exist at season grain. SOURCE_UNVERIFIED for per-game vintages.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:pr-tracking-access",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "pr-series-leader",
+    "severity": "MINOR",
+    "text": "KXNBASERIESREBLEADER (series argmax) has no mechanism or input; only an unresolved note.",
+    "resolution": "RESOLVED: KXNBASERIESREBLEADER recorded in contract.series_mapping_issues as NEW_ARCHETYPE_NEEDED: series_stat_leader, and a variants entry states this record does not cover it; pr-titleonly-series already lists its unknown rules.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "player_threes": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: minutes/participation (wide for role players) -> three-point attempts = minutes x rate set by role, passer availability and pace -> openness and shot type -> make probability with heavy shrinkage -> team shooting shock correlation -> script effects on attempts -> count crossing N (1+ to 7+) or cubic capped escalator. Rules: KXNBA3PT ladder (5+, floor 4.5) and KXNBAESCALATOR3PT payout schedule floor(10000*(y/10)^3)/10000, y=min(10,s) verified; protected, ladder and every-game variants TITLE_ONLY. The author's s1-s6 and four new inputs match my derivation and add the passer map and script elasticity. Difference: source feasibility for defender-distance data, and the same garbage-input issue.",
+  "verdict": "PASS_WITH_OPEN_GAPS",
+  "findings": [
+   {
+    "id": "p3-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "p3-defender-distance-source",
+    "severity": "MAJOR",
+    "text": "required_data row 1 claims nba_api shotchartdetail exposes closest_defender_distance per shot and nba.three_make_by_openness_prior (role primary) is a hierarchy on 'catch-and-shoot/pull-up x wide-open/open/tight'. I believe shotchartdetail does not carry defender distance; public aggregate dashboards (closest-defender bins by shot type) probably support a coarse version only. The unresolved p3-defender-distance flags SOURCE_UNVERIFIED but the input is still primary and the table lists the field as available.",
+    "resolution": "RESOLVED: reviewer correct on shotchartdetail; closest_defender_distance and assisted_by removed from the shot dataset fields, nba.three_make_by_openness_prior rebased on zone x pull-up with aggregate defender bins optional and demoted primary to secondary, source note and p3-defender-distance rewritten.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "p3-ladder-rungs-claim",
+    "severity": "MINOR",
+    "text": "Variants state ladder rungs 'run 1+ to 7+' and the escalator 'caps at 10', but only 5+ (KXNBA3PT) and the escalator text were sampled; the 1-7 range and 'ladder series are cumulative' cannot be verified from the text (p3-titleonly partly discloses).",
+    "resolution": "RESOLVED: variants text no longer states a 1+ to 7+ span or cumulative ladders as fact; it now says only 5+ is sampled and the span is assumed from titles, with p3-titleonly still listing ladder semantics as unknown.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "p3-escalator-text-anomaly",
+    "severity": "MINOR",
+    "text": "The escalator rules_primary ends 'Then the market resolves to Yes.' after a scalar payout schedule, which is an anomaly in the text; the record does not note that 'resolves to Yes' and a scalar payout coexist, i.e. settlement for the No leg is only by the secondary formula.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:p3-escalator-text",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "p3-assisted-three-source",
+    "severity": "MINOR",
+    "text": "nba.assisted_three_passer_map relies on assist fields in playbyplayv3 for threes; plausible but not verified that every made three has the assist linked in the free feed.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:p3-assist-linkage",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "quarter_and_half_markets": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: starters/rotation template per period -> possessions per period (pace, end-of-period) -> unit efficiency vs opponent units -> small-sample scoring noise (Skellam-like margin, tie mass ~5%) -> score-state feedback, halftime adjustment, bonus resets -> settlement partition (Q1-Q3 and 1H regulation only; Q4 excludes OT; 2H includes OT) with a three-way winner/tie structure. Rules verified: 1H 'Only points scored during the 1st half', 2H '(including overtime)', Q-markets 'do not include overtime', tie legs are separate markets. The author's six stages match. Differences: the OT size arithmetic is wrong by about 2x, no live-state inputs although these markets may trade in-play, and the starter confirmation timing claim.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "qh-ot-size-wrong",
+    "severity": "MAJOR",
+    "text": "The record says a Q4 tie triggers OT adding 'roughly 10-12 combined points to the 2H total' (variants), 'about a dozen points' (s6) and 'size about 11-13 combined points' (interaction ot_model x rules_text). A five-minute NBA overtime adds roughly 11-13 points per team, about 22-26 combined, since teams score about 2.3-2.4 per minute each. The 2H total/spread/team-total tail component is thus mis-sized by about half; the same 11-13 figure is correct only as per-team in team_total. This changes the OT mixture parameter the model must estimate for the KXNBA2H* contracts.",
+    "resolution": "RESOLVED: reviewer correct; a five-minute OT at about 2.3-2.4 points per team-minute adds about 11-13 per team and about 22-26 combined. Corrected the 10-12, dozen and 11-13 combined figures in variants, stage s6 and the ot_model x rules_text interaction to 22-26 combined (11-13 per team).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "qh-no-live-state",
+    "severity": "MINOR",
+    "text": "No input or unresolved item covers in-game state (score at period start, who is on court, foul/bonus state, time remaining) although later-period markets (Q3, Q4, 2H) exist for the same game; the record does not state when each market closes relative to period start, so whether pregame-only information suffices is an undisclosed gap (rules text sampled does not give close/trading time).",
+    "resolution": "DEFERRED_TO_UNRESOLVED:qh-live-state",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "qh-start-gifting",
+    "severity": "MINOR",
+    "text": "Several markets show status 'active' while games are not yet played (Nov 8); Q2 and Q4 inputs are described as mixtures, but starters_pit KEEP_PRIMARY is justified only for Q1/Q3 and its time-of-confirmation (about 30 minutes pregame) is not tied to a market-close timestamp.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:qh-start-timing",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "qh-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "qh-title-only-teamtotal",
+    "severity": "MINOR",
+    "text": "Period team totals (KXNBA1QTEAMTOTAL, KXNBA4QTEAMTOTAL) are TITLE_ONLY; KXNBA1HTEAMTOTAL is sampled. OT treatment for 4Q team total is inferred from the generic 4th-quarter footnote, which appears copied across series; flagged only partially in qh-titleonly.",
+    "resolution": "RESOLVED: settlement_definition now says OT wording was seen only on sampled series and that 1Q/4Q team totals inherit it from a generic footnote, and unresolved qh-titleonly states the 4Q team-total OT treatment is inferred, not read.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "race_to_and_points_leader": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain for race-to-N: opening tip/first possession, starters' first-stint scoring rates, alternating-possession first-passage with lumpy 0-3 increments, overshoot at small N; for points leader: argmax over ~20 players of minutes x usage x efficiency with heavy tails, negative same-team and positive cross-team dependence, OT and blowout truncation, tie rule. Required inputs: starters, first-possession/tip, unit ratings, minutes mixtures, usage allocation, tie/OT rules. The author's s1-s5 match; I would add the exact contract wording, which no one can read: the evidence has NO_LIVE_SERIES for this key, while KXNBARACE, KXNBAPTSLEADER, KXNBASERIESPTSLEADER and KXNBAFIRST50PTS are filed under player_points as TITLE_ONLY. So all settlement claims here are speculation (correctly disclosed).",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "rl-series-mismapping",
+    "severity": "MAJOR",
+    "text": "The only live series for race/leader contracts (KXNBARACE, KXNBAPTSLEADER) are filed under player_points, so this archetype has zero contract evidence and the points-leader/race required inputs were reviewed against no text. Race-to-N team vs player, tie rule, OT inclusion and DNP handling all remain unknown; the input list cannot be relied on until the series are remapped or rules sampled.",
+    "resolution": "RESOLVED: contract.series_mapping_issues records KXNBARACE and KXNBAPTSLEADER as belonging here (misfiled under player_points), and two other misfiled leader/first-to series as NEW_ARCHETYPE_NEEDED; settlement_definition and variants now state all claims are conditional because no live series confirms scope.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "rl-first-possession-claim",
+    "severity": "MINOR",
+    "text": "'First possession is worth about half a possession in expected points' and 'effect scales as 1/sqrt(N)' are stated as fact with no source; the tip-off winner is also not random-neutral for every format. Hypothesis, not established.",
+    "resolution": "RESOLVED: all statements that first possession is worth about half a possession and that the effect scales as 1/sqrt(N) were relabelled hypotheses/assumptions to be tested, in stages, input rationale, interaction mechanism and nonlinearity text.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "rl-race-input-vs-event",
+    "severity": "MAJOR",
+    "text": "nba.first_passage_race_table (primary) conditions on N in {5,...,30} fitted from play-by-play, but the race contract may be a season-long race (e.g. KXNBAFIRST50PTS 'First NBA Player to Score 50 Points' sits in the ledger as a race), which needs a different mechanism entirely (per-game 50-point hazard across all players). The archetype never considers that 'Race to' could be multi-game.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:rl-race-scope",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "rl-tie-co-leader-rate",
+    "severity": "MINOR",
+    "text": "'tied maximum roughly 5-8%' is asserted without computation; fine as a gap but should be labelled estimate.",
+    "resolution": "RESOLVED: the 5-8% tied-maximum figure is now labelled an unverified estimate to be computed from box scores in the variants text and in unresolved rl-tie-rule.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "rl-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "season_futures_team": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: latent team strength (roster prior, aging, continuity) with in-season update -> availability of stars across the season and into playoffs -> schedule/rest/Cup structure -> correlated game outcomes to win totals and records with tiebreaks and play-in -> bracket of best-of-sevens -> derived functionals (awards by voting, Cup knockout, viewership, streak extremes with 1/N ties). Rules verified: KXNBAWINS 'at least 60 games' (greater_or_equal), streak and award 1/N tie payouts, regular season only, Cup games before the final count. The author's s1-s7 match for team outcomes. Differences: no streak-extremes input here, no mechanism for the sampled award series, extrapolation of Cup-final exclusion to win totals, and simulation machinery labelled as inputs.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "sf-streak-no-input",
+    "severity": "MAJOR",
+    "text": "KXNBATEAMWINSTREAK (rules sampled: longest consecutive streak, ties pay $1/N, Cup games before the final count) is a rules-verified series here, but run-length / longest-streak-with-ties modelling exists only as nba.team_win_streak_hazard in the unreg archetype. This archetype has no input for the distribution of the maximum streak over 30 teams or the tied-team count that sets the 1/N payout; s4 mentions it in prose only.",
+    "resolution": "RESOLVED: added new_input nba.longest_streak_max_and_tie_model (simulated league-max run length, tied-team count and 1/N expected payout, with calibration to 15 seasons) wired into s4, distribution and settlement coverage, the game-results dataset and a new interaction; ownership overlap with the unreg record noted in why.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sf-award-series-no-mechanism",
+    "severity": "MAJOR",
+    "text": "KXNBASJC (rules-sampled Social Justice Champion), KXNBAFINALSMVP/FINMVP/WFINMVP/EFINMVP, NBA Cup All-Tournament Team and viewership series are decided by committee/vote or audience, not the team simulation. Only nba.finals_mvp_given_title_share (secondary) and a viewership input marked 'context' exist; the social-justice award, voting-panel behaviour and co-winner 1/N probability have no input. The 'unresolved' sf-mixed-bucket discloses the mixing but the required-input list still omits them.",
+    "resolution": "RESOLVED: added new_input nba.award_vote_and_cowinner_model (nominee conditional logit, co-winner probability, expected 1/N payout) wired into s7, settlement coverage and the awards dataset; award and viewership series listed in series_mapping_issues with target archetypes, viewership flagged NEW_ARCHETYPE_NEEDED.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sf-cup-final-extrapolation",
+    "severity": "MINOR",
+    "text": "Variants/s3 state 'Cup group results enter win totals while the Cup final does not'. The excluded-final wording was seen only on KXNBATEAMWINSTREAK; the KXNBAWINS sample says only 'wins at least 60 games in the 2026-27 regular season'. Applying it to win totals is an inference. Also 'single-elimination knockout' for the Cup is added to the KXNBACUP quote's 'establishes' but is not in the quoted text.",
+    "resolution": "RESOLVED: reviewer correct; variants and s3 now say the Cup-before-final wording was read only on KXNBATEAMWINSTREAK and is inferred for win totals, the KXNBACUP establishes text no longer claims a knockout structure, and sf-cup-rule notes the gap.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sf-sim-as-input",
+    "severity": "MINOR",
+    "text": "nba.standings_sim and nba.series_model are KEEP_PRIMARY 'inputs' but are model components (simulators) that consume ratings, schedule and tiebreak inputs; recording them as inputs hides what raw data is required beyond ratings. The new inputs partly fix this.",
+    "resolution": "RESOLVED: input_audit reasons for nba.standings_sim and nba.series_model now state they are model components consuming ratings, update gain, schedule strength, rest and tiebreak ledger, which are separate listed inputs fed by named datasets.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sf-injury-hazard-source",
+    "severity": "MINOR",
+    "text": "nba.playoff_star_health_hazard needs 10 seasons of injury episodes; sf-injury-data admits no clean public dataset, yet role is primary with 'partial' pregame knowability. Reliance is unproven.",
+    "resolution": "RESOLVED: nba.playoff_star_health_hazard role lowered from primary to secondary with why text noting the missing clean 10-season injury dataset; sf-injury-data stays in unresolved.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sf-title-only-majority",
+    "severity": "MINOR",
+    "text": "26 of 31 series are TITLE_ONLY (e.g. KXNBAFINBLOWOUT, KXNBA3PEAT, KXNBANHL combo, KXNBAPLAYOFFWINS); disclosed, but the combo (KXNBANHL) and blowout definitions change which inputs apply and are not listed in unresolved individually.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sf-combo-blowout-definitions",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "season_stat_markets": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: games-played distribution (injury, load management, qualification rule cliff) -> per-game rate posterior (minutes, role, usage, teammates, shrinkage to preseason projection) -> aggregation form: average (rounded, sqrt(n) variance), maximum over correlated candidates, run-length for streaks, team record extremes -> settlement rules (regular season only, tie 1/N). Evidence: NO_LIVE_SERIES; neighbouring KXNBASTATAVG/PLAYERHIGHSCORE/WINSTREAK sit in the unreg archetype and carry rules text. The author's s1-s5 are what I would write, with sensible new inputs. Differences: rules from those neighbours were available but this record says they are unknown.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "ss-rules-available-unused",
+    "severity": "MAJOR",
+    "text": "settlement_definition and variants say regular-season-only vs playoffs/play-in 'unknown without rules text' and qualification/tie treatment unverified, yet three sampled neighbour series (KXNBASTATAVG, KXNBAPLAYERHIGHSCORE, KXNBAWINSTREAK) state: only regular season counts, Play-In/playoffs/All-Star/Cup final excluded, 'League minimum qualification thresholds do not apply', zero games means average zero, rounded published figure. The record cites the qualification line but still marks nba.games_played_eligibility KEEP_PRIMARY and qualification_probability primary 'G_min read from the contract'; for the live contracts the cliff does not exist. The input priority and the cliff interactions need revision.",
+    "resolution": "RESOLVED: settlement_definition and variants now use the KXNBASTATAVG, KXNBAPLAYERHIGHSCORE and KXNBAWINSTREAK rules (no qualification, zero games averages zero, rounded published figure, regular season only); games_played_eligibility audited KEEP_CONTEXT, qualification_probability role context, cliff interaction and nonlinearity made conditional, series_mapping_issues added.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "ss-streak-mismatch",
+    "severity": "MAJOR",
+    "text": "The streak form is modelled as player consecutive-game threshold streaks (nba.streak_hit_persistence, primary), but the only live streak contracts are team win streaks (KXNBAWINSTREAK, KXNBATEAMWINSTREAK, KXNBALASTTOLOSE). No player-threshold-streak series exists in the ledger, so a primary input is designed for a contract never observed, while the real streak mechanism (team run-length over 30 teams) is not here.",
+    "resolution": "RESOLVED: streak_hit_persistence demoted to context (no player-threshold series in ledger); added identical new_input nba.longest_streak_max_and_tie_model for team win streaks in s4, distribution coverage and team dataset; KXNBAWINSTREAK and KXNBALASTTOLOSE recorded in series_mapping_issues.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "ss-duplicate-series-ownership",
+    "severity": "MINOR",
+    "text": "Team win streaks and team records (KXNBARECORD, KXNBAMOSTWINS) are covered in three archetypes (here, unreg, season_futures_team) with different input ids for the same mechanism; no cross-reference or DUPLICATE_OF is recorded.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:ss-ownership-overlap",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "ss-pbp-weights",
+    "severity": "MINOR",
+    "text": "Prior weights n_prior 25/35/40 games are labelled 'to be estimated by backtest' - fine, but a research-only gate cannot rely on them; present as placeholders.",
+    "resolution": "RESOLVED: the n_prior 25/35/40 values in nba.stat_rate_posterior measurement are now explicitly labelled placeholders to be estimated by backtest, not fitted estimates.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "series_and_cup": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain (for the contracts named): final regular-season standing distribution (ratings with uncertainty, availability, schedule, tiebreaks) -> seed as end-of-regular-season conference seed before the play-in (verified text) -> play-in bracket -> playoff bracket counts (home games, undefeated, triple doubles) -> Cup group tiebreaks with point differential and knockout -> draft lottery combinatorics with pick ownership and prospect board. Evidence: only KXNBASEEDOU has text; 19 series TITLE_ONLY, none a series winner or length. The author's s1-s5 match, and the disclosure sc-archetype-mismatch is honest. Differences: undefined stage input, series ownership overlap with season_futures_team, and unverifiable claims on draft/Cup contracts.",
+  "verdict": "PASS_WITH_OPEN_GAPS",
+  "findings": [
+   {
+    "id": "sc-draft-board-undefined",
+    "severity": "MAJOR",
+    "text": "Stage s3 relies on nba.draft_board, which is neither in this archetype's existing_inputs/input_audit nor in new_inputs (it only exists in the catalog for another archetype and its catalog definition includes 'market may lead public mocks'). Seven live series (KXNBADRAFTTOP5/10/15/20/30, TOP3, TOP5ROTY) depend on the prospect-slot layer, so the required input for a third of the live series is unaudited and possibly market/consensus-derived.",
+    "resolution": "RESOLVED: nba.draft_board (its catalog text allows a market lead) removed from stage s3 and the draft dataset feeds and replaced by new market-free input nba.prospect_slot_probability_model (weighted public boards, Plackett-Luce choice model, no price), with its own required_data row; the draft series are listed in series_mapping_issues.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sc-ratings-undefined-here",
+    "severity": "MINOR",
+    "text": "nba.ratings and nba.lineup_adj_rating are KEEP_PRIMARY/SECONDARY but the record says standings simulation is the engine; no standings_sim/tiebreak ledger input in this archetype (those live in season_futures_team). A seed contract cannot be priced from the listed inputs alone.",
+    "resolution": "RESOLVED: nba.standings_sim (catalog input) added to stage s1 and to the standings dataset feeds so seed and playoff contracts have the simulation layer; tiebreak handling remains in nba.play_in_path_model, and ownership overlap with season_futures_team recorded as sc-ownership-overlap.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sc-ownership-overlap",
+    "severity": "MINOR",
+    "text": "KXNBAPLAYOFF/PLAYIN/PIADVANCE/seed series and season_futures_team's playoff/ seed mechanisms overlap; the catalog blueprint (series winner, series length) is unrepresented by any live series while KXNBAFINALSEXACT (series length) sits in season_futures_team. Series-to-archetype mapping should be reconciled.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sc-ownership-overlap",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sc-draft-claims",
+    "severity": "MINOR",
+    "text": "'14% top-pick odds for each of the worst three' and 'teams cannot fall more than four positions' are correct for the current lottery but are asserted, and lottery rules can change; sc-draft-data discloses the board gap. KXNBATOP5ROTY semantics (Top 5 draft ROTY?) is unknown and not listed in unresolved.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sc-top5roty-semantics",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sc-play-in-home-games",
+    "severity": "MINOR",
+    "text": "KXNBAPLAYOFFHOMEGAMES / KXNBAPLAYOFFHOST: whether play-in games count is flagged as unknown; the home-game distribution input assumes the 2-2-1-1-1 format without that.",
+    "resolution": "RESOLVED: reviewer partly misread; the input already conditioned play-in home games on the contract (unknown) and sc-titleonly lists it. Measurement now produces both with/without play-in pmfs explicitly, and 2-2-1-1-1 is the NBA home pattern in every best-of-seven round.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sc-score-resid-label",
+    "severity": "MINOR",
+    "text": "nba.score_resid is WEAK (a residual against market lines) yet stage s4 and an interaction still use it for Cup tiebreak margin; the raw single-game margin distribution is not defined as a replacement input.",
+    "resolution": "RESOLVED: nba.score_resid (WEAK, market residual) replaced in stage s4, the Cup interaction and feeds by new input nba.single_game_margin_pmf built from ratings and scores with blowout compression, no price used; audit verdict WEAK retained.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "steals_blocks_turnovers": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: participation/minutes mixture (low counts scale with court time) -> supply: opponent rim attempts while he is on court and live-ball turnovers by opponent handlers -> player conversion (contests to blocks, deflections to steals) -> official-scorer credit noise -> Poisson/negative-binomial count at 0.5-3.5 strikes with stocks as a sum of two dependent counts -> settlement. Rules verified: KXNBABLK 3+ blocks (floor 2.5), KXNBASTL 3+, KXNBASTOCK combined 4+ with fair-price for inactive; OT not stated. The author's s1-s5 with deflection, rim-contest, live-ball profile and stocks dependence matches mine. Differences: source feasibility for hustle/rim data, no turnover series, and garbage input.",
+  "verdict": "PASS_WITH_OPEN_GAPS",
+  "findings": [
+   {
+    "id": "sbt-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sbt-turnover-no-series",
+    "severity": "MINOR",
+    "text": "Archetype name and families include player_turnovers but the ledger has no turnover series; nba.turnover_pressure KEEP_PRIMARY and nba.live_ball_turnover_profile target steals supply, not a player's own turnovers. Disclosed (sbt-no-turnover-series) but the turnovers branch has no inputs for own-turnover mechanism (handler load, usage).",
+    "resolution": "RESOLVED: reviewer correct; variants now state this record prices steals, blocks and stocks only, and sbt-no-turnover-series records that no input models a player own turnovers (handler load, usage, pressure), so no coverage of a turnover branch is claimed.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sbt-hustle-source",
+    "severity": "MAJOR",
+    "text": "nba.deflection_rate (primary) and nba.rim_contest_volume_on_court (primary) depend on hustle and defensive-dashboard data. leaguehustlestatsplayer is season aggregate; boxscorehustle game-level data and 'shots defended at rim' per game are flagged SOURCE_UNVERIFIED by the author and I could not confirm them, so two primary inputs may exist only at season grain or only from paid Second Spectrum data.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sbt-hustle-access",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sbt-scorer-bias-size",
+    "severity": "MINOR",
+    "text": "nba.scorer_bias KEEP_SECONDARY with an extra dispersion index 0.1-0.2 is unverified (sbt-credit-bias-size admits it). The interaction scorer_bias x stat_dist is not a real interaction: it is just added dispersion.",
+    "resolution": "RESOLVED: the 0.1-0.2 dispersion index is relabelled an unverified hypothesis in stage s4 and sbt-credit-bias-size, and the scorer_bias x stat_dist interaction is rewritten as a mean shift whose effect depends on distribution shape, with a test separating mean shift from dispersion.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sbt-ot-unstated",
+    "severity": "MINOR",
+    "text": "OT correctly flagged as not mentioned; but 'adding about five minutes in about 6% of games' sits in the mechanism as fact.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sbt-ot-inclusion",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "summer_league_games": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: who plays (rookies, two-way, shutdowns), minutes plans and rotation, team strength as minutes-weighted translated player talent with large uncertainty, format-specific game environment (period length, OT rule, pace, variance), incentive/tournament state, settlement. Evidence: NO_LIVE_SERIES; KXNBASUMMER and KXNBASUMMERPTS (TITLE_ONLY) are filed under season_futures_team and player_points. The author's s1-s5 and four inputs match my derivation. Differences: contracts for this archetype cannot be read, no source verification of format, and inputs labelled primary rest on unarchived announcement data.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "sl-no-contract-evidence",
+    "severity": "MAJOR",
+    "text": "No Kalshi series maps here; the only live Summer League series (KXNBASUMMER, KXNBASUMMERPTS) are in other archetypes. Every settlement claim (OT procedure, spread/total OT treatment, game length) is unverified, and the sl-format-facts item admits current format values are unconfirmed. Inputs such as nba.sl_format_scoring_baseline (primary) depend on format (40 vs 48 minutes) that is not known, so its measurement cannot be defined.",
+    "resolution": "RESOLVED: reviewer correct; settlement_definition now states every claim is conditional, lists KXNBASUMMERTOTAL/SPREAD/KXNBASUMMER/KXNBASUMMERPTS in series_mapping_issues (rules status NO_MARKETS_LISTED, TITLE_ONLY), and nba.sl_format_scoring_baseline stores rates per minute with game length L read from event rules instead of assuming 40 or 48.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sl-announcement-data-primary",
+    "severity": "MAJOR",
+    "text": "nba.sl_minutes_plan_hazard (primary) and nba.news (KEEP_PRIMARY) rely on beat-writer posts with no structured archive (sl-announcement-data); the record marks pregame_knowable 'partial' but the historical table needed to fit hazards by draft slot may not be obtainable, so the primary role is unsupported.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sl-announcement-data",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sl-player-prop-ownership",
+    "severity": "MINOR",
+    "text": "KXNBASUMMERPTS (player points) would need minutes-plan inputs from this archetype but sits under player_points with no Summer League inputs; cross-reference missing.",
+    "resolution": "RESOLVED: KXNBASUMMERPTS added to this record series_mapping_issues and variants now state which inputs its contracts need and that neither record covers them until remapped.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sl-numbers-asserted",
+    "severity": "MINOR",
+    "text": "'margin sd about 14-16 per 40-48 minutes' and 'sd of team rating 5-8 per 100 possessions' are asserted without source; label as priors to be estimated.",
+    "resolution": "RESOLVED: the 5-8 per 100 possessions team-rating sd and 14-16 margin sd are relabelled assumed, unsourced priors to be estimated, in stages s3 and s4 descriptions and distributions.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "team_total": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain: shared possessions (joint pace, not an average) -> each team's points per possession via four factors against the opponent's defense -> availability and unit changes -> shooting and free-throw variance (three-point luck, crew) -> game-script bend of team points vs expected margin (garbage time asymmetric) -> OT mixture if counted -> binary above a half-point strike. Rules verified: 'scores more than 135.5 points' game-wide, 48h postponement, fair-price on cancellation; OT unstated (correctly flagged). The author's s1-s6 and four new inputs match mine. Differences are limited to the unsupported OT numbers, an unnecessary spread-based input labelled primary, and the strike-ladder note.",
+  "verdict": "PASS_WITH_OPEN_GAPS",
+  "findings": [
+   {
+    "id": "tt-garbage-market",
+    "severity": "MAJOR",
+    "text": "nba.garbage keeps the catalog definition 'Blowout / garbage-time probability from spread' (a closing-line quantity) and is audited KEEP_PRIMARY/SECONDARY while the audit reason says it 'must be rebuilt from ratings'. No new_input defines the ratings-based replacement, and the archetype's input list has no team rating (nba.ratings / nba.off_rtg / nba.def_rtg) to rebuild it from. As written a market-derived value is a primary input and the rebuild is an undefined, unsupplied dependency. Add an explicit ratings-and-rotation-history blowout-probability / minutes-vs-margin input, or demote nba.garbage to benchmark.",
+    "resolution": "RESOLVED: nba.garbage re-audited BENCHMARK_ONLY (spread-derived) and replaced everywhere in stage input_ids, category_coverage, interactions, nonlinearities and feeds by new market-free input nba.rating_blowout_minutes_curve (ratings-implied margin, residual spread, minutes-vs-margin curve), with a new required_data row.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "tt-ot-default-assumed",
+    "severity": "MINOR",
+    "text": "Mechanism s5 and nonlinearity say OT 'if counted' adds 11-13 points per team; this is a correct per-team size, but the team-total mechanism stays unresolved on whether OT counts and no alternative treatment (regulation-only) is built into any input, only nba.ot_model as context.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:tt-ot-inclusion",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "tt-margin-curve-source",
+    "severity": "MINOR",
+    "text": "nba.team_points_margin_curve requires 'rating-based expected margin built from ratings (not the spread)', but the archetype's rating inputs (nba.off_rtg, nba.def_rtg, nba.lineup_adj_rating) must be available point-in-time over 5 seasons; vintage rule not stated for ratings.",
+    "resolution": "RESOLVED: added an explicit point-in-time vintage rule to nba.team_points_margin_curve measurement (daily stored pre-tipoff snapshots of off_rtg, def_rtg and lineup adjustment over the 5 seasons; no end-of-season or revised ratings).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "tt-pace-claim",
+    "severity": "MINOR",
+    "text": "'slower style tends to dominate' and the 0.55 weight on the slower team are asserted as an example, not found; hypothesis.",
+    "resolution": "RESOLVED: the slower-team-dominates statement and the 0.55 weight are relabelled a hypothesis and an illustrative free parameter to be estimated, in stage s1, the joint pace input mechanism, measurement and rationale text.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "tt-ladder-strike",
+    "severity": "MINOR",
+    "text": "Strike 135.5 for OKC is far above a team's mean (about 115-120), suggesting rungs; disclosed tt-strike-ladder. The tail-dependent rungs mean the tail of team points (three-point variance, OT) matters more than the mean, which the record treats only as a variance input.",
+    "resolution": "RESOLVED: nba.team_points_variance_by_style now outputs upper-tail quantiles and P(points >= strike) for regulation-only and overtime-included versions, and tt-strike-ladder notes tail-driven rungs; the strike set itself stays unresolved.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ },
+ "unreg:team_and_player_counting_specials": {
+  "reviewer": "independent-NBA-b",
+  "date": "2026-11-07",
+  "rederivation_notes": "My chain per series group: (a) KXNBASTATAVG season three-point average = games played x attempts x make probability shrunk, with rounded published figure and zero games = 0; (b) KXNBAPLAYERHIGHSCORE = max over games of a heavy-tailed points distribution with OT included; (c) division winners, 20-game win streak, last undefeated team = team simulation from ratings, availability, schedule, with tiebreak order, run-length chain and day-level 1/N ties; (d) KXNBAMATCHUP Cup Finals pairing at qualification. Required inputs: team ratings with uncertainty and availability for (c)/(d), standings/tiebreak state, per-player rate posteriors. Rules verified verbatim for all seven quoted series. The author's six new inputs cover (a)-(d) structure. Key difference: team-strength inputs are absent for the eight team contracts.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "sp-team-strength-missing",
+    "severity": "MAJOR",
+    "text": "Eight of eleven live series (five/six division winners, KXNBAWINSTREAK, KXNBALASTTOLOSE, KXNBAMATCHUP) are team simulations whose game win probabilities come 'from ratings and rest', yet no team-rating, availability-adjusted rating or preseason-prior input is in input_audit or new_inputs; the existing inputs are the DD-oriented list. talent_strength is marked COVERED with division_race_tiebreak_state and team_win_streak_hazard, which are state/hazard constructs, not strength. nba.ratings, nba.lineup_adj_rating, nba.preseason_roster_aging_prior (defined in season_futures_team) are required but not listed.",
+    "resolution": "RESOLVED: added nba.ratings, nba.lineup_adj_rating, nba.rest_travel and a copy of new input nba.preseason_roster_aging_prior to stage s4, talent_strength and role coverage and the team dataset feeds (new roster/prior dataset row); coverage note now says streak and tiebreak state inputs consume strength rather than measure it.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sp-undefined-stage-inputs",
+    "severity": "MINOR",
+    "text": "Stage/interaction ids m.rules_text (s6) and nba.rest_travel (interaction cup_finals_pair x rest_travel) are not in this archetype's audit or new_inputs; nba.rotation is WEAK yet used in s1 and the data table feeds.",
+    "resolution": "RESOLVED: nba.rotation (WEAK) removed from s1 and the injury feeds and replaced by nba.lineup_adj_rating; m.rules_text and nba.rest_travel are catalog inputs the validator accepts (audit covers only this archetype pre-existing inputs), and nba.rest_travel is now also in s4 and the team feeds so it is a staged, fed input.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sp-streak-ties-claim",
+    "severity": "MINOR",
+    "text": "division_race_tiebreak_state rationale says 'a tie occurs in about 10% of divisions' and the 54-point needing '38 or more minutes' are asserted with no computation; label as unverified. Also 'about 60 windows each' for 20-game streaks should be 63 (82-19).",
+    "resolution": "RESOLVED: the 10% division-tie rate and the 38-minute claim for 54 points are relabelled unverified estimates to be computed, and the 20-game streak window count is corrected from about 60 to 63 (82 games minus 19).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sp-cup-bracket-assumption",
+    "severity": "MINOR",
+    "text": "cup_finals_pair_probability assumes conference-based semifinals so the pair is a product of two independent outcomes; disclosed (sp-cup-bracket-structure) but the KXNBAMATCHUP sample (Washington vs Utah) is consistent only if bracket independence holds; shared Las Vegas neutral-site/rest correlation is ignored.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sp-cup-bracket-structure",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sp-team-streak-duplication",
+    "severity": "MINOR",
+    "text": "KXNBAWINSTREAK and KXNBALASTTOLOSE-style mechanisms also appear in season_futures_team (KXNBATEAMWINSTREAK) and season_stat_markets with different input ids; no cross-reference.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:sp-ownership-overlap",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "sp-source-agencies-rounding",
+    "severity": "MINOR",
+    "text": "avg_rounding_and_games_state assumes one-decimal round-half-up of the Source Agencies' published figure; the text only says 'rounded figure as reported'; disclosed in sp-source-agencies.",
+    "resolution": "RESOLVED: nba.avg_rounding_and_games_state measurement now states the decimal places d=1 as an unconfirmed assumption (rules say only rounded figure as reported by the Source Agencies) and parameterises the threshold as strike minus half a rounding unit; sp-source-agencies stays open.",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ }
+}

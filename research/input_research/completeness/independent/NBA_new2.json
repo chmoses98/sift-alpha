@@ -1,0 +1,73 @@
+{
+ "unreg:series_cumulative_points": {
+  "reviewer": "independent-NBA-new2",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain, written from the two rules samples before reading the record: (1) availability paths for both rosters over the remaining games (injury report vintage plus a per-game health hazard); (2) per-game possessions under playoff conditions (slower than regular season, matchup tempo) times opponent-adjusted points per possession incl. FT volume under the playoff whistle; (3) per-game joint (home pts, away pts) with venue under 2-2-1-1-1, rest days, shooting noise, garbage-time truncation, OT incidence; (4) game winner from the margin feeds a stopping rule at 4 wins, so N in {4..7} is endogenous and coupled to the margins the spread contract sums; (5) a series-level shared factor (same opponent 4-7 times) inflates the variance of the sums; (6) STATE: when a decision is taken mid-series the points already banked by each team, the series score and the next venue condition everything, and the total rung can already be decided once the running sum reaches K; (7) settlement: total is '>=' an integer strike (no tie); spread is 'more than' a half-point strike for a named team; rules say only 'cumulative points scored throughout the series', silent on OT, incomplete series, early settlement and source. My expectation for the shapes: series total a mixture over N with modes ~N x per-game total (~215-225) whose troughs are shallow but not flat given within-mode sd ~45-65; cumulative differential bimodal for near-even matchups because its sign follows the series winner. After comparing: the record matches stages 1-5 and 7 well and verifies its quotes verbatim (all three quotes are exact substrings), but it omits banked points-to-date as an input (stage 6), describes the differential as unimodal, overstates flatness between length modes, and adds three new inputs whose content already sits inside nba.series_game_conditional_state / nba.series_model / nba.series_length_distribution without declaring overlap.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "F1",
+    "severity": "MAJOR",
+    "text": "Missing input: points already scored by each team in completed games of the series (running cumulative total and running differential). The simulator's raw_data lists only 'current series state (wins each side, games played, next venue)' and nba.series_game_conditional_state's catalog measurement lists series score, rest, previous-game margin and injury change, but no banked points. For any decision after game 1 the banked sum is the largest single determinant of both contracts (e.g. a 900 total rung after three games at ~650 banked), and the record itself notes the total can be decided early ('decided as soon as the running sum crosses K'). Needs an explicit input/data field (per-game final team points to date, with as-of timestamp) feeding nba.series_sum_stopping_simulator.",
+    "resolution": "RESOLVED: added new input nba.series_banked_points_state (running banked total and differential, as-of rule, strike-shift conversion) to new_inputs, catalog_entry, stages s4-s6, coverage, required_data feeds, plus a threshold interaction and nonlinearity.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F2",
+    "severity": "MAJOR",
+    "text": "Undisclosed duplication of series-dependence and state effects. Existing nba.series_game_conditional_state already measures 'margin of the previous game', 'series-level random effect (sd about 2 points)' and an 'elimination-game dummy'; nba.series_model already includes 'game-to-game correlation' and 'adjustments'; nba.series_length_distribution already carries a 'series dependence parameter (game-to-game correlation about +0.05 on margin)'. The new nba.series_shared_scoring_factor (margin part), nba.series_game_number_drift ('team that lost the previous game tends to play better') and nba.clinch_elimination_margin_profile re-estimate the same effects under new ids. input_audit keeps all old ones as KEEP_* and no DUPLICATE_OF or scope split is given, so the catalog would hold 3-4 separately fitted dependence parameters that can contradict each other. Either narrow the new inputs to what is genuinely new (shared TOTAL factor, game-number drift of totals, close-out blowout/truncation profile) or mark overlaps DUPLICATE_OF.",
+    "resolution": "RESOLVED: narrowed nba.series_shared_scoring_factor to total-side dependence, nba.series_game_number_drift to game-number effects and nba.clinch_elimination_margin_profile to spread/blowout profile; margin-level parameters are consumed from nba.series_game_conditional_state (scope split in input_audit).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F3",
+    "severity": "MAJOR",
+    "text": "Role/structure inconsistency: nba.series_length_distribution is KEEP_PRIMARY and computed (per catalog) by an independent dynamic programme over win probabilities, while the new primary nba.series_sum_stopping_simulator generates length jointly with points 'rather than combined independently'. Using both as primary inputs reintroduces exactly the independence the record warns against. Length should be an output of the simulator (secondary/diagnostic), not a separate primary input; likewise nba.series_sum_stopping_simulator is an aggregation model rather than an information input (category 'distribution'), which should be stated.",
+    "resolution": "RESOLVED: nba.series_length_distribution downgraded to KEEP_SECONDARY in input_audit and catalog_entry (diagnostic, simulator output); simulator now stated to be an aggregation model, not a raw information input; s4 text updated accordingly.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F4",
+    "severity": "MINOR",
+    "text": "Wrong shape claim for the spread contract: s5 says the differential is 'unimodal but with length-dependent variance and a sign tied to the series winner'. A sum whose sign follows the series winner is bimodal (two lumps either side of 0) for near-even matchups and only unimodal for lopsided ones; rungs near 0/9.5 are priced off the trough. The simulator would reproduce it, but the stated distribution should be corrected.",
+    "resolution": "RESOLVED: s5 distribution and mechanism.summary corrected: the differential is bimodal for near-even matchups (sign follows the series winner), unimodal only for lopsided ones.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F5",
+    "severity": "MINOR",
+    "text": "Overstated non-linearity: 'flat between length modes' / 'sensitivity ... near zero between modes'. With per-game total ~215-225, single-game sd 18-20, a positive shared factor and pre-series mean uncertainty multiplied by N, within-mode sd is roughly 45-65 points against a mode spacing of ~220, so troughs retain a sizeable fraction of peak density; the curve is a soft staircase, not flat. Wording should be quantitative and conditional on the fitted shared-factor size (u4).",
+    "resolution": "RESOLVED: the staircase nonlinearity, interaction 1 and the catalog_entry hypothesis now say soft staircase with within-mode sd about 40-65 points against about 220 spacing, not flat between modes, conditional on shared-factor size (u4).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F6",
+    "severity": "MINOR",
+    "text": "Relevant existing catalog inputs not audited or used: nba.ot_final_margin_pmf (the record relies on 'a point mass of small margins from OT games' without it), nba.team_points_margin_curve and nba.rating_blowout_minutes_curve (market-free blowout/garbage-time shape, overlapping nba.margin_decay_after_pull), and nba.playoff_matchup_assignment_shift (playoff-specific defensive assignment, relevant to s2). Either add or state why excluded.",
+    "resolution": "RESOLVED: audited and added nba.ot_final_margin_pmf, nba.team_points_margin_curve (secondary), nba.rating_blowout_minutes_curve and nba.playoff_matchup_assignment_shift (context) to catalog_entry, input_audit, stages s2/s3 and feeds; overlap with margin_decay_after_pull stated.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F7",
+    "severity": "MINOR",
+    "text": "Blueprint market inputs silently dropped: game_total blueprint lists m.quote_history (primary), m.external_lines, m.ladder_structure, m.volume_oi, m.trade_tape and nba.market_calibration_bias; the record omits all without a BENCHMARK_ONLY note. Excluding market-derived values from the predictive input list is correct, but ladder monotonicity across rungs (m.ladder_structure) and executable price are needed for evaluation and the omission should be disclosed.",
+    "resolution": "RESOLVED: m.quote_history, m.external_lines, m.ladder_structure and nba.market_calibration_bias are now listed in catalog_entry as context and audited BENCHMARK_ONLY, excluded from all stages and coverage; ladder monotonicity kept as evaluation check feeding from Kalshi rung data.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F8",
+    "severity": "MINOR",
+    "text": "Settlement wording: settlement_definition asserts 'half-point strikes rule out ties' and variants imply multiple rounds, but only one strike (9.5) and one Finals event were sampled; a Kalshi events query for KXNBASERIESPTSSPREAD returned only KXNBASERIESPTSSPREAD-26NYKSASFIN, suggesting the series may exist only for the Finals. The generalisation to integer strikes/earlier rounds is unverified; u3 should say so and the 'no ties' claim should be scoped to observed strikes. OT, incomplete-series and source-of-truth gaps are correctly flagged as open (u1, u2), not inferred.",
+    "resolution": "RESOLVED: settlement_definition, the spread rules_evidence 'establishes' text and u3 now scope the no-tie claim to the observed 9.5 strike and mark other strikes and rounds as unverified (evidence pack samples only the Finals event for both tickers).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F9",
+    "severity": "MINOR",
+    "text": "SOURCE_UNVERIFIED: the simulator's measurement requires 'a correlation between total and |margin| fitted on 2004+ playoff games' and series random effects with ~15 series/season; Basketball-Reference exposes period scoring and game number, but 'series id'/'game number' as structured fields in NBA Stats leaguegamelog is not confirmed (game number is derivable from GAME_ID/date, which should be stated).",
+    "resolution": "DEFERRED_TO_UNRESOLVED:u6",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ }
+}

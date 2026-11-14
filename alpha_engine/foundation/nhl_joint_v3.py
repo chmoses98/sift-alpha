@@ -436,7 +436,8 @@ def ols(X, y):
 
 
 # ====================================================================== main pipeline
-def run(log=print, arch_pre=None):
+def run(log=print, arch_pre=None, hook=None):
+    """``hook`` (optional, used by ``nhl_input_probe``) receives the fitted 0.3 head model and game frame; it never alters the evaluation."""
     import pandas as pd
     games, gfiles = J.load_games(); mp, mfiles = V.load_moneypuck_ext()
     docs = repos_dir() / "NHL-edge-finder" / "docs" / "research"
@@ -559,6 +560,8 @@ def run(log=print, arch_pre=None):
         k, h0v, _ = fit_ot3(h_[ties], a_[ties], G["home_win"][ties], h0)
         return Model3(ll, jp, k, h0v), gam
     head, gam03 = model03(F)
+    if hook is not None:
+        hook(dict(G=G, head=head, sg=sg, tg=tg, season=season))
     arms = {}
     if acc_team:
         arms["a_no_team_extensions"] = (model03(F, names=names02)[0], "0.3 team-rate extensions removed (0.2 team terms only)")

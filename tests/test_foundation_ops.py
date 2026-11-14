@@ -263,6 +263,15 @@ class LoopHealthTests(unittest.TestCase):
         h = loop.finish([self.OK], "2027-03-01T00:00:00Z")
         self.assertEqual(h["overall"], "DEGRADED"); self.assertTrue(h["stale"])
 
+    def test_old_evaluation_data_degrades_health(self):
+        now = json.loads((OPS / "market_watch.json").read_text())["observed_utc"]
+        h = loop.finish([self.OK], now)
+        self.assertEqual(set(h["evaluation_freshness"]), {"NBA", "CBB", "NHL"})
+        newest = max(v["data_through"] for v in h["evaluation_freshness"].values())
+        import datetime as dt
+        later = (dt.date.fromisoformat(newest) + dt.timedelta(days=loop.EVAL_STALE_DAYS + 1)).isoformat() + "T00:00:00Z"
+        self.assertTrue(any("evaluations read data only through" in x for x in loop.finish([self.OK], later)["stale"]))
+
     def test_every_step_has_a_hard_timeout(self):
         self.assertEqual(set(loop.STEP_TIMEOUT_S), {"market_watch", "ledger", *loop.CHALLENGERS})
         self.assertLessEqual(sum(loop.STEP_TIMEOUT_S.values()), 75 * 60)

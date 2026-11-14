@@ -65,10 +65,19 @@ export function reconcile(ledger) {
   return {inputs: inputs.length, markets: Object.keys(ledger.markets).length, datasets: Object.keys(ledger.datasets).length, bySport};
 }
 
-// Short tally for a challenger card: per kind of reference, how many pooled result rows got each verdict (computed, never typed).
+// Short tally for a challenger card: per kind of reference, how many result rows got each verdict (computed, never typed).
+// The kind comes from the ledger (alpha_engine.foundation.contract.reference_kind, fail-closed), not from guessing at names here.
+export const REF_LABEL = {CURRENT_MODEL: "the current model", MARKET: "the market price", PRIOR_CHALLENGER: "an earlier challenger", BASELINE: "a simple baseline"};
 export function referenceTally(ch) {
-  const kind = r => r.startsWith("market") ? "the market price" : r.startsWith("incumbent") || r.startsWith("shadow") ? "the current model" : "a simple baseline";
   const out = {};
-  for (const r of ch.results) { const k = kind(String(r.reference)); (out[k] ||= {}); out[k][r.verdict] = (out[k][r.verdict] || 0) + 1; }
-  return ["the current model", "the market price", "a simple baseline"].filter(k => out[k]).map(k => ({against: k, rows: Object.values(out[k]).reduce((a, b) => a + b, 0), verdicts: out[k]}));
+  for (const r of ch.results) { const k = r.reference_kind; (out[k] ||= {}); out[k][r.verdict] = (out[k][r.verdict] || 0) + 1; }
+  return Object.keys(REF_LABEL).filter(k => out[k]).map(k => ({against: REF_LABEL[k], kind: k, rows: Object.values(out[k]).reduce((a, b) => a + b, 0), verdicts: out[k]}));
 }
+
+export const BOARD_LABEL = {NO_CHALLENGER: "no research challenger yet", NO_VALIDATED_GAIN: "no validated gain", VALIDATED_VS_CURRENT_MODEL_ONLY: "validated gains over the current model only; none over the market",
+  VALIDATED_VS_MARKET: "validated gain over the market price on at least one row"};
+export const BOARD_KIND = {NO_CHALLENGER: "plain", NO_VALIDATED_GAIN: "unv", VALIDATED_VS_CURRENT_MODEL_ONLY: "chipwarn", VALIDATED_VS_MARKET: "ok"};
+export const GAP_LABEL = {WORSE_THAN_MARKET: "worse than the market", BETTER_THAN_MARKET: "better than the market", NO_DETECTABLE_DIFFERENCE: "no detectable difference"};
+export const GAP_KIND = {WORSE_THAN_MARKET: "miss", BETTER_THAN_MARKET: "ok", NO_DETECTABLE_DIFFERENCE: "unv"};
+// Days between the newest data a sport's challengers read and the day the page is viewed (freshness is shown, never hidden).
+export const ageDays = (day, now = new Date()) => day ? Math.max(0, Math.floor((now - new Date(day + "T00:00:00Z")) / 864e5)) : null;

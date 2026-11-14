@@ -133,6 +133,24 @@ def verdict_from(ci_lo, ci_hi, p_holm, replicated: bool) -> str:
     return "INCONCLUSIVE"
 
 
+REFERENCE_KINDS = ("CURRENT_MODEL", "MARKET", "PRIOR_CHALLENGER", "BASELINE")
+
+
+def reference_kind(reference: str) -> str:
+    """What a result row is compared against. Fail-closed: an unrecognised reference raises, so a new evaluation cannot be
+    silently shown as "a simple baseline" when it is really the market price or the production model."""
+    r = str(reference).lower()
+    if "kalshi" in r or r.startswith(("market", "prospective_market")):
+        return "MARKET"
+    if r.startswith(("challenger:", "prospective:alpha", "alpha-")):
+        return "PRIOR_CHALLENGER"
+    if r.startswith(("incumbent", "shadow", "prospective_frozen", "pf_frozen", "sim_frozen", "frozen:", "production:")):
+        return "CURRENT_MODEL"
+    if r.startswith(("naive", "baseline", "a0 ", "a1 ", "ablation", "reproduction:")):
+        return "BASELINE"
+    raise ValueError(f"unclassified reference {reference!r}: name it market:*, incumbent:*, shadow:*, challenger:*, baseline:* or naive:*")
+
+
 CHECK_BASES = ("COMPUTED", "ATTESTED")
 ATTESTED = "ATTESTED"   # pass as ``passed`` for a design statement that the run does not independently compute
 
@@ -179,6 +197,10 @@ def validate_evaluation(doc: dict) -> list:
         for k in ("market_family", "archetypes", "metric", "reference", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "verdict"):
             if k not in r:
                 errs.append(f"result {r.get('market_family')}/{r.get('metric')}: missing {k}")
+        try:
+            reference_kind(r.get("reference"))
+        except ValueError as e:
+            errs.append(str(e))
         if r.get("verdict") not in VERDICTS:
             errs.append(f"result {r.get('market_family')}: bad verdict {r.get('verdict')}")
     if doc["verdict"].get("overall") not in VERDICTS:

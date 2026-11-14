@@ -62,7 +62,9 @@ def write_json(path, doc) -> None:
     """Deterministic JSON (sorted keys, 6-dp floats, NaN -> null) so a re-run on the same inputs is byte-identical."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_clean(doc), indent=1, sort_keys=True) + "\n")
+    tmp = path.with_name(path.name + ".tmp")       # atomic replace: a killed step can never leave a truncated evidence file
+    tmp.write_text(json.dumps(_clean(doc), indent=1, sort_keys=True) + "\n")
+    os.replace(tmp, path)
 
 
 # ------------------------------------------------------------------ scoring helpers (vectorised)

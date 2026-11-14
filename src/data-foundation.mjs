@@ -5,8 +5,8 @@ export const STAGE_LABEL = {
   PRODUCTION_APPROVED: "Production approved", PRODUCTION_ACTIVE: "Production active"};
 export const OUTCOME_KIND = {OK: "ok", PARTIAL: "chipwarn", MISSING: "plain", UNKNOWN: "unv", BLOCKED: "miss", FAILED: "miss", REJECTED: "miss"};
 export const OUTCOME_LABEL = {OK: "reached", PARTIAL: "partial", MISSING: "missing", UNKNOWN: "unknown", BLOCKED: "blocked", FAILED: "failed", REJECTED: "rejected"};
-export const VERDICT_KIND = {VALIDATED_IMPROVEMENT: "ok", IMPROVED_NOT_VALIDATED: "chipwarn", INCONCLUSIVE: "unv", NOT_IMPROVED: "miss", REJECTED: "miss"};
-export const VERDICT_LABEL = {VALIDATED_IMPROVEMENT: "validated improvement", IMPROVED_NOT_VALIDATED: "improved, not validated", INCONCLUSIVE: "inconclusive", NOT_IMPROVED: "not improved", REJECTED: "rejected"};
+export const VERDICT_KIND = {VALIDATED_IMPROVEMENT: "ok", IMPROVED_NOT_VALIDATED: "chipwarn", INCONCLUSIVE: "unv", NOT_IMPROVED: "miss", REJECTED: "miss", DESCRIPTIVE: "plain"};
+export const VERDICT_LABEL = {DESCRIPTIVE: "descriptive only (not in the tested family)", VALIDATED_IMPROVEMENT: "validated improvement", IMPROVED_NOT_VALIDATED: "improved, not validated", INCONCLUSIVE: "inconclusive", NOT_IMPROVED: "not improved", REJECTED: "rejected"};
 export const P0 = ["NBA", "CBB", "NHL"];
 
 export const fmt = n => n == null ? "UNKNOWN" : typeof n === "number" ? n.toLocaleString("en-US") : String(n);

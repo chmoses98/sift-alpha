@@ -64,7 +64,7 @@ Raw rows never enter this repository. Challengers read the owner's sport reposit
 * Health is fail-closed: `HEALTHY` requires every requested step to succeed, the ledger to reconcile to the map and the market watch to be under 8 days old.
   A skipped, failed or timed-out step makes the pass `DEGRADED` or `FAILED`.
 
-`.github/workflows/data-foundation-refresh.yml` runs that pass **only on manual dispatch**. It has no schedule, read-only permissions, a 30-minute
+`.github/workflows/data-foundation-refresh.yml` runs that pass **only on manual dispatch**. It has no schedule, read-only permissions, an 85-minute
 timeout and uploads an artifact instead of committing. **Adding a schedule is an owner decision and has not been made.**
 
 ## 5. Dashboard
@@ -72,7 +72,7 @@ timeout and uploads an artifact instead of committing. **Adding a schedule is an
 `src/data-foundation.jsx` adds the "Data foundation pipeline" section at the top of Input Research:
 Summary (P0 executive cards, all eight sports, unclassified new listings), Markets (sport → market → required inputs → input → datasets and
 collectors → challenger), Challengers (data, features and checks, results, ablations, limitations) and Queue (ranked next engineering actions).
-The summary (≈35 KB) is in the main bundle; the 2.9 MB ledger loads when a detail view is opened.
+The summary (≈0.15 MB) is in the main bundle; the ≈3.4 MB ledger loads when a detail view is opened.
 `pages.yml` now also requires the new section's markers in the published bundle.
 
 ## 6. Source rights (unchanged, and binding)
@@ -140,3 +140,71 @@ Parameters fitted on 2009–2023; test seasons 2024 and 2025 (2,624 games). Sour
 | CBB season-blend study | Multi-season game lake not committed; source rights unresolved. |
 | Scheduled refresh | The workflow is manual-only until the owner approves a schedule. |
 | Published dashboard | GitHub Pages builds `main`; this section is live only after this branch is merged. |
+
+## 9. Phase 2 (2026-11-14, second pass): review fixes, actual frozen incumbents, three more challengers
+
+Agent-built, not human verified. Still RESEARCH_ONLY; every incumbent is retained and nothing is promoted.
+
+    python -m alpha_engine.foundation.sources         # rebuild research/data_foundation_ops/source_acquisition.json
+    python -m unittest tests.test_foundation_sources tests.test_foundation_nba_frozen tests.test_foundation_cbb_venue tests.test_foundation_nhl_v2
+
+### 9.1 Defects found in review of this PR and repaired
+* The ledger showed two NBA inputs (`nba.injuries_pit`, `nba.status_resolution_prob`) as **Validated improvement / prepare for production review**
+  on a component metric (participation Brier, minutes error) although the challenger's overall verdict is "improved, not validated" and the inputs
+  are only partially verified. A validated claim now counts only when the challenger is validated overall **and** the input is fully verified.
+  Validated-improvement inputs: 2 → 0.
+* Dashboard rows outside an evaluation's Holm family displayed a placeholder "Holm p 1.000" and an "inconclusive" verdict. They are now labelled
+  **descriptive only** with no adjusted p-value.
+* Input detail no longer shows "reached" for a stage that sits after an incomplete earlier stage; the "at" chip shows partial as partial.
+* Loop: a lock left by a killed pass is recovered (dead owner, or older than the step budget). Evidence files are written atomically.
+  The manual workflow's timeout (85 min) is now above the summed step timeouts (75 min). It is still manual dispatch only.
+* Known and not changed: several data checks in `nhl_joint.py` / `nba_availability.py` are recorded as passed by construction rather than computed.
+  Changing them would change the committed 0.1 evidence files, so it is left for a follow-up.
+
+### 9.2 Source acquisition: no new external data, and why
+`research/data_foundation_ops/source_acquisition.json` (dashboard: **Sources**) rolls the 121-dataset queue up to 60 sources.
+* **New external records acquired: 0.** One request per host showed that this environment can reach only the ESPN site API, `api-web.nhle.com`,
+  the Kalshi public API and raw GitHub files; 18 other hosts (NBA.com, MoneyPuck, Sports-Reference, Bart Torvik, KenPom, Natural Stat Trick,
+  Daily Faceoff, CollegeBasketballData, NCAA, Kaggle, Hugging Face, Zenodo and others) are denied by its network policy.
+* **No provider terms could be read** (every terms page is unreachable from here), so no rights tier changed. ESPN and the NHL API stay
+  `UNRESOLVED_INTERNAL_ONLY`; "bulk collection awaits an owner rights decision" still stands, and a reachable host is not permission.
+* Of the P0 (NBA, CBB, NHL) missing PRIMARY slots in the queue, **492 sit behind data that is already archived in the owner's repositories**
+  and wait only on a recorded rights decision plus builder work; 206 need a prospective capture schedule; 20 are paid or have no free source.
+
+### 9.3 NBA: `alpha-nba-avail-0.2` against the actual frozen production forecasts: IMPROVED_NOT_VALIDATED
+Reference is now what production really archived before each game (`projection-data@dd561a7`: 51,305 frozen `pf` rows, 2026-10-19 to 11-14,
+almost all `pf-1.3.0`), not a reproduction. 176 games; freeze rule T-60.
+* Frozen incumbent mean absolute error: points 4.48, rebounds 1.83, assists 1.32, threes 0.86, PRA 5.86, minutes 4.77. It beats its shadow baseline.
+* **The market is better.** Against the two-sided Kalshi T-60 mid (118 games) the frozen incumbent's Brier is worse on points (+0.0097
+  [+0.0058, +0.0140]), rebounds (+0.0047), assists (+0.0061) and PRA (+0.0147); threes are inconclusive. Spreads (+0.0105) and team totals (+0.0095)
+  are also worse. The incumbent under-forecasts team points by 2.4 and game totals by 4.8.
+* Why: given the market-implied median, the model's disagreement with it does not predict the outcome (slope about 0.02). Per-minute rate error
+  explains 73–89% of error variance, minutes 9–24%. Information published between the freeze and T-60 is not the cause (90 rows in 30 games).
+* Challenger: a 70/30 blend of the frozen forecast with the 0.1 method. Assists CRPS improves and is validated (−0.0087 [−0.0128, −0.0049],
+  Holm p 0.008, both weeks); points improves but is inconclusive; the blend is rejected for rebounds and threes; ladder recalibration is rejected.
+  Against the market it is still worse on points (+0.0067). The 0.1 method refitted alone is worse than the frozen incumbent on points.
+* Defects in the owner's archive: no T-60 market boards after 2026-11-06 (so only 31 test games have prices, none in the second test week);
+  the `pf-1.3.0` label spans 28 code commits; injury-status captures are written only during forecast runs.
+
+### 9.4 CBB: `alpha-cbb-venue-prior-0.1`: INCONCLUSIVE, all four adjustments rejected for now
+542 games, 13 slates (2026-11-02 to 11-14), frozen `pure-0.2.0`; 8,501 full-game Kalshi contracts.
+* Early-season sigma scale, neutral-site offset, prior-season net (fading with games played) and returning minutes: none changes margin
+  log-likelihood detectably. The incumbent's November sigma is right (error ÷ sigma 1.00 [0.90, 1.11] at zero games seen).
+* Totals are under-projected by 2.7 points [1.3, 4.2] (the question Wave 14 is already testing). Neutral-site totals residual +8.6 [+2.3, +14.6] on 38 games: descriptive only.
+* Both the incumbent and the challenger trail the Kalshi mid: moneyline Brier +0.0164, spread +0.0177.
+* Waves 14, 15 and 16 are untouched and not mature (Wave 14: 23 games of 150 needed; Waves 15–16 analyse no earlier than 2026-12-22).
+* The neutral-site label issue is a frame convention, not a code defect: no wrong probability was published
+  (`research/data_foundation_ops/CBB/upstream_patches/NEUTRAL_SITE_FRAME_CONVENTION.md`).
+* Still not possible: a multi-season chronological prior-weight study. The owner's repository holds end-of-season ratings for 2006–2026 but no
+  game-level lake; its source (SportsDataverse) is rights-unresolved.
+
+### 9.5 NHL: `alpha-nhl-joint-0.2` (starter mixture, goalie quality, xG ratings, rest): IMPROVED_NOT_VALIDATED, no gain over 0.1
+Fitted through 2023; tested on 2024 and 2025 (2,624 games) and on the 309 games of 2026-27 that have actual frozen forecasts (`data-archive@7b49f21`).
+* Against 0.1 and against the shadow SIM2, all 14 rows are inconclusive. The only validated row (regulation tie vs V1) was already in 0.1.
+* Moneyline discrimination is unchanged (AUC 0.598 for 0.2 and 0.1; V1 0.590). Worse than the Kalshi T-60 mid in every family in 2025.
+* Ablations: xG team ratings help and replicate; goalie quality shows no detectable value; knowing the actual starter (not point-in-time, an upper
+  bound) is worth about 0.0008 NLL; the point-in-time starter model names the right goalie 65–70% of the time versus 41–46% for "last starter".
+* The archive's pre-game goalie observations were right 241 of 241 times when marked confirmed, but using them moved NLL by −0.0014 [−0.0031, +0.0003].
+* 2026-27 MoneyPuck team games are not archived, so ratings are frozen pre-season there; goalie logs cover only 196 of 309 games this season.
+* PRs #66 and #68 both add the same paths and cannot both merge as they are. Recommendation: keep #66 as the adapter (official outcomes with two
+  cross-checks, more models, closing quotes) and add #68's Kalshi settlements as a second outcome source; rename one postmortem.

@@ -86,8 +86,15 @@ class StageLogicTests(unittest.TestCase):
         self.assertEqual(L.CHAIN[at], "EVALUATED"); self.assertEqual(oc[7], "MISSING")
         oc, at = self.chain(base, ["a"], [{"stage": "EVALUATED", "outcome": "REJECTED", "challenger": "ch", "evidence": "e"}])
         self.assertEqual(L.CHAIN[at], "EVALUATED"); self.assertEqual(oc[7], "REJECTED")
-        oc, at = self.chain(base, ["a"], [{"stage": "VALIDATED_IMPROVEMENT", "outcome": "OK", "challenger": "ch", "evidence": "e"}])
+        claim = {"stage": "VALIDATED_IMPROVEMENT", "outcome": "OK", "challenger": "ch", "evidence": "e"}
+        oc, at = self.chain(base, ["a"], [{**claim, "overall": "VALIDATED_IMPROVEMENT"}])
         self.assertEqual(L.CHAIN[at], "VALIDATED_IMPROVEMENT")
+        # a validated component metric inside a challenger that is not validated overall stays at EVALUATED
+        oc, at = self.chain(base, ["a"], [{**claim, "overall": "IMPROVED_NOT_VALIDATED"}])
+        self.assertEqual(L.CHAIN[at], "EVALUATED"); self.assertEqual(oc[7], "MISSING")
+        # ... and so does a validated challenger on an input that is only partially verified
+        oc, at = self.chain({**base, "vstatus": "VERIFIED_PARTIAL"}, ["a"], [{**claim, "overall": "VALIDATED_IMPROVEMENT"}])
+        self.assertEqual(L.CHAIN[at], "EVALUATED"); self.assertEqual(oc[7], "MISSING")
 
     def test_challenger_claim_cannot_jump_an_unverified_input(self):
         oc, at = self.chain({"bucket": "REQUIRES_COLLECTION", "vstatus": "REQUIRES_COLLECTION"}, ["a"], [{"stage": "EVALUATED", "outcome": "OK", "challenger": "ch", "evidence": "e"}])
@@ -148,6 +155,36 @@ class LedgerArtifactTests(unittest.TestCase):
         for k, mk in self.ledger["markets"].items():
             for c in mk["challengers"]:
                 self.assertIn(c, self.ledger["challengers"])
+
+    def test_ledger_never_shows_validated_improvement_unless_the_whole_challenger_is_validated(self):
+        overall = {ch["id"]: ch["verdict"]["overall"] for ch in self.ledger["challengers"].values()}
+        for k, v in self.ledger["inputs"].items():
+            if v["at"] == 7:
+                self.assertEqual(v["chain"][3], "OK", f"{k}: validated although the input is not fully verified")
+                self.assertTrue(any(overall.get(c) == "VALIDATED_IMPROVEMENT" for c in v["challengers"]), k)
+            self.assertNotIn("production review", v["next_action"].lower() if v["at"] < 7 else "", k)
+        for ch in self.ledger["challengers"].values():
+            for r in ch["results"]:
+                if not r["tested"]:
+                    self.assertIsNone(r["p_holm"]); self.assertEqual(r["verdict"], "DESCRIPTIVE")
+
+    def test_loop_breaks_only_a_stale_lock(self):
+        import os, subprocess, sys, time
+        from alpha_engine.foundation import loop
+        self.assertFalse(loop.LOCK.exists(), "a loop pass is running; cannot test the lock")
+        try:
+            loop.LOCK.write_text(f"{os.getpid()} {int(time.time())}\n")
+            self.assertFalse(loop._lock_is_stale(), "a live owner inside the time budget must keep its lock")
+            dead = subprocess.Popen([sys.executable, "-c", "pass"]); dead.wait()
+            loop.LOCK.write_text(f"{dead.pid} {int(time.time())}\n")
+            self.assertTrue(loop._lock_is_stale(), "a lock whose owner is gone must be recoverable")
+            loop.LOCK.write_text("")
+            self.assertFalse(loop._lock_is_stale(), "a fresh legacy lock is judged by age alone")
+            old = time.time() - sum(loop.STEP_TIMEOUT_S.values()) - 600
+            os.utime(loop.LOCK, (old, old))
+            self.assertTrue(loop._lock_is_stale())
+        finally:
+            loop.LOCK.unlink(missing_ok=True)
 
     def test_validated_improvement_requires_a_validated_result_row(self):
         for cid, ch in self.ledger["challengers"].items():

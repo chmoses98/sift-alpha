@@ -89,11 +89,24 @@ test("Queue is ranked P0 first and labels evidence-backed vs hypothesis", async 
   await expect(rows.first()).toContainText(/evidence-backed|hypothesis/);
 });
 
+test("Sources ranks source decisions by missing P0 slots and never presents reachability as permission", async ({ page }) => {
+  const SRC = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/source_acquisition.json", import.meta.url)));
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Sources" }).click();
+  const rows = df.getByTestId("df-source-row");
+  await expect(rows.first()).toContainText("#1");
+  await expect(rows.first()).toContainText(SRC.sources[0].source);
+  await expect(rows.first()).toContainText("Decision needed");
+  await expect(rows.first()).toContainText("terms not read");
+  await expect(df.getByTestId("df-sources")).toContainText("Reachable is not permission");
+  await expect(df.getByTestId("df-blockers").locator("li")).toHaveCount(Object.keys(SRC.p0_slots_by_blocker).length);
+});
+
 test("no horizontal overflow in any view (desktop and iPhone)", async ({ page }) => {
   const df = page.getByTestId("data-foundation");
-  for (const tab of ["Summary", "Markets", "Challengers", "Queue"]) {
+  for (const tab of ["Summary", "Markets", "Challengers", "Queue", "Sources"]) {
     await df.getByRole("tab", { name: tab }).click();
-    if (tab !== "Summary") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
+    if (tab !== "Summary" && tab !== "Sources") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
     const o = await measureOverflow(page);
     expect(o.scroll, tab + " " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
   }

@@ -132,6 +132,14 @@ def _chain(inp: dict, dsets: list, datasets: dict, claims: list, feats: list):
         for j in range(5, i):
             if oc[j] != "OK":
                 oc[j], ev[j] = "OK", f"{c['challenger']}"
+        if c["stage"] == "VALIDATED_IMPROVEMENT" and (c.get("overall") != "VALIDATED_IMPROVEMENT" or oc[3] != "OK"):
+            # A component metric (e.g. participation Brier) can be validated while the challenger as a whole is not, or while
+            # the input itself is only partially verified. That is an evaluated input, never a validated improvement.
+            oc[6], ev[6] = "OK", f"{c['challenger']}: {c.get('evidence', '')}"
+            why = ("the challenger's overall verdict is " + str(c.get("overall")).replace("_", " ").lower() if c.get("overall") != "VALIDATED_IMPROVEMENT"
+                   else "the input is not fully verified")
+            oc[7], ev[7] = "MISSING", f"{c['challenger']}: a component metric improved, but {why}; not a validated improvement"
+            continue
         oc[i], ev[i] = c["outcome"], f"{c['challenger']}: {c.get('evidence', '')}"
         if c["stage"] == "EVALUATED" and c["outcome"] in ("OK", "PARTIAL"):
             oc[7], ev[7] = "MISSING", f"{c['challenger']}: evaluated, not validated"
@@ -191,7 +199,7 @@ def build() -> tuple:
     for e in evals:
         cid = f"{e['sport']}:{e['challenger_id']}"
         for c in e["input_stage_claims"]:
-            claims[c["input"]].append({**c, "challenger": e["challenger_id"]})
+            claims[c["input"]].append({**c, "challenger": e["challenger_id"], "overall": e["verdict"]["overall"]})
         for f in e["features"]:
             for i in f["catalog_inputs"]:
                 feats[i].append((f["feature_id"], e["challenger_id"]))
@@ -206,7 +214,7 @@ def build() -> tuple:
             "features": [{"feature_id": f["feature_id"], "catalog_inputs": f["catalog_inputs"], "description": f["description"], "pit_rule": f["pit_rule"],
                           "checks_passed": sum(1 for c in f["checks"] if c["passed"]), "checks_total": len(f["checks"]),
                           "checks_failed": [c["name"] + ": " + str(c["detail"]) for c in f["checks"] if not c["passed"]]} for f in e["features"]],
-            "results": [{k: r.get(k) for k in ("market_family", "archetypes", "metric", "reference", "cohort", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "replicated", "verdict")} for r in headline],
+            "results": [{k: r.get(k) for k in ("market_family", "archetypes", "metric", "reference", "cohort", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "replicated", "verdict", "tested")} for r in headline],
             "results_total_rows": len(e["results"]), "verdict_counts": dict(Counter(r["verdict"] for r in headline)),
             "ablations": e.get("ablations", []), "design": e.get("design", {})}
     unknown_claims = sorted(set(claims) - set(m["inputs"]))
@@ -338,7 +346,10 @@ def _shown_rows(results: list) -> list:
         best = rest.get(k)
         if best is None or (pooled(r), r["n_rows"]) > (pooled(best), best["n_rows"]):
             rest[k] = r
-    return head + [rest[k] for k in sorted(rest)]
+    # Rows outside the evaluation's Holm family carry a placeholder p-value and verdict in the source file. They are shown
+    # for context only: no adjusted p-value, and an explicit DESCRIPTIVE label instead of a tested verdict.
+    extra = [{**rest[k], "p_holm": None, "verdict": "DESCRIPTIVE", "tested": False} for k in sorted(rest)]
+    return [{**r, "tested": True} for r in head] + extra
 
 
 def _market_next(mk: dict, prim: list, inputs: dict) -> str:

@@ -1,4 +1,4 @@
-"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
+"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
 Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
 
     python -m alpha_engine.input_research.data_foundation.replay_ext_run tennis RAW_DIR OUT.json [--quick]
@@ -69,6 +69,26 @@ def main(a=None) -> int:
         from ...features import cfb_ext as X
         raw = X.load_raw(a[1]); out = a[2]
         r = G.run(X, raw, "CFB", {"plays": ("game_id", X.PL_CONTENT), "schedule": ("game_id", X.SC_CONTENT)}, games_table="schedule", games_date_col="game_date", quick=quick)
+    elif fam == "nba_team3":          # Phase 15
+        from ...features import nba_ext3 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NBA", {"team_games": ("game_id", X.TG_CONTENT), "player_games": ("game_id", X.PG_CONTENT)}, games_table="team_games", games_date_col="game_date_et", quick=quick)
+    elif fam == "nba_player3":
+        from ...features import nba_player_ext3 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NBA", {"player_games": ("game_id", X.PG_CONTENT)}, games_table="player_games", games_date_col="game_date_et", quick=quick)
+    elif fam == "nhl2":
+        from ...features import nhl_ext2 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NHL", {"games": ("game_id", X.G_CONTENT), "mp": ("game_id", X.MP_CONTENT)}, games_table="games", games_date_col="game_date", quick=quick)
+    elif fam == "nhl_ev2":
+        from ...features import nhl_ev_ext2 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NHL", {"team_states": ("game_id", X.TS_CONTENT), "goals": ("game_id", X.GO_CONTENT), "shots": ("game_id", X.SH_CONTENT), "goalies": ("game_id", X.GL_CONTENT)}, games_table="team_states", games_date_col="game_date", quick=quick)
+    elif fam == "nhl_player2":
+        from ...features import nhl_player_ext2 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NHL", {"players": ("game_id", X.PL_CONTENT), "goals": ("game_id", X.GO_CONTENT), "mp": ("nhl_game_id", X.MP_CONTENT)}, games_table="players", games_date_col="game_date", quick=quick)
     else:
         raise SystemExit("unknown family " + fam)
     Path(out).write_text(json.dumps(r, default=str, indent=0)); print("replayed", len(r["inputs"]), r["seconds"], "s"); return 0

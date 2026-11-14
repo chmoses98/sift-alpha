@@ -19,9 +19,9 @@ class Reproducible(unittest.TestCase):
         self.assertEqual((DIR / "priority_recalc.json").read_text(), PR.render())
 
     def test_pinned_universe(self):
-        self.assertEqual(RES["rights_group_datasets"], 86)
-        self.assertEqual(RES["distinct_missing_primary_slots"], 857)
-        self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 949)
+        self.assertEqual(RES["rights_group_datasets"], 85)
+        self.assertEqual(RES["distinct_missing_primary_slots"], 796)
+        self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 888)
 
 
 class NeedLevelRules(unittest.TestCase):

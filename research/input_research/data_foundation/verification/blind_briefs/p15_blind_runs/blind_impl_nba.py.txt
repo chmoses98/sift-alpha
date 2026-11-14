@@ -1,0 +1,303 @@
+import glob, json, math, bisect
+import numpy as np, pandas as pd
+from scipy.special import erf
+
+D = '/tmp/claude-0/-home-user/4b121d0a-de18-5db8-915a-3a1ef1a5904f/scratchpad/blind/nba/data/espn/'
+OUT = '/tmp/claude-0/-home-user/4b121d0a-de18-5db8-915a-3a1ef1a5904f/scratchpad/blind/nba/out/'
+
+def load(kind):
+    df = pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(D + kind + '_*.parquet'))], ignore_index=True)
+    df = df[df.season_type == 'regular'].copy()
+    df['date'] = pd.to_datetime(df.game_date_et)
+    df['sidx'] = df.season.str[:4].astype(int)
+    return df
+
+tg = load('team_games'); pg = load('player_games')
+Phi = lambda x: 0.5 * (1 + erf(x / np.sqrt(2)))
+
+# ---------------- TABLE 1 ----------------
+t = tg.rename(columns={'team_id': 'team', 'opp_team_id': 'opp'})
+t = t[['game_id', 'date', 'sidx', 'team', 'opp', 'home', 'pts', 'opp_pts', 'possessions', 'n_ot']]
+t = t.sort_values(['date', 'game_id', 'team']).reset_index(drop=True)
+assert not t.duplicated(['game_id', 'team']).any() and not t.duplicated(['team', 'date']).any()
+for c in ['pts', 'opp_pts', 'possessions', 'n_ot']: t[c] = t[c].astype(float)
+t['home'] = t.home.astype(bool)
+# index of the other row of the game
+key = pd.Series(t.index, index=pd.MultiIndex.from_arrays([t.game_id, t.team]))
+oidx = key.reindex(pd.MultiIndex.from_arrays([t.game_id, t.opp])).values
+assert not pd.isna(oidx).any()
+oidx = oidx.astype(int)
+O = lambda col: t[col].values[oidx]
+
+def E(col, H, m):
+    return t.groupby('team', sort=False)[col].transform(lambda s: s.shift(1).ewm(halflife=H, min_periods=m).mean())
+
+def before_date(mask, vals):
+    """per-row (sum, count) of vals over rows with mask & date < row date."""
+    v = pd.Series(np.where(mask, vals, 0.0)); n = pd.Series(mask.astype(float))
+    gs = v.groupby(t.date).sum().sort_index(); gn = n.groupby(t.date).sum().sort_index()
+    cs = gs.cumsum().shift(1).fillna(0.0); cn = gn.cumsum().shift(1).fillna(0.0)
+    return t.date.map(cs).values, t.date.map(cn).values
+
+def mean_before(mask, vals):
+    s, n = before_date(mask, vals)
+    return np.where(n > 0, s / np.where(n > 0, n, 1), np.nan), n
+
+def team_prior(mask, vals):
+    """per-row (sum, count) of vals over the team's earlier rows with mask."""
+    v = pd.Series(np.where(mask, vals, 0.0)); n = pd.Series(mask.astype(float))
+    s = v.groupby(t.team).cumsum() - v
+    c = n.groupby(t.team).cumsum() - n
+    return s.values, c.values
+
+home = t.home.values
+allr = np.ones(len(t), bool)
+t['margin'] = t.pts - t.opp_pts
+st = pg[(pg.played == True) & (pg.started == True)].groupby(['game_id', 'team_id']).minutes.sum()
+t['st_min'] = st.reindex(pd.MultiIndex.from_arrays([t.game_id, t.team])).values
+
+# rating_blowout_minutes_curve
+t['net100'] = t.margin / t.possessions * 100
+t['nr_pre'] = E('net100', 25, 5)
+t['pace_pre'] = E('possessions', 20, 3)
+t['adj'] = t.net100 + O('nr_pre')
+t['rb_adjnet_pre'] = E('adj', 25, 5)
+hadv, _ = mean_before(home, t.margin.values)
+exp_pace = np.sqrt(t.pace_pre.values * O('pace_pre'))
+t['rb_mu_pre'] = (t.rb_adjnet_pre.values - O('rb_adjnet_pre')) * exp_pace / 100 + np.where(home, hadv, -hadv)
+ok = home & t.rb_mu_pre.notna().values
+s, n = before_date(ok, np.where(ok, (t.margin - t.rb_mu_pre) ** 2, 0.0))
+t['rb_sd_pre'] = np.where(n >= 100, np.sqrt(s / np.where(n > 0, n, 1)), np.nan)
+for K in (15, 20):
+    t[f'rb_p{K}_pre'] = Phi((-(K - 0.5) - t.rb_mu_pre) / t.rb_sd_pre) + 1 - Phi(((K - 0.5) - t.rb_mu_pre) / t.rb_sd_pre)
+t['st_reg'] = t.st_min * 240 / (240 + 25 * t.n_ot)
+has = t.st_reg.notna().values
+am = t.margin.abs().values
+for nm, msk, mn in (('rb_st_close_pre', am < 10, 5), ('rb_st_blow_pre', am >= 20, 3)):
+    s, n = team_prior(msk & has, t.st_reg.values)
+    t[nm] = np.where(n >= mn, s / np.where(n > 0, n, 1), np.nan)
+t['rb_exp_stmin_pre'] = (1 - t.rb_p20_pre) * t.rb_st_close_pre + t.rb_p20_pre * t.rb_st_blow_pre
+
+# final_margin_pmf_empirical
+zok = home & t.rb_mu_pre.notna().values & t.rb_sd_pre.notna().values
+z = ((t.margin - t.rb_mu_pre) / t.rb_sd_pre).values
+res = np.full((len(t), 3), np.nan)
+Z = []
+mu_a = t.rb_mu_pre.values; sd_a = t.rb_sd_pre.values
+for d, idx in t.groupby('date', sort=True).indices.items():
+    if len(Z) >= 200:
+        Zs = np.sort(np.array(Z)); N = len(Zs)
+        for i in idx:
+            mu, sd = mu_a[i], sd_a[i]
+            if np.isnan(mu) or np.isnan(sd): continue
+            for j, th in enumerate((0, 5.5, 10.5)):
+                if home[i]:
+                    res[i, j] = (N - np.searchsorted(Zs, (th - mu) / sd, side='right')) / N
+                else:
+                    res[i, j] = np.searchsorted(Zs, (mu - th) / sd, side='left') / N
+    Z.extend(z[idx][zok[idx]].tolist())
+t['fm_p_win_pre'], t['fm_p_gt5_pre'], t['fm_p_gt10_pre'] = res[:, 0], res[:, 1], res[:, 2]
+
+# own_model_team_totals
+pace20 = np.full(len(t), np.nan); n20 = np.zeros(len(t)); kprev = np.zeros(len(t))
+for tm, idx in t.groupby('team', sort=False).indices.items():
+    p = t.possessions.values[idx]
+    for j, i in enumerate(idx):
+        kprev[i] = j
+        m = min(j, 20); n20[i] = m
+        if m >= 3:
+            ages = np.arange(1, m + 1); w = 0.5 ** (ages / 8.0)
+            x = p[j - m:j][::-1]
+            pace20[i] = (w * x).sum() / w.sum()
+t['ppp'] = t.pts / t.possessions; t['dpp'] = t.opp_pts / t.possessions
+lg_pace, _ = mean_before(allr, t.possessions.values)
+lg_ppp, _ = mean_before(allr, t.ppp.values)
+t['pace_s'] = (n20 * pace20 + 15 * lg_pace) / (n20 + 15)
+g40 = np.minimum(kprev, 40)
+t['off_s'] = (g40 * E('ppp', 20, 3).values + 20 * lg_ppp) / (g40 + 20)
+t['def_s'] = (g40 * E('dpp', 20, 3).values + 20 * lg_ppp) / (g40 + 20)
+hppp, _ = mean_before(home, (t.ppp - t.dpp).values)
+exp_poss = t.pace_s.values * O('pace_s') / lg_pace
+t['ot_exp_pts_pre'] = exp_poss * (t.off_s.values + O('def_s') - lg_ppp + np.where(home, 0.5, -0.5) * hppp)
+t['ot_exp_total_pre'] = t.ot_exp_pts_pre.values + O('ot_exp_pts_pre')
+t['ot_exp_margin_pre'] = t.ot_exp_pts_pre.values - O('ot_exp_pts_pre')
+t['resid'] = t.pts - t.ot_exp_pts_pre
+rok = t.resid.notna().values
+s, n = team_prior(rok, np.where(rok, t.resid ** 2, 0.0))
+t['ot_sd_team_pre'] = np.where(n >= 10, np.sqrt(s / np.where(n > 0, n, 1)), np.nan)
+rm = (t.margin - t.ot_exp_margin_pre).values; rt = (t.pts + t.opp_pts - t.ot_exp_total_pre).values
+mok = home & ~np.isnan(rm) & ~np.isnan(rt)
+z0 = lambda a: np.where(mok, a, 0.0)
+smm, n = before_date(mok, z0(rm * rm)); stt, _ = before_date(mok, z0(rt * rt)); smt, _ = before_date(mok, z0(rm * rt))
+nn = np.where(n > 0, n, 1)
+sdm = np.where(n >= 100, np.sqrt(smm / nn), np.nan); sdt = np.where(n >= 100, np.sqrt(stt / nn), np.nan)
+corr = (smt / nn) / (sdm * sdt)
+t['ot_sd_margin_pre'] = sdm; t['ot_sd_total_pre'] = sdt
+t['ot_corr_mt_pre'] = np.where(home, corr, -corr)
+
+# team_points_margin_curve
+mb = np.floor(t.ot_exp_margin_pre / 2).clip(-8, 7)
+tmr = np.full(len(t), np.nan)
+for b in range(-8, 8):
+    inb = (mb == b).values
+    s, n = before_date(inb & rok, t.resid.values)
+    tmr[inb] = (s / (n + 50))[inb]
+t['tm_resid_bin_pre'] = tmr
+t['tm_exp_pts_curve_pre'] = t.ot_exp_pts_pre + t.tm_resid_bin_pre
+
+# expectation_overperformance / win streak
+t['win'] = (t.pts > t.opp_pts).astype(float)
+g = t.groupby(['team', 'sidx'], sort=False)
+gp = g.cumcount().astype(float)
+w = g.win.cumsum() - t.win; pf = g.pts.cumsum() - t.pts; pa = g.opp_pts.cumsum() - t.opp_pts
+tot = t.groupby(['team', 'sidx'])[['pts', 'opp_pts']].sum()
+pi = pd.MultiIndex.from_arrays([t.team, t.sidx - 1])
+ppf = tot.pts.reindex(pi).values; ppa = tot.opp_pts.reindex(pi).values
+pyth = lambda f, a: 1 / (1 + (a / f) ** 14)
+exp_pct = 0.5 + 0.7 * (pyth(ppf, ppa) - 0.5)
+t['eo_exp_wins_pre'] = 82 * exp_pct
+t['eo_surprise_pre'] = (w - t.eo_exp_wins_pre * gp / 82) / 6
+with np.errstate(divide='ignore', invalid='ignore'):
+    cur = np.where(gp >= 5, pyth(pf.values, pa.values), exp_pct)
+t['eo_proj_wins_pre'] = w + (82 - gp) * cur
+run = np.zeros(len(t))
+for _, idx in g.indices.items():
+    r = 0
+    for i in idx:
+        run[i] = r
+        r = r + 1 if t.win.values[i] == 1 else 0
+t['ws_run_pre'] = run
+t['ws_p_game_pre'] = (w + 5) / (gp + 10)
+def p20(p, R, r):
+    if r >= 20: return 1.0
+    f = np.zeros(21); f[20] = 1.0
+    for _ in range(int(R)):
+        nf = np.empty(21); nf[:20] = p * f[1:] + (1 - p) * f[0]; nf[20] = 1.0; f = nf
+    return f[int(r)]
+t['ws_p20_pre'] = [p20(p, max(82 - k, 0), r) for p, k, r in zip(t.ws_p_game_pre.values, gp.values, run)]
+
+# lineup_adj_rating
+pr = pg[(pg.played == True) & (pg.minutes > 0)].sort_values(['nba_id', 'date'])
+pinfo = {}
+for pid, d in pr.groupby('nba_id'):
+    pinfo[pid] = (d.date.values, np.cumsum(d.plus_minus.values.astype(float)), np.cumsum(d.minutes.values.astype(float)))
+def impact(pid, d):
+    if pid not in pinfo: return 0.0
+    ds, cpm, cmin = pinfo[pid]
+    k = np.searchsorted(ds, d, side='left')
+    if k == 0: return 0.0
+    return 48 * cpm[k - 1] / (cmin[k - 1] + 600)
+gm = {}
+for (gid, tid), d in pr.groupby(['game_id', 'team_id']):
+    gm[(gid, tid)] = dict(zip(d.nba_id.values, d.minutes.values.astype(float)))
+la = np.full((len(t), 4), np.nan)
+gids = t.game_id.values; dts = t.date.values
+for tm, idx in t.groupby('team', sort=False).indices.items():
+    for j, i in enumerate(idx):
+        if j < 5: continue
+        M = {}
+        for q in idx[j - min(30, j):j]:
+            for pid, mn in gm.get((gids[q], tm), {}).items():
+                M[pid] = M.get(pid, 0.0) + mn
+        tot_ = sum(M.values())
+        if not tot_ > 0: continue
+        A = set(gm.get((gids[idx[j - 1]], tm), {}).keys())
+        sa = sum(M[p] for p in A)
+        if not sa > 0: continue
+        I = {p: impact(p, dts[i]) for p in M}
+        Ibar = sum(M[p] / tot_ * I[p] for p in M)
+        active = sum(M[p] / sa * I[p] for p in A)
+        top8 = sorted(M, key=lambda p: (-M[p], p))[:8]
+        out = [p for p in top8 if p not in A]
+        la[i] = (Ibar, active - Ibar, sum(M[p] / tot_ for p in out), sum(M[p] / tot_ * (I[p] - Ibar) for p in out))
+for j, c in enumerate(['la_ibar_pre', 'la_adj_pre', 'la_out_share_pre', 'la_out_impact_pre']): t[c] = la[:, j]
+
+cols1 = ['rb_adjnet_pre', 'rb_mu_pre', 'rb_sd_pre', 'rb_p15_pre', 'rb_p20_pre', 'rb_st_close_pre', 'rb_st_blow_pre', 'rb_exp_stmin_pre',
+         'fm_p_win_pre', 'fm_p_gt5_pre', 'fm_p_gt10_pre',
+         'ot_exp_pts_pre', 'ot_exp_total_pre', 'ot_exp_margin_pre', 'ot_sd_team_pre', 'ot_sd_margin_pre', 'ot_sd_total_pre', 'ot_corr_mt_pre',
+         'tm_resid_bin_pre', 'tm_exp_pts_curve_pre', 'eo_exp_wins_pre', 'eo_surprise_pre', 'eo_proj_wins_pre',
+         'ws_run_pre', 'ws_p_game_pre', 'ws_p20_pre', 'la_ibar_pre', 'la_adj_pre', 'la_out_share_pre', 'la_out_impact_pre']
+assert len(cols1) == 30
+t[['game_id', 'team'] + cols1].to_csv(OUT + 'blind_nba_team3.csv', index=False, float_format='%.17g')
+
+# ---------------- TABLE 2 ----------------
+u = pg[pg.played == True].copy()
+u = u.sort_values(['date', 'game_id', 'nba_id']).reset_index(drop=True)
+assert not u.duplicated(['game_id', 'nba_id']).any() and not u.duplicated(['nba_id', 'date']).any()
+stats = ['minutes', 'pts', 'reb', 'ast', 'stl', 'blk', 'fg3m', 'fg3a', 'plus_minus']
+for c in stats: u[c] = u[c].astype(float)
+u['one'] = 1.0
+# team_gp
+tgames = pg[['team_id', 'sidx', 'game_id', 'date']].drop_duplicates(['team_id', 'sidx', 'game_id']).sort_values(['team_id', 'sidx', 'date'])
+gdates = {k: np.sort(d.date.values) for k, d in tgames.groupby(['team_id', 'sidx'])}
+u['team_gp'] = [float(np.searchsorted(gdates[(a, b)], d, side='left')) for a, b, d in zip(u.team_id.values, u.sidx.values, u.date.values)]
+X = stats + ['one']
+gc = u.groupby(['nba_id', 'sidx'], sort=False)[X]; cur_ = gc.cumsum() - u[X]
+ga = u.groupby('nba_id', sort=False)[X]; car_ = ga.cumsum() - u[X]
+ptot = u.groupby(['nba_id', 'sidx'])[X].sum()
+prev_ = ptot.reindex(pd.MultiIndex.from_arrays([u.nba_id, u.sidx - 1])).fillna(0.0).reset_index(drop=True)
+dsum = u.groupby('date')[X].sum().sort_index().cumsum().shift(1).fillna(0.0)
+lg = dsum.reindex(u.date.values).reset_index(drop=True)
+G, M, Gp, Mp = cur_.one, cur_.minutes, prev_.one, prev_.minutes
+lg_min = lg.minutes.values; n_lg = lg.one.values
+tgp = u.team_gp
+with np.errstate(divide='ignore', invalid='ignore'):
+    avail = np.where(tgp > 0, np.minimum(1.0, G / tgp), 1.0)
+    R = np.maximum(82 - tgp, 0) * avail
+    for s in ('pts', 'reb', 'ast', 'stl', 'blk', 'fg3m'):
+        lg36 = np.where(lg_min > 0, 36 * lg[s] / lg_min, np.nan)
+        r0 = np.where(Mp >= 200, 36 * prev_[s] / Mp, lg36)
+        u[f'srp_{s}36_pre'] = (36 * cur_[s] + 400 * r0) / (M + 400)
+    for s in ('pts', 'reb', 'ast'):
+        lgavg = np.where(n_lg > 0, lg[s] / n_lg, np.nan)
+        prior = np.where(Gp >= 10, prev_[s] / Gp, lgavg)
+        u[f'ag_avg_{s}_pre'] = np.where(G > 0, cur_[s] / G, np.nan)
+        mu = (cur_[s] + 10 * prior) / (G + 10)
+        u[f'ag_proj_{s}_pre'] = np.where(G + R == 0, np.nan, (cur_[s] + R * mu) / (G + R))
+    u['pm_todate_pre'] = cur_.plus_minus
+    u['pm_rate_pre'] = car_.plus_minus / (car_.minutes + 500)
+    mpg = np.where(G > 0, M / G, np.where(Gp > 0, Mp / Gp, np.nan))
+    u['pm_proj_pre'] = u.pm_todate_pre + R * mpg * u.pm_rate_pre
+    wa = 0.6 * cur_.fg3a + 0.4 * prev_.fg3a; wm = 0.6 * cur_.fg3m + 0.4 * prev_.fg3m; wmin = 0.6 * M + 0.4 * Mp
+    u['rm_3pa36_pre'] = np.where(wmin > 0, 36 * wa / wmin, np.nan)
+    u['rm_p3_pre'] = (wm + 40 * 0.30) / (wa + 40)
+    mpg2 = np.where(G + Gp == 0, np.nan, (M + Mp) / (G + Gp))
+    u['rm_lambda_pre'] = u.rm_3pa36_pre * mpg2 / 36 * u.rm_p3_pre
+    u['rm_p_any_pre'] = 1 - np.exp(-u.rm_lambda_pre * R)
+cols2 = [f'srp_{s}36_pre' for s in ('pts', 'reb', 'ast', 'stl', 'blk', 'fg3m')] + \
+        [f'ag_avg_{s}_pre' for s in ('pts', 'reb', 'ast')] + [f'ag_proj_{s}_pre' for s in ('pts', 'reb', 'ast')] + \
+        ['pm_todate_pre', 'pm_rate_pre', 'pm_proj_pre', 'rm_3pa36_pre', 'rm_p3_pre', 'rm_lambda_pre', 'rm_p_any_pre']
+assert len(cols2) == 19
+o2 = u[['game_id', 'nba_id'] + cols2].rename(columns={'nba_id': 'team'})
+o2.to_csv(OUT + 'blind_nba_player3.csv', index=False, float_format='%.17g')
+
+notes = {"ambiguities": [
+ "NaN propagation applied literally everywhere: e.g. pace_s is NaN when pace20 is NaN (n20 < 3, including n20 = 0 where 0*NaN = NaN); off_s/def_s are NaN when E(ppp/dpp;20,3) is NaN even if g40 = 0; all league quantities are NaN on the first date (empty set) so every dependent column is NaN there.",
+ "E(x;H,m): rows grouped per team in (date) order across all seasons; shift(1) within the team, then ewm(halflife=H, min_periods=m).mean() with pandas defaults; NaN x values (e.g. adj) are left in the series.",
+ "margin is recomputed as pts - opp_pts from the row (not read from the file's margin column); win = pts > opp_pts.",
+ "o_X is looked up via (game_id, opp_team_id) in the regular-row universe.",
+ "rb_sd_pre, ot_sd_margin/total/corr use running sums over home rows of all dates strictly before d (dates taken over the whole regular team table).",
+ "rb_st_close_pre / rb_st_blow_pre: close/blowout classified by the team's own |margin| of the earlier game; count threshold applies to games with non-NaN st_reg.",
+ "st_min is NaN when no played & started regular player row exists for (game_id, team_id); otherwise the sum of minutes.",
+ "fm_*: Z(d) built only from home rows whose own rb_mu_pre and rb_sd_pre are non-NaN; requires len(Z(d)) >= 200; strict inequalities; share = count/len(Z(d)).",
+ "pace20: 'last up to 20 earlier games' = the team's 20 most recent earlier regular rows across seasons; weights normalised by their own sum (weighted mean).",
+ "g40 and k (lineup) count the team's earlier regular rows in team_games across all seasons.",
+ "ot_sd_team_pre: uncentred RMS of resid over the team's earlier games with non-NaN resid, needs >= 10.",
+ "ot_corr_mt_pre: corr = mean(rm*rt)/(sd_m*sd_t), uncentred, NaN when n < 100; sign flipped for away rows.",
+ "tm_resid_bin_pre: bin = floor(ot_exp_margin_pre/2) clipped to [-8,7] using the row's own value; S and N accumulate over all rows (home+away) of earlier dates whose own bin equals b and whose resid is non-NaN; NaN only if own bin undefined.",
+ "eo_*: ppf/ppa NaN when the team has no regular rows in season sidx-1, making eo_exp_wins_pre and eo_surprise_pre NaN; eo_proj_wins_pre then NaN only while gp < 5 (cur = pyth(pf,pa) once gp >= 5). pyth with zero inputs cannot arise for gp >= 5.",
+ "ws_run_pre resets at each (team, sidx); ws_p20_pre computed by the stated recursion R = max(82-gp,0) times and read at r = ws_run_pre; 1 if run >= 20.",
+ "lineup: 'player rows' need played == True and minutes > 0 (regular). Window games are the team's previous min(30,k) rows of team_games; games with no player rows contribute nothing. A = players with a player row (played, minutes > 0) for T in T's immediately preceding team_games row; players of A all have M_i > 0 since that game is in the window. Top-8 ties broken by numerically smaller nba_id (ids can be negative; plain numeric comparison). Players considered for Ibar/top8 are those with M_i > 0 rows in the window.",
+ "I(i,d) uses the player's rows on all teams and seasons with date strictly before the team row's date d (not before the window games' dates).",
+ "TABLE 2 output sorted by (date, game_id, nba_id); output column team = nba_id.",
+ "team_gp: number of distinct game_ids among all regular player_games rows (played or not) of the row's team_id and sidx with date strictly earlier than the row's date.",
+ "prev(X) is 0 when the player has no universe rows in season sidx-1 (so Gp = Mp = 0).",
+ "srp: r0 falls back to lg36(d) when Mp < 200; lg36 is NaN on the first date so srp_* is NaN there.",
+ "ag_proj: computed as (cur + R*mu)/(G+R), NaN if G+R == 0; NaN if mu is NaN (prior NaN on the first date) even if R were 0. ag_avg is NaN when G = 0.",
+ "pm_proj_pre is NaN when mpg is NaN (G = 0 and Gp = 0) even if R = 0 (literal NaN propagation); pm_todate_pre is 0 with no earlier rows this season; pm_rate_pre is 0 with no career rows.",
+ "rm: rm_3pa36_pre NaN if wmin <= 0; rm_lambda_pre and rm_p_any_pre NaN whenever rm_3pa36_pre or mpg2 is NaN, even if R = 0.",
+ "avail = min(1, G/team_gp) where G counts the player's earlier universe rows this season on any team; R = max(82-team_gp,0)*avail (not rounded).",
+ "CSV floats written with %.17g; NaN as empty cells; integer-valued features (ws_run_pre, pm_todate_pre) are written as floats."
+]}
+json.dump(notes, open(OUT + 'blind_nba_notes.json', 'w'), indent=1)
+print('done', t.shape, u.shape)

@@ -29,6 +29,8 @@ Reproduce with `python3 research/provider_licensing/priority_recalc.py`. Check w
 3. *Hypothetical vs build-ready.* Provider columns are **hypothetical rights clearance**. "Build-ready" uses today's registry with no hypothetical clearance, cost `free`
    (a key-needed source counts as an account, so it is excluded) and archived or reachable access.
 
+> Phase 15 note (2026-11-14): `priority_recalc.json` was regenerated from the Phase 15 map (30 NBA/NHL archive builders verified): the universe is now 796 distinct missing PRIMARY slots in 85 rights-group datasets, 888 across all queue groups. The tables in this document are the Phase 14 snapshot (857 / 86 / 949) and were not re-derived.
+
 **Before → after (need level, 857 distinct missing PRIMARY slots in the 86 rights-group datasets; 949 across all queue groups)**
 
 | Measure | Rev 1 | Rev 2 |

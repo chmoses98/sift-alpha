@@ -1,0 +1,113 @@
+{
+ "patches": {
+  "mlb.leaguewide_rare_game_event_hazard": {
+   "rationale": "Rates moved sharply across eras: higher strikeout rates raised no-hit and 20-strikeout chances per inning while shorter starts lowered the chance of one pitcher finishing 27 outs; multi-HR feats depend on the right tail of hitter power. The no-hitter definition is NOT settled by the contract: the rule says 'any pitcher records a no hitter' while the event title says 'Individual Pitcher No Hitter', and combined no-hitters are a material share of recent no-hitters (share not measured here), so this input carries the readings as explicit branches instead of assuming one. Using long-run historical averages without these adjustments misstates the hazard by large factors.",
+   "measurement": "For each event e and reading r, per team-game rate lambda_e,r(t) = exp(b0 + b1*league K% + b2*league HR per PA + b3*league mean starter outs per start) fitted by Poisson regression on league-season counts 1990-2025 (SOURCE_UNVERIFIED that every count is obtainable from Retrosheet and Baseball-Reference lists). Branches kept separately for the no-hitter: (A) one pitcher records all outs of a nine-inning game, (B) any no-hit game including combined and shortened games; the perfect game and 20-strikeout counts are single branches. Nested monotonicity is enforced: P(perfect game) <= P(no-hitter A) <= P(no-hitter B). The 500-ft drive, 4+ HR and 2+ grand-slam events are modelled bottom-up in mlb.hr_distance_tail_exceedance, mlb.hitter_hr_profile and mlb.bases_loaded_pa_opportunity; the league-count regression for those three is used only as a calibration cross-check against the bottom-up sum, never added to it. P(event in the rest of the season) = 1 - exp(-sum over remaining regular-season team-games and expected playoff team-games of lambda); playoff team-games count only for the six events that include the playoffs. Games already played are taken from the feats-to-date ledger (mlb.season_feat_ledger_state): an achieved feat settles Yes. Units: probability per branch. As-of: the market timestamp.",
+   "raw_data": [
+    "league-season counts of no-hitters (individual and combined), perfect games, 20+ K games, 4+ HR games and 2+ GS games",
+    "league-season K%, HR per PA, starter outs per start",
+    "feats-to-date ledger for the current season"
+   ]
+  },
+  "mlb.joint_season_hr_sb_distribution": {
+   "mechanism": "A season with both H* home runs and S* steals (50 and 50 for KXMLBSTAT-265050, 50 and 40 for KXMLBSTATCOUNT) is a joint tail of two correlated counts requiring health and plate appearances; an any-hitter contract is the union of that joint tail over every hitter still on pace.",
+   "rationale": "The probability depends on each hitter's season-to-date pace, remaining PA and the rates of both events, and the two are correlated through playing time and hitter quality; independence misprices. For an any-hitter contract only a handful of hitters have both thresholds reachable, so the answer is dominated by the one or two power-speed candidates and by their health.",
+   "measurement": "Given current HR_0, SB_0, team games remaining G, per-game play probability from availability and PA per game by lineup slot, set rates r_HR and r_SB per PA = (ROS projection * 250 + season pace * n)/(250 + n) with n = season PA. Simulate 20,000 seasons: PA_rest from game draws with a health hazard; HR_rest ~ NegBin(mean r_HR*PA_rest, dispersion fitted across hitters 2015-2025) and SB_rest ~ NegBin(mean r_SB*PA_rest); couple the two with a Gaussian copula whose rho is the cross-hitter correlation of season HR and SB rate residuals given PA (2015-2025). Output p_h = P(HR_0 + HR_rest >= H* and SB_0 + SB_rest >= S*) for one hitter. For an any-hitter contract take the candidate set = hitters for whom both thresholds are still arithmetically reachable and compute P(any) = 1 - prod over candidates (1 - p_h), treating different clubs' hitters as independent. Units: probability. As-of: daily."
+  },
+  "mlb.window_exposure_schedule": {
+   "mechanism": "A multi-game window aggregates per-game event probabilities (participation times the chance of the event given participation) with the schedule structure and an absorbing injury state.",
+   "rationale": "P(at least one event) in a window depends on the number of team games in it (off days, doubleheaders, postponement), on whether the player plays each game, and on the per-game chance of the event given he plays; participation alone gives the probability of playing, not of the event. For a home-run window the per-game event probability is plate appearances times the per-PA home-run probability, so a power hitter's saturation is much slower than his playing probability alone implies.",
+   "measurement": "N = number of team games in the window from the official schedule (adjust for postponement probability from mlb.forecast_precip_timing). Per-game participation p_g: hitters from mlb.playing_time_role start probability, pitchers from mlb.pitcher_rotation_slot_and_rest P(start on date) plus relief-appearance rate for relievers. Per-game event probability given participation q_g: 1 for pure participation markets; for a hitter home-run market q_g = 1 - (1 - r_g)^(PA_g) with per-PA home-run probability r_g from mlb.hitter_hr_profile adjusted by mlb.hr_environment and the probable pitcher (mlb.pitcher_hr_vulnerability) and PA_g from mlb.expected_pa. P(healthy through g) = (1 - h)^g with per-game injury hazard h from mlb.injuries_pit shrunk to league by age/role (k = 100 player-seasons). P(at least one event) = 1 - prod_g (1 - p_g x P(healthy through g) x q_g); for regular-season windows multiply p_g by (1 - clinched rest factor) from mlb.clinched_rest_policy after the clinch date. Units: probability. As-of: daily.",
+   "raw_data": [
+    "schedule with dates, rotation order, off days, doubleheaders",
+    "injury/IL hazard",
+    "per-game participation probabilities",
+    "per-PA event rate and expected PA per game"
+   ]
+  },
+  "mlb.series_hr_exposure": {
+   "measurement": "N_games ~ distribution from the series-length model (probability of each series length for the round format, from mlb.series_length_distribution). P(start) per game is estimated from the hitter's role: his share of team games started in the last 60 games, split by opposing starter hand with shrinkage to the lineup-slot prior (k = 20 games) and zero after a round-roster exclusion (mlb.postseason_round_roster_membership); fixed values such as 0.95 for an everyday player or 0.55 for a platoon player are placeholders only for hitters with no role history and are unsourced. Per-game p_HR from the single-game model with each game's probable starter and the park and weather of that game. Series count distribution = compound sum. Units: expected HR in series. As-of: before each game with updated series state."
+  },
+  "mlb.injuries_pit": {
+   "raw_data": [
+    "IL placements and activations with transaction timestamps",
+    "injury and late-scratch reports with report time",
+    "roster status snapshots by date"
+   ]
+  },
+  "mlb.hr_environment": {
+   "raw_data": [
+    "park home-run factors by batter handedness",
+    "game-time wind speed and direction, temperature, humidity",
+    "ball-carry or ball-regime indicators by season"
+   ]
+  },
+  "mlb.hitter_hr_profile": {
+   "raw_data": [
+    "Statcast batted-ball rows: launch_speed, launch_angle, spray angle, barrel flag",
+    "plate appearances and home runs by hitter and season",
+    "hitter handedness and park"
+   ]
+  },
+  "mlb.pitcher_hr_vulnerability": {
+   "raw_data": [
+    "home runs, fly balls and barrels allowed by pitcher and batter handedness",
+    "batters faced by pitcher and season",
+    "park and game environment for each batter faced"
+   ]
+  },
+  "mlb.series_length_distribution": {
+   "label": "Series length distribution by round format (best-of-3, best-of-5, best-of-7) from game-level win probabilities with team-strength dependence",
+   "mechanism": "A series-length or exposure contract settles on how many games are played, a function of the round's format, game win probabilities, home-field pattern and the dependence of games on a shared team-strength latent.",
+   "measurement": "Simulate the round format: best-of-3 (Wild Card; all games at the higher seed), best-of-5 (Division Series; home pattern 2-2-1) and best-of-7 (League Championship and World Series; home pattern 2-3-2); the format table must be checked against MLB documentation (SOURCE_UNVERIFIED here). Game i win prob p_i from the single-game model with announced starters and rest, draw team-strength offset ~ N(0, sd = 0.04 in win prob) shared across games, compute P(N = minimum, ..., maximum games) for each format. Calibrate sd to historical series length frequencies per format; the best-of-3 round has only a few seasons of history in the 12-team format, so its calibration is weak and flagged. As-of: after each game with updated series state.",
+   "raw_data": [
+    "series-level: round format, games, winner, scores, starters",
+    "per-game pregame win probability from the project's model"
+   ]
+  },
+  "mlb.bracket_path_enumeration": {
+   "rationale": "Matchup, games-hosted and qualifier contracts, and every postseason count that sums over games, are functions of which teams reach which round and how long each series lasts. That requires enumerating the fixed bracket (no reseeding within the 12-team format, to be verified) with round-specific series-length distributions and home-field patterns, not a title-probability number.",
+   "measurement": "Enumerate all bracket paths from the current seeds or seed probabilities: P(path) = product of series-win probabilities from the team-strength posterior; series length distribution per round format from mlb.series_length_distribution (best-of-3 all games at the higher seed, best-of-5 with 2-2-1, best-of-7 with 2-3-2; SOURCE_UNVERIFIED against MLB documentation) with shared team-strength draws; games hosted = sum over series of the home games in the realised length. Output P(matchup A vs B in round r), the distribution of games hosted by a team and the distribution of total playoff games remaining. As-of: daily."
+  },
+  "mlb.postseason_league_hr_count": {
+   "measurement": "H0 = official playoff HR so far. For each remaining game g on each bracket path (probabilities from mlb.bracket_path_enumeration): lambda_g = sum over both teams of projected HR per PA (rest-of-season hitter projections vs the probable starter and bullpen, shrunk to team rate with k = 300 PA) x expected PA (about 38 per team) x park-and-weather factor from mlb.hr_environment (park HR factor by handedness, wind, temperature). Game count ~ NB(lambda_g, phi) with phi from mlb.game_shared_hr_dispersion. P(H0 + sum >= N) by Monte Carlo over paths and series lengths (20k draws). Calibrate total-HR-per-postseason predictions on postseasons since 2015, noting that the 12-team format (best-of-3 Wild Card round) has only a few seasons of history. Units: count and probability. As-of: after each playoff game."
+  },
+  "mlb.scoreless_streak_ledger_state": {
+   "measurement": "From play-by-play since the stated start date build, for each pitcher-appearance, the sequence of outs recorded and runs charged (a) counting all runs charged to the pitcher including inherited runners who score, and (b) counting earned runs only; streak total_outs = outs recorded since the start date up to but excluding the first run under each reading, alive = no run charged under that reading, remaining_outs_needed = max(0, 3N - total_outs). Also store the number of regular-season team games remaining and the pitcher's projected starts left from mlb.pitcher_rotation_slot_and_rest. Flag any appearance in which official scoring was later changed (error to hit, earned-run reassignment): re-pull each appearance after a lag chosen by an observed revision study, because no source stating an official scoring-correction window was found (the 48 hours assumed earlier was unsourced). Run charging and inherited-runner attribution must be taken from a source that exposes them (MLB Stats API play-by-play or Retrosheet event files; field availability is SOURCE_UNVERIFIED here). Units: outs and a binary alive flag per reading. As-of: after every appearance and after each re-pull.",
+   "free_sources": [
+    "MLB Stats API play-by-play and game logs (free; run-charging fields SOURCE_UNVERIFIED)",
+    "Retrosheet event files for historical validation (free)"
+   ]
+  },
+  "mlb.velocity_ceiling_candidate_pool": {
+   "rationale": "Pitch speed is bounded by the arm, so only pitchers whose tracked peaks sit close to a threshold T have any realistic chance of a single pitch reaching it. Recollection, not verified here (SOURCE_UNVERIFIED): very few pitchers per season record tracked pitches above 104 mph, and tracked maxima in the Statcast era sit near 105-106 mph, so 105+ and 106+ lie at or near the observed record while 107+ lies beyond it. For the any-pitcher events the pool, not the average pitcher, carries the probability; prospects with tracked AAA peaks and arms from leagues without Statcast history (NPB, KBO) can join it mid-season.",
+   "measurement": "From Statcast pitch-level release_speed (MLB) and Hawk-Eye AAA data: for each pitcher in the last three seasons compute season max, 99.9th and 99th percentile of fastball speed, number of pitches within 2.0 and 4.0 mph of T for each contract threshold T in {105, 106, 107}, and age; include a pitcher in the pool for threshold T if 3-season max >= T - 4.0 mph or AAA max >= T - 4.0 (the 4.0 mph margin is a design choice, not a sourced figure; test sensitivity at 3.0 and 5.0). Apply an aging adjustment of about -0.2 to -0.3 mph per year after age 27 to percentiles (unsourced; fit on Statcast), shrunk by pitch counts. Arms from NPB/KBO with no Statcast history enter by their league-tracked maxima where available (SOURCE_UNVERIFIED). As-of: daily.",
+   "free_sources": [
+    "Baseball Savant Statcast search (free)",
+    "pybaseball statcast (free)",
+    "Baseball Savant minor-league Statcast (AAA) (free_limited)",
+    "NPB/KBO published pitch speeds (no Statcast history; SOURCE_UNVERIFIED)"
+   ]
+  },
+  "mlb.max_velocity_extreme_distribution": {
+   "mechanism": "The fastest pitch of a season is the maximum over pitches of a speed distribution with a bounded upper tail for a few pitchers; each contract threshold T (105, 106 or 107) is a different point on that tail.",
+   "rationale": "The archetype owns nested any-pitcher thresholds (105+, 106+, 107+) plus a named-pitcher 107.0+ strike. Where T lies inside or at the observed tracked range (105+, probably 106+; recollection, SOURCE_UNVERIFIED) the tail probability can be estimated empirically from observed exceedances; where T lies beyond every tracked pitch (107+) it is an extrapolation that depends on the assumed endpoint. The regime therefore changes by threshold, and P(107+) <= P(106+) <= P(105+) must hold for the any-pitcher events.",
+   "measurement": "For each contract threshold T in {105.0, 106.0, 107.0}: per pitcher with >=300 fastballs in the last 2 seasons, fit a peaks-over-threshold generalized Pareto to fastball release_speed exceedances over the pitcher's 99th percentile (threshold u_i), shape xi_i constrained < 0 (finite endpoint) and shrunk to the pooled league xi with k=200 exceedances; p_i(T) = P(speed >= T | fastball) = (n_exc/n_fb)*(1 + xi_i*(T-u_i)/sigma_i)^(-1/xi_i), zero if T exceeds the fitted endpoint. When the league has observed pitches at or above T in the last three seasons, replace the fitted p_i(T) for pool members by the empirical exceedance frequency (shrunk to the fit with k = 5,000 pitches) so the extrapolation regime applies only where it is needed. N_i = expected remaining fastballs = remaining appearances x fastballs per appearance (postseason appearances weighted by P(team reaches each round)). P(any, T) = 1 - prod_i(1 - p_i(T))^(N_i), with a sensitivity run that adds a shared park-offset random effect; enforce monotonicity across T. For the named-pitcher strike use only that pitcher's term. Units: probability. As-of: daily, using only pitches dated before the as-of date."
+  },
+  "mlb.velocity_feed_anomaly_rate": {
+   "mechanism": "When a threshold lies beyond every tracked pitch, a YES can come from a feed glitch, mis-tagged pitch or unit error that is published (and possibly later corrected) rather than from a physical pitch; for thresholds inside the observed range the physical path dominates and this input matters little.",
+   "rationale": "If the physical tail near T is nearly empty (plausibly only for 107+; SOURCE_UNVERIFIED) the probability of a spurious reading could matter, but no evidence is recorded here that a spurious reading at these levels has ever been published, and the history needed to measure it is not obtainable: only own-captured live-feed snapshots would show readings removed before the first public pull. What counts depends on whether Kalshi settles on the first published reading or the corrected one, which the rules do not say; the markets carry early_close_condition 'This market will close and expire after the event occurs', so a published reading may close the market before any correction."
+  },
+  "mlb.velocity_tracking_calibration": {
+   "rationale": "Statcast reports release speed, which differs from the old PITCHf/x 50-ft reading, so historical records are not directly comparable. Park-to-park offsets in tracking readings and post-game revisions are plausible (SOURCE_UNVERIFIED here, see velo_park_offsets) and scoreboard and broadcast readings can differ from Statcast. Settlement on '107.0+' versus '107+' (and on 105+ and 106+) interacts with one-decimal rounding."
+  },
+  "mlb.season_feat_ledger_state": {
+   "rationale": "The Kalshi markets for the eight non-velocity events opened between 2026-02-27 and 2026-03-25 (the routed 106+ and 107+ velocity pair opened 2026-06-27), so they were live while the season was in progress and at any as-of date part of the season's feats are already known. A feat already recorded makes the market a pure settlement question, a feat not yet recorded leaves a hazard over only the games remaining, and for the 20-win and 50/50 races the counts to date and candidates still arithmetically alive are the state of the race."
+  },
+  "mlb.playoff_games_pa_distribution": {
+   "label": "Playoff games played and plate-appearance distribution for a named player (exposure for series markets; leader output only for playoff-leader markets)",
+   "mechanism": "A named player's playoff exposure is the number of games his team plays, which depends on bracket survival and round format, times his starts and plate appearances per game by lineup slot; playoff-leader markets add a maximum over players on top of that exposure.",
+   "measurement": "Exposure (all uses): for each player i, G_i distribution from mlb.bracket_path_enumeration (games played by his club across rounds of best-of-3, best-of-5 and best-of-7 formats). Per game, start probability s_i from his share of the last 30 team games started, split by opposing starter hand and shrunk to the lineup-slot prior with k = 20 games (no fixed 0.9 or 0.5 targets: those earlier placeholders were unsourced); PA per start by lineup slot from postseason PA per game 2015-2025 (slot means, with the shorter-series sample flagged). Output the distribution of games and plate appearances for player i, as-of daily during the postseason. Leader-market use only: stat (HR, RBI, hits, as stated in the contract) per PA from the projection rate shrunk to the 3-season rate with k = 300 PA, adjusted by the opposing starter; simulate 20k joint draws over G_i games with game-level shared environment; leader = maximum count among players of clubs that played, ties split per contract; output P(leader). Series home-run markets use only the exposure output."
+  }
+ }
+}

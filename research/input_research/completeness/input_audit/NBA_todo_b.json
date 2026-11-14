@@ -1,0 +1,1786 @@
+{
+"nba.player_shooting_regression": {
+"category": "variance_luck",
+"free_sources": [
+"nba_api / stats.nba.com (free, undocumented, rate-limited)",
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"PBPStats.com (free tier: on/off, lineup, possession-level splits)"
+],
+"label": "Player shooting luck vs expectation (3P%, FG%, FT%)",
+"measurement": "Beta-binomial shrinkage with prior mean = career/role expectation and prior strength set empirically per stat (3P ~ 300-500 att, FT ~ 100-150 att); compare recent vs shrunk estimate; include shot-quality (openness) adjustment.",
+"mechanical_flags": [],
+"mechanism": "Hot or cold stretches in 3P%/FG%/FT% mostly regress to a player's shot-quality-adjusted talent, so recent form overstates the next game's expected efficiency.",
+"pregame_knowable": "yes",
+"rationale": "Markets and naive models overweight recent hot shooting; true talent is better estimated by priors from career, volume and shot openness. FT% stabilizes faster than 3P%. Subtle: real changes (mechanics, injury recovery, role) exist, so shrinkage weight should depend on sample size and change signals.",
+"raw_data": [
+"player-game three-point attempts and makes",
+"shot quality by game"
+],
+"registry_ids": []
+},
+"nba.player_xpts_per_shot": {
+"category": "matchup",
+"free_sources": [
+"nba_api shotchartdetail (location, zone, action type; no per-shot defender distance to this resolver's knowledge)",
+"nba_api tracking shot dashboards (aggregate closest-defender bins, SOURCE_UNVERIFIED)",
+"Cleaning the Glass"
+],
+"label": "Shot-level expected points per attempt for the player vs tonight's defense",
+"measurement": "From shot-level data estimate a hierarchical model of make probability by player x shot zone x action type (shotchartdetail location, ACTION_TYPE, SHOT_TYPE and SHOT_DISTANCE fields) with beta priors (rim prior weight 150 FGA, three prior weight 750 FGA, midrange 300); multiply by opponent's allowed frequency/quality for each shot type (opponent-adjusted by league mean) to get predicted points per shot; sum over projected attempts by type. As-of: shots finished before tip-off. Closest-defender distance is not part of the base model; an optional season-level adjustment may use aggregate defender-distance bins from the tracking dashboards (not crossed with location), pending pp-defender-distance.",
+"mechanical_flags": [],
+"mechanism": "Points per attempt is a function of shot type and location (rim, midrange, corner and above-the-break three, action type) and the shooter's finishing talent, so team zone averages mix very different shooters.",
+"pregame_knowable": "yes",
+"rationale": "Opponent zone-allowed tables ignore who takes the shots; a pull-up scorer vs drop coverage and a roll man vs switching differ by large amounts and these are mostly knowable pregame.",
+"raw_data": [
+"shot chart: loc_x, loc_y, shot_zone, action_type, shot_type, shot_distance, result",
+"optional aggregate closest-defender-distance bins per player (SOURCE_UNVERIFIED)"
+],
+"registry_ids": []
+},
+"nba.playoff_any_game_threshold_union": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference playoff game logs",
+"nba_api playoff box scores",
+"own bracket simulation"
+],
+"label": "Probability a player reaches N points in at least one playoff game (union over a random, correlated run)",
+"measurement": "Simulate 20,000 playoff runs: draw the team's qualification and series path from the bracket simulation (nba.title_path, nba.series_length_distribution, nba.play_in_path_model), the player's availability per game from nba.playoff_star_health_hazard, a run-level form factor (log-normal, sd fitted from the player's game-to-game residual autocorrelation, about 0.1), and per-game p_g = P(points >= N) from nba.single_game_ceiling_tail rescaled by playoff minutes (nba.playoff_rotation) and opponent defender shift (nba.playoff_matchup_assignment_shift); P(YES) = share of runs with at least one game >= N. Validate on historical playoff 40+ and 50+ games (rates too low for 50 alone). As-of: nightly from the end of the regular season.",
+"mechanical_flags": [],
+"mechanism": "A playoff-long single-game threshold pays on the maximum game score over a random number of games whose length depends on advancement and the player's own health, with per-game tails correlated through form and matchup.",
+"pregame_knowable": "yes",
+"rationale": "Multiplying a regular-season per-game tail by expected games overstates the price: playoff pace and defense compress the tail, the number of games is zero with positive probability, health and advancement are linked, and a series against one elite defender correlates several games. The union must be computed jointly, not from marginals.",
+"raw_data": [
+"playoff bracket and series results",
+"player playoff and regular-season game logs (points, minutes, FGA, 3PA, FTA)",
+"injury report vintages"
+],
+"registry_ids": []
+},
+"nba.playoff_home_games_distribution": {
+"category": "distribution",
+"free_sources": [
+"Computed from the series model and NBA schedule format"
+],
+"label": "Distribution of the number of home playoff games by seed and path",
+"measurement": "For each team and round compute P(reach round) from the bracket simulation, P(home-court) from the seed comparison, and the distribution of home games in a series given length and home status (2-2-1-1-1: 4,3,3,2 or 2 for lower seed... enumerate); convolve across rounds into a pmf of total home games; produce two variants of the pmf, one counting play-in home games and one excluding them, because the sampled text does not say which applies (sc-titleonly); the 2-2-1-1-1 home pattern is the NBA best-of-seven format in every round. As-of: nightly during playoffs.",
+"mechanical_flags": [],
+"mechanism": "A team's total home playoff games is the sum over rounds of home games in each series, which depend on home-court status (seed), series length and advancement.",
+"pregame_knowable": "yes",
+"rationale": "KXNBAPLAYOFFHOMEGAMES and KXNBAPLAYOFFHOST count games rather than winners; probability mass depends on the series-length distribution (4-7 games) and on losing in an early round with few home games.",
+"raw_data": [
+"bracket simulation outputs, series format"
+],
+"registry_ids": []
+},
+"nba.playoff_matchup_assignment_shift": {
+"category": "matchup",
+"free_sources": [
+"NBA.com matchups (nba_api leagueseasonmatchups)",
+"Second Spectrum (paid)"
+],
+"label": "Playoff matchup assignment shift (primary defender effect)",
+"measurement": "From tracking matchup data compute for each offensive player the points/assists per 100 possessions guarded by each defender (min 50 possessions) with shrinkage to the defender's overall effect (k=100 possessions); for a series use the expected share of possessions by defender from the last regular-season meeting and playoffs-to-date; shift = \u03a3 share \u00d7 (matchup rate - baseline); update after each series game with half-life 2 games.",
+"mechanical_flags": [],
+"mechanism": "In a series the primary defenders assigned to stars shift counts relative to regular-season rates, adjusted game by game.",
+"pregame_knowable": "partial",
+"rationale": "Regular-season position-based opponent allowances miss the specific defender and the series adaptation. The 5-15% shift magnitude is SOURCE_UNVERIFIED (recalled, not estimated).",
+"raw_data": [
+"matchup possession data"
+],
+"registry_ids": []
+},
+"nba.playoff_max_deficit_comeback_rate": {
+"category": "game_state",
+"free_sources": [
+"nba_api playbyplayv2 / cdn.nba.com liveData play-by-play",
+"Basketball-Reference play-by-play pages"
+],
+"label": "Probability of winning a game after trailing by D or more points (max-deficit comeback rate)",
+"measurement": "From play-by-play score paths of 15 seasons compute each game's maximum deficit faced by the eventual winner; fit P(max deficit of winner >= D) by logistic regression on D (20-35), own-model pregame margin mean and sd, playoff flag and pace, with the playoff coefficient shrunk to the regular-season value (prior weight 200 playoff games); output per-game P(win after trailing >= 30) for each side and the series union 1 - E[prod over games (1 - p_g)] using series length draws. As-of: before game 1 and after each game.",
+"mechanical_flags": [],
+"mechanism": "A team wins after trailing by D only if the leader's in-game margin path reaches D and then reverses fully; large leads trigger starter rest and slower pace by the leader, so reversals from 30+ are rare and depend on when the lead was built.",
+"pregame_knowable": "yes",
+"rationale": "KXNBASERIESGCOMEBACK settles on any series game won after a 30-point deficit, a path event that no final-score model sees: a game can end close after a 30-point swing. Both the chance of a 30-point lead and the chance of reversing it depend on the strength gap, pace and how coaches manage big leads in the playoffs.",
+"raw_data": [
+"play-by-play score after every scoring event with game clock",
+"own-model pregame margin mean and sd",
+"playoff flag"
+],
+"registry_ids": []
+},
+"nba.playoff_rotation": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"nba_api / stats.nba.com (free, undocumented, rate-limited)",
+"cdn.nba.com liveData JSON (boxscore, playbyplay, odds; free, unofficial)"
+],
+"label": "Playoff rotation tightening and minutes inflation",
+"measurement": "Compare each player's playoff vs regular-season minutes in historical series; team-level rotation depth; adjust minutes projections and series stat distributions by round.",
+"mechanical_flags": [],
+"mechanism": "Playoff games feature shorter rotations and higher starter minutes, changing player props and team-level ratings relative to the regular season.",
+"pregame_knowable": "partial",
+"rationale": "Stars play several more minutes per game and bench depth matters less; regular-season minutes baselines understate playoff volume for starters and overstate bench contributions. Subtle: the effect varies by round and by series pace/blowout probability.",
+"raw_data": [
+"player playoff vs regular-season minutes by series"
+],
+"registry_ids": []
+},
+"nba.playoff_round_event_counts": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference playoff series results",
+"own bracket simulation"
+],
+"label": "Joint distribution of round-level series event counts (sweeps, upsets, Game 7s) and team playoff losses",
+"measurement": "Simulate the full bracket 50,000 times from nba.title_path with per-game probabilities from the series model, including a common per-round shock to home-court advantage (sd estimated from 20 seasons of round-level home win rates); record per round the number of sweeps, upsets (higher numerical seed beats lower, post-Play-In seeds) and Game 7s, and per team the total losses and the 16-0 indicator; output the joint pmf and marginal P(count >= N), P(losses = k). As-of: nightly during the playoffs; before the playoffs from the seed distribution.",
+"mechanical_flags": [],
+"mechanism": "Counts of sweeps, upsets and Game 7s in a round, and a team's total playoff losses, are sums over series whose pairings depend on earlier rounds and whose outcomes share common shocks.",
+"pregame_knowable": "yes",
+"rationale": "KXNBASWEEP, KXNBAUPSET, KXNBAGAME7, KXNBAPOLOSE and KXNBAUNBEATEN settle on counts or exact totals; multiplying independent series probabilities ignores that second-round pairings and seed gaps are random, and that league-wide shocks (injury waves, officiating emphasis) make concurrent series dependent, which fattens the tails of the count.",
+"raw_data": [
+"playoff series results with seeds and game-by-game outcomes for 20 seasons",
+"current seeds and bracket"
+],
+"registry_ids": []
+},
+"nba.playoff_round_scoring_shift": {
+"category": "pace_volume",
+"free_sources": [
+"Basketball-Reference / NBA Stats team game logs (regular season and playoffs)"
+],
+"label": "Playoff-versus-regular-season pace and efficiency shift by round",
+"measurement": "For each playoff game since 2004, compute actual possessions and offensive rating minus the regular-season opponent-adjusted expectation for that pairing; pool by round with a hierarchical model (round level, team-tempo slope); report mean shift in possessions per 48 and points per 100 with sd, using a 6-season half-life to track era changes.",
+"mechanical_flags": [],
+"mechanism": "Playoff games are played slower, with tighter rotations of better players, more half-court sets and more physical defence, so possessions and points per possession differ from the same teams' regular-season rates, and the shift grows by round.",
+"pregame_knowable": "yes",
+"rationale": "Regular-season ratings applied directly overstate playoff possessions; summing the bias over four to seven games makes it a material miss on a series total ladder whose rungs are spaced a few tens of points apart. The shift is also matchup-dependent: fast teams lose more pace than slow ones.",
+"raw_data": [
+"team game logs with possessions, points, opponent (regular season and playoffs)",
+"season-level opponent-adjusted team ratings"
+],
+"registry_ids": []
+},
+"nba.playoff_star_health_hazard": {
+"category": "availability",
+"free_sources": [
+"NBA injury reports (archived)",
+"Pro Sports Transactions injury/transaction data",
+"Basketball-Reference game logs"
+],
+"label": "Time-resolved probability that each rotation star is healthy for each playoff round",
+"measurement": "For each player in the top-3 of each contender estimate a hazard model for an injury ending availability (survival model by age, previous-season games missed, minutes per game, current injury status) fitted on 10 seasons of injury data; output P(healthy at playoff start), P(healthy for round k) conditional on being healthy at the start; combine with team-level strength loss from the player's absence (impact x minutes share). As-of: injury report vintage.",
+"mechanical_flags": [],
+"mechanism": "Title and conference odds are convex in star availability, and the relevant availability is in April-June, not the regular-season games-missed average.",
+"pregame_knowable": "partial",
+"rationale": "Games-missed expectations average over a season; the quantity that matters for round-reach contracts is the probability of being healthy at tip of each playoff series, which depends on current injury state, history, age and minutes load.",
+"raw_data": [
+"injury reports archived by vintage",
+"player age, minutes and games missed"
+],
+"registry_ids": []
+},
+"nba.playoff_triple_double_rate": {
+"category": "distribution",
+"free_sources": [
+"nba_api game logs",
+"Basketball-Reference"
+],
+"label": "Per-player playoff triple-double rate given expected games and minutes",
+"measurement": "For each candidate compute P(triple-double | game) from regular-season rate adjusted by playoff minutes factor (starters about +2 to +4 minutes) with shrinkage to a role prior (weight 20 games); expected games from the bracket simulation as a distribution; P(at least one TD in playoffs) = 1 - E[(1-p)^G]; aggregate across candidates with correlations through team advancement. As-of: nightly.",
+"mechanical_flags": [],
+"mechanism": "A playoff triple-double contract is an at-least-one-event over the playoffs; probability depends on the few players with triple-double production, the expected number of playoff games each plays and their playoff minutes.",
+"pregame_knowable": "yes",
+"rationale": "KXNBAPLAYOFF3D cannot be priced from regular-season rates alone: minutes rise for stars, games depend on series length and advancement, and triple-double rate per game is concentrated in a handful of high-assist bigs and guards.",
+"raw_data": [
+"playoff bracket and series results by game",
+"player playoff and regular-season game logs (pts, reb, ast, stl, blk, minutes)",
+"injury report vintages during the playoffs"
+],
+"registry_ids": []
+},
+"nba.playoff_whistle_regime": {
+"category": "officiating",
+"free_sources": [
+"official.nba.com referee assignments",
+"Basketball-Reference box scores (PF, FTA)"
+],
+"label": "Round-level playoff foul and free-throw environment with unknown future crews",
+"measurement": "Per playoff game since 2010: personal fouls and FTA per 100 possessions minus each team pair's regular-season rate; model by round with crew random effects; for unplayed games integrate over the round's officials pool (empirical frequency of crew chiefs assigned in that round) and use the announced crew only for the game whose assignment is out.",
+"mechanical_flags": [],
+"mechanism": "Playoff officiating tolerates more contact, cutting fouls and free-throw attempts relative to the regular season; crews are assigned game by game and announced on the morning of each game, so for later games only the round-level pool distribution is knowable.",
+"pregame_knowable": "partial",
+"rationale": "Free throws are a large share of points and also add stoppages that change late-game possessions; a series-long shift of a few attempts per game sums to a material number of points. Using a single named crew for the whole series would be wrong because each game draws a different crew.",
+"raw_data": [
+"referee assignments per playoff game with announcement time",
+"team PF and FTA per game"
+],
+"registry_ids": []
+},
+"nba.points_parity_band_mass": {
+"category": "distribution",
+"free_sources": [
+"nba_api shot logs",
+"Basketball-Reference"
+],
+"label": "Composite points pmf with parity and free-throw effect for 2-point bands",
+"measurement": "Simulate FG2, FG3, FT counts with beta-binomial dispersion and component correlations estimated on 5 seasons; tabulate P(points = k) and aggregate to band edges from the rules; verify pmf mod 2 against historical frequencies; shrink the pmf to the smoothed empirical pmf of similar-usage players with weight 0.2.",
+"mechanical_flags": [],
+"mechanism": "Points = 2 FG2 + 3 FG3 + FT; the mass of a 2-point band depends on parity coming from threes and free throws.",
+"pregame_knowable": "yes",
+"rationale": "Band probabilities from a smooth normal approximation ignore the lattice structure of the composite, which can misallocate up to several percentage points between adjacent bands.",
+"raw_data": [
+"player-game FG2/FG3/FT"
+],
+"registry_ids": []
+},
+"nba.points_upper_tail_rate": {
+"category": "distribution",
+"free_sources": [
+"Computed from nba_api box scores"
+],
+"label": "Player-specific upper-tail frequency of points given full-minutes games (ceiling-game rate)",
+"measurement": "For each player estimate exceedance probabilities P(pts >= 1.4m), P(pts >= 1.7m) and P(pts>=2.0m) where m is the minutes-conditional mean, on games with >=30 minutes over a 3-season window; fit a generalised-Pareto above the 85th percentile of residuals with shape shrunk to a league-wide value (prior weight 60 exceedances). Output the tail index and exceedance rates.",
+"mechanical_flags": [],
+"mechanism": "Scoring has a heavier right tail than a negative binomial fit to the mean implies because hot shooting, FT surges and OT stack; the cubic escalator weights this tail heavily.",
+"pregame_knowable": "yes",
+"rationale": "The scalar escalator pays (y/50)^3 so its expected value is dominated by 35+ outcomes; a model calibrated to the mean misprices it, and the 30+/40+ rungs depend on the same tail.",
+"raw_data": [
+"player-game points and expected points"
+],
+"registry_ids": []
+},
+"nba.preseason_roster_aging_prior": {
+"category": "team_strength",
+"free_sources": [
+"Basketball-Reference BPM/VORP",
+"EPM / RAPM published by Dunks&Threes or similar",
+"Cleaning the Glass"
+],
+"label": "Preseason team prior from minutes-weighted roster impact with aging curves and continuity",
+"measurement": "Prior team rating = sum over projected rotation of (expected minutes share x player impact projection), where projection = last-two-season blended impact (weights 0.6/0.3/0.1 over 3 seasons) + aging adjustment by age bucket (estimated from historical year-over-year change; roughly +1.0/-0.3/-1.0 per 100 possessions at ages 22/28/33) + continuity adjustment (minutes-weighted share of returning players, coefficient estimated by backtest); shrink to league mean by sd of prior error estimated from 10 historical seasons; report mean and sd. As-of: before opening night and updated at each roster transaction.",
+"mechanical_flags": [],
+"mechanism": "A team's true strength before and early in the season is a function of who is on the roster, how those players age, and how much of last year's unit returns; this prior dominates for the first 20-30 games.",
+"pregame_knowable": "yes",
+"rationale": "With about ten games played, the 2026-27 rating is mostly the prior; building it from last season's team rating ignores offseason roster churn, aging and rookie contributions, and the error of the prior sets the uncertainty of every futures contract.",
+"raw_data": [
+"player-season impact ratings, ages, minutes, team rosters, transactions"
+],
+"registry_ids": []
+},
+"nba.prospect_board_dispersion": {
+"category": "distribution",
+"free_sources": [
+"Tankathon consensus",
+"NBADraft.net",
+"public board posts"
+],
+"label": "Prospect consensus rank and cross-board dispersion",
+"measurement": "For each prospect: mean and sd of rank across at least 6 boards (ESPN, The Athletic, Tankathon, NBADraft.net, Bleacher Report, Yahoo) with weights proportional to each source's historical rank-error; convert to P(selected at slot k) by a Plackett-Luce model fit on 2015-2025 drafts; update after each workout/medical report with 48h half-life.",
+"mechanical_flags": [],
+"mechanism": "Selection at slot N is a categorical outcome over the top prospects; disagreement across public boards and team-specific mocks signals entropy and information arrival.",
+"pregame_knowable": "partial",
+"rationale": "A single consensus rank hides that the second pick is nearly deterministic in some drafts and a coin flip among four prospects in others; measuring dispersion is the correct uncertainty input.",
+"raw_data": [
+"board snapshots with timestamps",
+"historical draft slots"
+],
+"registry_ids": []
+},
+"nba.prospect_slot_probability_model": {
+"category": "other",
+"free_sources": [
+"Tankathon (free web board and mock aggregator)",
+"Public mock drafts and big boards (ESPN, The Ringer, others; some paywalled)",
+"NBA.com draft combine measurements"
+],
+"label": "Market-free prospect draft-slot probability model from public boards, measurables and team needs",
+"measurement": "Step 1: consensus score = weighted mean of z-scored ranks across at least 5 public boards and mock drafts, weight = inverse of each source's mean absolute slot error over the last 5 drafts (equal weights if history is missing), with a recency bonus for mocks published in the last 7 days. Step 2: a Plackett-Luce choice model over the remaining pool at each pick, theta_i = a * consensus_score_i + b * team_need_fit_i + c * international_or_age flag, with a, b, c fitted by maximum likelihood on the last 10 drafts (not fitted here). Step 3: simulate 20000 drafts, drawing pick order from the lottery and ownership layers, to obtain P(prospect taken at or before slot k) and P(team picks within top k). No prediction-market price, sportsbook line or Kalshi quote is an input. As-of: nightly in the final month, then hourly on draft day, with draft-night trades treated as a separate scenario.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Player-slot draft contracts (top 5, top 10, top 20 and so on) need the probability that a named prospect is selected at or before a slot, which is the product of the team's pick position (from the lottery and ownership layers) and a ranked-choice model of who each team takes.",
+"pregame_knowable": "partial",
+"rationale": "The catalog input nba.draft_board mixes a public consensus rank with 'the market may lead the public mocks', so it can smuggle a price into the model. A market-free version uses only non-price information: aggregated public big boards and mocks (weighted by their past accuracy), combine and workout measurables, age and team needs, and excludes any prediction-market or sportsbook draft price, which is kept as a benchmark only. Slot outcomes are strongly rank-ordered at the top and diffuse in the middle, so a ranked-choice model is needed and not a per-player independent probability.",
+"registry_ids": []
+},
+"nba.pts_exit_foulout_hazard": {
+"category": "availability",
+"free_sources": [
+"nba_api playbyplayv3, box scores",
+"NBA official injury report archive"
+],
+"label": "Early-exit and foul-out hazard of the scorer (injury, ejection, sixth foul)",
+"measurement": "From box score and play-by-play, per player-season: share of games entered with minutes < 0.55 x pregame expected minutes and a non-blowout exit, plus share ending by sixth foul or ejection; beta(2,40) shrinkage to a position prior, 60-game half-life; multiply by a status factor for Questionable/Probable/returning-from-injury estimated from archived report vintages. Feeds a mixture weight for the short-minutes branch.",
+"mechanical_flags": [],
+"mechanism": "Points accumulate only while on court and the contract settles on actual points once he enters, so mid-game exits remove the upper tail entirely.",
+"pregame_knowable": "partial",
+"rationale": "Average minutes hide a distribution with a point mass at early departure; for older or injury-prone scorers and foul-prone drivers it is several percent per game and it is not captured by status labels alone.",
+"raw_data": [
+"PBP sub/ejection/foul events",
+"injury vintages",
+"minutes"
+],
+"registry_ids": []
+},
+"nba.qualification_probability": {
+"category": "motivation",
+"free_sources": [
+"NBA.com official statistical leader criteria",
+"nba_api game logs"
+],
+"label": "Probability a candidate meets the contract's qualification rule (games, minutes, or none)",
+"measurement": "For each candidate compute P(games_played >= G_min) where G_min is read from the contract (or 0 if 'qualification thresholds do not apply'): games played = games to date + Binomial-like process over remaining games with per-game availability from an injury-hazard model and a load-management multiplier for players >30 or with a history of rest; record probability and the conditional leader probability given qualification; update after every game.",
+"mechanical_flags": [],
+"mechanism": "Leader and award-like markets require a minimum number of games or minutes; a player's chance depends on the distribution of games played and on strategic rest near the threshold.",
+"pregame_knowable": "yes",
+"rationale": "A scoring leader who misses 25 games might be disqualified under a minimum-games rule or still counted if the rule says qualification thresholds do not apply; this is a cliff in the payoff and varies by contract.",
+"raw_data": [
+"games played, remaining schedule, injury history, ages"
+],
+"registry_ids": []
+},
+"nba.qualifying_stage_requirement": {
+"category": "other",
+"free_sources": [
+"Kalshi rules text (public API)"
+],
+"label": "Qualifying-stage requirement per contract wording",
+"measurement": "For each series code: required stage (announce / signed definitive / approved / adopted), time zone, window end, carve-outs and multi-outcome rules; fill from rules_primary and rules_secondary of every live series (22 here), mark TITLE_ONLY where no text; test with 20 historical events whether the wording would have resolved Yes.",
+"mechanical_flags": [],
+"mechanism": "Each series names which stage counts; a map from wording to stage lets the model score the right stage.",
+"pregame_knowable": "yes",
+"rationale": "The draft treats the wording as a text input, but the useful object is a coded stage per series and the exclusions list, so the same news can be mapped to Yes/No consistently.",
+"raw_data": [
+"rules_primary, rules_secondary, close_time per market"
+],
+"registry_ids": []
+},
+"nba.quarter_unit_projection": {
+"category": "player_role",
+"free_sources": [
+"pbpstats.com lineups",
+"nba_api teamdashlineups / playbyplayv3",
+"Cleaning the Glass"
+],
+"label": "Per-quarter expected on-court units and their projected net/offensive rating",
+"measurement": "For each team, build per-quarter minute-share matrix (player x quarter) from last 30 games with 15-game half-life, conditioned on starters confirmed and injury vintages; map to expected unit compositions; apply ridge-regularised lineup/player on-off ratings (lambda tuned by rolling CV) to compute expected points per 100 possessions in each quarter; adjust for opponent unit by the same method. Output: expected team points and margin per quarter with standard errors.",
+"mechanical_flags": [],
+"mechanism": "Each quarter's scoring is the possession-weighted sum of ratings of the specific five-man units on the floor; coaches' stagger patterns make Q2 and Q4 weak or strong depending on who is available.",
+"pregame_knowable": "partial",
+"rationale": "Full-game ratings average over rotation; Q2 often features bench units with one starter, while Q1 and Q3 start with the best five. Because rotation patterns are predictable from coach tenure and are altered by injuries, a projection by quarter is a pregame-computable improvement over team ratings.",
+"raw_data": [
+"stint and substitution data by quarter",
+"lineup possessions and points"
+],
+"registry_ids": []
+},
+"nba.rating_blowout_minutes_curve": {
+"category": "distribution",
+"free_sources": [
+"nba_api / stats.nba.com leaguegamelog (team game logs, free, undocumented, rate-limited)",
+"cdn.nba.com liveData playbyplay JSON (substitutions with score, free, unofficial)",
+"Basketball-Reference game logs and play-by-play (free, polite scraping)"
+],
+"label": "Ratings-based blowout probability and starter-minutes-vs-margin curve (market-free)",
+"measurement": "Step 1, expected margin: mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv, where NetRtg_adj is the as-of-tipoff opponent-adjusted net rating from nba.off_rtg and nba.def_rtg (ridge regression on game point differential, half-life about 25 games, shrunk to the preseason prior with n_prior about 20 games as a placeholder to be fitted), adjusted for the confirmed unavailable players via nba.lineup_adj_rating, home_adv fitted on the last 5 seasons (about 2 points). Step 2, margin spread: sd_margin fitted on 5 seasons of residuals of final margin versus mu (league-wide roughly 12-13 points, to be estimated, with a heavier empirical tail than normal). Step 3: P(final |margin| >= 15/20/25) and P(|lead| >= 15/20 entering Q4) from the empirical residual distribution around mu. Step 4, minutes curve: from play-by-play stints, per team-season, expected minutes of each rotation player conditional on margin entering Q4 in bins (0-9, 10-14, 15-19, 20+), shrunk toward the league curve with k about 30 blowout games. Output per player: expected minutes lost and the probability of falling below a stated minutes level. No closing line or other price is used; the spread is retained only to benchmark calibration of step 3.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Rebuilds the blowout risk from team strength and rotation history instead of the closing spread: a ratings-implied expected margin and margin spread give P(large lead), and a coach/player minutes-versus-margin curve converts each margin path into expected minutes lost by starters and gained by bench players.",
+"pregame_knowable": "yes",
+"rationale": "The catalog input nba.garbage is defined from the closing spread, which is a market price and so a benchmark, not an input. The causal quantity is the chance that the margin passes the coach's pull threshold early enough to matter, and how much playing time each player then loses. Subtle: the loss depends on when the lead arrives (a 20-point lead entering Q4 removes far more starter minutes than one reached with 3 minutes left), on the coach, and on whether the trailing team also pulls starters, so the curve must be conditional on the margin path and not only on the final margin.",
+"raw_data": [
+"team-game final margins and opponent-adjusted ratings as of tipoff (5 seasons)",
+"play-by-play substitution stints with margin entering Q4 (per team-season)",
+"player minutes by game"
+],
+"registry_ids": []
+},
+"nba.rating_update_gain": {
+"category": "team_strength",
+"free_sources": [
+"Basketball-Reference team game logs",
+"nba_api team game logs"
+],
+"label": "In-season rating update gain and posterior sd (how fast current results override the prior)",
+"measurement": "Backtest across the last 15 seasons: regress end-of-season margin per game on preseason prior and games-played-weighted current margin; solve for optimal weight w(n) as a function of games played n (expect w near 0.2 at n=10, 0.5 at n=40); posterior sd of true rating = sqrt(prior_var x (1-w)); use margin of victory capped at 15 and garbage-time excluded. As-of: all games before the as-of date.",
+"mechanical_flags": [],
+"mechanism": "True team strength is updated game by game with weight given by signal-to-noise; the gain declines with games played, and calibrating it by backtest sets how fast futures should move.",
+"pregame_knowable": "yes",
+"rationale": "A rating that overweights early results (10 games) swings futures; under-weighting leaves stale priors. The right gain is estimated from past seasons and depends on whether margin or win/loss is used and on roster stability.",
+"raw_data": [
+"team-game margins, possessions, rosters by game"
+],
+"registry_ids": []
+},
+"nba.ratings": {
+"category": "team_strength",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"nba_api / stats.nba.com (free, undocumented, rate-limited)",
+"DARKO (darko.app, free web view; no official API)",
+"Dunks & Threes EPM (free partial; no official API)"
+],
+"label": "Team ratings / schedule strength for season markets",
+"measurement": "Bayesian team rating: preseason prior from player-based projection (minutes-weighted EPM/BPM/RAPM) updated by game results with margin capped and garbage filtered; produce mean and sd; separate regular-season and playoff rotation versions.",
+"mechanical_flags": [],
+"mechanism": "A season-level team rating (net rating plus roster talent plus health) feeds simulations for wins, seed, series and title.",
+"pregame_knowable": "yes",
+"rationale": "Season markets require a rating that combines prior-season performance, roster changes, current-season results and injury information; single-season net rating has meaningful luck variance. Subtle: ratings should reflect playoff-relevant strength (top-8 rotation health) rather than regular-season depth for title/series markets, and be uncertainty-aware.",
+"raw_data": [
+"team game results with margins",
+"player impact metrics (EPM/BPM/RAPM)",
+"rosters"
+],
+"registry_ids": [
+"nba.ratings"
+]
+},
+"nba.referee_crew": {
+"category": "officiating",
+"free_sources": [
+"NBA official referee assignments (official.nba.com, free, posted morning of game day)",
+"NBA Last Two Minute reports (official.nba.com, free)",
+"Basketball-Reference (free; polite scraping, rate-limited) game box scores list officials"
+],
+"label": "Referee crew tendencies (fouls, pace, total, home bias)",
+"measurement": "Mixed-effects model: total or FTA residual ~ crew chief + referees + team effects with shrinkage; rolling 2-3 seasons; compute expected fouls/FTA shift for tonight's crew.",
+"mechanical_flags": [],
+"mechanism": "The assigned crew's foul-calling rate sets free-throw volume, foul trouble, and game pace, affecting totals and certain player props.",
+"pregame_knowable": "partial",
+"rationale": "Crew assignments are public the morning of game day, so they are knowable but the effect is modest and the historical estimate noisy; crews with higher foul rates raise free-throw attempts and lower fluidity. Subtle: crew effects are partly confounded by the teams they officiated; need to regress crew effect on fouls/total residual controlling for teams.",
+"raw_data": [
+"referee assignments by game",
+"crew foul and pace history"
+],
+"registry_ids": []
+},
+"nba.reg_tie_pmf_model": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference game logs",
+"nba_api"
+],
+"label": "Own-model regulation tie probability P(OT)",
+"measurement": "P_gauss(0) = phi(mu/sigma)/sigma with mu own-model margin and sigma from nba.margin sd model (about 12, scale sqrt(possessions)); multiply by excess factor kappa(|mu|) estimated by isotonic regression on 10 seasons of games as observed OT rate divided by P_gauss(0) in |mu| buckets of 2 points; kappa about 1.7-1.9 overall; output with beta interval; use own-model mu, not closing lines. Margin is integer-valued with parity tied to the total, and free-throw, three-point and intentional-foul structure moves mass onto and off zero, so estimate the observed integer pmf at 0 (and smoothed mass at +/-1 to +/-4) over 15 seasons and let kappa(|mu|) absorb the discreteness rather than reading the continuous density at zero.",
+"mechanical_flags": [],
+"mechanism": "P(OT) = mass of regulation margin at zero from a heteroscedastic margin density with a late-game excess-mass correction.",
+"pregame_knowable": "yes",
+"rationale": "The draft claims P(OT) is roughly flat across spreads, but a Gaussian with sd 12 gives 3.3% at pick-em and 2.3% at 10 points, so the dependence on spread is large; the right model is a decreasing function with an empirical excess factor.",
+"raw_data": [
+"team-game regulation and final scores with period counts (15 seasons)",
+"own-model expected margin and margin sd per game"
+],
+"registry_ids": []
+},
+"nba.replacement_level_minutes_absorption": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference play-by-play minutes",
+"nba_api"
+],
+"label": "Replacement-level minutes absorption",
+"measurement": "From 3 seasons of game-level minutes: for each team and absent role (primary ball handler, wing, rim protector), estimate the share of vacated minutes absorbed by each teammate with ridge regression, then compute expected replaced rating = \u03a3 share_j \u00d7 impact_j(minutes-adjusted); use 20-game half-life; compare to team default; fallback to position-group priors for new combinations.",
+"mechanical_flags": [],
+"mechanism": "When a rotation player is out, minutes flow to specific teammates at specific quality; who absorbs them (a starter playing more versus a bench player starting) determines the actual rating loss.",
+"pregame_knowable": "partial",
+"rationale": "Impact-based absence valuations assume replacement at team-average bench quality; a team whose next man up is a two-way player or an out-of-position player loses much more.",
+"raw_data": [
+"player-game minutes",
+"lineups",
+"impact values"
+],
+"registry_ids": []
+},
+"nba.reporter_reliability_score": {
+"category": "availability",
+"free_sources": [
+"X/Twitter archives (API paid)",
+"Pro Sports Transactions",
+"Spotrac transaction history"
+],
+"label": "Reporter and source reliability by report stage",
+"measurement": "Compile reports from tier-one national reporters and team beat writers over 5 seasons, label each with stage (talks / agreed / done), compute completion rate and median lead time to the official act per source and stage with beta-binomial shrinkage k=10 reports; apply to tonight's reports with time decay half-life 7 days for 'talks'; as-of report timestamp.",
+"mechanical_flags": [],
+"mechanism": "Conversion probability of a report into the qualifying event depends on the reporter and the claim stage (talks, agreed in principle, finalising).",
+"pregame_knowable": "partial",
+"rationale": "The draft input 'transactions, trades, coaching news' is a feed, not a probability; the value is a calibration table P(event | source, stage).",
+"raw_data": [
+"time-stamped reports and outcomes"
+],
+"registry_ids": []
+},
+"nba.rest_travel": {
+"category": "schedule_context",
+"free_sources": [
+"NBA schedule JSON (cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, free)",
+"nba_api / stats.nba.com (free, undocumented, rate-limited)",
+"Basketball-Reference (free; polite scraping, rate-limited)"
+],
+"label": "Rest, back-to-back, travel, altitude",
+"measurement": "Per team: days of rest, is_b2b, second_game_of_b2b_on_road, games in last 4/6/7 days, rest differential; interactions with age and minutes load; fit effect on margin residual vs closing line.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "Fatigue from short rest, back-to-backs and dense schedule modestly lowers efficiency and, through coaching decisions, changes minutes and availability.",
+"pregame_knowable": "yes",
+"rationale": "Rest effects on team performance are small but real; larger is the indirect channel where stars sit on the second night of a back-to-back, which is handled by availability inputs. Rest differential (not absolute rest) matters for the spread; 3-in-4 and 4-in-6 clusters, and games after long road trips, add tail risk. Subtle: effect sizes have shrunk in the sports-science era and must be fit on recent seasons only.",
+"raw_data": [
+"schedule",
+"rest days by team"
+],
+"registry_ids": [
+"nba.rest_travel"
+]
+},
+"nba.return_timeline_hazard": {
+"category": "availability",
+"free_sources": [
+"Pro Sports Transactions injury list",
+"Basketball-Reference injuries",
+"team reports"
+],
+"label": "Return-from-injury timeline hazard by injury type",
+"measurement": "Weibull survival fit by injury category on 10 seasons of injuries (from the first reported timeline to the first appearance), parameters shrunk to the pooled category with k=8 cases; adjust for team disclosure style via the ratio of actual to reported timeline; P(return by T) = 1 - exp(-(t/scale)^shape) with t measured from the injury date; update at each report; as-of timestamp.",
+"mechanical_flags": [],
+"mechanism": "The probability a player has returned by a date follows a recovery time-to-event distribution with setbacks, not a point estimate.",
+"pregame_knowable": "partial",
+"rationale": "Reported timelines are lower bounds with setbacks; a return-by-date market is a CDF at a date, and the shape depends on the injury (ankle sprain versus stress fracture versus surgery).",
+"raw_data": [
+"injury events with report dates and return dates"
+],
+"registry_ids": []
+},
+"nba.rim_contest_volume_on_court": {
+"category": "matchup",
+"free_sources": [
+"nba_api defensive dashboard (shots defended at rim, SOURCE_UNVERIFIED for per-game)",
+"pbpstats.com on/off",
+"Second Spectrum (paid)"
+],
+"label": "Opponent rim attempts faced while the player is the on-court rim protector, and contest/block rate",
+"measurement": "From tracking and play-by-play compute per player: opponent rim attempts per 36 minutes on court, contest share (his contests / team contests), block rate per contest (shrunk to role prior with weight 150 contests); project tonight's rim attempts faced = opponent rim FGA per 100 possessions x possessions while on court x anchor-minutes share. Include position-pair changes when another rim protector is out. As-of: tip.",
+"mechanical_flags": [],
+"mechanism": "Blocks equal opponent rim attempts faced times the player's contest share times block rate per contest, so block supply depends on who is the anchor and how many shots the opponent takes at the rim while he is on court.",
+"pregame_knowable": "partial",
+"rationale": "Total FGA or team pace is a poor supply measure: a drop-coverage center faces 20+ rim attempts, a switching center fewer; opponent rim frequency while the player is on court, and the share of contests that are his, move block expectation more than his season blocks per minute.",
+"raw_data": [
+"defense dashboard: DFGA at rim, contests, blocks; lineup minutes"
+],
+"registry_ids": []
+},
+"nba.rising_stars_roster_strength": {
+"category": "team_strength",
+"free_sources": [
+"NBA.com Rising Stars roster releases",
+"Basketball-Reference rookie and G League stats",
+"NBA G League stats site"
+],
+"label": "Rising Stars team strength from first/second-year and G League rosters",
+"measurement": "Per player: offensive impact per 100 possessions this season shrunk toward a draft-slot prior with k=800 possessions (placeholder); G League players' ratings multiplied by a league-translation factor estimated from players who moved between leagues (placeholder 0.8); team strength = minute-share weighted sum with minutes from nba.asg_minutes_rotation_plan; output per-possession scoring rates for nba.target_score_race_model; as-of = Rising Stars draft and final roster.",
+"mechanical_flags": [],
+"mechanism": "Rising Stars teams are drafted from first- and second-year NBA players plus a G League team, so team strength rests on young-player offensive ratings with small samples and a cross-league adjustment for the G League side.",
+"pregame_knowable": "partial",
+"rationale": "Rookie and sophomore impact estimates are noisy and the G League team's stats are in a weaker league, so naive per-game scoring over-rates high-usage players on bad teams and mis-rates the G League side. Honorary coaches draft the teams, so team balance depends on the draft, and Rising Stars participants doubling into other events may play reduced minutes.",
+"raw_data": [
+"Rising Stars draft results",
+"rookie/sophomore per-100 stats",
+"G League player stats",
+"translation sample of call-ups"
+],
+"registry_ids": []
+},
+"nba.roster_overlap_weighted_rating": {
+"category": "team_strength",
+"free_sources": [
+"nba_api game logs",
+"Basketball-Reference"
+],
+"label": "Roster-overlap weighted team rating",
+"measurement": "Weight w_g = exp(-lambda \u00d7 (1 - overlap_g)) \u00d7 recency half-life 40 games, overlap_g = \u03a3 over tonight's top-10 players of min_share_tonight \u00d7 I(played in game g), lambda fit by out-of-sample game-margin error on 3 seasons; rating = weighted opponent-adjusted net rating shrunk to the preseason prior with k=15 effective games.",
+"mechanical_flags": [],
+"mechanism": "Past game results are weighted by how similar the active set of that game was to tonight's, so results from games with different rosters count less.",
+"pregame_knowable": "yes",
+"rationale": "Season ratings blend games played with and without stars, and a rating from a healthy-roster sample misleads for a depleted lineup; the overlap weighting makes the baseline condition on the rotation.",
+"raw_data": [
+"team-game margin",
+"player participation per game"
+],
+"registry_ids": []
+},
+"nba.rule_change_pipeline": {
+"category": "other",
+"free_sources": [
+"NBA.com official rule-change announcements",
+"NBA Board of Governors meeting releases",
+"reporter coverage archives"
+],
+"label": "Rule-change adoption pipeline (competition committee, Board of Governors vote calendar, trial history)",
+"measurement": "Build the list of publicly reported rule proposals 2000-2026 with stage reached (reported idea, committee discussion, committee recommendation, Board vote, adopted) and months from stage to adoption; P(adopt before date) = P(next stage cleared) x ... along the remaining stages x indicator that a scheduled Board meeting falls before the deadline; shrink stage rates toward the all-proposal rate with k=10 proposals; approval threshold (recalled as a three-quarters majority) SOURCE_UNVERIFIED.",
+"mechanical_flags": [],
+"mechanism": "A rule change is adopted only after a proposal clears the competition committee and a Board of Governors vote at a scheduled meeting before the market window ends, so probability is the product of stage-transition rates and a calendar test.",
+"pregame_knowable": "partial",
+"rationale": "KXNBARULE (the \"one free throw\" rule adopted before the 2026-27 regular season) needs the committee and Board-of-Governors process, the meeting calendar and the history of proposals that were discussed but never adopted; the pooled off-field base rate says nothing about it.",
+"raw_data": [
+"rule proposals with stage dates",
+"Board of Governors meeting calendar",
+"vote outcomes"
+],
+"registry_ids": []
+},
+"nba.schedule_marquee_selection_model": {
+"category": "schedule_context",
+"free_sources": [
+"Basketball-Reference historical schedules",
+"NBA.com schedule releases and national-TV listings",
+"reporter leaks before schedule release"
+],
+"label": "Marquee-date schedule selection model (Christmas and opening games)",
+"measurement": "For each candidate pairing on the date compute: both teams' national-TV game counts last season and this season's announced national-TV allocation, number of All-NBA players, market size (DMA rank), prior-season Finals/conference-finals participation, rivalry flag, and Christmas/opening appearances in the last 5 seasons; fit a conditional logit on 15 seasons of Christmas slates and opening-week schedules; enforce one game per team per date; update to near-certainty on tier-one leaks; as-of: before the official schedule release.",
+"mechanical_flags": [],
+"mechanism": "The league selects Christmas and opening-week pairings for national TV from teams with star power, large markets, rivalries and last season's Finals or ring-night storylines, under arena and travel constraints.",
+"pregame_knowable": "partial",
+"rationale": "Christmas and first-opponent markets are a choice among a few feasible pairings; team performance matters only via appeal, and the strongest predictors are prior-year national-TV allocation, star presence and storyline, plus pre-release leaks. A Finals rematch or ring night is close to a fixed rule, which a base rate over all pairings misses.",
+"raw_data": [
+"historical Christmas and opening-week schedules",
+"national-TV game allocations by team",
+"All-NBA rosters, market size"
+],
+"registry_ids": []
+},
+"nba.score_resid": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited) game logs",
+"The Odds API (free tier, limited credits; sportsbook lines)",
+"cdn.nba.com liveData JSON (boxscore, playbyplay, odds; free, unofficial)"
+],
+"label": "Score residual distribution around lines",
+"measurement": "Compute empirical residual distribution of (margin + spread) and (total points - total) over multiple seasons by spread bucket and total bucket; fit scale; compute probability mass at integers for push/at-threshold handling.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "The distribution of actual margin/total minus the closing line gives the variance, skew and tail mass needed to convert a point-spread/total edge into a probability.",
+"pregame_knowable": "yes",
+"rationale": "NBA margin sd around the closing spread is roughly 11-12 points and total sd roughly 17-19; these differ by spread size (blowouts have fatter tails), pace and period. Subtle: the center of the residual distribution is zero if lines are efficient, so the use is the shape (variance by line size, push masses at integer numbers) rather than bias.",
+"registry_ids": [
+"nba.score_resid"
+]
+},
+"nba.scorer_bias": {
+"category": "officiating",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited) team game logs by arena",
+"nba_api / stats.nba.com (free, undocumented, rate-limited)",
+"hoopR / sportsdataverse (free R/Python pull of ESPN and NBA data)"
+],
+"label": "Official scorer/arena stat-credit bias (assists, steals, blocks, rebounds)",
+"measurement": "Mixed-effects model of assists/blocks/steals per 100 possessions with team-offense, team-defense and venue random effects; arena effect = home-arena random effect on both teams.",
+"mechanical_flags": [],
+"mechanism": "Statistics like assists, blocks and steals are subjective official-scorer judgments, and arena-level tendencies (home scorer) can shift counts systematically.",
+"pregame_knowable": "yes",
+"rationale": "If home arenas credit more assists/blocks/steals to the home team, prop outcomes depend on venue and the scorer culture; the effect can be measured as arena-level residual in stat/min controlling for team and opponent. It is a hypothesis, probably small, and needs panel data over multiple seasons. Subtle: team-composition confounds (a team always plays at its own arena), so use opponent-team residuals at the same venue.",
+"raw_data": [
+"player-game assists/rebounds by arena"
+],
+"registry_ids": []
+},
+"nba.season_plus_minus_projection": {
+"category": "team_strength",
+"free_sources": [
+"nba_api leaguedashplayerstats (PLUS_MINUS, minutes; free, undocumented)",
+"PBPStats.com on/off splits (free tier)",
+"Basketball-Reference player plus/minus pages (free, polite scraping)"
+],
+"label": "Season total plus/minus projection: on-court net margin rate times remaining minutes, combined across teams after trades",
+"measurement": "For each candidate: remaining minutes = remaining team games x P(plays) x projected minutes (season availability inputs). On-court margin per 48 = team opponent-adjusted net rating (nba.ratings, as of date) + the player's on/off differential shrunk toward 0 with prior weight 3,000 on-court possessions, converted to points per minute with projected pace. Final total = official plus/minus to date + remaining minutes x per-minute margin, simulated jointly with team season outcomes so teammates share team-level shocks; ties split 1/N. As-of: nightly.",
+"mechanical_flags": [],
+"mechanism": "Total plus/minus is the scoring margin while a player is on court summed over the season, so it equals on-court minutes times his lineups' net margin per minute; team strength and minutes dominate it, the player's own impact is a smaller part.",
+"pregame_knowable": "yes",
+"rationale": "A plus/minus leader race is usually won by a heavy-minutes starter on the best team rather than the best individual player, and teammates on a dominant team compete with each other. Subtle: the rules combine a traded player's totals across teams, and games missed scale the total down linearly, so a durable starter on a 60-win team can beat a better player who misses 15 games.",
+"raw_data": [
+"Player season plus/minus and minutes to date",
+"Player on/off net rating splits with on-court possessions",
+"Team ratings and remaining schedule"
+],
+"registry_ids": []
+},
+"nba.second_half_adjustment_effect": {
+"category": "game_state",
+"free_sources": [
+"nba_api linescore + play-by-play",
+"pbpstats.com"
+],
+"label": "Coach-specific second-half and Q3 adjustment effect (Q3 efficiency minus game baseline)",
+"measurement": "For each coach-team-season compute Q3 net rating minus first-half net rating regressed on margin at halftime and minutes played by starters in the first half; empirical-Bayes shrink across coaches (variance component estimated by method of moments) so that individual coach effects are heavily shrunk (typical shrinkage 80-90%); apply only when the coach is unchanged. As-of: games before tip.",
+"mechanical_flags": [],
+"mechanism": "After halftime coaches adjust schemes and starters re-enter, so Q3 scoring is not an average of Q1 and Q2 and certain coaches systematically outscore their baseline in Q3.",
+"pregame_knowable": "yes",
+"rationale": "Q3 and Q1 both start with starters but have different information sets; evidence of Q3 effects by coach is plausible but noisy; the quantity matters for Q3 winner/spread/total and for the 2H markets, and interacts with lead size.",
+"raw_data": [
+"period net rating by team and halftime margin"
+],
+"registry_ids": []
+},
+"nba.second_unit_net_rating_gap": {
+"category": "team_strength",
+"free_sources": [
+"nba_api lineups",
+"Cleaning the Glass (paid)"
+],
+"label": "Second-unit net rating gap",
+"measurement": "Net rating of the lineups with at most one top-5 player, per 100 possessions, over the last 40 games with opponent adjustment and shrinkage k=250 possessions; gap = team A second unit minus team B second unit; translate to expected margin drift per 6 minutes = gap \u00d7 12/100; as-of rotation as projected.",
+"mechanical_flags": [],
+"mechanism": "The bench lineups play most late blowout minutes, so the margin drift is the second unit's net rating difference.",
+"pregame_knowable": "partial",
+"rationale": "Starter-based team ratings say nothing about who wins the last six minutes of a blowout; a deep bench preserves a lead.",
+"raw_data": [
+"lineup stints"
+],
+"registry_ids": []
+},
+"nba.series_banked_points_state": {
+"category": "game_state",
+"free_sources": [
+"Basketball-Reference playoff box scores / line scores",
+"NBA Stats leaguegamelog (final team points per game)"
+],
+"label": "Points already banked in completed series games (running team totals, running combined total and running differential)",
+"measurement": "As of timestamp T (decision time), take every series game with a final official box score published before T: for each, team points including overtime. Compute B_total = sum over completed games of (home pts + away pts); D_team = sum of (named team pts - opponent pts). Rung conversion: remaining requirement for the total is K_rem = K - B_total (P=1 if K_rem <= 0, otherwise tail probability of the remaining-games total under nba.series_sum_stopping_simulator started from the current series score); for the spread S_rem = S - D_team on the remaining-games differential. Games in progress at T contribute nothing unless the decision uses a live-score feed (excluded here); a game with a pending or corrected score is flagged and re-read after the correction window; units are points, no shrinkage because the quantity is realised.",
+"mechanical_flags": [],
+"mechanism": "Both contracts sum over every game of the series, so once k games are final the sum splits into a known banked part and an unplayed remainder; the decision-time probability is a tail probability of the remainder measured from the shifted strike, not from the full strike.",
+"pregame_knowable": "yes",
+"rationale": "For any decision after game 1 the banked sum is the largest single determinant of both contracts: a 900 total rung after three games with about 650 banked needs only about 250 more points, which is a length question (one more game or two), and the rung can already be decided (YES with certainty) once the banked sum reaches the strike. For the spread, a banked differential of +30 turns a 9.5 strike into a bet that the opponent outscores the leader by less than the remaining cushion. Using a series-start distribution after games are played would ignore this realised state.",
+"raw_data": [
+"final team points by game for completed games of the series, including OT, with game end timestamp",
+"current series score and next scheduled game and venue"
+],
+"registry_ids": []
+},
+"nba.series_game_conditional_state": {
+"category": "game_state",
+"free_sources": [
+"Basketball-Reference playoff series",
+"NBA schedule"
+],
+"label": "Playoff-series game-conditional state",
+"measurement": "Features: games played, series score, rest days since the last game, minutes of the stars in the previous game, margin of the previous game, injury-status change since game 1; fit a hierarchical model of game margin residual on 2000-2025 series with series-level random effect (sd about 2 points) and elimination-game dummy; as-of the last completed game.",
+"mechanical_flags": [],
+"mechanism": "In a series, a game's mean margin depends on series score, rest days between games, accumulated injuries and coaching adjustments.",
+"pregame_knowable": "partial",
+"rationale": "Single-game ratings treat games as independent; series markets (home clinch, game 7, comeback) depend on the dependency between games and on elimination-state minutes tightening.",
+"raw_data": [
+"series game logs",
+"injury status per game"
+],
+"registry_ids": []
+},
+"nba.series_game_number_drift": {
+"category": "game_state",
+"free_sources": [
+"Basketball-Reference playoff game logs"
+],
+"label": "Within-series drift of game TOTALS by game number (adjustments and familiarity)",
+"measurement": "From playoff games 2004+: regress GAME TOTAL residual (vs pre-game own-model total) on game-number fixed effects 1-7 with series random effects, after partialling out rest days using the coefficients from nba.series_game_conditional_state (not re-fitted here); margins are not modelled here (margin by games played comes from nba.series_game_conditional_state); shrink game 6-7 coefficients toward game 5 because of sparse counts; output per-game total mean adjustments used by the simulator.",
+"mechanical_flags": [],
+"mechanism": "Coaches adjust coverages and rotations after each game and players learn the matchup, so later games in a series tend to be scored differently from game 1 (total-side fixed effects by game number 1-7); margin-side game-number, previous-game bounce-back and rest effects are owned by nba.series_game_conditional_state (its 'games played' and previous-margin features) and only consumed here.",
+"pregame_knowable": "yes",
+"rationale": "Late games (5-7) exist only in longer series, so a drift by game number changes the per-game total exactly in the paths that cross high rungs, ; the margin level by game number is not re-fitted here because nba.series_game_conditional_state already carries games played as a margin feature and home margin by game number is confounded with the 2-2-1-1-1 venue alternation.",
+"raw_data": [
+"playoff game totals by game number",
+"rest days as defined in nba.series_game_conditional_state"
+],
+"registry_ids": []
+},
+"nba.series_length_distribution": {
+"category": "game_state",
+"free_sources": [
+"Basketball-Reference playoffs",
+"own ratings"
+],
+"label": "Series-length distribution from per-game win probabilities",
+"measurement": "P(series ends in k games) by dynamic programming over home pattern 2-2-1-1-1 with per-game win probabilities from own-model ratings and series dependence parameter (game-to-game correlation about +0.05 on margin, estimated from 2000-2025 playoff series); injuries known as of the as-of date; output P(4), P(5), P(6), P(7).",
+"mechanical_flags": [],
+"mechanism": "The number of games in a best-of-seven series is a function of per-game win probability, home pattern and dependence between games.",
+"pregame_knowable": "yes",
+"rationale": "KXNBASERIESGAMES counts games, not points; the draft has no input for it except a generic series model reference outside the archetype.",
+"raw_data": [
+"playoff series results by game with venue",
+"own team ratings"
+],
+"registry_ids": []
+},
+"nba.series_model": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"nba_api / stats.nba.com (free, undocumented, rate-limited)"
+],
+"label": "Best-of-seven series model (home-court, game-to-game correlation, adjustments)",
+"measurement": "Per-game win p from playoff-adjusted ratings with home advantage; sample game-to-game correlation parameter; adapt rating after injuries; compute pmf of series length and winner.",
+"mechanical_flags": [],
+"mechanism": "Series win and game-count probabilities derive from per-game win probabilities with home pattern; correlated injuries and adjustments change the distribution.",
+"pregame_knowable": "yes",
+"rationale": "A simple independent binomial overstates sweeps vs actual; playoff rotations shorten, pace slows, and stars play more minutes, shifting the effective team rating. Series props (sweep, exact games, player series totals) need game-level scoring simulations. Subtle: in-series injuries and coaching adjustments create positive correlation between games.",
+"raw_data": [
+"playoff game results with home/away and injuries"
+],
+"registry_ids": []
+},
+"nba.series_ot_count_model": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference playoff series and box scores (period counts)",
+"nba_api playoff game logs"
+],
+"label": "Series overtime-game count model (threshold tail over random series length)",
+"measurement": "For each game g of the series compute p_g from nba.reg_tie_pmf_model using that game's own-model margin (home/away alternation, current injuries); draw series length L from nba.series_model jointly with the per-game margins; count OT games with a beta-binomial-type overdispersion parameter rho estimated by comparing the observed variance of OT-game counts per series with the Poisson-binomial prediction over 20+ seasons of playoff series (all rounds); report P(count >= k) for each listed threshold k; as-of: market snapshot, after any completed games of the series are conditioned on.",
+"mechanical_flags": [],
+"mechanism": "The number of overtime games in a playoff series is a sum of per-game tie indicators over a random number of games, with positive dependence because closely matched series produce repeatedly close games.",
+"pregame_knowable": "partial",
+"rationale": "KXNBASERIESOT settles on at least N overtime games (3+ in the sampled Finals market); at a per-game rate near 6% that is a deep-tail event whose probability is driven by series length and within-series dispersion, so multiplying an average OT rate by the number of games misprices it by a large factor.",
+"raw_data": [
+"playoff game period counts by series",
+"series length and per-game margins"
+],
+"registry_ids": []
+},
+"nba.series_player_exposure": {
+"category": "pace_volume",
+"free_sources": [
+"Basketball-Reference playoff logs",
+"own series model"
+],
+"label": "Expected games and minutes exposure over a series",
+"measurement": "E[games] = \u03a3_k P(series length = k) \u00d7 k; exposure_i = \u03a3_games P(player i plays game g | series length) \u00d7 expected minutes_g (playoff inflation factor from role-specific ratio of playoff to regular-season minutes over 10 seasons, shrunk with k=8 players); include injury persistence (probability of playing game g+1 given absent in g about 0.6, estimated); output exposure distribution (mean, sd).",
+"mechanical_flags": [],
+"mechanism": "Series totals depend on the number of games, availability in each, and playoff minutes inflation.",
+"pregame_knowable": "partial",
+"rationale": "The draft has a series model for the number of games but no link to each player's exposure, including injuries across games and early eliminations.",
+"raw_data": [
+"playoff game logs, series lengths"
+],
+"registry_ids": []
+},
+"nba.series_shared_scoring_factor": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference playoff game logs"
+],
+"label": "Series-level shared TOTAL (scoring-environment) random effect and its covariance with margin residuals",
+"measurement": "Fit a random-effects model on playoff games 2004-present: residual of GAME TOTAL versus the pre-series own-model expectation, with a series random intercept; report the intraclass correlation and its posterior sd, shrunk toward a regular-season back-to-back-matchup estimate; update the series effect after each completed game with a normal-normal conjugate step. Also estimate the covariance between the total residual and the margin residual within game; the margin random effect itself is taken from nba.series_game_conditional_state so that the simulator holds a single fitted margin-dependence parameter.",
+"mechanical_flags": [],
+"mechanism": "Two teams meeting four to seven times in two weeks share a scoring environment (tempo, scheme, shooting conditions) that persists across games, so game totals inside a series are positively correlated beyond pre-series ratings; this input owns the total-side dependence and the total-margin covariance only.",
+"pregame_knowable": "partial",
+"rationale": "If games were independent, the sd of a five-game series total would be about sqrt(5) times the single-game sd; a positive intraclass correlation inflates that, fattening both tails of the series total and shifting probability toward far rungs. The margin-side series random effect (sd about 2 points), the previous-game margin and the elimination dummy are already defined in nba.series_game_conditional_state and are consumed from it, not re-estimated here. The size of this effect is small-sample and must be estimated with shrinkage.",
+"raw_data": [
+"playoff game totals with series id and game number",
+"pre-series own-model expected totals",
+"margin random effect parameter from nba.series_game_conditional_state"
+],
+"registry_ids": []
+},
+"nba.series_stat_leader_model": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference playoff series box scores",
+"nba_api playoff box scores"
+],
+"label": "Playoff-series stat-leader probability (max of cumulative totals across both rosters, with ties)",
+"measurement": "Simulate each series game by game: series length and winner from nba.series_model; per-player per-game counts from negative-binomial draws on a playoff-minutes scenario (rotation tightening, per-game injury hazard), with per-player rates shrunk to a role prior with k=10 games; compute P(player holds the maximum cumulative total) and P(tie at the maximum) from at least 20,000 simulated series. Calibrate on 15 seasons of playoff series (leader identity against pre-series expected rank, Brier score). As-of: before game 1, then updated after each game with realised totals.",
+"mechanical_flags": [],
+"mechanism": "The series leader is the player with the largest cumulative points or rebounds over the series, the maximum of about 16-20 rotation players' totals over a random number of shared games, correlated through series length and pace and negatively within a team.",
+"pregame_knowable": "yes",
+"rationale": "KXNBASERIESPTSLEADER and KXNBASERIESREBLEADER are live under this key and are not pairwise head-to-heads. Leadership concentrates on each team's top producers, and the relevant quantity is the gap in expected per-game rate times games played; summing 4-7 games reduces noise so favourites are stronger than in a single-game leader market, while an injury that costs a candidate one or two games shifts mass sharply. The tie rule is unseen.",
+"raw_data": [
+"playoff player-game box scores (points, rebounds, minutes) for 15 seasons",
+"series results and game counts"
+],
+"registry_ids": []
+},
+"nba.series_sum_stopping_simulator": {
+"category": "distribution",
+"free_sources": [
+"Derived from Basketball-Reference / NBA Stats playoff box scores and own-model ratings"
+],
+"label": "Game-by-game series simulator for the joint law of series length, cumulative total and cumulative point differential",
+"measurement": "Monte Carlo (>=200k paths) over the 2-2-1-1-1 home pattern from the current series state; per game draw team points from a bivariate distribution with means from own-model pace x points per possession for that game's venue, rest and projected lineups, a series-level random effect shared across games, and a correlation between total and |margin| fitted on 2004+ playoff games; output P(N=k), P(total>=K) and P(diff>=S) for every listed rung, recomputed at each as-of timestamp.",
+"mechanical_flags": [],
+"mechanism": "Draws each game's (home points, away points) jointly, records the winner, stops when one side reaches four wins, and sums points and margins over the realised games, so length and points are generated by one process rather than combined independently.",
+"pregame_knowable": "yes",
+"rationale": "This is an aggregation model, not a raw information input: it is listed because every rung is a tail probability of its output and the catalog needs its definition. The series total is a random sum over a random number of games, and the number of games depends on the same per-game margins that the spread contract sums. Multiplying an expected length by an expected per-game total loses the multimodal shape (one mode per possible length) and the negative coupling between lopsided margins and short series, which is exactly where rung probabilities live.",
+"raw_data": [
+"playoff game box scores (team points by period incl. OT, home team; series id and game number to be derived from game id and date, see u6)",
+"own-model per-game expected possessions and points per possession",
+"current series state (wins each side, games played, next venue)"
+],
+"registry_ids": []
+},
+"nba.shooting_stars_team_skill": {
+"category": "team_strength",
+"free_sources": [
+"NBA.com Shooting Stars announcements and recaps",
+"Basketball-Reference career shooting",
+"Event video"
+],
+"label": "Shooting Stars team shooting skill and format conversion",
+"measurement": "Per team member: P(make) by distance band from nba.threept_spot_and_tempo_profile for active players; for retired or non-NBA members, last available career rates shrunk heavily to a field mean (placeholder k=50 shots) plus past Shooting Stars results; team score simulated over the ledger's format (when verified) 20000 times, else a rank-based composite flagged FORMAT_UNVERIFIED; as-of = team announcement.",
+"mechanical_flags": [],
+"mechanism": "A Shooting Stars team (franchise-named; recent editions mixed current players with retired or other-league shooters) scores by making shots from a sequence of locations within a time limit; the team with the higher score wins.",
+"pregame_knowable": "partial",
+"rationale": "Kalshi's rules give no format, so the conversion of skill to score is unverified; retired legends have no current shooting data, which makes team skill a composite of current catch-and-shoot rates and old or exhibition-only evidence. Location sequence and time limit make tempo and long-range accuracy matter as in the 3PT contest.",
+"raw_data": [
+"team rosters per year",
+"per-shot or per-round contest scores",
+"career shooting rates by distance"
+],
+"registry_ids": []
+},
+"nba.single_game_ceiling_tail": {
+"category": "distribution",
+"free_sources": [
+"nba_api player game logs",
+"Basketball-Reference game finder"
+],
+"label": "Per-game tail model for a player's maximum single-game points (exceedance of 50+/54+ and overtime contribution)",
+"measurement": "For each candidate fit a generalised Pareto to the exceedances of points over 35 in games with minutes >= 32 over 3 seasons, with league-wide shape shrinkage (prior weight 40 exceedances) and player-specific scale; estimate per-game P(pts >= 54) = P(game >= 35) x GPD tail beyond 54, adding an OT adjustment (OT games contribute about 6% and add about 6-8 points for stars); then P(at least one in remaining G games) = 1 - E[(1 - p)^G] with games-played uncertainty. Also track the season-to-date maximum (already achieved events resolve YES if the strike was met).",
+"mechanical_flags": [],
+"mechanism": "A highest-scoring-performance contract is the maximum over about 70 games of a heavy-tailed scoring distribution, with extreme nights requiring high minutes, hot shooting, free throws and often overtime.",
+"pregame_knowable": "yes",
+"rationale": "The mean scoring rate is nearly irrelevant for 54+; the exceedance probability per game is a tail quantity that must be estimated with a peaks-over-threshold model and then compounded over remaining games (1 - (1-p)^G).",
+"raw_data": [
+"player-game points, minutes, OT flag, season-to-date maximum"
+],
+"registry_ids": []
+},
+"nba.single_game_margin_pmf": {
+"category": "distribution",
+"free_sources": [
+"nba_api leaguegamelog (final scores)",
+"Basketball-Reference game results"
+],
+"label": "Market-free single-game margin distribution for Cup group games (ratings-implied mean, compressed tails)",
+"measurement": "For each remaining group game: mean margin mu = (NetRtg_home_adj - NetRtg_away_adj) * expected_possessions/100 + home_adv from nba.off_rtg and nba.def_rtg (opponent-adjusted, as-of tipoff); spread = empirical distribution of final-margin residuals (final margin minus mu) from the last 5 seasons of regular-season games, giving a pmf on integer margins with sd of about 12-13 points (to be estimated, not assumed); apply the blowout compression curve from nba.rating_blowout_minutes_curve to the tail. Sum margins over a team's remaining group games by convolution and rank teams with the official tiebreak order. No closing line or other price is used.",
+"mechanical_flags": [
+"MARKET_MARKER_IN_DEFINITION"
+],
+"mechanism": "The Cup point-differential tiebreak needs the distribution of each remaining group game's final margin, which is a ratings-implied mean plus a spread that is compressed in blowouts when starters sit and widened by overtime-free tails.",
+"pregame_knowable": "yes",
+"rationale": "The existing nba.score_resid is a residual against market lines, which is a book calibration, not an input. The tiebreak value of a margin depends on the raw margin pmf: a 20-point win counts the same in the tiebreak sum whether or not it was needed, but coaches ease off, so the margin tail is lighter than a normal distribution. The pmf is built from scores and ratings only.",
+"raw_data": [
+"Team game results with final margins for 5 seasons",
+"As-of team ratings",
+"Cup group schedule"
+],
+"registry_ids": []
+},
+"nba.sl_first_half_share": {
+"category": "distribution",
+"free_sources": [
+"NBA.com Summer League box scores and period scores",
+"nba_api play-by-play for Summer League games (league id for Summer League)"
+],
+"label": "Summer League first-half share of team points and margin by roster composition",
+"measurement": "From the last five Summer League events compute, per game and team, first-half points / game points and first-half margin / game margin; regress the first-half margin on the minutes-weighted translated strength of the players who logged first-half minutes (from play-by-play substitutions) versus the full-game weighted strength; report the first-half share of mean total (shrunk to the pooled value with prior weight 40 games), the half-margin sd and the empirical integer tie frequency of first halves. As-of: pre-tip, using announced participation.",
+"mechanical_flags": [],
+"mechanism": "Summer League coaches give prospects and invited starters most first-half minutes and hand the second half to fringe players, so first-half points and margin depend more on top-of-roster strength than the full game.",
+"pregame_knowable": "partial",
+"rationale": "First-half spread, total and winner contracts need the half distribution, not half the game distribution: the half margin carries a larger share of the roster-strength signal, its variance is not half the game variance, and the tie mass at zero is priced by KXNBASUMMER1HWINNER directly.",
+"raw_data": [
+"Summer League period scores by game",
+"Summer League play-by-play substitutions",
+"player translated strength from nba.sl_talent_translation"
+],
+"registry_ids": []
+},
+"nba.sl_format_scoring_baseline": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference Summer League scores",
+"nba_api summer league (leagueid 15), SOURCE_UNVERIFIED for coverage"
+],
+"label": "Summer League-specific scoring, pace and margin variance baseline by format",
+"measurement": "From all Summer League games over the last 5 events compute mean total, standard deviation of total and margin, tie-at-regulation frequency, OT frequency, and pace in possessions per 40 or 48 minutes depending on format; model margin as normal with sd by league (Las Vegas, California Classic, Salt Lake City) and shrink event-level sd to the pooled value (prior weight 30 games); update with games already played in the current event. As-of: games before tip. The game length L (40 or 48 minutes) and overtime procedure are read from the event's published rules and are unconfirmed (sl-format-facts); all rates are stored per minute and scaled by L, so no format value is hard-coded.",
+"mechanical_flags": [],
+"mechanism": "Summer League has a different game format (quarter length, overtime rule, fouling rules) and talent level, so scoring totals, pace and margin variance differ from the regular season and must be estimated from Summer League games.",
+"pregame_knowable": "yes",
+"rationale": "Applying regular-season totals and margin sd to Summer League misstates both: games are typically higher scoring per possession with weaker defense and higher variance, so spread and total probabilities need league-specific parameters.",
+"raw_data": [
+"game results, period scores, possessions, event identifiers"
+],
+"registry_ids": []
+},
+"nba.sl_game_importance_incentive": {
+"category": "motivation",
+"free_sources": [
+"NBA.com Summer League standings and format pages",
+"Basketball-Reference Summer League standings"
+],
+"label": "Game importance and incentive state (tournament seeding, championship eligibility, evaluation goals)",
+"measurement": "Compute for each team and game an indicator of seeding relevance (probability the game changes championship qualification based on standings and tiebreaks, evaluated from remaining schedule) and the team's historical bench-depth shift when eliminated; features: P(game matters), games played so far, whether prior game was a back-to-back. As-of: after the previous game's result.",
+"mechanical_flags": [],
+"mechanism": "Teams in Summer League care about evaluation and sometimes about the tournament; their minutes and effort depend on whether the game matters for seeding or the final.",
+"pregame_knowable": "yes",
+"rationale": "Win-maximizing effort is not the default: after a team is eliminated or clinched it plays deeper bench and evaluation lineups, which changes both the winner and the totals; the effect is predictable from the standings state.",
+"raw_data": [
+"standings and tournament rules by year, schedule"
+],
+"registry_ids": []
+},
+"nba.sl_minutes_plan_hazard": {
+"category": "availability",
+"free_sources": [
+"Beat-writer announcements (X/Twitter, team websites), SOURCE_UNVERIFIED for archival access",
+"Basketball-Reference Summer League box scores",
+"RealGM Summer League logs"
+],
+"label": "Probability that a drafted player or returning rotation player plays, sits or is shut down",
+"measurement": "From past Summer Leagues build a table by draft slot (1-5, 6-14, 15-30, second round), years of experience and game number of the share of games played and minutes distribution; compute shutdown hazards after game k given previous game minutes (logistic); combine with announced status via a calibrated map from announcement language (will play, game-time, shut down) to realised participation. As-of: last announcement before the order time. Two parts with different evidence: (a) the base participation and minutes table by draft slot and game number from Summer League box scores (obtainable if the box-score history is confirmed, SOURCE_UNVERIFIED); (b) the map from announcement language to realised participation, which needs a live-captured timestamped archive that does not exist historically (sl-announcement-data), so part (b) cannot be fitted until captured.",
+"mechanical_flags": [],
+"mechanism": "Summer League teams manage minutes for prospects and shut down players after a few games or when they are established; the probability a top prospect plays in a given game is a decision, not an injury process.",
+"pregame_knowable": "partial",
+"rationale": "The minutes a star rookie plays varies from full to zero by team policy, game number and announcements; the market impact is large because a top pick may account for a big share of team scoring.",
+"raw_data": [
+"historical SL box scores with minutes by player; announcement text with timestamps"
+],
+"registry_ids": []
+},
+"nba.sl_mvp_award_model": {
+"category": "other",
+"free_sources": [
+"NBA.com Summer League stats and award announcements (free)",
+"Basketball-Reference Summer League pages (free, polite scraping; coverage by year unverified)"
+],
+"label": "Summer League MVP candidate model: individual production share, team advancement and games played",
+"measurement": "Step 1: for each candidate, expected games played = sum over the team's scheduled games of P(plays) from nba.sl_minutes_plan_hazard, and expected points and usage per game from nba.sl_talent_translation and nba.sl_format_scoring_baseline. Step 2: team advancement probability from simulated event standings and the knockout. Step 3: conditional logit over candidates with covariates (expected total points, usage rank, team reaches the final, draft slot) fitted on past Summer League MVP winners and runners-up (at least 10 events, ridge penalty, prior weight 5 events). Step 4: renormalise across candidates; update after each game day with realised production. As-of: start of the event, then nightly.",
+"mechanical_flags": [],
+"mechanism": "The Summer League MVP goes to a player who combines a high scoring and usage share with a team that advances, and who plays most of his team's games; a candidate's chance is a conditional choice among the event's leading producers, weighted by his team's path to the final.",
+"pregame_knowable": "partial",
+"rationale": "No other input gives an award outcome: team strength and game inputs price games, while the award depends on who plays enough games, per-game production relative to the field and voter emphasis on draft status and team success. Subtle: top picks often play two or three games and are shut down, so expected games played, not talent, is the first filter.",
+"raw_data": [
+"Summer League player box scores by game (points, minutes, usage proxies)",
+"Past Summer League MVP winners and finalists with team results",
+"Event schedule and bracket"
+],
+"registry_ids": []
+},
+"nba.sl_talent_translation": {
+"category": "team_strength",
+"free_sources": [
+"Sports-Reference College Basketball",
+"NBA G League stats (gleague.nba.com)",
+"Basketball-Reference draft pages",
+"RealGM international stats"
+],
+"label": "Talent translation of rookies, two-way and G League players to a common Summer League strength scale",
+"measurement": "For each player build a prior rating from available sources: college BPM/box-score composite (translation coefficient estimated historically by regressing NBA first-year BPM on college BPM with age and pace adjustments), G League per-minute production translated by a league-quality factor (about 0.6-0.7 estimated by backtest), international league adjustments; shrink to draft-slot prior (pick position mean) with prior weight 15 games-equivalent; team rating = minutes-weighted sum with expected minutes from announced rosters. As-of: roster announcement time.",
+"mechanical_flags": [],
+"mechanism": "Most Summer League minutes go to players without NBA data, so team strength must come from translating college, international and G League performance to an equivalent NBA-level rating.",
+"pregame_knowable": "partial",
+"rationale": "A franchise's NBA rating says little about its Summer League roster; the strength is the minutes-weighted sum of translated player ratings, and uncertainty is large because translation factors are noisy.",
+"raw_data": [
+"college and G League per-minute statistics, draft slot, age"
+],
+"registry_ids": []
+},
+"nba.sl_tournament_bracket_sim": {
+"category": "schedule_context",
+"free_sources": [
+"NBA.com Summer League standings and format page",
+"NBA.com Summer League schedule"
+],
+"label": "Summer League tournament standings, tiebreak and knockout simulation",
+"measurement": "Encode the current event format (group games per team, number of knockout qualifiers, tiebreak order including point differential) from the league's published rules; simulate remaining group games from the game-level margin distribution (nba.sl_format_scoring_baseline with team means from nba.sl_talent_translation and participation from nba.sl_minutes_plan_hazard), apply the tiebreaks, then simulate the bracket with per-round strength that drops by the expected shutdown share; 20,000 paths; output P(qualify), P(reach final), P(champion). As-of: after each game day.",
+"mechanical_flags": [],
+"mechanism": "The Summer League champion is the winner of a knockout among the top teams of the group stage; qualification depends on a short record and a point-differential tiebreak, and later rounds are single games.",
+"pregame_knowable": "yes",
+"rationale": "With four group games per team, ties in record are common and point differential decides qualification, so a team's title chance depends on margin as well as wins; rosters also change between stages as prospects are shut down, so the knockout strength must be re-estimated, not carried over.",
+"raw_data": [
+"Summer League schedule and results",
+"event format and tiebreak rules",
+"standings with point differential"
+],
+"registry_ids": []
+},
+"nba.standings_motivation": {
+"category": "motivation",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"nba_api / stats.nba.com (free, undocumented, rate-limited)",
+"NBA standings (stats.nba.com leaguestandingsv3)"
+],
+"label": "Standings, clinch/tank incentives and late-season motivation",
+"measurement": "Compute win-probability leverage per game from standings simulation (seed distribution sensitivity), clinch/elimination flags, games remaining, lottery odds sensitivity; interact with star age/injury history.",
+"mechanical_flags": [],
+"mechanism": "Teams out of contention or with locked seeds rest stars or play young players, changing availability and minutes distribution late in the season.",
+"pregame_knowable": "partial",
+"rationale": "Late-season and post-clinch games show elevated load management and unpredictable rotations, making both sides and player props noisier and shifting minutes to bench players. Subtle: announcements arrive late (game-day), and tanking incentives (lottery odds) differ from effort incentives; play-in positioning and in-season Cup stakes alter incentives too.",
+"raw_data": [
+"standings and remaining schedule",
+"clinch/elimination status",
+"historical late-season rest patterns"
+],
+"registry_ids": []
+},
+"nba.star_pair_scoring_correlation": {
+"category": "player_role",
+"free_sources": [
+"Computed from nba_api box scores"
+],
+"label": "Correlation of scoring between a team's top scorers and across the two teams",
+"measurement": "Estimate residual-points correlation (actual minus minutes-conditional expectation) for each team's top-3 scorer pairs and for cross-team top-scorer pairs over 2 seasons using Fisher-z shrinkage to a league pair-type prior (prior weight 40 games); condition on co-star availability. Output a covariance matrix over the candidate set.",
+"mechanical_flags": [],
+"mechanism": "Teammates split a roughly fixed number of shots so a big night for one lowers the other, while both teams share pace and officiating; this sets the covariance structure of the maximum.",
+"pregame_knowable": "yes",
+"rationale": "Leader probability depends on the joint distribution: if two stars were positively correlated, the max would be less spread out than if negatively correlated; both are estimable from box scores.",
+"raw_data": [
+"player-game residual points"
+],
+"registry_ids": []
+},
+"nba.starter_bench_definition_ledger": {
+"category": "player_role",
+"free_sources": [
+"NBA.com box score starter flags",
+"team announcements"
+],
+"label": "Starter/bench designation ledger and rest-driven reclassification",
+"measurement": "Record for each team-game: official starters list, status of expected starters, bench designation of the primary scorers; compute counterfactual bench points under tonight's starter list using player points-per-minute and projected minutes: bench_pts = \u03a3_{non-starters} proj_min \u00d7 ppm; adjust for returning player minute limits; as-of lineup confirmation.",
+"mechanical_flags": [],
+"mechanism": "The bench is the set of players not in the official starting five, so a starter absence promotes the next man into the starter group and shifts scoring from bench to starter.",
+"pregame_knowable": "partial",
+"rationale": "The draft interaction says a rested starter becomes a bench player, but a rested starter does not play; the real effects are (a) a promoted bench player moves out of the bench count and (b) a returning star on a restriction coming off the bench moves in.",
+"raw_data": [
+"starting lineup per game",
+"player scoring rates"
+],
+"registry_ids": []
+},
+"nba.starter_probability": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"cdn.nba.com liveData JSON (boxscore, playbyplay, odds; free, unofficial)",
+"PBPStats.com (free tier: on/off, lineup, possession-level splits) lineup stats"
+],
+"label": "Probability a player starts / closes (role-change estimate)",
+"measurement": "From past games with a given starter absent: who replaced them and with what minutes/usage; coach-specific replacement mapping; probability = share of past absences where player A was the replacement.",
+"mechanical_flags": [],
+"mechanism": "A player's start/close status and bench-to-starter swaps determine role and minute allocation and are triggered by teammate absence.",
+"pregame_knowable": "partial",
+"rationale": "When a starter is out the coach elevates a specific replacement (often the next big or the best guard), and that replacement's volume jumps; which replacement depends on position needs and coach habits, observable in past absence games. Prices on player props often lag the replacement identification until inactives are confirmed.",
+"raw_data": [
+"starting lineup flags by game",
+"minutes-by-role history"
+],
+"registry_ids": []
+},
+"nba.starting_five_continuity": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference starting lineups",
+"NBA.com lineups"
+],
+"label": "Starting-five continuity (games together)",
+"measurement": "Count of consecutive and total games the exact tonight's starting five has started together this season and last, plus overlap measured as the number of the five who started the last 10 games; weight for historical first-shot shares = min(1, games_together/15) and the rest reverts to role-based priors (position, usage).",
+"mechanical_flags": [],
+"mechanism": "The opening set depends on practiced combinations; a new starting five or a replaced starter resets the first-possession script.",
+"pregame_knowable": "partial",
+"rationale": "First-basket shares computed with a different starter are stale; the number of games the current five has started together tells how much of the history to trust.",
+"raw_data": [
+"game-level starting five"
+],
+"registry_ids": []
+},
+"nba.stat_rate_posterior": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference per-game stats",
+"nba_api player game logs"
+],
+"label": "Shrunk posterior of a player's true per-game stat rate given games to date and preseason projection",
+"measurement": "Prior mean = preseason projection (last-two-season blend with aging adjustment); weights by stat: n_prior of about 25 games for points, 35 for rebounds, 40 for assists (these three values are placeholders, not fitted estimates; they must be estimated by a backtest of ten seasons); posterior mean = (n_prior x prior + n x observed)/(n_prior + n) with minutes-conditional adjustment; posterior sd = sqrt(per-game variance/(n_prior + n)). As-of: games to date.",
+"mechanical_flags": [],
+"mechanism": "A season-long average or leader race depends on the player's true rate, which is a weighted combination of the preseason projection and the noisy to-date average.",
+"pregame_knowable": "yes",
+"rationale": "Early-season averages overstate hot starts; the weight on results needs to be calibrated per statistic (scoring is more stable than rebounding and assists), and the posterior variance determines how much the leader gap is worth.",
+"raw_data": [
+"player-season per-game stats, minutes, ages"
+],
+"registry_ids": []
+},
+"nba.status_resolution_prob": {
+"category": "availability",
+"free_sources": [
+"NBA official injury report PDF (official.nba.com, free; updates through the day before and day of game)",
+"Basketball-Reference (free; polite scraping, rate-limited) box scores (DNP reason)",
+"ESPN public JSON (site.api.espn.com/apis/site/v2/sports/basketball/nba)"
+],
+"label": "Probability a questionable/GTD player plays (calibrated)",
+"measurement": "Fit calibrated classifier on historical (status, injury type, minutes since report, back-to-back, home/away, team) -> played; expected-value projection = p * E[X | plays, restrictions] + (1-p) * (teammate scenario).",
+"mechanical_flags": [],
+"mechanism": "A calibrated play probability for uncertain statuses converts a discrete report label into expected minutes and a mixture over scenarios.",
+"pregame_knowable": "partial",
+"rationale": "Using 'questionable' as a coin flip loses information: historical play rates depend on injury body part, whether the player practiced, team, rest day, stakes, and whether the player was already ruled 'probable' earlier. Mixture-modeling over play/no-play for key teammates changes every prop in the game. Subtle: the resolution event (inactive list) can arrive after the market closes, so the stake sizing must be unconditional on it.",
+"raw_data": [
+"injury report status vintages",
+"game participation"
+],
+"registry_ids": []
+},
+"nba.stocks_dependence_by_archetype": {
+"category": "distribution",
+"free_sources": [
+"Computed from nba_api box scores"
+],
+"label": "Dependence between steals and blocks for combined stocks, by player archetype",
+"measurement": "Compute the within-player correlation of steal and block counts after controlling for minutes (Pearson on Pearson residuals) over 3 seasons by archetype (guard, wing, forward, center), with Fisher-z shrinkage to archetype mean (prior weight 60 games); model sum distribution via bivariate negative-binomial or Gaussian copula with these parameters; output P(S+B >= k) for k=2..6.",
+"mechanical_flags": [],
+"mechanism": "Combined steals+blocks sums two counts whose dependence depends on defensive archetype: wings with deflection-based steals and bigs with rim blocks have small correlation, while versatile defenders have positive correlation through minutes and activity.",
+"pregame_knowable": "yes",
+"rationale": "The 4+ stocks rung needs the distribution of the sum; assuming independence or perfect minutes-driven correlation misstates variance, and the covariance is archetype specific.",
+"raw_data": [
+"player-game steals, blocks, minutes"
+],
+"registry_ids": []
+},
+"nba.streak_hit_persistence": {
+"category": "distribution",
+"free_sources": [
+"nba_api game logs",
+"Basketball-Reference"
+],
+"label": "Game-to-game persistence of threshold hits and streak-break hazard (DNP, rest, matchup)",
+"measurement": "For each player estimate a logistic model of threshold hit on minutes projection, rest days, opponent defensive rating and lag-1 hit (to capture persistence beyond minutes) over a 3-season window; compute probability of a run of length at least N via a Markov chain with state = current run length and per-game hit probability from the model; add break hazard per game from injury/rest model. Adjust for the rule on inactive games (counts as break, skip, or void).",
+"mechanical_flags": [],
+"mechanism": "A streak of N games meeting a threshold is a run-length process whose per-game hit probability varies with minutes and rest and which is broken by any DNP or rest night.",
+"pregame_knowable": "yes",
+"rationale": "Treating hits as independent with the season-average rate understates both streak and break risk; minutes and rest dependencies create positive autocorrelation within a stretch, and the specific rule (whether inactive games break the streak) changes everything.",
+"raw_data": [
+"player-game points and minutes with rest and DNP flags (3 seasons)"
+],
+"registry_ids": []
+},
+"nba.summer_league_game_selection_pattern": {
+"category": "motivation",
+"free_sources": [
+"nba_api Summer League box scores",
+"team press statements"
+],
+"label": "Summer League game selection and minutes cap pattern",
+"measurement": "Per player: P(plays game g) by draft slot bucket (top 5, 6-14, 15-30, second round, undrafted, veteran) from the last 6 Summer Leagues; minutes distribution per game conditional on playing; adjust for team announcements (coded 0/0.5/1) and for back-to-back games; combine to a distribution of games played and total minutes.",
+"mechanical_flags": [],
+"mechanism": "Participation and minutes in Summer League depend on draft slot, contract status and team plans, with top picks playing fewer games and veterans resting.",
+"pregame_knowable": "partial",
+"rationale": "Summer League exposure is the main variance of its stat markets, and none of the current inputs gives the probability that a player plays a given game.",
+"raw_data": [
+"Summer League game logs with draft slot"
+],
+"registry_ids": []
+},
+"nba.target_score_race_model": {
+"category": "game_state",
+"free_sources": [
+"NBA.com play-by-play of Rising Stars and 2024-2025 All-Star target games",
+"Basketball-Reference box scores"
+],
+"label": "Race-to-target exhibition game model (first to 40 / first to 25)",
+"measurement": "Model each possession as points in {0,1,2,3,4} with team-specific probabilities from offensive rating vs opponent defence under exhibition effort (from nba.asg_effort_scoring_baseline target-regime estimates), alternate possessions with a possession-start Bernoulli, simulate to target T (40 semifinal, 25 final per KXNBARISINGSTARS rules) 20000 times; output P(win) and expected possessions; validate on past target-score exhibitions; units = probability.",
+"mechanical_flags": [],
+"mechanism": "In an untimed game the winner is the first team to reach or exceed a target score, so the outcome is a first-passage race of two scoring processes rather than a margin over fixed time.",
+"pregame_knowable": "yes",
+"rationale": "A race to 25 has few possessions, so a per-possession efficiency edge converts to a much smaller win probability than in a 48-minute game, and a single three or and-one near the target is decisive (a made shot can overshoot). There is no garbage time and no clock-driven fouling, so timed-game variance estimates do not transfer. Relation to the existing nba.first_passage_race_table: that input is a first-to-N race inside a regular 48-minute game at full effort and does not end the game; here reaching the target ends the game at exhibition effort, so the table is only a structural prior/cross-check for N=25 and is not reused as the estimate.",
+"raw_data": [
+"possession-level scoring in target-score exhibitions",
+"team rosters per game"
+],
+"registry_ids": []
+},
+"nba.team_assisted_fgm_expectation": {
+"category": "pace_volume",
+"free_sources": [
+"Basketball-Reference team stats",
+"nba_api"
+],
+"label": "Expected team assisted field goals in the player's minutes",
+"measurement": "E[assisted FGM] = possessions(own pace composition) \u00d7 FGA per possession \u00d7 FG% (opponent-adjusted, 20-game half-life, k=150 FGA) \u00d7 assisted rate (team assisted/FGM, opponent scheme adjustment, 20-game half-life, k=100 FGM); scale to player's projected minutes share; report mean and sd by game.",
+"mechanical_flags": [],
+"mechanism": "Team assisted makes depend on possessions, field-goal percentage, shot mix and the style-driven assisted rate.",
+"pregame_knowable": "yes",
+"rationale": "The draft uses implied team totals (market-derived) as the environment; an own estimate of assisted makes depends on assisted-rate by team and by opponent coverage, which totals do not capture.",
+"raw_data": [
+"team-game FGA, FGM, assisted FGM"
+],
+"registry_ids": []
+},
+"nba.team_bench_points_model": {
+"category": "player_role",
+"free_sources": [
+"nba_api boxscoretraditional (starter position flag) and leaguegamelog (free, undocumented, rate-limited)",
+"Basketball-Reference box scores (starters listed first; free, polite scraping)"
+],
+"label": "Team bench-points model: non-starter minutes times bench scoring rate, conditional on margin path and confirmed starters",
+"measurement": "Step 1: expected bench minutes = 240 (+25 per overtime period) minus the sum of projected starter minutes, with starter minutes from nba.minutes conditioned on the margin-path curve of nba.rating_blowout_minutes_curve and on confirmed starters (nba.starters_pit). Step 2: bench points per minute = minutes-weighted sum of each projected reserve's shrunk points per minute (prior weight 300 minutes toward the role mean) times the team's opponent-adjusted offensive-rating factor. Step 3: distribution by simulation over margin paths and starter-exit scenarios (foul-out, injury) with player-level negative-binomial points; calibrate dispersion on 3 seasons of team bench points from box scores with the starter flag. As-of: lineup confirmation (about 30 minutes before tip); earlier, a mixture over probable starting fives.",
+"mechanical_flags": [],
+"mechanism": "A team's bench points equal the minutes played by non-starters times their points per minute; bench minutes rise sharply in blowouts (for both teams) and when starters exit, and the confirmed starting five decides who is counted as bench.",
+"pregame_knowable": "partial",
+"rationale": "A bench-points contract moves opposite to star ladders: a blowout or a starter's early exit increases bench minutes, while a pregame scratch of a starter promotes a reserve into the starting five and removes his points from the bench total. Neither the individual points inputs nor team-total inputs say who is classified as bench, which is fixed only at the starting-lineup announcement.",
+"raw_data": [
+"Player-game box score with starter flag, minutes and points",
+"Confirmed starting lineups with announcement timestamp",
+"Substitution stints with score margin (for the margin-path minutes curve)"
+],
+"registry_ids": []
+},
+"nba.team_glass_strategy": {
+"category": "matchup",
+"free_sources": [
+"pbpstats.com possession types",
+"nba_api team stats"
+],
+"label": "Offensive-glass crash rate versus transition-defense tradeoff of each team and coach",
+"measurement": "Compute per team-season OREB% and opponent transition points per possession after offensive rebounds (from play-by-play possession types) with 70-game half-life and coach-tenure reset; build matchup term = own crash rate x opponent weakness against crashing (opponent's DREB% minus expected from size) and report separately for OREB and DREB attributable to the player's position.",
+"mechanical_flags": [],
+"mechanism": "Coaches choose how many players crash the offensive boards; heavy crashing raises OREB for bigs and lowers the opponent's DREB share while increasing transition possessions for opponents.",
+"pregame_knowable": "yes",
+"rationale": "Crash policy is a team trait that is persistent across seasons within a coach, and it changes both rebound counts and pace; it is not recoverable from rebound pool or pace alone.",
+"raw_data": [
+"possession start type, oreb counts, transition scoring"
+],
+"registry_ids": []
+},
+"nba.team_points_margin_curve": {
+"category": "game_state",
+"free_sources": [
+"Computed from nba_api game logs and team ratings"
+],
+"label": "Expected team points as a function of the game's expected margin (winner-loser asymmetry and garbage-time shape)",
+"measurement": "From 5 seasons of games compute realised team points minus rating-based expected points as a function of pregame expected margin built from ratings (not the spread) in bins of 2 points; fit a monotone-spline of own points on expected margin with total environment as a covariate; use leave-one-season-out cross-validation; output expected team points given expected margin and total. Vintage rule: every team rating used (nba.off_rtg, nba.def_rtg, nba.lineup_adj_rating) must be the snapshot computed from games completed before that historical game's tipoff, stored daily over the 5 seasons, with the confirmed-inactive adjustment as of the pregame report; end-of-season or later-revised ratings are not allowed, as they leak the game's own result.",
+"mechanical_flags": [],
+"mechanism": "A team's points are not linear in the expected margin: favorites' points flatten (garbage time) and underdogs gain late points through fouling and deep-bench scoring, so the mapping from win probability to team points is a curve.",
+"pregame_knowable": "yes",
+"rationale": "Deriving team totals as (total \u00b1 spread)/2 assumes linearity; the empirical curve can differ by 1-2 points at large spreads, and this matters for strikes in a market keyed to the team's own points.",
+"raw_data": [
+"team-game points, pregame expected margin from ratings"
+],
+"registry_ids": []
+},
+"nba.team_points_variance_by_style": {
+"category": "distribution",
+"free_sources": [
+"Computed from nba_api game logs"
+],
+"label": "Style-dependent variance of a team's points (three-point reliance, transition share, pace)",
+"measurement": "Compute each team's residual sd of points (actual minus rating-based expectation, no market lines) over a season with regression on three-point attempt rate, pace and opponent style; shrink to league sd (about 12.5) with prior weight 25 games; combine own sd and opponent style effects; model the points distribution as skew-normal with skew from blowout probability. As-of: games before tip. Also output tail quantiles of own team points (80th, 90th, 95th and 99th percentile) and P(points >= strike) at strikes far above the mean, separately for a regulation-only and an overtime-included version, because far-away strikes (such as 135.5) are priced by the tail (three-point shooting variance, overtime) and not by the mean.",
+"mechanical_flags": [],
+"mechanism": "Teams that take many threes and play fast have higher game-to-game variance in points than slow half-court teams; the over/under probability at a given strike depends on the sd, not only the mean.",
+"pregame_knowable": "yes",
+"rationale": "A team total strike near the mean has probability near 50% regardless of variance, but strikes at 5-10 points away depend on the sd; the sd is team- and matchup-specific and is typically 11-14 points.",
+"raw_data": [
+"team-game points, 3PA rate, pace"
+],
+"registry_ids": []
+},
+"nba.team_record_head_to_head_linkage": {
+"category": "team_strength",
+"free_sources": [
+"nba_api schedule",
+"Basketball-Reference schedule and results"
+],
+"label": "Dependence between teams' records via head-to-head games and conference schedule overlap",
+"measurement": "From the remaining schedule compute pairwise numbers of head-to-head games and common-opponent overlap; in the simulation draw correlated team-strength shocks and enforce zero-sum head-to-head results; estimate the covariance of final win totals across the top-8 contenders by simulation; output distribution of the maximum and the probability of ties (tie handling per rule). As-of: nightly.",
+"mechanical_flags": [],
+"mechanism": "Records of contending teams are not independent: when two top teams play each other, one gains what the other loses, and shared opponents create correlation in schedule luck.",
+"pregame_knowable": "yes",
+"rationale": "Best-record and most-wins markets are about the maximum over teams, so the covariance of wins across teams matters; ignoring head-to-head linkage and common opponents misstates the extreme's distribution.",
+"raw_data": [
+"remaining schedule with head-to-head counts",
+"team rating posterior draws"
+],
+"registry_ids": []
+},
+"nba.team_stat_pair_difference_model": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference team logs",
+"nba_api"
+],
+"label": "Team-stat pair difference model (shared-pace correlation)",
+"measurement": "For team stat X (e.g. 3PM): mean_X = attempts_X \u00d7 rate_X using opponent-adjusted rates (20-game half-life, k=150 attempts); sd_diff from joint empirical covariance over 3 seasons: var = var_A + var_B - 2 rho sd_A sd_B with rho from pace; compute P(A>B), P(tie) with discrete negative binomial convolution; blowout correction increasing trailing-team attempts.",
+"mechanical_flags": [],
+"mechanism": "The head-to-head team stat is the difference of two counts with positive correlation through game pace and negative through script effects.",
+"pregame_knowable": "yes",
+"rationale": "Treating the two teams' counts as independent overstates the sd of the difference and misprices the zero-tie mass.",
+"raw_data": [
+"team-game shot counts"
+],
+"registry_ids": []
+},
+"nba.team_three_attempt_matchup": {
+"category": "pace_volume",
+"free_sources": [
+"nba_api / stats.nba.com team and opponent shooting dashboards",
+"Basketball-Reference team game logs"
+],
+"label": "Team three-point attempt rate versus opponent 3PA allowed",
+"measurement": "Team 3PA per 100 possessions (EWMA, 15-game half-life, shrunk to team prior season with weight 20 games) multiplied by opponent 3PA-allowed index (opponent 3PA allowed per 100 / league mean, 20-game half-life, shrunk with weight 25 games); expected 3PA = index-adjusted rate x projected game possessions / 100, adjusted for missing high-volume shooters via player 3PA shares; make rate from nba.three_pt_luck expectation; as-of: games completed before the market's snapshot.",
+"mechanical_flags": [],
+"mechanism": "Team made threes = possessions x team 3PA per possession x make rate; the 3PA share is a stable team-scheme trait modulated by how many threes the opponent's defence concedes.",
+"pregame_knowable": "yes",
+"rationale": "KXNBAH2HTEAM3PT is settled on made threes, and attempt volume (25-45 3PA per team-game across the league) separates teams far more than 3P%; a high-volume team facing a defence that runs opponents off the line loses much of its edge, which ratings and pace inputs do not capture.",
+"raw_data": [
+"team-game 3PA, 3PM, possessions",
+"opponent 3PA allowed per game",
+"player 3PA shares for active-set adjustment"
+],
+"registry_ids": []
+},
+"nba.team_win_streak_hazard": {
+"category": "distribution",
+"free_sources": [
+"nba_api schedule and results",
+"Basketball-Reference"
+],
+"label": "Hazard of a team reaching a 20-game winning streak (run-length chain with heterogeneous game win probabilities)",
+"measurement": "For each team and each window of 20 consecutive scheduled games compute the product of game win probabilities from ratings and rest (with a star-health scenario mixture); P(streak >= 20 for team i) = 1 - prod over windows via a Markov chain with state = current run length; combine across teams assuming approximate independence except head-to-head links; include Cup games (they count) and exclude the Cup final and playoffs. As-of: nightly; update current runs.",
+"mechanical_flags": [],
+"mechanism": "A 20-game win streak requires 20 consecutive wins; with game win probabilities of 75-85% for the best team, the chance depends on the full sequence of probabilities, their correlation through star health and schedule, and the number of teams that could qualify.",
+"pregame_knowable": "yes",
+"rationale": "Averaging a team's win probability underestimates the chance because a streak concentrates in stretches of weak opponents and healthy rosters; the league-wide market is a union over 30 teams and 63 windows each (82 games minus 19).",
+"raw_data": [
+"schedule with opponents and dates, ratings, current run length per team"
+],
+"registry_ids": []
+},
+"nba.teammate_absence_shift": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"nba_api / stats.nba.com (free, undocumented, rate-limited) playerdashboard/teamplayeronoffdetails",
+"PBPStats.com (free tier: on/off, lineup, possession-level splits)"
+],
+"label": "With/without teammate splits: usage, minutes and stat redistribution",
+"measurement": "Per player: stat per minute and minutes with teammate X on/off the roster, over games where X missed; hierarchical shrinkage to a role-based redistribution model (usage, ball handling, rebound share absorbed); evaluate for combinations of absences.",
+"mechanical_flags": [],
+"mechanism": "When key teammates are out, shot attempts, ball-handling, and rebound opportunities redistribute to the remaining players in a structured way (not evenly).",
+"pregame_knowable": "partial",
+"rationale": "This is the largest edge source for props: a lead guard out raises the backup guard's usage and assists, but a primary scorer out lowers assists for his passing partner (fewer converted passes). Direction depends on whether the absent player consumes the stat (usage, rebounds) or produces teammates' stat conversion (shooters). Subtle: with/without samples are small and confounded by opponent and by injuries to multiple players; use hierarchical shrinkage and role-based priors.",
+"raw_data": [
+"player-game logs by teammate availability"
+],
+"registry_ids": []
+},
+"nba.teammate_conv": {
+"category": "matchup",
+"free_sources": [
+"nba_api / stats.nba.com (free, undocumented, rate-limited) shotchartdetail, leaguedashptstats (Passing: by teammate)",
+"PBPStats.com (free tier: on/off, lineup, possession-level splits)"
+],
+"label": "Teammate shot conversion / shooting quality",
+"measurement": "AST/potential assist history; expected conversion = sum over teammates of pass share x teammate expected eFG given shot type; use shrinkage; condition on which teammates are active tonight.",
+"mechanical_flags": [],
+"mechanism": "Assists depend on whether the shots a player creates are made; the shooting skill and shot quality of teammates on the floor raises or lowers conversion.",
+"pregame_knowable": "partial",
+"rationale": "Teammate expected eFG on the passes created (shooters like catch-and-shoot specialists vs low-percentage players) changes assists per potential assist from ~0.4 to ~0.6. Subtle: conversion has luck (hot/cold shooters) that should be regressed, but real roster quality changes (star shooter returning or leaving) is real signal.",
+"raw_data": [
+"assisted field goals by passer-shooter pair"
+],
+"registry_ids": [
+"nba.teammate_conv"
+]
+},
+"nba.three_att_script_elasticity": {
+"category": "game_state",
+"free_sources": [
+"nba_api playbyplayv3",
+"pbpstats.com"
+],
+"label": "Elasticity of a shooter's three-point attempt rate to score margin and quarter",
+"measurement": "From play-by-play estimate per player 3PA per minute in margin bins (<-12, -12..-5, -5..+5, +5..+12, >+12) by quarter, with empirical-Bayes shrinkage to role-archetype bins (prior weight 120 minutes per bin); combine with the projected distribution of margin paths from team ratings (not the spread). Output expected 3PA integrating over the margin-path distribution and minutes mixture.",
+"mechanical_flags": [],
+"mechanism": "Trailing teams take more threes late and leading teams run clock and bench shooters, so 3PA per minute is a function of the margin path, not a constant.",
+"pregame_knowable": "yes",
+"rationale": "Blowout dynamics cut starters but raise bench shooters' attempts; a close fourth quarter raises volume for closers; the sign differs between roles, so a single 'blowout' penalty misprices spot-up wings and bench shooters.",
+"raw_data": [
+"PBP shot events with score margin, player minutes by bin"
+],
+"registry_ids": []
+},
+"nba.three_make_by_openness_prior": {
+"category": "variance_luck",
+"free_sources": [
+"nba_api shotchartdetail (location, zone, action type; no per-shot defender distance to this resolver's knowledge)",
+"nba_api tracking shot dashboards with closest-defender and catch-and-shoot splits (aggregate, SOURCE_UNVERIFIED)",
+"Cleaning the Glass"
+],
+"label": "Hierarchical make probability by shot type (catch-and-shoot vs pull-up) and defender openness",
+"measurement": "Base model (public per-shot data): beta-binomial hierarchy on made/attempted by shot zone (corner, above the break) x pull-up flag from shotchartdetail ACTION_TYPE and SHOT_ZONE fields over 3 seasons, league-cell mean as prior with prior weight 250 attempts per cell, partial pooling by player, recent-season weight 0.5 per year. Optional refinement if the tracking dashboards are confirmed (p3-defender-distance): aggregate catch-and-shoot versus pull-up and closest-defender bins (wide open 6+ ft, open 4-6, tight under 4) as separate multiplicative adjustments, not a crossed cell, because the dashboards are not per-shot. Combine with tonight's predicted context mix from shot-creation role and opponent openness allowed. Output a single p3 with credible interval. As-of: shots finished before tip.",
+"mechanical_flags": [],
+"mechanism": "Make probability depends on shot context more than on a single season 3P%, so talent should be estimated per context and recombined with tonight's expected context mix.",
+"pregame_knowable": "yes",
+"rationale": "Overall 3P% averages over open catch-and-shoot threes (about 38%) and tightly contested pull-ups (about 31%); a shooter's attempt mix changes with teammates and opposing closeouts, so the make probability changes even with fixed talent.",
+"raw_data": [
+"shot-level 3PA with zone, action type and result (shotchartdetail)",
+"aggregate player tracking shot splits by closest-defender bin and catch-and-shoot flag (SOURCE_UNVERIFIED)"
+],
+"registry_ids": []
+},
+"nba.three_point_variance_load": {
+"category": "distribution",
+"free_sources": [
+"Basketball-Reference team logs",
+"nba_api"
+],
+"label": "Three-point attempt volume as a variance load",
+"measurement": "Var_total = \u03a3_team [9*3PA*p3(1-p3) + 4*2PA*p2(1-p2) + FTA*pft(1-pft)] + var(possessions)*ppp^2*... using opponent-adjusted attempts and rates (20-game half-life); calibrate a scale factor lambda so that predicted variance matches realised total residual variance in 2 prior seasons; report sd per game and skew.",
+"mechanical_flags": [],
+"mechanism": "The sd of the total depends on how many threes both teams attempt and on the dispersion of free-throw and two-point results.",
+"pregame_knowable": "yes",
+"rationale": "The draft says total sd is about 17-19 as a constant; it varies with shot mix, and wide-open three-heavy teams produce a wider total distribution that matters at ladder tails.",
+"raw_data": [
+"team 3PA/2PA/FTA and percentages"
+],
+"registry_ids": []
+},
+"nba.three_pt_luck": {
+"category": "variance_luck",
+"free_sources": [
+"nba_api / stats.nba.com (free, undocumented, rate-limited) shotchartdetail, leaguedashteamshotlocations; synergy",
+"PBPStats.com (free tier: on/off, lineup, possession-level splits)"
+],
+"label": "Team three-point shooting luck vs shot quality (own and opponent)",
+"measurement": "Expected 3P% = sum over attempts of shooter prior (career/regressed) adjusted for openness; luck = actual - expected over trailing N games; estimate shrinkage factor from out-of-sample reversion; same for opponent 3P% allowed with league-mean prior weighted heavily.",
+"mechanical_flags": [],
+"mechanism": "Realized team 3P% regresses toward a shot-quality-based expectation; opponent 3P% allowed is mostly outside the defense's control on open looks.",
+"pregame_knowable": "yes",
+"rationale": "Hot or cold shooting streaks inflate or deflate recent offensive/defensive ratings and totals; ignoring regression overstates how hot teams will score and how stingy lucky defenses are. Subtle: shooters' true skill still differs, so expectation must use shooter-specific priors and shot openness, not a league mean.",
+"raw_data": [
+"team and opponent 3P% vs shot quality"
+],
+"registry_ids": []
+},
+"nba.three_volume": {
+"category": "player_role",
+"free_sources": [
+"nba_api / stats.nba.com (free, undocumented, rate-limited) leaguedashplayerptshot / shotchartdetail",
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"PBPStats.com (free tier: on/off, lineup, possession-level splits)"
+],
+"label": "3PA rate, catch-and-shoot share, 3P% shrinkage and opponent 3PA allowed",
+"measurement": "3PA per 36 (EWMA), catch-and-shoot vs pull-up share, shot openness; 3P% shrunk with beta prior (career/team) with prior weight about 200-300 attempts; opponent 3PA allowed per 100 relative to league; negative-binomial attempts model.",
+"mechanical_flags": [],
+"mechanism": "Threes made equal attempts times make probability; attempts are driven by role, minutes and opponent scheme, and make% must be shrunk heavily.",
+"pregame_knowable": "yes",
+"rationale": "A player's 3PA per minute is much more stable than 3P%; make% over a season reverts toward career and shot-quality-based expectation. Opponent 3PA allowed and pace/spacing change attempt volume. Subtle: attempts are overdispersed (game-to-game volume varies), so a binomial with fixed attempts understates variance.",
+"raw_data": [
+"player-game 3PA, 3PM, minutes",
+"catch-and-shoot / pull-up splits",
+"opponent 3PA allowed"
+],
+"registry_ids": [
+"nba.three_volume"
+]
+},
+"nba.threept_contest_score_pmf": {
+"category": "distribution",
+"free_sources": [
+"Own simulation from public shooting data",
+"Basketball-Reference shooting splits",
+"NBA Stats shooting tracking pages"
+],
+"label": "Three-Point Contest round-score distribution and winner simulation",
+"measurement": "For each entrant simulate ball by ball: P(make) per location from nba.threept_spot_and_tempo_profile (regular, money-ball and deep-zone balls), the shooter's chosen all-money-ball rack location, balls actually released within 70 s from the tempo distribution (unreleased balls score 0), rack-level correlation rho with a beta-binomial prior from nba.within_game_make_dispersion, point weights from nba.contest_format_rules_ledger; run 20000 simulations of round 1, top-three advancement, final round (score resets) and a shoot-off on ties; output P(win), P(advance). As-of = last field change or rack-placement announcement.",
+"mechanical_flags": [],
+"mechanism": "Each shooter's round score is a sum over racks of correlated Bernoulli makes with different point weights; the winner is the maximum over finalists after advancement, with ties broken by a shoot-off.",
+"pregame_knowable": "partial",
+"rationale": "The winner is a max-of-noisy-scores over a field of about eight, so the favourite's chance is capped well below his skill edge; the round-score SD is several points, comparable to the skill gap between the best and median shooter (per-ball make probability is a parameter to be estimated, not a fact). Only the final-round score decides (rules), so round-1 advancement variance and final-round tie mass both matter.",
+"raw_data": [
+"entrant make probabilities",
+"format parameters",
+"historical round scores 2003-2026"
+],
+"registry_ids": []
+},
+"nba.threept_spot_and_tempo_profile": {
+"category": "player_role",
+"free_sources": [
+"NBA Stats shot dashboard and shot-location splits",
+"Past contest video",
+"NBA.com contest recaps"
+],
+"label": "Three-point contest location, deep-ball and release-tempo profile per shooter",
+"measurement": "Per shooter: catch-and-shoot 3P% by zone (left corner, right corner, left wing, right wing, top), last 3 seasons, each shrunk to his own pooled rate with k=150 attempts (placeholder); 27+ ft 3P% shrunk to league deep rate with k=100; tempo = balls released per round and seconds left in past contests (median and SD), else imputed from catch-and-shoot release time; rack-placement = announced choice, else the zone maximizing expected points; units = P(make) by ball type and balls released; as-of = rack announcement.",
+"mechanical_flags": [],
+"mechanism": "Contest score depends on accuracy at each rack location, on deep-range accuracy for the bonus balls between racks, on where the shooter places the all-money-ball rack, and on how many balls he releases before 70 seconds expire.",
+"pregame_knowable": "partial",
+"rationale": "Pooled open 3P% hides location splits: a corner specialist gains by placing the all-money rack in his best corner, and the deep bonus balls reward a 27+ ft make rate that many spot-up shooters lack. The 70-second limit (rules) means slow releasers leave balls unshot, a zero that pooled accuracy never sees.",
+"raw_data": [
+"shot-level 3PA with x,y location and distance",
+"past contest ball-by-ball with timestamps",
+"announced rack placements"
+],
+"registry_ids": []
+},
+"nba.tiebreak_ledger": {
+"category": "schedule_context",
+"free_sources": [
+"NBA.com official tiebreaker rules",
+"nba_api standings and schedule",
+"Basketball-Reference standings"
+],
+"label": "Head-to-head, division and conference record ledger for tiebreaker evaluation",
+"measurement": "For each team pair compute season-to-date head-to-head wins/losses and remaining games, division record, conference record and record vs playoff teams, updated nightly from game results; in the simulation, apply the official tiebreak procedure (stored as code from league rules) to simulated ties and output P(win tie) by pair. As-of: nightly after final scores.",
+"mechanical_flags": [],
+"mechanism": "Seeds and division winners are decided by the league's tiebreak hierarchy (head-to-head, division winner, conference record and so on), so exact ties are resolved by information that accumulates over the season.",
+"pregame_knowable": "yes",
+"rationale": "Simulating only win totals misses the probability that a tie is broken in a team's favor; at seed boundaries (6th vs 7th, 10th vs 11th, play-in cutoff) a tie occurs in about 8-15% of final standings and the tiebreak ledger is partly known before the season ends.",
+"raw_data": [
+"game results by pair, schedule, division/conference identifiers"
+],
+"registry_ids": []
+},
+"nba.title_path": {
+"category": "team_strength",
+"free_sources": [
+"Basketball-Reference (free; polite scraping, rate-limited)",
+"NBA schedule JSON (cdn.nba.com/static/json/staticData/scheduleLeagueV2.json, free)"
+],
+"label": "Playoff bracket path, matchup and home-court structure",
+"measurement": "Simulate bracket with seed distribution and series-level win probability; incorporate matchup tweaks (style, pace, rim protection) and home-court structure (2-2-1-1-1).",
+"mechanical_flags": [],
+"mechanism": "Series winner and title probabilities depend on the bracket path (seed, opponent strength, home-court) and matchup-specific adjustments.",
+"pregame_knowable": "yes",
+"rationale": "Title odds are the product of series-win probabilities along a path that depends on which seed you are, who you face and the rest/injury states. A given team's path difficulty can differ substantially even for equal rating. Subtle: series outcomes are correlated through injuries to key players across rounds.",
+"raw_data": [
+"playoff bracket and seeds",
+"series results by round"
+],
+"registry_ids": []
+},
+"nba.top_pick_trade_hazard": {
+"category": "other",
+"free_sources": [
+"RealGM / Basketball-Reference draft-day trades",
+"NBA.com transaction log with processing dates"
+],
+"label": "Top-10 draft pick trade hazard (pick or draft rights, processed in window)",
+"measurement": "From 15 drafts count, per draft, whether any top-10 pick or its rights was traded and the processing date (pre-draft, draft night pick-for-pick, post-moratorium); P(Yes) = P(any top-10 pick trade agreed by the window) x P(processed by window end | deal type), with deal type inferred from whether salaried players are included; condition on the number of top-10 picks held by win-now teams and the board's consensus tightness; as-of: market snapshot.",
+"mechanical_flags": [],
+"mechanism": "Top-10 picks are traded when a team's valuation of the pick differs from another's (consensus-board gaps, win-now teams with picks), and only trades officially processed in the window count.",
+"pregame_knowable": "partial",
+"rationale": "KXNBAPICKTRADE counts a trade of any top-10 pick or of a drafted player's rights before he signs, officially processed before the window end; many draft-night deals are agreed then processed after the moratorium, so the agreement base rate overstates Yes.",
+"raw_data": [
+"draft-day trade list with agreement and processing dates",
+"top-10 pick ownership by team"
+],
+"registry_ids": []
+},
+"nba.undefeated_start_survival": {
+"category": "distribution",
+"free_sources": [
+"nba_api schedule and results"
+],
+"label": "Survival probability of undefeated starts by calendar day (last remaining unbeaten team)",
+"measurement": "For each team compute S_i(d) = product over games on days <= d of P(win) (from ratings, rest and home/away); P(team i is the last undefeated) = sum over days of P(i's first loss on day d and all others have lost by day d), with ties on the same day sharing 1/N; compute by simulation with dependence from shared opponents. As-of: nightly; early in the season (about 8-10 games played) the field is nearly resolved.",
+"mechanical_flags": [],
+"mechanism": "The last undefeated team is the one whose first loss comes latest, measured by the date of the first loss, so the market depends on survival functions of each team and ties by date.",
+"pregame_knowable": "yes",
+"rationale": "The product of win probabilities gives each team's survival, but the contract resolves by the day of the first loss and splits ties when several teams lose on the same day, so the probability of a team being last depends on ties and calendar clustering.",
+"raw_data": [
+"schedule with dates, ratings, current records"
+],
+"registry_ids": []
+},
+"nba.unsigned_player_signing_hazard": {
+"category": "availability",
+"free_sources": [
+"RealGM / Basketball-Reference transactions",
+"Spotrac free-agent lists",
+"reporter feeds"
+],
+"label": "Unsigned-player NBA signing and activation hazard",
+"measurement": "Reference class of unsigned veterans aged 26+ with prior NBA rotation roles (2010-2026) at the same calendar date: monthly signing hazard by age, last-season minutes and games, injury status, minimum-contract interest reports; P(play | signed) from the share of such signings that logged regular-season minutes and days to first appearance; combine over remaining regular-season dates; as-of: market snapshot.",
+"mechanical_flags": [],
+"mechanism": "An unsigned veteran appears in a regular-season game only after a team signs him and plays him; signings cluster at camp, injury waves and the buyout window.",
+"pregame_knowable": "partial",
+"rationale": "KXNBACOMPETE needs at least one second of regular-season play by an unsigned player, so the probability is P(sign before the season's last games) x P(play | signed); health and perceived value drive the signing, and a late signing leaves few games, which a generic availability input does not model.",
+"raw_data": [
+"unsigned free-agent list by date",
+"signing dates and first-appearance dates"
+],
+"registry_ids": []
+},
+"nba.usage_allocation_model": {
+"category": "player_role",
+"free_sources": [
+"pbpstats.com lineup/on-off",
+"nba_api teamdashlineups",
+"Cleaning the Glass"
+],
+"label": "Lineup-conditional shot-attempt allocation model for tonight's expected on-court unit",
+"measurement": "Fit a Dirichlet-multinomial (or softmax) model of FGA+0.44*FTA+TOV shares among the five on-court players using stint data, with player creation archetype, on-ball minutes share and prior-season usage as features; ridge-regularised, 2-season window with 200-game half-life; predict tonight's shares for the projected unit set (weighted by expected minutes per unit) and report mean and standard error. As-of: injury report at last vintage.",
+"mechanical_flags": [],
+"mechanism": "Team attempts are a roughly fixed pie divided among the five on court according to creation roles, so a scorer's share is a function of the whole unit, not just whether one named teammate is out.",
+"pregame_knowable": "partial",
+"rationale": "With/without splits rest on tiny samples and ignore that replacing a creator by a catch-and-shoot wing shifts shots differently than replacing him by another creator; an allocation model with role types generalises across rosters.",
+"raw_data": [
+"lineup stints possessions, FGA, FTA, TOV by player",
+"creation archetype table"
+],
+"registry_ids": []
+},
+"nba.voter_signal_proxy": {
+"category": "other",
+"free_sources": [
+"NBA.com ladder archives",
+"ESPN straw poll archives",
+"Basketball-Reference voting history"
+],
+"label": "Observable voter-signal proxy: public media ladders, prior-win count and repeat-winner penalty",
+"measurement": "For each candidate and award: mean rank over the last 4 published media ladders (NBA.com ladder, ESPN straw poll; unranked = 6th) with weights 0.4/0.3/0.2/0.1 newest first; repeat_penalty = number of consecutive prior wins; prior_share = first-place vote share in the last two seasons (0 if not a finalist); fit a conditional-logit ballot model on 2000-2026 winners with these three features plus production rank and seed, shrinking coefficients with a ridge penalty chosen by leave-one-season-out.",
+"mechanical_flags": [],
+"mechanism": "Replaces the unmeasurable narrative and voter-fatigue notion with observables: average rank in published media award ladders and straw polls, the number of consecutive prior wins, and the candidate's first-place share in the previous two seasons.",
+"pregame_knowable": "yes",
+"rationale": "nba.voting_narrative is audited WEAK because it is not measurable as defined, yet narrative and fatigue are the only drivers of the vote beyond production and team success; a proxy built from public ladders and past ballots gives them a measurable form without using any market price.",
+"raw_data": [
+"published ladder ranks by date",
+"prior-season voting results"
+],
+"registry_ids": []
+},
+"nba.within_game_make_dispersion": {
+"category": "variance_luck",
+"free_sources": [
+"nba_api shot logs",
+"Basketball-Reference"
+],
+"label": "Within-game make-rate dispersion (beta-binomial rho)",
+"measurement": "Estimate rho by maximum likelihood of a beta-binomial model on 5 seasons of player-game (attempts, makes) for players with at least 200 attempts; pool by shot type (three, two, free throw) and by attempt count; shrink the player-specific rho to the pooled value with k=100 games; produce the pmf of makes given attempts n and rate p.",
+"mechanical_flags": [],
+"mechanism": "Makes in a game are positively correlated beyond independent shots, so the count is overdispersed relative to a binomial.",
+"pregame_knowable": "yes",
+"rationale": "Independence understates the tail of makes, which a convex payout over-weights; the dispersion parameter is a key tail parameter.",
+"raw_data": [
+"player-game attempts and makes by type"
+],
+"registry_ids": []
+},
+"nba.within_team_allocation_dependence": {
+"category": "player_role",
+"free_sources": [
+"Basketball-Reference game logs"
+],
+"label": "Within-team scoring allocation dependence",
+"measurement": "For each team and pair of top-6 players, compute the correlation of player points conditional on team points (partial correlation) using 3 seasons of games, shrunk to the role-pair prior with k=40 games; combine with team total correlation to get unconditional pairwise correlations; separate regimes with/without a major teammate absence.",
+"mechanical_flags": [],
+"mechanism": "Teammates split a fixed team total, giving negative dependence between teammates' counts conditional on team points.",
+"pregame_knowable": "yes",
+"rationale": "Treating two teammates' overs as positively dependent through the team total omits the allocation effect that offsets it at fixed pace; the net sign depends on how much variation in the team total versus in the split drives each leg.",
+"raw_data": [
+"player-game points by team"
+],
+"registry_ids": []
+}
+}

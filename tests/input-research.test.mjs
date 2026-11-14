@@ -41,14 +41,14 @@ test("market benchmark is labelled a near-close sportsbook line, never a Kalshi 
     if (p.level === "L1_TESTED_VS_BASELINE") assert.match(p.benchmark, /^NO MARKET/);
   }
 });
-test("every family, input and interaction is reachable in the published data (275 / 672 / 679)", () => {
+test("every family, input and interaction is reachable in the published data (275 / 1640 / 1351)", () => {
   let fam = 0, inp = 0, ix = 0;
   for (const d of Object.values(docs)) {
     fam += Object.keys(d.families).length; inp += Object.keys(d.inputs).length;
     ix += Object.values(d.archetypes).reduce((a, x) => a + x.interactions.length, 0) + Object.values(d.blueprints).reduce((a, x) => a + x.interactions.length, 0);
     for (const b of Object.values(d.blueprints)) assert.ok(b.families.length > 0);
   }
-  assert.deepEqual([fam, inp, ix], [275, 672, 679]);
+  assert.deepEqual([fam, inp, ix], [275, 1639, 1351]);
 });
 test("every path states a claim boundary that mentions Kalshi, and headline models are strict-pregame", () => {
   for (const d of Object.values(docs)) for (const p of Object.values(d.paths)) {
@@ -67,4 +67,33 @@ test("dashboard component and stylesheet are wired into the page", () => {
   const main = readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
   assert.match(main, /<InputResearch \/>/);
   assert.ok(existsSync(new URL("../src/input-research.css", import.meta.url)));
+});
+
+// milestone 2: verified computable inputs + scaled search artifacts must be internally consistent
+const comp = JSON.parse(readFileSync(new URL("../research/input_research/computable_summary.json", import.meta.url)));
+const ss = JSON.parse(readFileSync(new URL("../research/audit/input_research/scaled_search_summary.json", import.meta.url)));
+test("computable summary: one status per catalog input, verified count reconciles", () => {
+  assert.equal(comp.status, "RESEARCH_ONLY");
+  assert.equal(comp.inputs.length, comp.n_inputs);
+  assert.equal(Object.values(comp.totals).reduce((a, b) => a + b, 0), comp.n_inputs);
+  assert.equal(comp.n_non_market, comp.n_inputs - comp.totals.EXCLUDED_BENCHMARK_ONLY);
+  const ok = comp.inputs.filter(r => r.s.startsWith("COMPUTED"));
+  assert.equal(ok.length, comp.verified_computed);
+  for (const r of comp.inputs) {
+    if (r.s === "NOT_COMPUTED") assert.ok(r.why && r.why.length > 5, r.k);
+  }
+});
+test("scaled search: every tested market states baseline, null, Holm p and a verdict; validated rows satisfy the rule", () => {
+  assert.equal(ss.status, "RESEARCH_ONLY");
+  const rows = ss.rows.filter(r => r.status === "TESTED");
+  assert.equal(rows.length, ss.totals.n_tested);
+  assert.ok(ss.ledger.rows_logged >= rows.length * 50, "every configuration is logged");
+  assert.ok(ss.ledger.lab59_experiments_read_only >= 13362);
+  for (const r of rows) {
+    assert.ok(r.baseline && r.null.length >= 1 && r.holm_p >= 0 && r.holm_p <= 1, r.market);
+    if (r.verdict === "VALIDATED") {
+      assert.ok(r.holm_p < 0.05 && r.ci[0] > 0 && Math.min(...r.halves) > 0 && r.pos / r.blocks >= 0.7, r.market);
+      assert.ok(r.gain > 2 * Math.max(0, ...r.null), r.market);
+    }
+  }
 });

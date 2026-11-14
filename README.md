@@ -47,6 +47,10 @@ The separate GitHub Actions CI workflow builds and runs unit tests on PRs. It ha
 
 The dashboard's **Input research** section lets you pick any sport and market family and see every candidate predictive input with its rationale, data source/completeness/freshness, current-model use, learned importance/weight, evidence for or against it, performance against the relevant benchmark, remaining gaps and the ranked next questions. **RESEARCH_ONLY**: hypotheses and availability audits are not evidence; only the NFL game total/spread/winner (vs the near-close line) and NFL QB passing yards (vs the QB's own history) have predictive tests so far, and nothing is above L2. See [docs/INPUT_RESEARCH.md](docs/INPUT_RESEARCH.md).
 
+## Data foundation pipeline
+
+The dashboard's **Data foundation pipeline** section follows every market from its required inputs to datasets, collectors, features, research challengers and evaluations, with ten explicit stages per input (never one percentage). See [docs/DATA_FOUNDATION_OPS.md](docs/DATA_FOUNDATION_OPS.md). **RESEARCH_ONLY**: the three P0 challengers (NBA, CBB, NHL) are research results on archived data; none beats the market price and every incumbent is retained.
+
 ## Universal evaluation standard
 
 [Alpha Universal Evaluation Standard v1](docs/ALPHA_EVALUATION_STANDARD_V1.md) (`alpha_eval/`, `python -m alpha_eval ...`) scores every sport, model and market on accuracy, directional calibration, model-vs-market, fee-adjusted hypothetical economics and signed CLV, with explicit GRADED / PENDING / UNSUPPORTED / BLOCKED accounting. See the generated [coverage and adoption matrix](docs/alpha_eval/COVERAGE_MATRIX.md). RESEARCH_ONLY; example reports are synthetic.

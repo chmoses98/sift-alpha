@@ -1,0 +1,80 @@
+{
+ "unreg:all_star_weekend_events": {
+  "reviewer": "independent-NBA-new",
+  "date": "2026-11-07",
+  "rederivation_notes": "Own chain written before reading the record: this key bundles three disjoint processes. (A) 3PT contest: ~8 invited shooters -> field/withdrawal -> per-ball make probability under contest conditions (stationary, no defender, timed round ~70s, release speed so unshot balls are lost) -> spot-specific rates matter because the shooter chooses where to place the all-money-ball rack and two deep 'zone' balls (~6 ft behind the line, 3 pts each since 2020) need a deep-range make rate -> round total max 40 -> top-3 to final -> shoot-off on ties -> max-of-noisy-scores. (B) Dunk contest: ~4 low-profile entrants -> field/withdrawal -> repertoire/difficulty and make-within-attempt-cap -> 5-judge bounded scores (6-10, 50 max) with ceiling compression, crowd/narrative effects -> top-2 final -> dunk-off on ties. (C) All-Star Game: roster selection/replacements -> team assignment, which is format-dependent (East-West, captains draft, 2025 four-team target-score-40 mini-tournament including the Rising Stars winner, 2026 USA Stars/USA Stripes/World round robin of 12-minute games with record->point-differential->points tiebreak and a championship game) -> low-effort, high-3PA scoring -> minutes sharing -> tournament advancement -> winner. (D) Celebrity Game: different rosters entirely. Hazards: withdrawn named entrant (No vs void), shoot-off/dunk-off, which game the ASG series settles (single game vs championship), multi-outcome team names. Differences after reading the record: it captures A-C stages, withdrawal, judging and format ledger well, but (i) has no ASG tournament-advancement/round-robin input (only a pairwise roster gap), so the 2026 point-differential tiebreak and championship path are unmodelled; (ii) omits rack-placement choice, spot-specific and deep-zone make rates and release speed for the 3PT contest; (iii) its ASG late-game logic assumes a target score while 2026 used timed 12-minute games; (iv) it mixes three mechanisms under one input list with a player_other blueprint and lists the Celebrity Game with no inputs.",
+  "verdict": "REVISE",
+  "findings": [
+   {
+    "id": "F1",
+    "severity": "MAJOR",
+    "text": "Archetype/catalog mis-mapping: catalog_entry lists one flat input set with roles for three disjoint series (KXNBA3PTCONTEST, KXNBASLAMDUNK, KXNBAALLSTARGAME). Inputs such as 'nba.dunk_judge_score_model' (primary) and 'nba.asg_roster_strength_composite' (primary) are irrelevant to the 3PT contest and vice versa, and there is no per-series scope field. Blueprint 'player_other' (minutes x per-minute rate counting-stat chain) fits none of them and the ASG winner is a team market. Either split into sub-archetypes or scope every input to the series it feeds.",
+    "resolution": "RESOLVED: every catalog_entry input now carries a 'series' scope list and contract.series_input_scope maps each of the seven tickers to its inputs; blueprint changed from player_other to game_side (nearest for the team tournaments) with the residual mismatch logged as u8.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F2",
+    "severity": "MAJOR",
+    "text": "All-Star Game winner lacks a tournament/advancement input. Stage s5 and 'nba.asg_roster_strength_composite' produce a pairwise 'team gap = difference of weighted sums'. The 2026 format (verified via NBA PR/official rules PDF announcements) is three teams (USA Stars, USA Stripes, World) in a round robin of 12-minute games, ranking by record then point differential then total points, top two to a championship game. Winner probability therefore requires a simulation of margins (not just win/loss) across the round robin plus the final; nothing analogous to 'nba.threept_contest_score_pmf' exists for the Game. The 2025 format also seeded a Rising Stars winner team whose identity is only known two days before, an unmodelled conditional entrant.",
+    "resolution": "RESOLVED: added nba.asg_tournament_path_sim (round-robin Monte Carlo with quoted Game 1-4 pairings, point-differential tiebreak and championship; samples the Rising Stars entrant for 2025) and stage s6; roster composite now outputs every team pair.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F3",
+    "severity": "MAJOR",
+    "text": "3PT contest skill inputs miss contest-specific mechanics: the shooter chooses the station for the all-money-ball rack and there are two deep-range bonus balls (3 pts) between stations; the round is timed, so release speed determines unshot balls. 'nba.contest_shooting_skill_transfer' uses only pooled catch-and-shoot/open 3P%, FT% and past contest rate. Required additions: spot-specific (corner/wing/top) catch-and-shoot rates for rack placement, deep (27+ ft) make rate, and a release-time/balls-attempted measure from past contests. Exact current ball values/time limit are from reviewer memory: confirm in the format ledger.",
+    "resolution": "RESOLVED: added nba.threept_spot_and_tempo_profile (zone catch-and-shoot rates, 27+ ft rate, rack placement, balls released within the quoted 70 seconds) to s2 and the score pmf measurement; ball values kept as SOURCE_UNVERIFIED in u2.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F4",
+    "severity": "MAJOR",
+    "text": "ASG effort/variance baseline is format-mis-specified for the latest event: 'nba.asg_effort_scoring_baseline' and its nonlinearity rely on 'Effort jumps in the closing minutes when a target score is in play' and 'margin SD per 12 minutes'. Target-score (Elam/race-to-40) games have no clock and need a race-to-target model; 2026 timed 12-minute games do not. Pooling across formats as written mixes incompatible processes; the input must be defined conditional on the ledger's format vector (timed vs target) and the record should state which applies to the contract year.",
+    "resolution": "RESOLVED: nba.asg_effort_scoring_baseline redefined conditional on the ledger's timed vs target regime (2026 timed 12-minute games quoted; Rising Stars 40/25 races quoted); added nba.target_score_race_model and made the compression nonlinearity timed-only.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F5",
+    "severity": "MAJOR",
+    "text": "catalog_entry contract_types includes 'Pro Basketball All-Star Celebrity Game' but no input covers it (celebrity/ringer rosters, special scoring rules). u5 discloses this, yet the entry still claims the contract type. Remove it from the archetype until a series exists, or add a roster-composition input and a settlement gap.",
+    "resolution": "RESOLVED: 'Pro Basketball All-Star Celebrity Game' removed from catalog_entry.contract_types and from variants; u5 rewritten to say no live series exists and what to add if one is listed.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F6",
+    "severity": "MINOR",
+    "text": "Settlement: settlement_definition says the ASG series settles on the 'team ... officially declared winner'; with a 4-game format it is unknown whether KXNBAALLSTARGAME is a per-game or tournament-champion market, and Kalshi winner markets often resolve a non-participating named entrant to No rather than void. Both are disclosed in variants/u1 but the definition text should not assert the tournament winner; keep CONTRACT_AMBIGUOUS until rules are sampled.",
+    "resolution": "RESOLVED: settlement_definition rewritten from sampled rules: 2026 series is the tournament champion ('wins the 2026 Pro Basketball All-Star Tournament'), player series resolve No on withdrawal, team series have no such clause (u1).",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F7",
+    "severity": "MINOR",
+    "text": "Unsourced numerics presented as priors: 'about 10-15 percent by entrant' withdrawal base rate, ASG composite weights '0.5 ... 0.3 ... 0.2', shrinkage 'k=300' and 'per-ball probability near 0.55-0.65'. Label as placeholders to be estimated, not facts.",
+    "resolution": "RESOLVED: withdrawal base rate, composite weights w1-w3, shrinkage constants and per-ball probability now labelled placeholders to be fitted in the measurement/rationale texts of the affected new_inputs.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F8",
+    "severity": "MINOR",
+    "text": "SOURCE_UNVERIFIED: 'NBA.com contest recaps with judge scores' is claimed to give per-judge dunk scores; recaps and Wikipedia typically give per-dunk totals, not judge-level scores needed for the 'partial-pooling judge effect'. Also 'NBA Draft Combine measurements' for 'nba.dunker_pedigree_profile' are missing for undrafted/G League entrants (common in this contest), and in-game dunk counts from Basketball-Reference exclude G League minutes.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:u6",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F9",
+    "severity": "MINOR",
+    "text": "Category coverage stretches: opponent_matchup COVERED via 'nba.threept_contest_score_pmf' and coaching_scheme COVERED via 'nba.asg_minutes_rotation_plan' are re-labels, and environment cites 'nba.contest_shooting_skill_transfer'. Also 'nba.three_volume' largely duplicates 'nba.three_make_by_openness_prior' for the contest. Wording/classification only.",
+    "resolution": "RESOLVED: opponent_matchup now cites only team-exhibition inputs, environment only nba.venue, coaching note limited to rotations; nba.three_volume re-audited KEEP_CONTEXT, removed from the contest stage and scoped to the All-Star Game.",
+    "resolved_by": "resolver-NBA"
+   },
+   {
+    "id": "F10",
+    "severity": "MINOR",
+    "text": "Missing situational stage: entrants doubling up (3PT shooters or dunkers also playing Rising Stars/ASG, Saturday-night fatigue, home-market entrant crowd effect on judges). Partly captured by the declared situational GAP and u4; should be explicitly an unresolved item for the contests, not only the Game.",
+    "resolution": "DEFERRED_TO_UNRESOLVED:u7",
+    "resolved_by": "resolver-NBA"
+   }
+  ]
+ }
+}

@@ -1,0 +1,207 @@
+{
+ "auditor": "independent-audit24-MLB (Claude agent, not human)",
+ "inputs": {
+  "mlb.award_electorate_procedure": {
+   "verdict": "WEAK",
+   "assessment": "The table schema in `measurement` is computable, but the rationale itself admits unverified facts: panel size (six vs nine retired relievers), Hank Aaron fan weight (unpublished), and all URLs per free_sources 'VERIFICATION STATUS'. The 'Use:' half is a modelling rule that belongs to mlb.award_vote_rank_model, and vote_deadline/finalist_announcement_flag overlap mlb.award_timing_information_state. It is a lookup of ~10 awards x 2 leagues x seasons with hand-keyed rows, so useful as a gating rule but low-information and dependent on manual transcription. Agent judgement only, not human expert verification.",
+   "market_free": "yes",
+   "raw_data": [
+    "award procedure table: award, league, season, electorate_class, n_voters, ballot_places, points_vector, vote_deadline, fan_vote_flag, public_ballots_flag, source_url"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "BBWAA and MLB.com award announcements (manual transcription)",
+      "access": "free",
+      "note": "no committed probe in data_foundation for bbwaa.com/mlb.com award pages; catalog says pages were unreachable"
+     },
+     {
+      "name": "SABR Defensive Index page",
+      "access": "free",
+      "note": "no probe"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "mlb.award_fan_vote_popularity": {
+   "verdict": "FIXED",
+   "assessment": "Formula defect: pop_i = log(votes) with '0 for players not listed' is undefined (log 0) and MLB only publishes the top vote-getters per Phase 1 update, so non-listed players are censored, not zero. 'team metro population' has no source or definition (Toronto, shared metros, units) and is described as a 'second term' without a coefficient. Phase 1 totals are only available for the ballot-leader list, so most finalists lack the value. Point-in-time is OK (July data precedes award votes) but pregame_knowable is honestly 'partial'. Only ~12 winners per league, 4 coefficients: heavy ridge needed. Agent judgement only.",
+   "market_free": "yes",
+   "raw_data": [
+    "All-Star phase-1 fan vote totals by player and season (leader lists only, with the lowest published total per league/position)",
+    "Hank Aaron finalists and winners by league and season",
+    "team metro population (Census MSA, fixed definition)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "MLB.com All-Star ballot leader releases",
+      "access": "free",
+      "note": "no committed probe; historical per-player Phase 1 completeness unverified"
+     },
+     {
+      "name": "US Census MSA population",
+      "access": "free",
+      "note": "public; mapping of Toronto to Canadian CMA needed"
+     },
+     {
+      "name": "Baseball-Reference",
+      "access": "free_scrape",
+      "note": "terms of use limit bulk scraping; no committed probe"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "pop_i = log(V_i) where V_i = published Phase 1 fan votes of player i in the same season; if i is not on the published leader list set V_i = the lowest published total of his league-position list (censoring floor) and not_listed=1. Second term m_i = log(team metro/CMA population, latest census, millions). Model: P(i)=softmax(a1*OPS+_z + a2*HR_z + a3*pop_z + a4*m_z + a5*not_listed + a6*playoff) over club-nominee finalists, z within league-season, conditional logit on 2014-2025, ridge toward the production-only fit with penalty 3 seasons and a3,a4 shrunk hardest. As-of end of the regular season."
+  },
+  "mlb.executive_award_team_improvement": {
+   "verdict": "FIXED",
+   "assessment": "x2 uses 'mean of ZiPS and PECOTA team projections': PECOTA is paywalled (Baseball Prospectus) and neither vintage is archived publicly, so the preseason value cannot be reconstructed historically; the preseason-frozen snapshot must be specified. x5 is ambiguous: whose fWAR counts for players traded away (only after leaving? full season?) and what 'acquired in prior 12 months' means at the season end, so it is not computable as written. x4 payroll needs a stated payroll source (Cot's; probe not confirmed). The 'only 8 winners' framing is correct (1 per season since 2018), so heavy shrinkage is appropriate. Point-in-time fine at season end. Agent judgement only.",
+   "market_free": "yes",
+   "raw_data": [
+    "team standings by season",
+    "preseason team projections (ZiPS or FanGraphs Depth Charts) snapshot dated before opening day",
+    "opening-day payroll by club",
+    "transaction log with player fWAR on each club"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "FanGraphs preseason projected standings",
+      "access": "free_scrape",
+      "note": "historical vintage must be own-captured or Wayback; probe fangraphs POLICY_DENIED"
+     },
+     {
+      "name": "Cot's Baseball Contracts / Spotrac payroll",
+      "access": "free_scrape",
+      "note": "listed in sources.json but no probe for payroll"
+     },
+     {
+      "name": "MLB Stats API (statsapi.mlb.com schedule, game feed, transactions)",
+      "access": "free",
+      "note": "probes mlb_statsapi_sched/feed/trans REACHABLE (data_foundation/probes.json)"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "For each club's top baseball-operations executive at season end: x1 = wins minus prior-season wins; x2 = wins minus FanGraphs preseason projected wins (ZiPS-based Depth Charts snapshot frozen before opening day; PECOTA dropped as paywalled); x3 = playoff flag; x4 = z-score within league-season of wins per $10M opening-day payroll (Cot's); x5 = fWAR accrued with the acquiring club, from acquisition date to season end, by players acquired by trade or FA in the prior 12 months, minus fWAR those traded-away players accrued for their new clubs after the trade. P(i)=softmax(b*x), conditional logit on 2018-2025 winners, ridge penalty 3 seasons. As-of last regular-season day."
+  },
+  "mlb.opposing_probable_starter_vintage": {
+   "verdict": "WEAK",
+   "assessment": "Recipe is mostly computable and point-in-time safe by construction, and mlb_statsapi_sched probe (hydrate=probablePitcher,lineups) supports the endpoint. Weaknesses: (1) pitchHand is not part of the probablePitcher stub in the schedule hydrate; hand must be joined from /people (not probed). (2) 30-minute snapshots from 3 days out exist only from own capture going forward, so there is no history for vintage/change-rate fitting; P(change) depends on mlb.f5_starter_change_risk and the pre-listing fallback on mlb.pitcher_rotation_slot_and_rest, which overlaps its announced-probable flag (c). (3) Switch hitters and switch-pitcher edge cases are unspecified; manager-specific start rates over 2 seasons are thin. Not an exact duplicate. Agent judgement only.",
+   "market_free": "yes",
+   "raw_data": [
+    "probable-pitcher snapshots (own capture): game_pk, team_id, pitcher_id, pitch_hand (from /people), first_seen_ts, change_ts",
+    "lineup history: game_pk, batter_id, started_flag, opposing_starter_hand"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "MLB Stats API schedule hydrate=probablePitcher,lineups plus /people for pitchHand",
+      "access": "free",
+      "note": "probe mlb_statsapi_sched REACHABLE; snapshot history is own_capture only"
+     },
+     {
+      "name": "Retrosheet game logs",
+      "access": "free",
+      "note": "probe retrosheet POLICY_DENIED; use Stats API boxscores instead"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "mlb.pitcher_k_talent_prior": {
+   "verdict": "FIXED",
+   "assessment": "Look-ahead defect: the whiff-grade model is 'fitted on 2021-2025 Statcast pitches' and beta is regressed on the same seasons, so backtests of 2021-2025 games use future data; also projKS 'latest Steamer and ZiPS' has no archived vintage (FanGraphs overwrites), so historical as-of values are not reconstructible without own capture. w=0.5/0.3 and the 0.25 weight are unfitted constants. Savant CSV and FanGraphs probes were POLICY_DENIED, so sourcing is unverified. Distinct from mlb.k_rates (observed half-life K%), not a duplicate. arm_angle availability by season is unverified. Agent judgement only.",
+   "market_free": "yes",
+   "raw_data": [
+    "projection snapshots (own capture): pitcher_id, system, K%, BF, publish_date",
+    "statcast pitches: pitcher_id, pitch_type, release_speed, pfx_x, pfx_z, release_extension, release_pos_z, release_spin_rate, arm_angle, description, game_date"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Baseball Savant Statcast CSV",
+      "access": "free_scrape",
+      "note": "probe mlb_savant_csv was POLICY_DENIED from the audit environment"
+     },
+     {
+      "name": "FanGraphs (projections, leaderboards)",
+      "access": "free_scrape",
+      "note": "probe 'fangraphs' was POLICY_DENIED; terms limit scraping"
+     },
+     {
+      "name": "pybaseball Statcast wrapper",
+      "access": "free_scrape",
+      "note": "same upstream as Savant"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "prior_K = w*projK + (1-w)*stuffK; projK = mean of latest Steamer and ZiPS K% captured with its publish_date at or before the as-of date (own snapshots only; no back-fill). stuffK = league K% + beta*(usage-weighted whiff grade - league mean); the whiff-grade logistic model (release speed, IVB, HB, spin, extension, release height, arm angle, deltas to primary fastball) and beta are refit walk-forward: for games in season S use only pitches and seasons < S. w fitted by minimising held-out K% log loss in 2023-2025, default 0.5 and 0.3 on arsenal change. Posterior K% = (BF_eff*obsK + 150*prior_K)/(BF_eff+150), BF_eff = BF since change + 0.25*earlier BF. Units: K per BF."
+  },
+  "mlb.postseason_round_roster_membership": {
+   "verdict": "WEAK",
+   "assessment": "Logistic recipe is explicit and point-in-time safe: P is 0/1 once submitted. Weak points: no evidence in probes that the transactions endpoint records round roster submissions (mlb_statsapi_trans only shows the endpoint is reachable), so the 2012-2025 fitting set and submitted_ts are unverified; 'Baseball-Reference postseason rosters by series' is not a confirmed page. b3 'projected WAR rank within position group' and b4 depend on mlb.rehab_progression_stage, undefined here. About 14 seasons x 12 clubs gives ~170 rosters, limiting a 7-term fit. Related to but not the same quantity as mlb.postseason_roster_reset_eligibility (a team-level runs delta), so not a duplicate. Agent judgement only.",
+   "market_free": "yes",
+   "raw_data": [
+    "postseason roster submissions: club, round, player_id, submitted_ts",
+    "injury replacement transactions: removed player, added player, ts",
+    "end-of-season active roster and injured list"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "MLB Stats API transactions",
+      "access": "free",
+      "note": "probe mlb_statsapi_trans REACHABLE, but postseason roster-submission coverage not shown"
+     },
+     {
+      "name": "Baseball-Reference",
+      "access": "free_scrape",
+      "note": "terms of use limit bulk scraping; no committed probe"
+     },
+     {
+      "name": "MLB.com postseason roster announcements",
+      "access": "free",
+      "note": "manual; no probe"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "mlb.reliever_award_production": {
+   "verdict": "FIXED",
+   "assessment": "Defect: x4 and the 'LI >= 1.5' innings are said to come from 'MLB Stats API play-by-play (leverage state per plate appearance)', but the game feed has no leverage index; it must be derived from a base-out-inning-score win-expectancy table, which is not defined. gmLI/WPA from FanGraphs (probe POLICY_DENIED) is the other route. x6 bundles two stats (K-BB% and FIP-), x2 saves and x3 gmLI are collinear, and 7 features against ~10 winners per league is over-parameterised. Honest unverified flags about the awarding body are good. Not a duplicate of mlb.award_stats_war. Agent judgement only.",
+   "market_free": "yes",
+   "raw_data": [
+    "season reliever table: IP, saves, gmLI, WPA, fWAR, FIP-, K-BB%",
+    "play-by-play with own-derived leverage index per PA (base-out-inning-score LI table)",
+    "Reliever of the Year winners and finalists by league and season, by awarding body"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "FanGraphs (projections, leaderboards)",
+      "access": "free_scrape",
+      "note": "probe 'fangraphs' was POLICY_DENIED; terms limit scraping"
+     },
+     {
+      "name": "Baseball-Reference",
+      "access": "free_scrape",
+      "note": "terms of use limit bulk scraping; no committed probe"
+     },
+     {
+      "name": "MLB Stats API play-by-play (gamefeed)",
+      "access": "free",
+      "note": "probe mlb_statsapi_feed REACHABLE; leverage index is own derivation"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Pool per league-season: relievers with >=50% appearances in relief and >=40 IP. Features at last regular-season day: x1 = fWAR z within pool, x2 = saves, x3 = gmLI (average LI at entry, computed from a published base-out-inning-score leverage table applied to Stats API play-by-play, or FanGraphs gmLI), x4 = IP with LI>=1.5, x5 = WPA, x6 = FIP- in relief. ERA and K-BB% are dropped (collinear with x1/x6). P(i)=softmax(b*x) per award on its own winner history, ridge penalty 3 seasons toward zero except x1; BBWAA Relief award has only the x1 softmax, labelled uncalibrated. As-of last regular-season day."
+  }
+ },
+ "note": "Independent audit of review-added inputs that had no audit entry at the approved baseline 50dc65e (found 2026-11-09 when the gate criterion was made exact). Claude agent audit, NOT human expert verification. Sorts last."
+}

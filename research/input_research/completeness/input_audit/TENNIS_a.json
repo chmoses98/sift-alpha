@@ -1,0 +1,1854 @@
+{
+ "auditor": "input-audit-TENNIS-a",
+ "inputs": {
+  "m.external_lines": {
+   "verdict": "FIXED",
+   "assessment": "Benchmark input. Original says 'timestamp-match' but free historical files only carry one open and one close snapshot, so matching to an arbitrary Kalshi time is impossible and a close-vs-early-quote comparison leaks the future. Sign persistence is undefined. Must be restricted to benchmark use, never a model feature.",
+   "market_free": "no",
+   "raw_data": [
+    "tennis-data.co.uk columns B365W/L, PSW/L, MaxW/L, AvgW/L",
+    "Betfair exchange historical price files",
+    "Kalshi candlesticks at matched horizon"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "tennis-data.co.uk odds spreadsheets",
+      "access": "free",
+      "note": "Open/close style single snapshot (B365, PS, Max, Avg)"
+     },
+     {
+      "name": "Betfair Exchange historical data (data.betfair.com)",
+      "access": "free_limited",
+      "note": "basic plan: limited fields; advanced is paid"
+     },
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Entire calculation is a de-vigged sportsbook/exchange price; benchmark only, there is no market-free rebuild because the quantity is the market.",
+   "measurement_fix": "For each match with a free-file close: p_book = two-way de-vig of Pinnacle close (power method: solve k so 1/o1^k... sums to 1; Shin only for 3-way sets; fall back to average close if Pinnacle missing). Compare to the Kalshi mid from the candlestick whose end time is the last one at or before the book file's stated close time; if the file gives no timestamp, use Kalshi last pre-start candle and label the comparison close-vs-close only. Output diff = kalshi_mid - p_book and sign persistence = share of consecutive matching snapshots with the same sign. Use for benchmarking only."
+  },
+  "m.fees": {
+   "verdict": "FIXED",
+   "assessment": "Execution constant, not a predictor. As written no formula is given, so it is not computable. Fee schedule changes over time and maker fees differ; the schedule must be versioned by trade date to avoid applying a current schedule to history.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "Kalshi fee schedule versions by effective date",
+    "fill price, size, maker/taker role"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi fee schedule / help center",
+      "access": "free",
+      "note": "Versioned history must be archived by us"
+     }
+    ],
+    "verified": false
+   },
+   "market_note": "The fee function itself is rule-based and market-free, but net edge subtracts a market price and spread; use the fee table alone as a market-free input.",
+   "measurement_fix": "Implement fee(price p in dollars, contracts C, role, trade_date) from the schedule in force on trade_date; for the standard taker schedule fee = ceil_to_cent(0.07 * C * p * (1 - p)), maker fee per the schedule row (often 0 or 0.0175 coefficient) and verify both coefficients against the archived schedule. Net edge per contract = model_p - fill_price - fee/C - (slippage vs mid). Report the net-of-fee break-even probability gap by price bucket. As-of: trade timestamp."
+  },
+  "m.ladder_structure": {
+   "verdict": "FIXED",
+   "assessment": "Cross-rung consistency is a trading structure input; useful only if rungs are captured at one timestamp (historical candlesticks are not synchronous, so snapshots must come from own capture or aligned candles). 'Constrained distribution' and 'least squares' are not specified enough to reproduce.",
+   "market_free": "no",
+   "raw_data": [
+    "all rung bid/ask/mid at one timestamp per event",
+    "hold/break model parameters"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "Own capture of Kalshi orderbook/market snapshots",
+      "access": "own_capture",
+      "note": "Forward-only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Computed entirely from Kalshi rung mid prices; benchmark/trading-structure only. A market-free analogue is the model-only game-margin PMF (ten.game_margin_pmf_calibration).",
+   "measurement_fix": "For one event at a single timestamp t (candles aligned to the same 1-minute bucket, rungs with no trade in 10 min dropped): list cumulative prices P(D>k) for ascending k; flag any non-monotone pair (P_k < P_{k+1}); fit pmf over integer D by minimising sum_k w_k (mid_k - P(D>k;theta))^2 where theta are the two hold probabilities of a set-level DP game-margin model and w_k = 1/(spread_k)^2; record per-rung residual mid_k - fitted and the fitted pmf. Never use quotes after market start."
+  },
+  "m.lifecycle": {
+   "verdict": "OK",
+   "assessment": "Status timestamps (open_time, close_time, status changes) are knowable and not prices; the pregame-knowable flag is partial because mid-life halts are recorded as they happen. Historical status transitions are not retained by the API (only final status and times), so halts need own capture.",
+   "market_free": "yes",
+   "raw_data": [
+    "market open_time, close_time, expiration, status",
+    "own-captured status transitions",
+    "scheduled start time from order of play"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "Own capture of Kalshi orderbook/market snapshots",
+      "access": "own_capture",
+      "note": "Forward-only"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "m.orderbook_depth": {
+   "verdict": "OK",
+   "assessment": "Definition is computable. Hard limitation: Kalshi serves only the current orderbook, so history exists only from our own capture; any backtest before capture start is impossible. Uses prices and sizes so it is a market-state input.",
+   "market_free": "no",
+   "raw_data": [
+    "orderbook levels (price,size) per side with capture timestamps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "Own capture of Kalshi orderbook/market snapshots",
+      "access": "own_capture",
+      "note": "Forward-only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Computed from resting quotes; execution/benchmark only, no market-free version exists."
+  },
+  "m.quote_history": {
+   "verdict": "OK",
+   "assessment": "Specified horizons (T-24h..close) and the ban on post-start quotes are sound. Candlestick resolution limits T-10m accuracy; 'sharp-book drift' needs a book timestamp the free files lack, so that part is close-vs-close only.",
+   "market_free": "no",
+   "raw_data": [
+    "Kalshi candlesticks bid/ask/last at fixed horizons",
+    "scheduled start time"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "tennis-data.co.uk odds spreadsheets",
+      "access": "free",
+      "note": "Open/close style single snapshot (B365, PS, Max, Avg)"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Quote path and drift vs a sharp price are market-derived; usable only as execution/benchmark, never as a model feature."
+  },
+  "m.rules_text": {
+   "verdict": "OK",
+   "assessment": "Parsing rules_primary into flags is concrete and market-free. Key risk is version drift: rules text can be edited after listing, so the hash must be recorded at fetch time or history is misread. Retirement/walkover flags are the highest-value ones in tennis.",
+   "market_free": "yes",
+   "raw_data": [
+    "rules_primary and rules_secondary text with fetch timestamp and hash",
+    "market ticker and series"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "Own capture of Kalshi orderbook/market snapshots",
+      "access": "own_capture",
+      "note": "Forward-only"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "m.settlement_truth": {
+   "verdict": "OK",
+   "assessment": "Label source, not a feature (not pregame-knowable); correctly flagged. Value is in finding wording or void cases where settled value differs from the Sackmann result. Timestamp of settlement may lag the match by hours.",
+   "market_free": "yes",
+   "raw_data": [
+    "settled result, settlement_value, settlement_ts per market",
+    "independent result from Sackmann score string"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "m.strike_hit_rates": {
+   "verdict": "FIXED",
+   "assessment": "Shrinkage constant k is unspecified and 'average de-vigged pre-close price' mixes a Kalshi price with an undefined de-vig (Kalshi rungs are not a booked market with an overround). As written it is not computable.",
+   "market_free": "no",
+   "raw_data": [
+    "settled outcomes by family and strike",
+    "pre-close Kalshi mid at fixed horizon"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Realised minus market price is a calibration of the market; no market-free rebuild, benchmark only (model calibration should use ten.game_margin_pmf_calibration).",
+   "measurement_fix": "For each family f and strike bucket b (strike rounded to the rung grid): n = settled markets, y = YES count, pbar = mean Kalshi mid at T-1h (no de-vig; a single contract has none). gap = y/n - pbar with Wilson 90% interval on y/n; shrunk_gap = gap * n/(n+k) with k = 40 until k is fit by out-of-sample squared error of next-period gaps. As-of: only markets settled before the as-of date; exclude voided markets."
+  },
+  "m.trade_tape": {
+   "verdict": "OK",
+   "assessment": "Computable and the /markets/trades endpoint is public. Signed imbalance needs taker_side, which the API provides. Flow signals are noisy and the 1/5/30 min impact windows need trade density tennis markets often lack; treat as diagnostic.",
+   "market_free": "no",
+   "raw_data": [
+    "trade price, count, taker_side, created_time"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Derived from executed market prices and flow; benchmark/execution only."
+  },
+  "m.volume_oi": {
+   "verdict": "OK",
+   "assessment": "Straightforward, but volume and OI are market activity, not information about the match; relation to price accuracy is a hypothesis. Historical OI at past timestamps is not exposed (only current/final), so time-sliced OI needs capture.",
+   "market_free": "no",
+   "raw_data": [
+    "market volume, open_interest, volume by hour"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     },
+     {
+      "name": "Own capture of Kalshi orderbook/market snapshots",
+      "access": "own_capture",
+      "note": "Forward-only"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Market-activity statistics; no market-free equivalent. Benchmark/execution only."
+  },
+  "ten.ace_settlement_source": {
+   "verdict": "DUPLICATE",
+   "assessment": "Registry id is m.rules_text; the source-of-record flag is already an output of that parse. The extra 'compare sources for disagreement rates' needs two independent historical ace feeds that are not freely available, so it cannot be computed.",
+   "market_free": "yes",
+   "raw_data": [
+    "rules text source_of_record field"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "m.rules_text"
+  },
+  "ten.ball_change_cycle": {
+   "verdict": "FIXED",
+   "assessment": "Original mod formula is wrong for schedules like 7 then every 9 (first change after game 7, later changes after games 16, 25...), and 'report in spw points' conflates hold with serve-point win. Needs a register of ball schedules, which is not in any free dataset; slam PBP exists only for Slams.",
+   "market_free": "yes",
+   "raw_data": [
+    "game index within match",
+    "ball-change schedule register per event-year",
+    "point-by-point game outcomes with server"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, winner, game/set state) from 2011; Slams only"
+     },
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Register per event-year: first_change_after = a (e.g. 7 or 9), interval = b (9 or 11), warmup_counts flag. Games played before game g = g-1; new balls are used in game g iff g-1 >= a and (g-1-a) mod b == 0; fresh = that indicator. Estimate delta_hold = coefficient on fresh in logit(hold) ~ server + returner + surface + event + fresh from Slam point-by-point (game level), report as change in hold probability (pp), shrunk to 0 with n/(n+500) games. Event not in register -> missing, not imputed."
+  },
+  "ten.ball_type_pressure": {
+   "verdict": "WEAK",
+   "assessment": "Measurement is a one-liner with no window or units; effect is small, confounded with court and venue, and ball brand per event-year is only partly documented. Largely subsumed by event-year speed history.",
+   "market_free": "yes",
+   "raw_data": [
+    "event-year ball brand register",
+    "event hold%/ace%"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.bo5_rating_premium": {
+   "verdict": "FIXED",
+   "assessment": "Residual is ill-defined and circular: if Elo is fit on bo3+bo5 together the favourite's bo5 over-performance is mechanical (bo5 amplifies the edge) and would be read as a player premium. 60 bo5 matches is more than most players have inside 3 years; shrinkage is therefore dominant.",
+   "market_free": "yes",
+   "raw_data": [
+    "match rows: best_of, winner/loser ids, date",
+    "pre-match Elo for both players"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each Slam bo5 match, expected win prob E_5 = F(Elo gap) where F is a bo5 transform of the bo3-fitted win prob (via set-win prob s solved from bo3 prob, then bo5 formula). residual_i = sum over player's last up to 60 bo5 matches before as-of with weights 0.5^(age_days/1095) of (result - E_5), divided by the weighted sum of E_5(1-E_5) and by ln10/400 to convert to Elo points, then shrunk by n_eff/(n_eff+25) toward 0. Add the premium to the Elo gap only in best_of=5 matches. As-of: before the event's first match."
+  },
+  "ten.career_major_count_state": {
+   "verdict": "OK",
+   "assessment": "Settlement-state lookup: concrete and market-free. Low modelling value; its use is to catch a contract whose assumed count is stale. Doubles, mixed and junior titles must be excluded by category field.",
+   "market_free": "yes",
+   "raw_data": [
+    "major singles titles with date, tour"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.compatriot_collision_matrix": {
+   "verdict": "FIXED",
+   "assessment": "Original formula is muddled: 'P(both reach) x P(meet|both reach)=1' and 'loss = P(meet)*min(p_i,p_j conditional)' is not a correct union adjustment. Correct quantity is the gap between the independent union and the simulated union.",
+   "market_free": "yes",
+   "raw_data": [
+    "draw positions, seeds, nationality (ioc/ official flag)",
+    "per-match win probabilities from the model"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Run N=20000 bracket simulations using match win probabilities as-of draw publication (before the draw: resample draws respecting seeding rules). For nation c and stage s: U_sim = share of sims with at least one nation-c player reaching s; U_indep = 1 - prod_i(1 - p_i,s) with marginal p from the same sims; collision term = U_indep - U_sim >= 0. Also report P(pair meets) per pair and the earliest possible round from bracket sections. Nationality per ten.nationality_designation_status."
+  },
+  "ten.court_side_point_asymmetry": {
+   "verdict": "WEAK",
+   "assessment": "Charted data cover a small, selected set of matches; side-specific spw differences are tiny and noisy, and for pairs without charted matches the input is missing. Shrink constant n/(n+80) is unanchored. Marginal effect on match or game totals is negligible.",
+   "market_free": "yes",
+   "raw_data": [
+    "charted points: server, side (deuce/ad), winner",
+    "hand"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_MatchChartingProject",
+      "access": "free_limited",
+      "note": "Volunteer-charted shot-level data; biased toward notable matches, small coverage"
+     },
+     {
+      "name": "Sportradar / Hawk-Eye tennis feeds",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.cross_surface_rating_covariance": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same latent quantity as ten.surface_similarity (cross-surface skill correlation with partial pooling). Elo has no posterior covariance, so the hierarchical formulation as written is not an Elo model.",
+   "market_free": "yes",
+   "raw_data": [
+    "match results with surface"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.surface_similarity"
+  },
+  "ten.decider_format_tail": {
+   "verdict": "DUPLICATE",
+   "assessment": "The event-year deciding-set rule lookup is ten.final_set_rule; the >13-game tail is a deterministic function of that rule plus holds, i.e. an output of the hold DP, not a separate input.",
+   "market_free": "yes",
+   "raw_data": [
+    "event-year final-set rule"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "ten.final_set_rule"
+  },
+  "ten.decider_record": {
+   "verdict": "FIXED",
+   "assessment": "Marker flag is a false positive (rating-implied, not price-implied), but 'rating' is unspecified and 'conditional match-win rate given set-1 win relative to expectation' has no expected value defined. Deciding-set records are mostly luck, so heavy shrinkage is essential.",
+   "market_free": "yes",
+   "raw_data": [
+    "match score strings by player",
+    "pre-match Elo"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Over a player's last 60 matches before as-of (half-life 18 months): decider_resid = sum(won_decider - E_dec) / n_dec where E_dec = pre-match Elo win probability (market-free Elo from ten.surface_rating), restricted to matches that reached a deciding set; shrink by n_dec/(n_dec+30). set1_conv_resid = sum(won_match - E_cond)/n over matches where player won set 1, E_cond = pooled empirical P(win match | win set 1, best_of, Elo-gap bin). Retirements excluded."
+  },
+  "ten.doubles_pair_strength": {
+   "verdict": "FIXED",
+   "assessment": "Weights are declared placeholders (fine) but the formula adds raw Elo levels (singles 1500 offset times 0.3) so the scale is wrong, and doubles Elo has no K or initial value. Doubles data in Sackmann are sparse and incomplete for lower tours.",
+   "market_free": "yes",
+   "raw_data": [
+    "doubles match rows with 4 player ids, score, round",
+    "partnership history",
+    "singles Elo"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "ATP/WTA doubles rankings pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Doubles Elo per player: start 1500, K=32 for first 30 doubles matches then 16, updated using the pair mean; shrunk d_i = 1500 + (elo_i-1500)*n_i/(n_i+15). Pair rating = 1500 + 0.6*mean(d_A-1500,d_B-1500) + 0.25*pair_elo_dev (0 if <5 shared matches) + 0.15*0.3*mean(singles_elo-1500) - debut_penalty, debut_penalty=20*max(0,1-prior_matches/10). Only matches before as-of; weights are placeholders to be fit by log loss."
+  },
+  "ten.eligible_event_calendar": {
+   "verdict": "FIXED",
+   "assessment": "P(eligible) and P(commit) are undefined, so P(return by T) is not computable. Overlaps ten.pre_draw_field and ten.protected_ranking_and_entry_pathway; keep only as the calendar/deadline table plus a defined entry model.",
+   "market_free": "yes",
+   "raw_data": [
+    "calendar with entry deadlines, category, surface, points",
+    "entry list status",
+    "historical commit rate by category"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "For player i and window ending T: events e with entry deadline after as-of and start <= T. P(eligible_e) = 1 if rank <= last direct acceptance in last 3 editions, else historical share of such ranks receiving wildcard/protected entry (shrunk n/(n+10)). P(commit_e | eligible) = player's share over last 24 months of eligible same-category events actually entered, shrunk n/(n+8) to category mean. P(return by T) = 1 - prod_e(1 - P(eligible_e)P(commit_e)P(start_e | enter)). Challenger/exhibition carried separately."
+  },
+  "ten.exhibition_format_effort": {
+   "verdict": "WEAK",
+   "assessment": "Target shrink 0.6-0.8 is an assumed number and no free exhibition results database exists (Sackmann excludes exhibitions), so the factor cannot be fitted. Format flags are knowable but effort is discretionary and unobservable.",
+   "market_free": "yes",
+   "raw_data": [
+    "event class and format spec",
+    "exhibition results (none free)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Promoter announcements",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.first_serve_speed_trend": {
+   "verdict": "WEAK",
+   "assessment": "Serve-speed data free only at Slam sites and not as a bulk historical table; availability is flagged unverified in the definition itself. 'elasticity beta' is unspecified. Largely a sub-case of ten.serve_profile_physical and ten.aces_df.",
+   "market_free": "yes",
+   "raw_data": [
+    "first-serve speed per match",
+    "match and round"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sportradar / Hawk-Eye tennis feeds",
+      "access": "paid"
+     },
+     {
+      "name": "Slam official stats pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.game_margin_pmf_calibration": {
+   "verdict": "FIXED",
+   "assessment": "Useful and market-free, but 'parametric fit' to shrink toward is unspecified and Elo before each match must come from a rolling pre-match rating (not end-of-season) or it leaks.",
+   "market_free": "yes",
+   "raw_data": [
+    "set scores per match",
+    "pre-match Elo",
+    "tour, best_of, surface"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each historical completed match (retirements/walkovers excluded) record D = games won by the winner minus loser signed from player A's view, with pre-match Elo-implied p_A computed from ratings updated only through the prior day. Bin p_A in 5-point bins by tour x best_of x surface; empirical pmf per bin smoothed with a Gaussian kernel over adjacent bins (bandwidth 1 bin); shrink to a discretised-normal fit of D on logit(p_A) with weight n/(n+50). Output P(D>k) for half-integer k. Walk-forward only."
+  },
+  "ten.game_serial_dependence": {
+   "verdict": "FIXED",
+   "assessment": "Needs game sequences, which in free data exist only for Slam point-by-point; the 'set-level state' control is not defined. Overlaps ten.within_match_dependence (overdispersion) but estimates a specific effect; keep with a precise spec.",
+   "market_free": "yes",
+   "raw_data": [
+    "game-by-game winner and server within sets"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, winner, game/set state) from 2011; Slams only"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "From Slam point-by-point build one row per service game: hold (0/1), server id, returner id, prior_game_broken (previous game was a break against this server), serving_to_stay (opponent leads by one game and a further loss loses the set), set index, surface. Logit(hold) ~ server effect + returner effect + prior_game_broken + serving_to_stay with server random slope on prior_game_broken; report pooled coefficient with CI and per-player slope shrunk n/(n+60). Use matches before as-of only."
+  },
+  "ten.games_per_set_distribution": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as ten.set_dist (Markov model of set-score distribution calibrated to historical set scores by tour and surface); additional kernel calibration is an implementation choice.",
+   "market_free": "yes",
+   "raw_data": [
+    "set scores and serve counts"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.set_dist"
+  },
+  "ten.h2h_style": {
+   "verdict": "FIXED",
+   "assessment": "Marker flag is a false positive (rating-implied). The measurement offers two alternative methods ('alternative:') and is therefore not a single computable definition; raw H2H is mostly the rating gap and survivorship of repeated meetings.",
+   "market_free": "yes",
+   "raw_data": [
+    "head-to-head match rows",
+    "pre-match Elo",
+    "hand, serve profile"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Ultimate Tennis Statistics",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Tennis Abstract",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "H2H residual for pair (A,B) as-of: sum over prior completed meetings (retirements excluded, any surface) of (A_won - E_A) where E_A is the pre-match surface Elo win probability at that meeting, times 1/(n+10) (shrinkage n/(n+10) on the mean), clipped to +/-0.10. Style term is a separate input: logistic regression of match result on rating gap plus lefty indicator, ace-rate gap and return-points-won gap, fit on matches before as-of. Only meetings dated before the as-of timestamp."
+  },
+  "ten.handedness": {
+   "verdict": "FIXED",
+   "assessment": "Measurement is a vague one-liner. Hand is a stable public field in Sackmann players file; effect is small and has to be estimated on the residual after rating or it is confounded by player quality.",
+   "market_free": "yes",
+   "raw_data": [
+    "player hand (winner_hand/loser_hand)",
+    "pre-match Elo",
+    "surface, result"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "hand_pair in {RR,LR,RL,LL} from Sackmann winner_hand/loser_hand (unknown hand = missing). From matches before as-of fit logit(result) = offset(Elo gap) + b_pair + b_pair*surface with ridge penalty (lambda=50 matches) and report the left-minus-right coefficient b_LR in logit units, shrunk n/(n+200). Optionally add player-level lefty random slope shrunk n/(n+40)."
+  },
+  "ten.health_persistence_between_events": {
+   "verdict": "FIXED",
+   "assessment": "Targets are knowable only from historical participation data, which free sources give indirectly (absence from results is not a withdrawal). 'Top-50' and 'prior-run depth' are not defined thresholds. As-of rule is missing.",
+   "market_free": "yes",
+   "raw_data": [
+    "player participation sequences by event",
+    "prior-event rounds and minutes",
+    "draw/entry lists"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Unit = (player, consecutive scheduled events j, j+1 at which the player was on the entry list in j+1 and had played in j). y = 1 if the player played a match in j+1. Features: age bin (<25,25-30,30-34,35+), rounds won in j, total minutes in j, gap days; logistic with ridge (equiv. shrinkage n/(n+30)). Restrict to players ranked top 50 at the entry deadline of j+1; as-of = j+1 entry list publication. Withdrawals are identified from entry lists, not from absence of rows."
+  },
+  "ten.hold_gap_expected_margin": {
+   "verdict": "FIXED",
+   "assessment": "Closing sentence offers two methods (closed-form E[N]*(hA-hB) approximation or the full DP) and the approximation is only exact in expectation with alternating-serve parity; the DP should be the definition. Duplicates the DP in ten.set_dist but adds the margin mean/variance output.",
+   "market_free": "yes",
+   "raw_data": [
+    "serve points won/played per player",
+    "opponent return stats"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Opponent-adjusted spw for each player from matches strictly before the match day (12-month half-life, same method as ten.opp_adjusted_serve_return); hold h via closed-form game formula h(spw). For each set run the DP over game scores with alternating serve (average over first server) to get the set margin pmf, E[D_set], Var; roll over sets using the set-count distribution for the format. Report mean and SD of total game margin with spw drawn from Beta posterior (SD about 0.015). Do not use E[N]*(hA-hB) except as a check."
+  },
+  "ten.hold_rate_uncertainty_propagation": {
+   "verdict": "FIXED",
+   "assessment": "The Jensen effect is real and the definition is nearly computable; gaps: how effective n uses the half-life, the Beta prior, and opponent adjustment (spw_A vs B must be the matchup value, not raw career spw).",
+   "market_free": "yes",
+   "raw_data": [
+    "serve points won and played per player-surface with dates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Matchup spw_A and spw_B from opponent-adjusted components (ten.opp_adjusted_serve_return). Beta posterior: mean = adjusted spw, effective n = sum of 0.5^(age_days/365) over serve points in the last 24 months (cap 4000). Draw 2000 pairs, add day shock N(0,0.02^2) on spw, convert to holds with the closed-form game formula, compute P(6-6) by set DP per draw, return E[p66] and E[p66]-p66(mean h). As-of: data through the day before."
+  },
+  "ten.home_crowd": {
+   "verdict": "FIXED",
+   "assessment": "One-line definition with no host-country source: Sackmann carries player ioc but not tournament country, so a venue-to-country register is a required dataset. Effect is small and confounded by surface familiarity.",
+   "market_free": "yes",
+   "raw_data": [
+    "player ioc",
+    "tournament host country register",
+    "event tier",
+    "pre-match Elo"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "home = 1 if player ioc equals the host country of the event from a hand-built tourney->country register (0 otherwise; Davis/BJK ties and neutral venues coded separately). Fit logit(result) = offset(Elo gap) + b_home*(home_A - home_B) + b_tier-slam interaction with player random intercepts; report b_home in logit units with shrinkage n/(n+150) matches. Only matches before as-of."
+  },
+  "ten.home_slam_depth_prior": {
+   "verdict": "WEAK",
+   "assessment": "Authors state it is only a calibration check; 15 editions x 4 majors gives ~60 observations per nation, mostly 0/1 for small nations. Placeholder weight 0.3 is unfitted.",
+   "market_free": "yes",
+   "raw_data": [
+    "nationality by player and round reached"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.host_surface_selection": {
+   "verdict": "WEAK",
+   "assessment": "Pace descriptor has no objective source (flagged unverified), team events are rare, and surface choice is a lookup already needed by ten.team_event_structure. Little incremental value.",
+   "market_free": "yes",
+   "raw_data": [
+    "tie surface and venue announcements"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.in_event_rating_update": {
+   "verdict": "FIXED",
+   "assessment": "Contains a hypothesis (sign of fatigue interaction) and undefined 'observed dominance ratio'. Overlaps ten.form and ten.fatigue, but within-event updating is a defined distinct use. Constants are placeholders, acknowledged.",
+   "market_free": "yes",
+   "raw_data": [
+    "per-round match serve and return statistics",
+    "pre-match ratings"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "dominance_m = (points won by player) / (total points) from match stats (Sackmann w_/l_ columns if present, else games won / games played). expected_m = pre-match expected points share from Elo (convert Elo win prob to points share via the fitted monotone map on history). resid_m = dominance_m - expected_m. Next-round Elo adjustment = clip(k * 400/ln10 * sum_m decay_m * resid_m, -40, 40) with k=0.15, decay_m = 1 - days_since/10 (0 beyond 10 days). k, clip, decay are placeholders to fit by out-of-sample log loss. As-of: after each completed match."
+  },
+  "ten.in_match_spw_posterior": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as the posterior-updated spw already inside ten.in_play and ten.server_game_state; the Beta-binomial form is an implementation choice. Not pregame-knowable (live only).",
+   "market_free": "yes",
+   "raw_data": [
+    "point sequences with server and winner",
+    "pregame spw prior per pair"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, winner, game/set state) from 2011; Slams only"
+     },
+     {
+      "name": "Sportradar / Hawk-Eye tennis feeds",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "ten.in_play"
+  },
+  "ten.layoff_survival_curve": {
+   "verdict": "FIXED",
+   "assessment": "Injury class labels are not in any structured free source (press coverage, parsed by hand), and the Kaplan-Meier conditioning plus 'statement shift' are not specified. Survivorship: only players who eventually returned appear in results data unless layoffs are enumerated from last-match dates.",
+   "market_free": "yes",
+   "raw_data": [
+    "player match dates",
+    "injury label and surgery flag (manual coding)",
+    "stated timeline"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Press / ATP-WTA news",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Enumerate every gap >=30 days in a ranked top-100 player's match history (gap start = last match date). Event = first match after the gap; players with no further match by the as-of date are right-censored. Injury class from manual coding of press at gap start (missing = 'unknown'). Kaplan-Meier per class; conditional curve S(t+d)/S(d) for d days already elapsed; shrink class hazard to pooled with n/(n+20). Statement types shift the hazard via a Cox coefficient estimated on coded cases. As-of: day of market."
+  },
+  "ten.leg_resolution_state": {
+   "verdict": "WEAK",
+   "assessment": "Contract bookkeeping with no estimation; its output is a conditional probability that any joint simulation (ten.joint_event_correlation) already produces once legs are marked resolved.",
+   "market_free": "yes",
+   "raw_data": [
+    "leg status table with timestamps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.level_transfer_offset": {
+   "verdict": "FIXED",
+   "assessment": "The definition mixes two methods (fit Elo with level dummies, then offsets from players crossing levels) and does not say how crossing is detected or what rating is shifted. Sackmann does include Challenger and futures/ITF files, so data are available.",
+   "market_free": "yes",
+   "raw_data": [
+    "match rows incl. tourney_level for ATP main, Challenger, ITF",
+    "player_id, date, result"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Pool all levels (tour, Challenger, ITF) in one Elo run. For each level L define offset_L = mean over players with >=5 matches at both L and tour level within the previous 24 months of (mean Elo after last 5 tour matches - mean Elo before first 5 matches...) i.e. the rating change across the crossing, shrunk by n_players/(n_players+25) toward 0, recomputed weekly from data before as-of. Rating used for a match = Elo + offset_L(player's pool). Use only crossings completed before as-of."
+  },
+  "ten.line_calling_regime": {
+   "verdict": "WEAK",
+   "assessment": "Event-year regime list is unverified in the definition; electronic line calling rolled out almost everywhere in 2025, so the flag is nearly collinear with year and the ace effect cannot be separated from drift in serve stats.",
+   "market_free": "yes",
+   "raw_data": [
+    "event-year regime flags",
+    "ace per service point"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.major_participation_hazard": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same participation-probability quantity as ten.pre_draw_field (probability of participation by player and event tier), here restricted to majors; the majors case is a covariate subset, not a new input.",
+   "market_free": "yes",
+   "raw_data": [
+    "Slam entries and starts by player-year"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "ten.pre_draw_field"
+  },
+  "ten.major_winner_concentration": {
+   "verdict": "WEAK",
+   "assessment": "Twelve majors is a tiny sample for a Herfindahl index; the 0.3 shrink is an unfitted placeholder and it is stated to be a calibration check only.",
+   "market_free": "yes",
+   "raw_data": [
+    "majors winners list"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.market_margin_bias": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same subject as m.external_lines (de-vig method and favourite-longshot correction of sharp closing prices); it is a sub-step of that benchmark, not a separate input. Computed from implied probabilities, so not a model input.",
+   "market_free": "no",
+   "raw_data": [
+    "closing odds by bookmaker with results"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "tennis-data.co.uk odds spreadsheets",
+      "access": "free",
+      "note": "Open/close style single snapshot (B365, PS, Max, Avg)"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "Calibration of closing implied probabilities is entirely price-derived; benchmark only.",
+   "duplicate_of": "m.external_lines"
+  },
+  "ten.market_odds": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as m.external_lines (de-vigged sharp closing odds vs Kalshi). Free files give one close snapshot with undefined timestamp; retirement/walkover handling inconsistent across bookmakers.",
+   "market_free": "no",
+   "raw_data": [
+    "closing and opening odds by bookmaker, result"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "tennis-data.co.uk odds spreadsheets",
+      "access": "free",
+      "note": "Open/close style single snapshot (B365, PS, Max, Avg)"
+     },
+     {
+      "name": "Tennis Explorer",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": true
+   },
+   "market_note": "De-vigged bookmaker odds are the market price; benchmark only, no market-free rebuild.",
+   "duplicate_of": "m.external_lines"
+  },
+  "ten.nationality_designation_status": {
+   "verdict": "OK",
+   "assessment": "Concrete register with a primary and check source and an explicit uncertain-membership flag; admits it cannot estimate change probability, which is honest. Check that draw-sheet flag is captured at publication time and not read later.",
+   "market_free": "yes",
+   "raw_data": [
+    "player nationality fields from draw sheet, ATP/WTA profile, passport"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.player_games_residual": {
+   "verdict": "OK",
+   "assessment": "Computable and persistence-tested before use. Residual depends on the quality of the model expectation (ten.match_length_expectation), so it must use only pre-match inputs for each historical match or it will leak.",
+   "market_free": "yes",
+   "raw_data": [
+    "match games and model expectations",
+    "adjusted hold rates as-of each match"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "ten.player_set_drop_propensity": {
+   "verdict": "OK",
+   "assessment": "Specified window, half-life and shrinkage; expected straight-set share given opponent rating needs to be defined by the pooled Elo-bin table (ten.set_count_distribution_by_edge). Persistence test is the right safeguard.",
+   "market_free": "yes",
+   "raw_data": [
+    "scores",
+    "pre-match ratings"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "ten.player_speed_slope": {
+   "verdict": "OK",
+   "assessment": "Detailed, leak-aware (leave-player-out index, matches before as-of). Residual risk: field composition in the CPI and few events per player; ridge with lambda about 20 matches is explicit. Duplicate risk with ten.surface_similarity is low because slope is per player.",
+   "market_free": "yes",
+   "raw_data": [
+    "match rows with tourney_name, surface, w_/l_ serve counts",
+    "event-level hold% by year"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "ten.protected_ranking_and_entry_pathway": {
+   "verdict": "FIXED",
+   "assessment": "Mixes flags with a formula in which P(wildcard or protected use) is undefined. Protected-ranking status is published inconsistently, and entry cutoffs must be taken from the entry list as-of publication.",
+   "market_free": "yes",
+   "raw_data": [
+    "rank, protected ranking value/expiry, event direct-acceptance cutoffs by edition",
+    "wildcard history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per player and event: rank_now, protected_rank (value, expiry, uses left) from tour announcements, cutoff_e = worst rank directly accepted in each of the last 3 editions (median). P(eligible) = 1 if min(rank_now, protected_rank if valid) <= cutoff_e; otherwise wildcard probability = historical share of wildcard places given to players with the same status (former top-10, home nation, ex-champion) divided by their entries, shrunk n/(n+10). As-of: entry list publication."
+  },
+  "ten.ranking_publication_calendar": {
+   "verdict": "OK",
+   "assessment": "Lookup table with a simple rule (latest publication <= T); computable and market-free. Verify time-of-day of publication and year-end exceptions, as the definition itself flags.",
+   "market_free": "yes",
+   "raw_data": [
+    "ranking publication dates and times by week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.remaining_race_arithmetic": {
+   "verdict": "DUPLICATE",
+   "assessment": "The race simulation is the same quantity as ten.ranking_points_simulation (and ten.points_defense_rolling). The Finals-qualification cutoff addition is a parameterisation of the same simulation.",
+   "market_free": "yes",
+   "raw_data": [
+    "current points, expiry schedule, points table, remaining calendar"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "ten.ranking_points_simulation"
+  },
+  "ten.retirement_announcement_hazard": {
+   "verdict": "OK",
+   "assessment": "Discrete-time hazard with at-risk set defined; the survivorship caveat is correctly stated. Practical risk: announcement dates must be hand-collected, and 'announcement' wording varies (hints vs formal).",
+   "market_free": "yes",
+   "raw_data": [
+    "player birth date, last match, announcement date, rank history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.retirement_games_completed_profile": {
+   "verdict": "DUPLICATE",
+   "assessment": "Derived from the same RET partial-score table as ten.retirement_timing_profile; games completed is a function of the partial score recorded there.",
+   "market_free": "yes",
+   "raw_data": [
+    "partial set scores, round, best_of"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.retirement_timing_profile"
+  },
+  "ten.retirement_margin_state": {
+   "verdict": "DUPLICATE",
+   "assessment": "Margin at retirement is again a function of the partial score table in ten.retirement_timing_profile; same data, same shrinkage.",
+   "market_free": "yes",
+   "raw_data": [
+    "partial set scores at retirement"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.retirement_timing_profile"
+  },
+  "ten.retirement_settlement_rules": {
+   "verdict": "DUPLICATE",
+   "assessment": "Registry id is m.rules_text and the flags (settle_on_retirement_winner, void_if_not_completed, count_partial_games) are the same parse; the expected-value step is a downstream use.",
+   "market_free": "yes",
+   "raw_data": [
+    "rules_primary text per market"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi trade-api/v2 (markets, trades, candlesticks)",
+      "access": "free",
+      "note": "Historical orderbook depth is not served; only current snapshot"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "m.rules_text"
+  },
+  "ten.retirement_timing_profile": {
+   "verdict": "FIXED",
+   "assessment": "Best of the three RET inputs but it only outputs set-level timing; the partial score string already gives games completed and margin, so it should carry those outputs too. Sackmann RET score strings sometimes omit the in-progress set.",
+   "market_free": "yes",
+   "raw_data": [
+    "score strings with RET (partial sets)",
+    "round, best_of, tour"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Parse every Sackmann score ending in RET/DEF: completed sets, games per player in the interrupted set, retiring player (the loser). Outputs by tour x best_of x round group, shrunk toward tour pooled with n/(n+30): P(retire before completing set 1/2/3), P(retiring player trailing), distribution of total games completed and of games margin D at stoppage (with P(D>1.5), P(count>k) for each strike k). Rows with missing interrupted-set score flagged and treated as censored for games counts. Data before as-of only."
+  },
+  "ten.round_robin_group_structure": {
+   "verdict": "FIXED",
+   "assessment": "Factual error: 'six matches each' is wrong; a group of four has six matches in total and each player plays three. Tie-break order has to be taken from the event-year rulebook. Alternates and withdrawals add scenario branches that are not defined numerically.",
+   "market_free": "yes",
+   "raw_data": [
+    "group composition, tie-break rules by year, results",
+    "alternates order"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Simulate each group of four: 6 matches in total (3 per player) with win probability from indoor-hard pace-adjusted ratings, set scores sampled from the set-count distribution, games from the game-margin pmf. Rank by wins, then head-to-head (two tied), then set ratio, then game ratio per the rulebook of that year (multi-way tie rule coded). P(advance)=top two of group; P(title)=P(advance) x semifinal x final win probabilities from the knockout sim. Withdrawals replaced by next alternate per rulebook with prob from withdrawal hazard. As-of: group draw."
+  },
+  "ten.round_upset_calibration": {
+   "verdict": "OK",
+   "assessment": "Marker flag is a false positive (Elo-implied). Computable from Sackmann seed and round; walk-forward Elo must be pre-match. Seed-difference bins overlap with Elo gap, so the added signal is probably small.",
+   "market_free": "yes",
+   "raw_data": [
+    "match rows with seed and round",
+    "pre-match Elo"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "ten.score_feed_latency": {
+   "verdict": "REMOVE_CANDIDATE",
+   "assessment": "Operational infrastructure for live trading, not a candidate input for a match outcome; the measurement 'track price lag after score changes' is vague and uses prices. Not pregame-knowable.",
+   "market_free": "no",
+   "raw_data": [
+    "feed timestamps",
+    "Kalshi price changes after score events"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ESPN public JSON scoreboard",
+      "access": "free_limited",
+      "note": "Unofficial, no latency timestamps"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   },
+   "market_note": "Lag is measured against Kalshi quotes after score changes; benchmark/infrastructure only."
+  },
+  "ten.second_serve_risk_policy": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as ten.double_fault_pressure (DF rate under break-point and trailing pressure) with a returner-aggression term that needs charting data (MCP) not covered for most matches.",
+   "market_free": "yes",
+   "raw_data": [
+    "df, 2nd serve points, break-point states"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Jeff Sackmann tennis_MatchChartingProject",
+      "access": "free_limited",
+      "note": "Volunteer-charted shot-level data; biased toward notable matches, small coverage"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.double_fault_pressure"
+  },
+  "ten.second_serve_vulnerability": {
+   "verdict": "DUPLICATE",
+   "assessment": "Second-serve points won (own and against) is already a component of ten.first_serve (p(win|2nd)) and ten.opp_adjusted_serve_return; the pair product is just their combination. Definition is a one-liner with no window or shrinkage.",
+   "market_free": "yes",
+   "raw_data": [
+    "2ndWon, svpt, 1stIn per player"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Jeff Sackmann tennis_MatchChartingProject",
+      "access": "free_limited",
+      "note": "Volunteer-charted shot-level data; biased toward notable matches, small coverage"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.opp_adjusted_serve_return"
+  },
+  "ten.serve_direction_mix_vs_returner": {
+   "verdict": "WEAK",
+   "assessment": "Charted coverage is small and biased, the 'adjusted by returner weakness' step has no formula, and most players lack enough charted points. Incremental value over aggregate ace-rate inputs is unproven.",
+   "market_free": "yes",
+   "raw_data": [
+    "serve direction and outcome per point"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_MatchChartingProject",
+      "access": "free_limited",
+      "note": "Volunteer-charted shot-level data; biased toward notable matches, small coverage"
+     },
+     {
+      "name": "Sportradar / Hawk-Eye tennis feeds",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.service_points_scenario_mixture": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as ten.match_length_expectation (distribution of service games and service points per player from the Markov model, with retirement truncation); only the scenario enumeration differs.",
+   "market_free": "yes",
+   "raw_data": [
+    "svpt, SvGms, set scores"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.match_length_expectation"
+  },
+  "ten.set_count_distribution_by_edge": {
+   "verdict": "FIXED",
+   "assessment": "Contains an unclear '1.5-point shrinkage per bin' alongside n/(n+40) so two shrinkage rules conflict. Overlaps ten.straight_set_share_curve (kept as duplicate of this), and ten.set_dist. Elo as-of must be pre-match.",
+   "market_free": "yes",
+   "raw_data": [
+    "match scores, best_of",
+    "pre-match Elo",
+    "tour, surface"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each completed match (retirements excluded) compute pre-match Elo win prob p from ratings through the prior day. Bin p in 5-point bins by tour x best_of x surface; empirical P(N sets) per bin, fitted by a monotone logistic in logit(p); shrink bin value toward the fit with weight n/(n+40) (no separate additive shrink). Output P(decider), P(straight sets), P(winner dropped a set) per format, walk-forward only."
+  },
+  "ten.set_first_server_sequence": {
+   "verdict": "OK",
+   "assessment": "Rule is correct (continuation of alternation; after a tiebreak the player who received first in the tiebreak serves first). Tiny effect and toss is unknown pregame, so the pregame value is 0.5/0.5 by construction; useful mainly in live/set markets.",
+   "market_free": "yes",
+   "raw_data": [
+    "point-by-point serve indicators",
+    "toss result when announced"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, winner, game/set state) from 2011; Slams only"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.set_number_calibration": {
+   "verdict": "OK",
+   "assessment": "Specified bins, conditioning states and shrinkage; honestly limits interpretation to the net offset. Small cells in bo5 set 4/5 states, so shrinkage matters. Overlaps ten.within_match_dependence only partially.",
+   "market_free": "yes",
+   "raw_data": [
+    "set scores by match",
+    "pre-match Elo",
+    "best_of"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "ten.shot_clock_and_violation_state": {
+   "verdict": "REMOVE_CANDIDATE",
+   "assessment": "Not pregame-knowable and no structured source (manual coding of broadcasts); the effect on outcomes is negligible and it cannot be backfilled.",
+   "market_free": "yes",
+   "raw_data": [
+    "violation events per match",
+    "umpire id"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Sportradar / Hawk-Eye tennis feeds",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.short_format_rules": {
+   "verdict": "OK",
+   "assessment": "Formats correctly described (first to four games, tiebreak at 3-3, no-ad, best of five) and conversion is a well-defined DP. The variance-inflation estimate rests on very few Next Gen Finals sets; rules change by year, keyed by year as stated.",
+   "market_free": "yes",
+   "raw_data": [
+    "event rulebook fields by year",
+    "past Next Gen Finals set/game scores"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.slam_to_slam_carryover": {
+   "verdict": "WEAK",
+   "assessment": "Consecutive-major title pairs for the same player are only a handful in history, so even with shrinkage the estimate is dominated by the prior; joint outcomes are better produced by ten.joint_event_correlation.",
+   "market_free": "yes",
+   "raw_data": [
+    "major winners by year and event"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.straight_set_share_curve": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same table as ten.set_count_distribution_by_edge (P(2-0)/P(decider) by Elo-implied bin, tour, best_of, surface) with the same Sackmann source and shrinkage.",
+   "market_free": "yes",
+   "raw_data": [
+    "match score strings, pre-match Elo",
+    "best_of, tour, surface"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.set_count_distribution_by_edge"
+  },
+  "ten.team_group_tiebreak_rules": {
+   "verdict": "WEAK",
+   "assessment": "Rule register plus simulation of ties, which is the same method as ten.round_robin_group_structure and ten.team_event_structure applied to team events; 'rubber distributions' undefined and team events are rare.",
+   "market_free": "yes",
+   "raw_data": [
+    "group tables, rules"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.team_tie_lineup_distribution": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same as ten.team_event_structure (probability of each lineup from nominations and captain history, rubber win probabilities, simulate the tie).",
+   "market_free": "yes",
+   "raw_data": [
+    "nominations, past lineups, results"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA/ITF/Grand Slam rulebooks and event pages",
+      "access": "free"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "ten.team_event_structure"
+  },
+  "ten.tiebreak_base_rate_by_event": {
+   "verdict": "DUPLICATE",
+   "assessment": "Event-year tiebreak rate relative to tour is already in ten.venue_speed_history (hold%, ace%, tiebreak%, mean games by event-year with shrinkage); the straight-set share is covered by ten.set_count_distribution_by_edge.",
+   "market_free": "yes",
+   "raw_data": [
+    "score strings by tournament, year, round"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.venue_speed_history"
+  },
+  "ten.tiebreak_sweep_joint_table": {
+   "verdict": "FIXED",
+   "assessment": "Dependence between tiebreak and sweep is real and not captured elsewhere, but 'bin of mean hold and hold gap' does not say how holds are computed per historical match (must be pre-match).",
+   "market_free": "yes",
+   "raw_data": [
+    "scores per match",
+    "pre-match hold estimates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each historical match compute pre-match hold probabilities h_A,h_B from opponent-adjusted serve stats through the prior day. Bin by mean hold (0.05 wide) x |hold gap| (0.05 wide) x best_of. Build the 2x2 table counts (any tiebreak, winner won without losing a set); smooth with add-0.5 Laplace; shrink cell probabilities to the product of marginals with weight n/(n+80); report odds ratio per bin with CI. Retirements excluded."
+  },
+  "ten.tour_gender_effect": {
+   "verdict": "WEAK",
+   "assessment": "Tour/level indicators are a model-structure choice, not a measurable input; 'separate intercepts' has no data definition. Nothing to audit as a feature beyond what ten.format and the ratings already carry.",
+   "market_free": "yes",
+   "raw_data": [
+    "tour, level, hold/break by tour"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "ten.tournament_set_drop_path": {
+   "verdict": "FIXED",
+   "assessment": "'Correlation adjustment' is unspecified and the contract meaning (tournament sweep) is unresolved. Product of per-match straight-set probabilities treats rounds as independent otherwise.",
+   "market_free": "yes",
+   "raw_data": [
+    "draw, results by round for past events",
+    "set-count distribution"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Run the bracket simulation (ten.path_difficulty_sim) with per-match P(win, straight sets) from ten.set_count_distribution_by_edge. P(title without dropping a set) = share of sims where the player wins all rounds, each in straight sets. Correlation: add a player-level latent form shock z~N(0,s^2) to the Elo gap shared across rounds with s estimated by matching the historical share of title runs without a set lost for top-8 seeds; report P with and without the shock. As-of: draw publication."
+  },
+  "ten.unretirement_reentry_status": {
+   "verdict": "WEAK",
+   "assessment": "State variable with a hazard the author concedes rests on n<20 and a 'judgemental prior' which is not a computation. Testing-pool notices are often not public, so the key signal can be missing.",
+   "market_free": "yes",
+   "raw_data": [
+    "re-registration or notice date",
+    "wildcard and entry announcements",
+    "historical un-retirement cases"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ITIA announcements",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.walkover_slot_hazard": {
+   "verdict": "DUPLICATE",
+   "assessment": "Pre-match walkover rate by round/tier/age/rest is already specified in ten.retirement_base_rate ('separate pre-match walkover vs in-match retirement'); the horizon-specific version needs own capture and is covered by ten.withdrawal_hazard_timeline.",
+   "market_free": "yes",
+   "raw_data": [
+    "score='W/O' rows with round and date",
+    "order-of-play snapshots"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     },
+     {
+      "name": "Own capture of ATP/WTA entry lists, draws and order-of-play snapshots",
+      "access": "own_capture",
+      "note": "Forward-only; not backfillable"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "ten.retirement_base_rate"
+  },
+  "ten.win_margin_conversion_curve": {
+   "verdict": "DUPLICATE",
+   "assessment": "P(D>k | winner) by Elo edge bin is a conditional slice of the full margin pmf in ten.game_margin_pmf_calibration. Marker flag is a false positive (it states a market-free P(win)).",
+   "market_free": "yes",
+   "raw_data": [
+    "scores, best_of, pre-match Elo"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_atp / tennis_wta match CSVs (incl. qual_chall, futures/itf files)",
+      "access": "free",
+      "note": "CC BY-NC-SA; score string, best_of, round, surface, w_/l_ serve counts, seeds, hand, ioc, rankings; updated with lag"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "ten.game_margin_pmf_calibration"
+  },
+  "ten.withdrawal_cascade_effect": {
+   "verdict": "WEAK",
+   "assessment": "Simulation with replacement rules already part of ten.draw and ten.path_difficulty_sim (withdrawals and replacement entries); only a sensitivity readout is added, and horizon-weighting needs forward own-capture.",
+   "market_free": "yes",
+   "raw_data": [
+    "bracket slots, replacement history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "Own capture of ATP/WTA entry lists, draws and order-of-play snapshots",
+      "access": "own_capture",
+      "note": "Forward-only; not backfillable"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "ten.withdrawal_hazard_timeline": {
+   "verdict": "FIXED",
+   "assessment": "Needs entry-list snapshots by date, which free sources do not keep (Wayback or own capture only), so history is thin. Intervals, covariates and as-of vintage are described but 'event category' bins are undefined.",
+   "market_free": "yes",
+   "raw_data": [
+    "entry list snapshots, draw, order of play, results"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Own capture of ATP/WTA entry lists, draws and order-of-play snapshots",
+      "access": "own_capture",
+      "note": "Forward-only; not backfillable"
+     },
+     {
+      "name": "ATP/WTA official sites (draws, order of play, rankings, race, entries)",
+      "access": "free_scrape",
+      "note": "No stable API; own capture needed for point-in-time vintages"
+     },
+     {
+      "name": "Wikipedia draws, champions and player pages",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Unit = (player listed at entry deadline). Intervals: I1 entry deadline to draw, I2 draw to order-of-play, I3 order-of-play to first ball. Hazard_k = P(withdraw in I_k | still in at start of I_k) by discrete-time logistic with covariates event category (Slam/Masters/500/250/Challenger), rank band (1-10,11-30,31-60,61+), age bin, days since last match; ridge equivalent to n/(n+30). Training data only from own-captured snapshots plus archived lists; as-of = snapshot vintage time."
+  },
+  "ten.within_match_serve_decay": {
+   "verdict": "FIXED",
+   "assessment": "Set-level spw is not in the Sackmann match CSV (match totals only), so the definition must be limited to Slam point-by-point; covariate effects (age, heat, prior minutes) need a regression, not just an average.",
+   "market_free": "yes",
+   "raw_data": [
+    "point-level server and winner by set",
+    "match minutes, prior-match minutes, age"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Jeff Sackmann tennis_slam_pointbypoint",
+      "access": "free",
+      "note": "Grand Slam point sequences (server, winner, game/set state) from 2011; Slams only"
+     },
+     {
+      "name": "Jeff Sackmann tennis_MatchChartingProject",
+      "access": "free_limited",
+      "note": "Volunteer-charted shot-level data; biased toward notable matches, small coverage"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "From Slam point-by-point compute spw_set_k per player in bo5 matches lasting >=3 sets; decay_k = spw_{k+1} - spw_k per player-match. Pooled mixed model decay ~ set_index + age>=33 + prior_match_minutes>200 + heat_flag + (1|player); player estimate = pooled prediction + player random effect shrunk n/(n+25) toward 0. Use only matches before as-of; report expected spw change by set index."
+  }
+ }
+}

@@ -1,0 +1,44 @@
+# PROPOSED, NOT ACTIVE (RESEARCH_ONLY). Copy into a sibling repo's .github/workflows/ ONLY after the owner approves it, one repo at a time.
+# Append-only vintage capture to an orphan data branch, modelled on the owner's existing `pit-injury-reports` workflow. No secrets other than the default GITHUB_TOKEN, no accounts,
+# no scraping: public JSON endpoints only. Edit FEEDS per repo (see docs/CAPTURE_PROPOSAL.md). GitHub cron is best-effort (runs can be hours late): the manifest records the real capture time.
+name: capture-vintage
+on:
+  schedule:
+    - cron: "17 * * * *"          # hourly by default; tighten per feed only if the owner approves (game-day windows)
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: capture-vintage-data          # one writer at a time; never cancel an in-flight capture
+  cancel-in-progress: false
+env:
+  DATA_BRANCH: data-vintage-capture
+  FEEDS: >-
+    espn_cfb_injuries=https://site.api.espn.com/apis/site/v2/sports/football/college-football/injuries
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, path: code }
+      - name: Check out the data branch (created empty on first use)
+        run: |
+          set -e
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" "$DATA_BRANCH" >/dev/null 2>&1; then
+            git clone --depth=1 --branch "$DATA_BRANCH" "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" data
+          else
+            mkdir data && cd data && git init -q -b "$DATA_BRANCH" && git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Capture
+        run: |
+          args=(); for f in $FEEDS; do args+=(--feed "$f"); done
+          python code/docs/capture_workflows/capture_snapshot.py.proposed --root data/capture "${args[@]}"
+      - name: Commit and push (append-only; retry on a concurrent push)
+        run: |
+          cd data && git config user.name "capture-bot" && git config user.email "capture-bot@users.noreply.github.com"
+          git add -A && (git diff --cached --quiet && echo "nothing new" && exit 0)
+          git commit -qm "vintage capture $(date -u +%Y-%m-%dT%H:%MZ) (research_only)"
+          for i in 1 2 3; do git push origin HEAD:"$DATA_BRANCH" && exit 0; git pull --rebase origin "$DATA_BRANCH" || true; sleep 5; done; exit 1

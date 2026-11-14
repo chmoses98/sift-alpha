@@ -8,7 +8,13 @@ Questions about already-tested archetypes are generated from their own results (
 """
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+UNIVERSE = ROOT / "research/input_research/market_universe/universe_summary.json"
+EXPERIMENT = ROOT / "research/audit/input_research/experiments/nfl_passyds_kalshi_v1.json"
 
 LEVEL_GAP = {"L0_INVENTORY_ONLY": 1.0, "L1_TESTED_VS_BASELINE": 0.7, "L2_TESTED_VS_MARKET": 0.45, "L3_TESTED_VS_KALSHI": 0.2, "L4_PROSPECTIVELY_CONFIRMED": 0.0}
 
@@ -48,6 +54,26 @@ def build(sport_docs: dict, catalogs: dict) -> dict:
             items.append({"id": f"{s}:{a}", "sport": s, "archetype": a, "label": rec["label"], "level": rec["level"], "live_markets": markets, "feasibility": round(feas, 3),
                           "untested_inputs": n_untested, "uncollected_inputs": n_missing, "score": round(score, 4), "question": q, "first_step": first, "cost": "$0 (free sources only)",
                           "status": "RESEARCHED_IN_PART" if rec["paths"] else "OPEN"})
+    # evidence that came from outside the archetype tests: the live-listing audit and the Kalshi-priced experiment
+    if EXPERIMENT.exists():
+        e = json.loads(EXPERIMENT.read_text())
+        for it in items:
+            if it["id"] == "NFL:qb_passing_yards":
+                w = e["horizons"]["primary_T-60m"]["waterfall"]
+                it["level_note"] = "Kalshi replay (NFL-PASSYDS-1) done: no demonstrated edge; eligibility is biased by the realised QB1"
+                it["first_step"] = (f"Capture the ANNOUNCED starter and pre-kickoff Kalshi quotes prospectively (the replay's {w['eligible_priced']:,} priced contracts / {w['games']} games exclude "
+                                    f"{w['no_model_row_n']} contracts whose player was not the realised QB1, which resolved YES far less often); then re-run prop_experiment on contracts it has never seen.")
+                it["score"] = round(it["score"] * 1.3, 4)   # a priced experiment exists: the next step is concrete, so it moves up
+    if UNIVERSE.exists():
+        u = json.loads(UNIVERSE.read_text())
+        for sp, v in u["by_sport"].items():
+            n = v.get("new_unregistered", 0)
+            if sp in ("NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "SOCCER", "TENNIS") and n >= 2:
+                items.append({"id": f"{sp}:universe_gap", "sport": sp, "archetype": None, "label": f"{sp}: {n} live Kalshi series not in the registry", "level": "L0_INVENTORY_ONLY",
+                              "live_markets": None, "feasibility": 0.8, "untested_inputs": None, "uncollected_inputs": None, "score": round(math.log1p(n) * 0.8, 4),
+                              "question": f"{n} of {v['series']} live {sp} series have no registry record; which market types are they (see universe_summary.json new_in_scope_by_kind) and which have an outcome a free source can settle?",
+                              "first_step": "Classify the series into families with the registry taxonomy, read each family's contract rules and fee type, add them to the registry as OBSERVED_NOW, then write blueprints.",
+                              "cost": "$0 (public listing)", "status": "OPEN"})
     items.sort(key=lambda x: -x["score"])
     for i, it in enumerate(items):
         it["rank"] = i + 1

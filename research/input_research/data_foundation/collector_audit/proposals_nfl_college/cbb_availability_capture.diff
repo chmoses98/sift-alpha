@@ -1,0 +1,59 @@
+PROPOSAL (not applied) -- repo chmoses98/cbb-edge-finder, branch main (workflow runs only from default branch)
+--- a/.github/workflows/availability-capture.yml
++++ b/.github/workflows/availability-capture.yml
+@@
+ on:
+   schedule:
+-    - cron: "4,34 * * 1-4,11,12 *"   # season (Nov-Apr): every 30 minutes
++    # measured 2026-11-01..11-10: 31 non-empty captures in 9.6 days (median gap 6.0 h, max 16.2 h) vs 30 min intended.
++    # Same fix kalshi-capture.yml got: off the :00/:30 boundary + self-chain below.
++    - cron: "11,41 * * 1-4,11,12 *"   # season (Nov-Apr): every 30 minutes
+@@
+ permissions:
+   contents: write
++  actions: write  # only to dispatch the next capture (self-chain step)
+@@ jobs.capture.steps  (append as the LAST step, after "Append to availability-archive")
++      - name: Chain the next capture (bounded, fail-closed, circuit-broken)
++        # identical decision logic to kalshi-capture.yml (cbb_edge.ops.chain: SKIP on listing failure, offseason, or 3
++        # consecutive failures; DISPATCH otherwise). Wait 25 min so the chain approximates the intended 30 min cadence.
++        if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
++        env:
++          GH_TOKEN: ${{ github.token }}
++          GH_REPO: ${{ github.repository }}
++          CHAIN_WAIT_SECONDS: "1500"
++          JOB_STATUS: ${{ job.status }}
++        run: |
++          set -u
++          sleep "$CHAIN_WAIT_SECONDS"
++          listing_flag="--listing-failed"
++          for i in 1 2 3; do
++            if gh run list --workflow availability-capture.yml --limit 20 \
++                 --json status,conclusion,databaseId,event,createdAt > runs.json; then
++              listing_flag=""; break
++            fi
++            sleep $((i * 5))
++          done
++          python -m cbb_edge.ops.chain --runs runs.json $listing_flag \
++            --run-id "$GITHUB_RUN_ID" --job-status "$JOB_STATUS" | tee chain_decision.json
++          action=$(python -c "import json;print(json.load(open('chain_decision.json'))['action'])" 2>/dev/null || echo ERROR)
++          [ "$action" = "ERROR" ] && { echo "::error::chain decision tool failed; not chaining"; exit 1; }
++          if [ "$action" = "DISPATCH" ]; then
++            for i in 1 2 3; do
++              gh workflow run availability-capture.yml --ref main && { echo "chained next availability-capture"; exit 0; }
++              sleep $((i * 10))
++            done
++            echo "::error::could not dispatch the next capture after 3 attempts"; exit 1
++          fi
++          echo "not chaining: $(cat chain_decision.json)"
+@@ jobs.capture.timeout-minutes
+-    timeout-minutes: 40
++    timeout-minutes: 45   # capture ~3 min + 25 min chain wait
+@@ (new step after "Capture", before upload-artifact) -- make the empty injury feed visible instead of silent
++      - name: Injury-feed health (report only)
++        run: |
++          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
++          import json,glob
++          rows=[json.loads(l) for f in glob.glob("archive/captures/**/*.jsonl",recursive=True)[-1:] for l in open(f)]
++          n=len(rows); inj=sum(1 for r in rows if r.get("injury_status")); na=sum(1 for r in rows if r.get("status")!="available")
++          print(f"availability rows={n} with_injury_status={inj} not_available={na}  (0/0 for every capture so far: ESPN CBB injury feed empty)")
++          PY

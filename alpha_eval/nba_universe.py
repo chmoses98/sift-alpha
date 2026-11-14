@@ -101,10 +101,11 @@ def eligible_rows(classified: dict) -> list:
 
 
 def reconcile(classified: dict, graded_rows: Iterable[dict], forecast_market_ids: set, forecast_family_games: set,
-              evaluated_families: frozenset = frozenset(EVALUATED_BY_ADAPTER)) -> dict:
+              evaluated_families: frozenset = frozenset(EVALUATED_BY_ADAPTER), frozen_not_evaluated: Optional[dict] = None) -> dict:
     """Partition EVERY board ticker into exactly one category; returns totals, per-family and per-series tables.
     ``evaluated_families``: families for which Alpha has a forecast source wired in THIS run (a family not in it is never counted as covered).
     ``graded_rows``: grade_all()["rows"] (accuracy status per forecast row). ``forecast_family_games``: {(native_family, game_id)} that have ANY forecast, so a game forecast for one family never excuses another."""
+    fne = FROZEN_INPUT_NOT_YET_EVALUATED if frozen_not_evaluated is None else frozen_not_evaluated   # sport-specific (NHL passes its own)
     graded_markets, forecast_markets = set(), set(forecast_market_ids)
     for r in graded_rows:
         if r["accuracy"]["status"] == GRADED:
@@ -119,7 +120,7 @@ def reconcile(classified: dict, graded_rows: Iterable[dict], forecast_market_ids
                 c = NOT_GRADED_C
             elif r["family"] in evaluated_families:
                 c = MARKET_NOT_FC if (r["family"], r["game_id"]) in forecast_family_games else GAME_NOT_FC
-            elif r["family"] in FROZEN_INPUT_NOT_YET_EVALUATED:
+            elif r["family"] in fne:
                 c = FROZEN_NOT_EVAL
             else:
                 c = NO_SOURCE

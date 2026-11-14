@@ -1,0 +1,2141 @@
+{
+ "auditor": "input-audit-NFL-a",
+ "inputs": {
+  "m.combo_pricing": {
+   "verdict": "FIXED",
+   "assessment": "Benchmark-only by construction: the edge is joint model probability minus an executable Kalshi combo price. Original text left the correlation source, fee treatment and edge sign undefined. Joint probability is only as good as the leg dependence inputs; price must be sampled at order time, not close.",
+   "market_free": "no",
+   "raw_data": [
+    "Kalshi combo orderbook/quote snapshots with timestamps",
+    "fee schedule",
+    "leg model probabilities",
+    "leg dependence matrix"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi public API (rules text, settlement)",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "For a combo of legs L1..Ln at snapshot time t: p_joint = mean over 20,000 joint simulations using game-level dependence from nfl.corr and nfl.leg_dependence_by_model_regime (legs in different games independent unless nfl.cross_game_leg_dependence rho differs from 0). Executable cost c = best ask for YES plus Kalshi taker fee at that price; edge = p_joint - c, in probability points, with 90% interval from simulation seed variance plus leg-model uncertainty. Use the rules text version captured at t to apply void/push handling per nfl.leg_void_push_matrix; if any leg rule is unresolved, report edge under each variant. Price is read only as the comparison target, never as a model input.",
+   "market_note": "Comparison target is the market's executable combo price after fees; used for edge measurement and benchmarking only. No market-free rebuild exists for the price itself; the joint probability side is market-free."
+  },
+  "m.stat_correction_risk": {
+   "verdict": "FIXED",
+   "assessment": "Mixes a market-free quantity (how often official NFL stats are revised after the game and how sources disagree) with market-structure framing (ladder strikes within tolerance). Not knowable pregame, only the historical revision rate is. Original text had no revision-rate formula or tolerance definition.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "official NFL gamebook/game-center stats at game end and T+1d, T+7d",
+    "nflverse player_stats",
+    "ESPN public JSON box score",
+    "settlement source named in the contract rules"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL gamebook / ESPN public JSON / nflverse player_stats",
+      "access": "free_scrape",
+      "note": "need own snapshots at two times to observe revisions"
+     },
+     {
+      "name": "Kalshi public API (rules text, settlement)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "For each stat type (rushing/receiving/passing yards, receptions, TDs, sacks) over seasons where own snapshots exist, compute revision rate r = share of player-games whose value at T+7d differs from the value at game end by >=1 unit, and revision size distribution; also source disagreement rate between ESPN and the contract's named settlement source at T+1d. For a threshold K, correction risk = P(|true revision| >= distance of projected value to K) approximated by r times P(realized stat within 1 unit of K) from the player distribution. Output probability in points; as-of before kickoff using rates from prior seasons only. No contract price is used; ladder strikes only supply K.",
+   "market_note": "Revision rates are market-free; the flagged ladder strikes K come from market structure. Rebuild: take K from the contract's rule text, not from prices."
+  },
+  "nfl.award_milestone_proximity": {
+   "verdict": "FIXED",
+   "assessment": "Milestone cliff effect is plausible but the original threshold (20th percentile of winners' totals) and the accrual model were undefined, and a data-snooped threshold leaks if winners from the scored season are included. Overlaps nfl.award_stats and rest_of_season_stat_projection but adds the discrete-threshold feature.",
+   "market_free": "yes",
+   "raw_data": [
+    "player season totals by week",
+    "historical AP award winners with their season stat lines",
+    "remaining schedule"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Per candidate and award: thresholds T_k = round-number milestones (e.g. 1,000/1,500/2,000 rush yds, 4,000/5,000 pass yds, 15/20 sacks) plus the career or season record for the stat, and the 20th percentile of prior winners' totals over the 15 seasons ending before the scored season. Projected final total = banked total + sum over remaining games of expected stat per game (rate over the last 8 games, half-life 4, shrunk to career rate with k=4 games) x P(plays) from nfl.games_played_dist; normal approximation with game-level variance from nfl.player_stat_variance. Feature = P(final >= T_k) and games needed at current rate. As-of after each week's games."
+  },
+  "nfl.award_month_window_games": {
+   "verdict": "OK",
+   "assessment": "Schedule-count logic is sound and fully knowable (nflverse schedules). Weak spot: expected stats per game and opponent adjustment are not defined here and must come from named catalog inputs, otherwise it is a vague restatement. Bye and Thursday effects are real but small versus role uncertainty.",
+   "market_free": "yes",
+   "raw_data": [
+    "schedule by team and date",
+    "player-game stats",
+    "opponent adjustment (nfl.dvp)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.backed_up_breakaway_conversion": {
+   "verdict": "WEAK",
+   "assessment": "Extrapolates a GPD tail to 99 yards from a handful of historical plays; the estimate is mostly prior. Overlaps nfl.play_length_evt_tail_fit, nfl.scrimmage_turnover_return_long_tail and nfl.own_one_yard_line_snap_rate. Covariates such as defense two-high rate and pass-rush pressure need FTN or PFR data with short history.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.yards_gained, yardline_100, pass_length, air_yards",
+    "pbp.touchdown, penalty",
+    "ftn.is_play_action, n_defense_box"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse FTN charting / participation",
+      "access": "free_limited",
+      "note": "2022+ for FTN; participation coverage varies"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.blowout_continuation_policy": {
+   "verdict": "OK",
+   "assessment": "Computable with pbp score_differential and drive results, coach-level shrinkage is specified. Sample is thin (28+ point leads in Q3-Q4 are a few dozen games per era) so the k=15 drive prior dominates. Coach identity must be as-of week; nflverse coach field in schedules is adequate.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.posteam, score_differential, game_seconds_remaining, drive_end_transition, pass",
+    "head coach by team-season"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.broadcast_role_assignment": {
+   "verdict": "WEAK",
+   "assessment": "Staffing decision for a non-athletic contract. The regression is fitted on a tiny population of announcers with public records scattered across press releases, so the measurement is hard to reproduce and the prior-season-frequency fallback carries most of the signal. Low value outside KXNFLROLE.",
+   "market_free": "yes",
+   "raw_data": [
+    "network broadcast crew sheets by event and season",
+    "talent contract announcements with dates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Network press releases / Wikipedia broadcaster history",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.career_record_chase_survival": {
+   "verdict": "OK",
+   "assessment": "Defined well enough (hazard, aging curve, 20,000 paths). Generalises nfl.qb_career_milestone_accrual to all positions but is not redundant. Retirement announcements need a dated source, and the phrase 'before the contract expiry' is a settlement condition rather than a feature.",
+   "market_free": "yes",
+   "raw_data": [
+    "player_stats season totals",
+    "rosters birth_date, years_exp",
+    "retirement announcement dates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     },
+     {
+      "name": "nflverse rosters",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.carry_count_forecast": {
+   "verdict": "FIXED",
+   "assessment": "Original text conditions team rush attempts on the closing spread, a market-derived value, and largely restates nfl.carries (expected carries = team attempts x share) with a NB wrapper. The count distribution and zero-carry mass are useful. Rebuild with own-model margin to be market-free.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "player-game carries and snaps",
+    "team rush attempts by game state",
+    "own pre-game margin from nfl.own_team_rating_market_free",
+    "inactive list"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Carries ~ NegBin with mean = team rush attempts x carry share. Team rush attempts: mean by bucket of own-model expected margin (nfl.own_team_rating_market_free, no spread or total) in bins <=-7, -7..-3, -3..3, 3..7, >=7 using 2016-2025 games, team effect shrunk with k=8 games. Carry share: snap-weighted share over last 8 games, half-life 6, shrunk to depth-chart role prior with k=3 games. Dispersion by role (RB1, RB2, QB) fit by maximum likelihood on player-games with share >=10 percent; P(0 carries) = P(inactive) from nfl.injuries_pit plus P(active, zero carry) from NB. As-of final inactive list.",
+   "market_note": "Original conditioned team rush attempts on closing-spread buckets (market-derived). Market-free rebuild: bucket on own-model expected margin from nfl.own_team_rating_market_free."
+  },
+  "nfl.clinched_rest_starter_probability": {
+   "verdict": "DUPLICATE",
+   "assessment": "The quantity (probability starters sit after clinching, by coach rest history) is the one already in nfl.motivation_seeding, which also uses the standings simulation. This version is better specified (snap fraction by clinch state) but small samples (a few dozen clinched teams per year) and Week-18 coach idiosyncrasy limit it. Fold the snap-fraction definition into motivation_seeding.",
+   "market_free": "yes",
+   "raw_data": [
+    "snap counts by player-week",
+    "clinch flags by team-week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.motivation_seeding"
+  },
+  "nfl.coach_candidate_hire_model": {
+   "verdict": "OK",
+   "assessment": "Competing-vacancy structure V x share is sensible. Interview reports are timestamped own captures that cannot be reconstructed historically from public sources, so the conditional logit can only be fit on features that are archived (experience, record, ties). Survivor-bias risk in who is named a candidate.",
+   "market_free": "yes",
+   "raw_data": [
+    "coach hiring history by cycle",
+    "candidate interview reports with timestamps",
+    "exit hazards"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     },
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.coach_exit_competing_order": {
+   "verdict": "OK",
+   "assessment": "Competing-risk formula is exact given the hazards, derived entirely from nfl.coach_exit_hazard. Quality is bounded by those hazards; simultaneous Black Monday exits need announcement timestamps, which are public but must be captured.",
+   "market_free": "yes",
+   "raw_data": [
+    "weekly coach hazards for all 32 teams",
+    "coach exit announcement timestamps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.coach_exit_hazard": {
+   "verdict": "OK",
+   "assessment": "Discrete-time hazard with a non-market expectation is well defined and about 800 coach-seasons is enough for few covariates. Contract years remaining come from press reports and are not reliably archived (risk of look-ahead if backfilled). Expectation must be own-rating, not a sportsbook win total.",
+   "market_free": "yes",
+   "raw_data": [
+    "coach-season table with outcomes and exit dates",
+    "team records",
+    "contract years remaining (press)",
+    "preseason own rating"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     },
+     {
+      "name": "nflverse coaches",
+      "access": "free"
+     },
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.coach_hot_seat": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as nfl.coach_exit_hazard but vaguer, and its measurement explicitly uses a market-implied win total. Insider reports are anecdotal. Keep only the hazard model.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "records",
+    "preseason expectation",
+    "contract years",
+    "timestamped ownership statements"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     },
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.coach_exit_hazard",
+   "market_note": "Uses record versus market-implied win total. Market-free rebuild: use preseason expectation from nfl.own_team_rating_market_free, as nfl.coach_exit_hazard does."
+  },
+  "nfl.coach_surprise_vs_own_prior": {
+   "verdict": "FIXED",
+   "assessment": "Original definition sums preseason win probability over the REMAINING games but subtracts it from projected FINAL wins, which mixes banked and remaining games. Rating prior also described loosely. Must be fixed so surprise is final wins minus full-season preseason expectation; preseason rating must be frozen at kickoff of Week 1.",
+   "market_free": "yes",
+   "raw_data": [
+    "season results",
+    "frozen preseason own team ratings",
+    "remaining schedule",
+    "standings simulation output"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Preseason expected wins E0 = sum over all scheduled games of P(win_g) from the Week-1 frozen own rating (nfl.own_team_rating_market_free preseason prior: last-year efficiency regressed with roster continuity and a QB-change term; no sportsbook win total). Projected final wins W = banked wins + sum over remaining games of the current rating's win probability (or mean of nfl.standings_sim). Surprise = W - E0 in wins; optional tiebreak bonus = 0.5 x P(division title) x historical COY winners' division-title share. As-of after each week; E0 never re-estimated in season."
+  },
+  "nfl.combine_attempt_noise_best_of_k": {
+   "verdict": "WEAK",
+   "assessment": "Attempt-level 40 times are rarely published in machine-readable form, so the random-effects fit lacks data; the Combine-versus-pro-day gap estimate mixes surface, timing system and training. The 0.56 sd best-of-two uplift is a textbook value. Low data availability, narrow use.",
+   "market_free": "yes",
+   "raw_data": [
+    "combine attempt-level forty_1, forty_2 when published",
+    "pro_day forty, broad_jump by player"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse combine data (PFR-sourced)",
+      "access": "free"
+     },
+     {
+      "name": "NFL.com Combine tracker / pro-day results",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.combine_drill_extreme_history": {
+   "verdict": "FIXED",
+   "assessment": "Measurement contains an unresolved provisional window and the contract strike (148) in its definition. GEV with covariate on participant count is sensible but the pre-2006 timing regime is unresolved, so the window must be fixed. Small sample of 20 yearly maxima gives wide shape uncertainty.",
+   "market_free": "yes",
+   "raw_data": [
+    "combine.season, player, pos, forty, broad_jump",
+    "participant counts by position and year"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse combine data (PFR-sourced)",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "From nflverse Combine data 2006-2025 (fixed window; years before 2006 excluded because timing regime differs), take each year's best 40 time (minimum) and best broad jump (maximum) among participants. Fit a GEV to the 20 yearly maxima (sign-flipped for the 40) with location mu = a + b x (season-2006) + c x ln(number of participants who recorded the drill); shape by maximum likelihood with a Normal(0, 0.15) prior, parametric bootstrap 2,000 draws for intervals. Output P(max >= x) for any strike x (broad jump inches) and the distribution of the winning 40 time. As-of before testing, using the invite-list participant count forecast."
+  },
+  "nfl.combine_drill_participation_hazard": {
+   "verdict": "OK",
+   "assessment": "Logistic on skipped-drill flags is computable from blank drill fields. Point-in-time risk: consensus board rank at invite date must come from an archived snapshot; a current board backfilled to 2010 leaks draft outcome. Blank-field-equals-skip cannot distinguish injury from opt-out.",
+   "market_free": "yes",
+   "raw_data": [
+    "combine drill null flags by player",
+    "news headline timestamps",
+    "archived consensus board rank at invite date"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse combine data (PFR-sourced)",
+      "access": "free"
+     },
+     {
+      "name": "Archived mock draft / big board snapshots",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.combine_invite_pool_position_mix": {
+   "verdict": "WEAK",
+   "assessment": "Self-described as adding no information to the per-prospect simulation and used only as a covariate for the GEV fit; the 4.40 s and 130 inch thresholds are arbitrary. Participant count is already a covariate in nfl.combine_drill_extreme_history.",
+   "market_free": "yes",
+   "raw_data": [
+    "invite_list player, position, release_date",
+    "combine season, pos, forty, broad_jump"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com official Combine invite list",
+      "access": "free"
+     },
+     {
+      "name": "nflverse combine data (PFR-sourced)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.combine_timing_protocol_and_venue": {
+   "verdict": "WEAK",
+   "assessment": "Requires historical broadcast or tracker snapshots that were never archived publicly, so the official-minus-unofficial revision distribution cannot be built retroactively; only forward own capture is possible. Era regime flag is covered by nfl.combine_drill_extreme_history.",
+   "market_free": "yes",
+   "raw_data": [
+    "tracker snapshot player, drill, value, official flag, timestamp",
+    "Combine format release notes"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com Combine tracker snapshots",
+      "access": "own_capture"
+     },
+     {
+      "name": "League press releases",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.common_availability_shock": {
+   "verdict": "OK",
+   "assessment": "Lineup-state mixture is the right structure for same-game legs. 'In-state dependence' adjustment is left vague, and injury report vintages are not in nflverse (final status only), so the pregame probabilities need own capture. State count must stay small (4-6 states) to avoid sparse conditional splits.",
+   "market_free": "yes",
+   "raw_data": [
+    "injury report vintages",
+    "depth charts",
+    "player-game stats by teammate presence"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     },
+     {
+      "name": "NFL official injury reports (own capture of timestamped vintages)",
+      "access": "own_capture"
+     },
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.contender_pairwise_covariance": {
+   "verdict": "OK",
+   "assessment": "Residual correlation of remaining-season output after removing season means is computable and has an explicit shrinkage. Window of the last 8 weeks and seasons 2012-2025 gives few pairs per category; overlaps nfl.corr only partly (season-level vs game-level).",
+   "market_free": "yes",
+   "raw_data": [
+    "player-week stats by team",
+    "team assignment per week"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.contract_value_comps": {
+   "verdict": "OK",
+   "assessment": "APY as percent of cap by position is computable from public contract tables. Value covariate ('PFF-free equivalent') is not specified. Contract values are not betting-market quantities. Scrape terms for OTC/Spotrac are unchecked and guarantees are reported inconsistently.",
+   "market_free": "yes",
+   "raw_data": [
+    "contracts: player, position, sign date, years, total, APY, guarantees",
+    "salary cap by year",
+    "player production stats"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape",
+      "note": "terms of use unchecked"
+     },
+     {
+      "name": "nflverse contracts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.count_stat_dispersion_and_state_split": {
+   "verdict": "OK",
+   "assessment": "Negative binomial by stat and score-state bucket is concrete. The 'pre-game margin distribution' used for the state mixture must be own-model, not spread; state is endogenous to the outcome, so the mixture must be pregame.",
+   "market_free": "yes",
+   "raw_data": [
+    "team-game counts: FG made, sacks, interceptions, rush attempts, total yards",
+    "score differential history"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.cross_game_leg_dependence": {
+   "verdict": "OK",
+   "assessment": "Residuals use point-in-time model probabilities, tested against zero with a strong shrink prior; expected result near zero. Needs an archived pointwise model (as_of_ts) for 2012-2025, which must be refit historically without look-ahead.",
+   "market_free": "yes",
+   "raw_data": [
+    "games: result, roof, wind, temp",
+    "model archive game_id, as_of_ts, p_home_win"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.cross_league_futures_leg": {
+   "verdict": "WEAK",
+   "assessment": "Almost entirely the product of two other models with an ad hoc (1+rho_adj) factor set to zero; adds no estimate of its own. Needs the NBA catalog model output, which is outside the NFL audit. Early-NO timing is bookkeeping, not signal.",
+   "market_free": "yes",
+   "raw_data": [
+    "NFL season simulation output",
+    "other-league title probability",
+    "playoff elimination dates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Own season/game simulation output",
+      "access": "derived"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.cross_period_score_dependence": {
+   "verdict": "OK",
+   "assessment": "Tetrachoric correlation between quarter-scoring indicators is computable; partially overlaps nfl.period_zero_tie_mass (atoms) and nfl.score_path_sequence_sim. Tetrachoric estimates over binary quarter events are noisy per team tercile, so heavy pooling is required.",
+   "market_free": "yes",
+   "raw_data": [
+    "quarter score indicators per team-game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.deep_tail_margin_model": {
+   "verdict": "OK",
+   "assessment": "GPD tail for |margin| above 21 is well posed, with n of about 1,400 exceedances from 2000-2025. Covariates come from nfl.model_team_points_mean so no market data enters. Partial overlap with nfl.heteroskedastic_margin_sd (bulk SD) and nfl.total_distribution_tail.",
+   "market_free": "yes",
+   "raw_data": [
+    "final scores 2000-2025",
+    "model mean margin and total per game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.defence_sack_count_decomposition": {
+   "verdict": "DUPLICATE",
+   "assessment": "Expected sacks = dropbacks x pressure rate x conversion is exactly the definition of nfl.pass_rush. Only addition is the QB-specific conversion, which belongs in that input. Pressure data is 2018+ (PFR) or paid.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: sack, qb_hit, qb_dropback, passer, defteam",
+    "pressure flags from vendors"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse PFR advanced stats (pressures, targets in coverage)",
+      "access": "free_limited",
+      "note": "2018+"
+     },
+     {
+      "name": "PFF / Sports Info Solutions charting",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.pass_rush"
+  },
+  "nfl.defense_target_funnel_share": {
+   "verdict": "DUPLICATE",
+   "assessment": "Defence target share by position/alignment, ridge-adjusted for opponent, is the target-share half of nfl.dvp, which already lists target share and yards per target. Alignment fields exist only in FTN charting for 2022+, so history is short.",
+   "market_free": "yes",
+   "raw_data": [
+    "target by position/alignment, defteam, play type"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse FTN charting / participation",
+      "access": "free_limited",
+      "note": "2022+ for FTN; participation coverage varies"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.dvp"
+  },
+  "nfl.depth_chart_publication_lag": {
+   "verdict": "OK",
+   "assessment": "Settlement-mechanics input (which source's QB1 counts), market-free. Needs an archive of team-site charts with timestamps; nflverse depth_charts is weekly and loses the publication day. Useful only for first-start contracts.",
+   "market_free": "yes",
+   "raw_data": [
+    "depth chart snapshots with timestamp"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse depth_charts",
+      "access": "free",
+      "note": "weekly snapshot, no intraweek timestamp"
+     },
+     {
+      "name": "Team websites",
+      "access": "own_capture"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.designation_to_play_calibration": {
+   "verdict": "DUPLICATE",
+   "assessment": "Maps practice-status sequences and designation to P(play) by position, the exact content of nfl.injuries_pit. Hierarchical team effects and calibration are useful implementation details that should be merged there. Vintages are not in nflverse.",
+   "market_free": "yes",
+   "raw_data": [
+    "injury reports with practice status per day, designations, outcome snaps"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     },
+     {
+      "name": "NFL official injury reports (own capture of timestamped vintages)",
+      "access": "own_capture"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.injuries_pit"
+  },
+  "nfl.draft_first_pick_loser_race": {
+   "verdict": "DUPLICATE",
+   "assessment": "Worst-record race plus SOS tiebreak and pick ownership is a special case of nfl.draft_order_rules_engine (slots 1-32 with tiebreaks) combined with nfl.draft_pick_ownership_trade_graph. Tanking adjustment is a small add-on. The SOS tiebreak (lower SOS picks first) is the public rule.",
+   "market_free": "yes",
+   "raw_data": [
+    "standings with strength of schedule",
+    "pick ownership table"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com draft order / transactions pages",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "nfl.draft_order_rules_engine"
+  },
+  "nfl.draft_order_rules_engine": {
+   "verdict": "OK",
+   "assessment": "Deterministic rules calculation; slot mapping (non-playoff 1-18, wild-card losers 19-24, divisional 25-28, conference 29-30, SB loser 31, champion 32) matches the 14-team format. Value is in coupling to simulated seasons. Tiebreaker chain beyond SOS (division, conference, common games) must be coded exactly or ties are misassigned.",
+   "market_free": "yes",
+   "raw_data": [
+    "season results by team",
+    "strength-of-schedule tables",
+    "forfeiture and compensatory-pick notices"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com draft order / transactions pages",
+      "access": "free"
+     },
+     {
+      "name": "Tankathon draft order",
+      "access": "free_scrape"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.draft_pick_ownership_trade_graph": {
+   "verdict": "OK",
+   "assessment": "Ownership table is public and timestamped; the trade-up logistic is fit on about 15 drafts, a thin sample for top-10 trades. Overlap with nfl.draft_board 'trade market' is slight. 'Consensus gap' needs archived boards to be point-in-time.",
+   "market_free": "yes",
+   "raw_data": [
+    "pick ownership with trade dates",
+    "historical top-10 trade log",
+    "team pick inventory"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape",
+      "note": "terms of use unchecked"
+     },
+     {
+      "name": "ProSportsTransactions",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.draft_position_label_governance": {
+   "verdict": "OK",
+   "assessment": "Settlement-label mapping is real for Nth-at-position contracts (EDGE vs DL vs LB). Computable from the draft tracker vs consensus labels, though historical consensus labels need archiving. Narrow in scope but not redundant.",
+   "market_free": "yes",
+   "raw_data": [
+    "position label by source",
+    "pick announcement text"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "NFL.com draft order / transactions pages",
+      "access": "free"
+     },
+     {
+      "name": "College position listings",
+      "access": "free_scrape"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.draft_qb_class_model": {
+   "verdict": "OK",
+   "assessment": "Plackett-Luce over QBs with consensus rank and need is specified and excludes market odds. Danger: consensus_rank must be a point-in-time board average (not a post-draft reconstruction), and about 180 QBs gives few effective data points for gamma. Overlaps nfl.draft_board but adds the joint ordering.",
+   "market_free": "yes",
+   "raw_data": [
+    "draft_picks: season, round, pick, team, player, position",
+    "time-stamped consensus big boards",
+    "team QB contract and starter EPA"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "Archived public big boards / mock drafts",
+      "access": "free_scrape",
+      "note": "historical snapshots need an archive"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.drive_clock_allocation": {
+   "verdict": "OK",
+   "assessment": "Quarter-level drive starts and seconds per drive are computable from pbp drive fields. Overlaps nfl.drives and nfl.pace but adds period resolution; kickoff order handling (2H kick reversal) is the subtle part.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: drive, qtr, drive_start_game_seconds_remaining, drive_end, drive_plays, posteam"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.drive_duration_by_outcome": {
+   "verdict": "OK",
+   "assessment": "Lognormal duration by outcome class is concrete; drive_time_of_possession in nflfastR is a string 'MM:SS' that must be parsed. Subtle: durations censored at the half or game end for drives that end the period; those must be handled or the tail is biased.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: drive, drive_time_of_possession, drive_play_count, drive_result"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.drive_outcome_by_index": {
+   "verdict": "WEAK",
+   "assessment": "First-four-drive multinomial overlaps nfl.drive_result_lattice, nfl.period_drive_scoring_rates and nfl.opening_script (first drive outcomes). Per-index effect is shrunk toward the all-drive effect with k=25, so most of the value is the opening drive, already in opening_script.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: fixed_drive, fixed_drive_result, posteam, yardline_100, game_seconds_remaining"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.drive_result_lattice": {
+   "verdict": "OK",
+   "assessment": "Per-drive multinomial from nflverse drive data is standard. 'Offence rating, defence rating' are undefined here and must be taken from the own market-free ratings; the 11-drive fixed count should come from nfl.drives. Core of nfl.team_score_pmf_own_mean, so rating inputs must be point-in-time.",
+   "market_free": "yes",
+   "raw_data": [
+    "drive: start_yard_line, result, points, posteam, defteam, plays, time"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.dst_td_hazard": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same event class as nfl.non_offensive_scoring_rate (pick-six, fumble return, return TDs). The formula adds rates with 0.5 weights and mixes per-game and per-return units, so it is not dimensionally clean. Keep the other input.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: interception_return_td flags, fumble_recovery_return_td, returner id"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.non_offensive_scoring_rate"
+  },
+  "nfl.early_nonoffensive_score_hazard": {
+   "verdict": "WEAK",
+   "assessment": "Reallocation of nfl.non_offensive_scoring_rate to the first 15 minutes by an empirical one-quarter share; adds no new estimable signal because early events are rarer than the base events. Also overlaps nfl.safety_risk.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: interception, fumble_lost, return TDs, safety, qtr"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.endzone_exposure_plays": {
+   "verdict": "WEAK",
+   "assessment": "Exposure count for safeties, with a per-play safety probability; the safety rate is the thing of interest and nfl.safety_risk already covers safeties with field-position profile. Punts with yardline_100>=90 define own end zone/5 only if yardline_100 is the punting team's. Low count.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: yardline_100, play_type, sack, safety, punt_blocked"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.event_calendar_hazard": {
+   "verdict": "OK",
+   "assessment": "Generic calendar-hazard base rates (Gamma-Poisson) are computable once an event log exists; transaction wire history before 2010 is patchy. Overlaps event-specific hazards (coach exit, trade) but is the shared time-of-year prior.",
+   "market_free": "yes",
+   "raw_data": [
+    "event log: date, team, person, type",
+    "team standing by week, contract status"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape",
+      "note": "terms of use unchecked"
+     },
+     {
+      "name": "nflverse rosters/transactions",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.executive_move_attribution": {
+   "verdict": "OK",
+   "assessment": "Score combines win surprise with acquisition share of AV and a new-coach flag, softmax temperature fitted on about 25 winners (very small). PFR AV is a retrospective, formula-based statistic and terms are unchecked. Depends on the fixed definition of nfl.coach_surprise_vs_own_prior.",
+   "market_free": "yes",
+   "raw_data": [
+    "team-season wins and preseason expectation",
+    "player-season AV and acquisition type",
+    "head-coach change by season",
+    "PFWA Executive of the Year winners"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     },
+     {
+      "name": "nflverse rosters",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.expected_touchdowns_by_play_location": {
+   "verdict": "DUPLICATE",
+   "assessment": "Play-level expected touchdowns from yard line, down, distance and role is nfl.player_xtd (also nfl.td_luck). Only difference is the training window (2016 vs 2006).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: yardline_100, down, ydstogo, rusher_id, receiver_id, air_yards, touchdown"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.player_xtd"
+  },
+  "nfl.fantasy_component_and_stack_covariance": {
+   "verdict": "WEAK",
+   "assessment": "Within-player and teammate correlations of components overlap nfl.corr and nfl.team_stat_accounting_constraints. Specified with shrinkage k=80 and copulas, computable from weekly stats, but only the fantasy-scoring framing is new.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-game components: pass yds/TD, rush yds/TD, receptions, rec yds/TD, INT, fumbles lost"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.fourth_and_goal_policy": {
+   "verdict": "DUPLICATE",
+   "assessment": "Go-for-it rate on 4th-and-goal is a subset of nfl.fourth_down_fg_decision_rate (and nfl.coaching 4th-down go rate). The regression uses nflfastR wp, which includes the pregame spread as an input, so a small market-derived component enters.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "pbp: down, ydstogo, yardline_100, wp, play_type"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.fourth_down_fg_decision_rate",
+   "market_note": "nflfastR wp is fitted with the pregame spread as a feature, so using it as a regressor leaks market information. Market-free rebuild: replace wp by a score-differential and time-remaining only win-probability model."
+  },
+  "nfl.fourth_down_fg_decision_rate": {
+   "verdict": "OK",
+   "assessment": "Coach-level go probability by field zone with shrinkage to a model-based optimum, plus two-point policy. Specified well; overlaps nfl.coaching (4th-down go rate over expected). Optimum model must be one that does not use spread-based wp.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: down, ydstogo, yardline_100, play_type, field_goal_result, two_point_attempt"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.full_draft_order_compensatory_picks": {
+   "verdict": "OK",
+   "assessment": "Pre-March compensatory forecast depends on the OTC projection (formula is not published by the league) so uncertainty is real. Official list after March is exact. Needs a pick table with compensatory flags; nflverse draft_picks has them after the draft.",
+   "market_free": "yes",
+   "raw_data": [
+    "official seven-round order with compensatory flags",
+    "free-agent signings/losses with contract values",
+    "forfeiture notices"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL.com draft order / transactions pages",
+      "access": "free"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape",
+      "note": "terms of use unchecked"
+     },
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.full_strength_rating_vs_season_average": {
+   "verdict": "FIXED",
+   "assessment": "Concept (rating over full-strength games) is sound, but the garbage-time cutoff uses wp >95 percent from nflfastR, whose model takes the pregame spread as a feature, so market information leaks in. Snap-weight 'current starters' needs a definition that is point-in-time.",
+   "market_free": "hybrid",
+   "raw_data": [
+    "play-by-play",
+    "starter snap participation",
+    "own win-probability model"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "Select team-games where the current Week-N starting QB and at least 80 percent of the current expected starters (by offensive/defensive snap share over the last 4 games, as of the latest inactive list) played >=50 percent of snaps, excluding Week 18 games where >=3 starters were healthy-inactive. Inside those games compute opponent-adjusted EPA/play margin using only plays where an own win-probability model (score differential, time, possession, timeouts; no spread) is between 5 and 95 percent. Shrink to the season-average rating with k=5 games; output rating in points of margin (EPA x 55 plays) and the difference from season average. As-of after each week.",
+   "market_note": "nflfastR wp includes the pregame spread. Market-free rebuild: filter garbage time with a win-probability model using only score differential, time remaining, possession and timeouts."
+  },
+  "nfl.game_fantasy_max_field_sim": {
+   "verdict": "OK",
+   "assessment": "Joint simulation of both rosters under ESPN PPR weights is fully specified; default weights (1 per reception, 0.1 per yard, 0.04 per pass yard, 4 pass TD, 6 TD, -2 INT/fumble lost) match ESPN defaults but should be verified against the contract. Dependent on component model quality; ties handled by 1/N.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-game box stats",
+    "player shares: targets, carries, red-zone opportunities",
+    "ESPN scoring weights"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     },
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "ESPN fantasy scoring settings",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.game_receiving_leader_field_sim": {
+   "verdict": "OK",
+   "assessment": "Dirichlet target shares with yards per target is concrete and no lines are used. As-of kickoff minus 90 minutes coincides with inactive-list publication and may precede it; define as-of at publication of the inactive list. Share dispersion must be fit, not asserted.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_id, posteam, receiver_id, complete_pass, yards_gained, air_yards",
+    "snap_counts: offense_pct",
+    "injuries / inactives"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.game_rushing_leader_field_sim": {
+   "verdict": "OK",
+   "assessment": "Joint carry and yardage simulation with explicit no-spread margin draw; dependent on nfl.rush_yardage_tail and script response. Specified enough to compute. QB scramble handling affects who leads.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: rusher_id, rush_attempt, rushing_yards, qb_scramble, score_differential",
+    "depth charts",
+    "injuries"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.game_td_length_order_stats": {
+   "verdict": "OK",
+   "assessment": "Max/min TD length via NB count times a route mixture is computable; defaults to nfl.model_team_td_mean (market-free). Overlaps nfl.td_play_length_by_source but combines it into a game-level order statistic, which is new.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.touchdown, td_team",
+    "yards_gained, return_yards, yardline_100",
+    "play_type"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.gm_draft_behavior_history": {
+   "verdict": "OK",
+   "assessment": "Per-decision-maker trade and reach frequencies are computable from draft picks and trade logs, with k=3 drives of shrinkage. Reach versus consensus needs archived consensus ranks. New GM weights (50 percent of franchise's last regime) are asserted.",
+   "market_free": "yes",
+   "raw_data": [
+    "GM and coach tenure tables",
+    "historical picks with consensus rank",
+    "trade log"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     },
+     {
+      "name": "nflverse coaches",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.goal_line_personnel": {
+   "verdict": "OK",
+   "assessment": "Share of inside-5 carries, targets and sneaks by player is concrete; nflverse participation (personnel) coverage by season varies, and without it only pbp rusher/receiver ids are available. Partly overlaps nfl.rz_share (inside-5 carry share) and nfl.carries.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: yardline_100, rusher_id, receiver_id, qb_scramble, offense_personnel",
+    "depth chart vintages"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse FTN charting / participation",
+      "access": "free_limited",
+      "note": "2022+ for FTN; participation coverage varies"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.goal_to_go_pass_rate": {
+   "verdict": "OK",
+   "assessment": "Zone-by-down dropback rates with coach random effect are standard; partly covered by nfl.redzone's pass/run split but adds zone and score-bucket detail. Computable from pbp.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: yardline_100, down, play_type, pass_attempt, score_differential, posteam"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.halftime_margin_scoring_model": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same quantity as nfl.halftime_state_conditional_scoring (second-half scoring conditioned on halftime margin); this version is the market-free rebuild because it weights by own model margin instead of the pregame spread. The catalog entry should adopt this definition rather than keep both.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: score at half, Q3/Q4 scoring per team",
+    "point-in-time own model expected margin"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.halftime_state_conditional_scoring"
+  },
+  "nfl.head_to_head_leverage_games": {
+   "verdict": "FIXED",
+   "assessment": "Leverage formula as written is confused: |P(win)-P(loss)| should be the difference in the contract's probability between the two outcomes of the game. The quantity is the marginal win value in nfl.motivation_seeding; this definition is more precise and should replace it. Needs the standings simulation.",
+   "market_free": "yes",
+   "raw_data": [
+    "remaining schedule",
+    "results to date",
+    "tiebreak state variables",
+    "standings simulation output"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Own season/game simulation output",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "measurement_fix": "For each remaining game g and target contract C (division, seed, playoff, bye): run the standings simulation N=20,000 times with game g fixed to a home win and again fixed to a road win (other games random, common random numbers); leverage_g = P(C | home win) - P(C | road win) in probability points, signed for the team, and weighted leverage = |leverage_g| x 4 x p_g(1-p_g) for p_g own-model win probability. Aggregate by team as sum over its remaining games and by division/wild-card group. Include head-to-head results to date as first-tiebreak state. As-of after each week; no sportsbook probability used."
+  },
+  "nfl.healthy_inactive_base_rate": {
+   "verdict": "OK",
+   "assessment": "Base rate of healthy inactives by role and coach is a useful prior for rest/discipline; nflverse rosters_weekly status INA together with injury reports allows deriving it. Overlaps nfl.motivation_seeding in the clinch dimension only. Healthy vs injured needs the injury report to be present on the date.",
+   "market_free": "yes",
+   "raw_data": [
+    "inactive list, injury report, snap counts"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.heteroskedastic_margin_sd": {
+   "verdict": "OK",
+   "assessment": "Location-scale model uses model mean and model total, not lines; spread_line and total_line are listed in the free sources only for benchmarking. Defined enough to compute (n about 4,500). Leakage risk is if the benchmark columns are used as covariates.",
+   "market_free": "yes",
+   "raw_data": [
+    "game results, wind, temp, roof, backup-QB flag",
+    "model mean margin and total per game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.hof_finalist_progression_history": {
+   "verdict": "OK",
+   "assessment": "Committee-vote queue model is the right structure; sample (finalist-years since 2000) is a few hundred. Public lists are scraped manually; PFR terms are unchecked. Low reuse beyond one contract family.",
+   "market_free": "yes",
+   "raw_data": [
+    "candidate, category, position, semifinalist/finalist/inducted flags by year",
+    "first-year-eligible candidates by position",
+    "class size by category"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Pro Football Hall of Fame announcements",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.individual_defender_sack_int_accrual": {
+   "verdict": "OK",
+   "assessment": "Rate decomposition (rush snaps x pressure rate x sack per pressure; targets x INT per target) is specified with shrinkage. Pressure and target-in-coverage data come from PFR advanced stats from 2018, so earlier seasons are unavailable. Overlaps team-level nfl.pass_rush but is player-level.",
+   "market_free": "yes",
+   "raw_data": [
+    "player_stats def_sacks, def_qb_hits, def_interceptions",
+    "pfr advstats def: pressures, targets, completions allowed",
+    "snap_counts defense_pct"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     },
+     {
+      "name": "nflverse PFR advanced stats (pressures, targets in coverage)",
+      "access": "free_limited",
+      "note": "2018+"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.initial_roster_cut_model": {
+   "verdict": "OK",
+   "assessment": "Logistic on cut-down histories is computable; fully-secured salary share and dead cap need OTC contract detail (free_scrape). Cut-down eve info is timing-sensitive: waivers and IR designations occur after the cut deadline.",
+   "market_free": "yes",
+   "raw_data": [
+    "roster status by week 1",
+    "contract guarantees",
+    "preseason snaps",
+    "injury status at cut"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse rosters_weekly",
+      "access": "free"
+     },
+     {
+      "name": "OverTheCap / Spotrac",
+      "access": "free_scrape",
+      "note": "terms of use unchecked"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.injury_return_timeline": {
+   "verdict": "FIXED",
+   "assessment": "Survival by body part and report wording is fine, but the covariate 'surgical or not' is not in nflverse injuries data, so the measurement is partly uncomputable. Wording classes must be standardised, and onset date is the first listing, which censors pre-report injuries.",
+   "market_free": "yes",
+   "raw_data": [
+    "injury reports by week: body part, status, practice, games missed after onset"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "Define onset as the first weekly injury report listing the player with a given report_primary_injury; time-to-event = number of team games missed before the first game with snaps >0, censored at season end. Fit a Weibull (or Kaplan-Meier where n>=30) per body-part group (knee, ankle, hamstring, shoulder, concussion, other) and position group using 2009-2025 nflverse injuries and snap counts, stratified by first-report status (Out/Doubtful/Questionable) instead of surgery, which is unobserved. Shrink each stratum curve to the position-pooled curve with k=10 cases. Output P(returns by game k) as-of the report date."
+  },
+  "nfl.insider_report_conversion": {
+   "verdict": "OK",
+   "assessment": "Beta-prior conversion rate by reporter tier and wording is well defined. The 2018-2025 table of reports cannot be fetched from a public API reliably (X API is paid) and must be hand-built or captured forward, so historical estimates have selection bias toward remembered reports.",
+   "market_free": "yes",
+   "raw_data": [
+    "report log: reporter, text, timestamp",
+    "official transaction dates"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.kicker_ceiling_range_tail": {
+   "verdict": "OK",
+   "assessment": "Logistic extrapolation beyond observed range; no attempts above about 66 yards exist, so the 66-75 yard probabilities are driven by the prior and the preseason-evidence term. Record facts quoted in the rationale (68 yards, 2025) could not be checked here. Era term is important. Overlaps nfl.long_fg_attempt_and_make_model for 55-65.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.kick_distance, field_goal_result",
+    "kickoff depth fields",
+    "preseason long kick evidence",
+    "kicker table"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "Preseason pbp (nflverse)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.kicking_ball_and_fg_rule_era": {
+   "verdict": "WEAK",
+   "assessment": "An era indicator and re-estimated rates; small post-change sample makes the era effect mostly prior. Overlaps nfl.kickoff_rule_regime/nfl.field_pos (kickoff regime) and the era term in nfl.play_length_evt_tail_fit. The K-ball preparation rule claim could not be verified here.",
+   "market_free": "yes",
+   "raw_data": [
+    "rule-change table by season",
+    "pbp.kick_distance, field_goal_result, season",
+    "pbp.desc for fair-catch kick flag"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "NFL rulebook / Competition Committee announcements",
+      "access": "free"
+     },
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.kickoff_rule_regime": {
+   "verdict": "DUPLICATE",
+   "assessment": "Kickoff starting yard line, touchback rate, return rate and rule-regime flag are already in nfl.field_pos (touchback rate, rule-regime indicator, kickoff return EPA). Adds only returner-level shrinkage.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: kickoff_returner, kick_distance, touchback, yardline_100 after kick"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "NFL rulebook",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.field_pos"
+  },
+  "nfl.late_lead_clock_carry_yield": {
+   "verdict": "OK",
+   "assessment": "Carries and yards per carry in second-half lead states by back are computable from pbp; the integral over pre-game margin distribution must use the own-model margin, not the spread. Overlaps nfl.script/nfl.carries but adds lead-state yield, which is the meaningful difference.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: rusher_id, run_gap, score_differential, game_seconds_remaining, yards_gained"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.late_tie_game_management": {
+   "verdict": "OK",
+   "assessment": "Kneel/FG/go policy near ties is computable (qb_kneel, field_goal_attempt flags in pbp). Occasions are very rare per coach, so the k=10 shrink makes it nearly league-average; value is small except for tie-mass calibration (nfl.model_margin_lattice already includes an end-of-game term).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: score_differential, game_seconds_remaining, qb_kneel, field_goal_attempt, timeouts"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.leg_dependence_by_model_regime": {
+   "verdict": "DUPLICATE",
+   "assessment": "Same leg-pair dependence by margin/total regime as nfl.leg_dependence_by_margin_regime, but regime from the model's own margin instead of pregame spread. The catalog original is market-contaminated (spread bins); this should replace it rather than coexist.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-game stats",
+    "game results",
+    "point-in-time model expected margin and total"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.leg_dependence_by_margin_regime"
+  },
+  "nfl.leg_void_push_matrix": {
+   "verdict": "DUPLICATE",
+   "assessment": "Per-contract void, push and OT rule table is the content of m.rules_text (rules parsed for OT, push, void). The combo-variant probabilities are a consumer of that table. Rules text must be captured by version at order time.",
+   "market_free": "yes",
+   "raw_data": [
+    "market rules text by ticker with timestamp",
+    "combo market metadata"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "Kalshi public API (rules text, settlement)",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   },
+   "duplicate_of": "m.rules_text"
+  },
+  "nfl.lineup_adjusted_team_rating": {
+   "verdict": "FIXED",
+   "assessment": "Measurement contains the phrase 'not a betting line', which trips the market-marker check although the input is market-free. The position weights and 'performance index' were also undefined. PFF grades are paid; EPA-on-field indices are noisy. Ridge on availability indicators needs enough seasons per position.",
+   "market_free": "yes",
+   "raw_data": [
+    "injury vintages, depth chart, snap counts, team game margins",
+    "player performance indices"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse injuries / rosters_weekly / depth_charts",
+      "access": "free",
+      "note": "final weekly status only; report vintages need own capture"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "PFF / Sports Info Solutions charting",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   },
+   "measurement_fix": "For each position slot s (QB, LT, RT, C, G, TE, WR1-3, RB, EDGE1-2, DT, LB, CB1-2, S) estimate weight w_s as the ridge coefficient (lambda chosen by season-blocked cross-validation) from regressing team game margin residuals (actual margin minus the own rating_state_space expectation) on indicators for the starter being active, 2015-2025. Player value above replacement v_p = w_s x (index_p - index_replacement), where index is EPA/play on field shrunk to the position mean with k=400 snaps and replacement is the backup's snap-weighted index. Team lineup adjustment = sum over expected active starters of v_p; no market-derived quantity enters. As-of each injury report vintage and the inactive list."
+  },
+  "nfl.long_completion_tail_rate": {
+   "verdict": "OK",
+   "assessment": "Per-attempt rates for 20+ and 40+ completions with opponent factor on log scale are computable from pbp; overlaps nfl.explosive (explosive passes) but gives QB tail inputs with wind multiplier. Wind multiplier from nfl.weather_pit.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: pass_attempt, complete_pass, yards_gained, air_yards, yards_after_catch, defteam",
+    "weather and roof by game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.long_fg_attempt_and_make_model": {
+   "verdict": "OK",
+   "assessment": "Make probability by distance bin per kicker is largely nfl.kicker plus attempt-rate; the new part is the 60+ attempt rate by game state and the season count variance. Make probabilities above 60 yards rest on very few observations.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: kick_distance, field_goal_result, kicker_player_id, stadium, wind"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.long_fg_end_of_half_attempt_hazard": {
+   "verdict": "OK",
+   "assessment": "Coach policy on sending a kicker for a 65+ attempt is a real driver of attempts; defined with a hierarchical logit, but qualifying situations per coach are single digits, so the k=15 prior dominates. Time and timeout fields are in pbp.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: game_seconds_remaining, half_seconds_remaining, posteam_timeouts_remaining, score_differential, kick_distance, play_type",
+    "coach table"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.model_margin_lattice": {
+   "verdict": "OK",
+   "assessment": "Drive simulation calibrated to the market-free team means, plus isotonic correction at key numbers, is defined; the margin lattice excludes spread/total/price. Overlaps nfl.ot_model/nfl.team_score_pmf_own_mean on tie mass but is the margin distribution. Needs historical model means refit point-in-time for the calibration step.",
+   "market_free": "yes",
+   "raw_data": [
+    "games: home/away score by quarter, overtime flag",
+    "pbp: drive result, points, game_seconds_remaining"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.model_team_points_mean": {
+   "verdict": "OK",
+   "assessment": "Fully specified market-free team mean (drives x points per drive, ridge on opponent-adjusted EPA, QB, wind, dome). The mechanical MARKET_MARKER flag is a false positive: the text says no betting line or implied total is used. Raw 'play_clock seconds' is not a pbp field; seconds per play must be derived from drive times.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: drive, epa, points by drive, drive time, wind, roof",
+    "team-week starting QB and injury status"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.model_team_td_mean": {
+   "verdict": "OK",
+   "assessment": "TD-specific market-free mean with explicit NB correction for P(N>=1); avoids implied totals. Overlaps nfl.model_team_points_mean in construction but gives touchdown count, which is the quantity scorer contracts need.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: drive, posteam, drive_end_transition, touchdown, epa, yardline_100, fourth_down_converted",
+    "schedules: wind, roof, starting QBs"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.multi_season_playoff_drought_hazard": {
+   "verdict": "OK",
+   "assessment": "AR(1) rating plus QB jumps is a concrete first-passage simulation; coefficient 0.67 should be estimated from the data, not fixed. Depends on nfl.own_team_rating_market_free and qb scenario input. Long horizon makes error large; format changes (14-team) affect calibration.",
+   "market_free": "yes",
+   "raw_data": [
+    "season-end team ratings 2002-2025",
+    "playoff qualification by team-season",
+    "starting QB by team-season",
+    "draft pick positions"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     },
+     {
+      "name": "Derived from other catalog inputs (own model output)",
+      "access": "derived"
+     },
+     {
+      "name": "nflverse draft_picks",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.multi_td_dispersion": {
+   "verdict": "OK",
+   "assessment": "NB dispersion r by position and the P(2+|P(1+)) table are computable. Partly overlaps nfl.player_stat_variance but is TD-specific. Needs the xTD per game as an input, so quality depends on nfl.player_xtd.",
+   "market_free": "yes",
+   "raw_data": [
+    "player-game TD counts",
+    "xTD by game"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse player_stats",
+      "access": "free"
+     },
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.non_offensive_scoring_rate": {
+   "verdict": "OK",
+   "assessment": "Canonical non-offensive scoring rate (pick-six, fumble return, return TDs, safeties) with heavy shrinkage k=40; overlaps nfl.safety_risk (vague) but is better defined. Rare events; most of the estimate is league mean. td_team != posteam logic is standard.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: td_team, posteam, interception, fumble_lost, return_touchdown, safety"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  },
+  "nfl.non_roster_return_status": {
+   "verdict": "OK",
+   "assessment": "Chain of hazards (sign x activate) is defined with a Beta(1,19) base prior that is asserted, not estimated. The comeback sample (retired/unsigned veterans) is small and heterogeneous. Insider flags require own capture. Narrow to a few contracts.",
+   "market_free": "yes",
+   "raw_data": [
+    "transaction wire",
+    "player status history",
+    "insider report log"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "League transactions / PFR transactions",
+      "access": "free_scrape"
+     },
+     {
+      "name": "Insider/beat reports, X and NFL Network archives",
+      "access": "own_capture",
+      "note": "historical archive not publicly queryable"
+     },
+     {
+      "name": "nflverse rosters",
+      "access": "free"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.ol_individual_protection_record": {
+   "verdict": "OK",
+   "assessment": "Per-lineman pressures and sacks allowed per pass-block snap exist only in paid charting (PFF, SIS); free substitutes are team-level sack rate. Shrinkage k=300 is defined. Unusable without a paid feed, and prior-honour indicator embeds past votes (not leakage if as-of date is respected).",
+   "market_free": "yes",
+   "raw_data": [
+    "lineman pass-block snaps, pressures and sacks allowed",
+    "snap counts and starts",
+    "team sack rate and QB time to throw",
+    "prior All-Pro and Pro Bowl"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "PFF / Sports Info Solutions charting",
+      "access": "paid"
+     },
+     {
+      "name": "nflverse snap_counts",
+      "access": "free"
+     },
+     {
+      "name": "Pro-Football-Reference",
+      "access": "free_scrape",
+      "note": "terms unchecked; rate limited"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.opening_kick_field_position": {
+   "verdict": "DUPLICATE",
+   "assessment": "Opening kickoff starting yard line, touchback rate and return TD per kickoff by returner and rule regime is covered by nfl.field_pos and nfl.opening_script (first drive). Narrow subset.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: kickoff_attempt, touchback, kick_returner_player_id, yardline_100 after kick"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.field_pos"
+  },
+  "nfl.opp_def_int_propensity": {
+   "verdict": "WEAK",
+   "assessment": "Interceptions per attempt faced adjusted by QB turnover-worthy rate, pressure and depth; turnover-worthy throws are paid charting (SIS/PFF). Substantially covered by nfl.int_rate and nfl.turnovers (defence INT rate over expected). Interception counts are mostly noise (k=350).",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: defteam, interception, passer_id, air_yards",
+    "pressure flag",
+    "turnover-worthy throw rate (charting)"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "PFF / Sports Info Solutions charting",
+      "access": "paid"
+     }
+    ],
+    "verified": false
+   }
+  },
+  "nfl.opponent_ball_control_denial": {
+   "verdict": "DUPLICATE",
+   "assessment": "Expected own drives from own and opponent pace and drive length is nfl.drives (opponent-adjusted drive counts) and nfl.pace. The 'own share' regression is fine but is an implementation of the same quantity.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: drive, posteam, game_seconds_remaining"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.drives"
+  },
+  "nfl.ot_ending_hazard": {
+   "verdict": "DUPLICATE",
+   "assessment": "P(game ends level | OT) under current OT rules is the OT/tie component of nfl.ot_model. This version adds a drive-process simulation, but playoff and regular-season OT rules differ and the sample of about 100 OT games is small.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp: qtr==5 plays, drive results, game result",
+    "rulebook version by season"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     },
+     {
+      "name": "nflverse schedules/games",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   },
+   "duplicate_of": "nfl.ot_model"
+  },
+  "nfl.own_one_yard_line_snap_rate": {
+   "verdict": "OK",
+   "assessment": "Counts snaps from yardline_100=99 (exposure for a 99-yard play) with NB and 3-season pooling; computable. Very rare events, shrinkage prior of 30 team-games is mostly league mean. Companion to nfl.backed_up_breakaway_conversion.",
+   "market_free": "yes",
+   "raw_data": [
+    "pbp.yardline_100, down, ydstogo",
+    "punt_inside_twenty, punt_downed, penalty"
+   ],
+   "provenance": {
+    "sources": [
+     {
+      "name": "nflverse nflfastR play_by_play",
+      "access": "free"
+     }
+    ],
+    "verified": true
+   }
+  }
+ }
+}

@@ -126,6 +126,7 @@ def build() -> dict:
         "p0_distinct": p0_distinct,
         "p0_slots_by_blocker": dict(sorted(by_group.items(), key=lambda kv: -kv[1])),
         "counting_note": "A slot behind several datasets or sources counts toward each, so rows do not sum to the distinct totals above.",
+        "public_repository_exposure": terms.get("public_repository_exposure"),
         "free_alternatives": terms["free_alternatives"], "free_alternatives_note": terms["free_alternatives_note"],
         "sources": out,
     }

@@ -160,6 +160,7 @@ function SourcesView() {
       <div><b>{fmt(SOURCES.sources.filter(r => r.terms_read).length)}</b><small>of {fmt(SOURCES.sources.length)} sources whose governing terms were read directly ({fmt(SOURCES.sources.filter(r => r.terms_status === "SEARCH_SNIPPET_ONLY").length)} more from search summaries only)</small></div>
       <div><b>{fmt(SOURCES.sources.filter(r => r.reachability === "REACHABLE").length)}</b><small>reachable from the research environment (not permission)</small></div>
     </div>
+    {SOURCES.public_repository_exposure && <div className="ir-warn" data-testid="df-exposure"><b>Owner decision needed — raw provider data in public repositories.</b> {SOURCES.public_repository_exposure.finding} {SOURCES.public_repository_exposure.what_is_not_affected} <b>{SOURCES.public_repository_exposure.owner_decision_needed}</b></div>}
     <h4>NBA, CBB and NHL: missing PRIMARY slots, each counted once</h4>
     <div className="mim-cards" data-testid="df-p0-distinct">
       <div><b>{fmt(D.missing_primary_slots)}</b><small>missing PRIMARY slots ({P0.map(s => s + " " + D.by_sport[s]).join(" · ")})</small></div>

@@ -120,6 +120,10 @@ function MarketDetail({L, k, go}) {
     <p className="ir-fine"><b>Next engineering action:</b> {mk.next_action}</p>
     <h4>Where this market's predictive inputs stand</h4>
     <Ladder chain={L.chain} at={mk.at_counts} testid="df-market-ladder"/>
+    <h4>Current model evaluation (existing outcome ledger)</h4>
+    {mk.incumbent_evaluation.status === "RECORDED" ? <p className="ir-fine" data-testid="df-incumbent">{Object.entries(mk.incumbent_evaluation.cells).map(([k, v]) => <Chip key={k} k={k === "MISSING_DATA" || k === "INVALID_EVIDENCE" ? "miss" : k.startsWith("PROMISING") ? "chipwarn" : "unv"}>{v} × {k.replaceAll("_", " ").toLowerCase()}</Chip>)}
+      <span className="ir-why"> Cells of the incumbent-model evaluation for {mk.incumbent_evaluation.families.join(", ")}. “Missing data” means the current model publishes no probability or no outcome could be joined; none of these cells shows a demonstrated improvement over the market.</span></p>
+      : <p className="ir-fine" data-testid="df-incumbent">{mk.incumbent_evaluation.status === "NOT_MAPPED" ? "Not mapped: the existing evaluation ledger has not been linked to this archetype (only NBA, CBB and NHL are linked)." : "No evaluation of the current model is recorded for this market."}</p>}
     <h4>Research challengers and evaluation</h4>
     {mk.challengers.length ? mk.challengers.map(c => <ChallengerCard key={c} ch={L.challengers[c]} archetype={k} open/>) : <p className="ir-fine">No challenger has been evaluated for this market. Projection and calibration performance: not measured here.</p>}
     <h4>Required inputs ({rows.length})</h4>
@@ -156,8 +160,8 @@ export function DataFoundation() {
   return <section className="mim df" aria-label="Data foundation pipeline" data-testid="data-foundation" ref={top} data-ready={L ? "yes" : "no"}>
     <div className="eyebrow">DATA FOUNDATION / FROM MARKET TO INPUT TO DATA TO MODEL TO EVALUATION</div>
     <h2>Data foundation pipeline</h2>
-    <p className="ir-fine"><b>RESEARCH ONLY.</b> {S.notice}</p>
-    <div className="mim-cards" data-testid="df-totals">
+    <p className="ir-fine"><b>RESEARCH ONLY.</b> {S.notice.replace(/^RESEARCH ONLY\.\s*/, "")}</p>
+    <div className="mim-cards" data-testid="df-totals" hidden={view !== "summary"}>
       <div><b>{fmt(t.archetypes)}</b><small>market archetypes, 8 sports</small></div>
       <div><b>{fmt(t.inputs)}</b><small>distinct inputs ({fmt(t.inputs_predictive)} predictive)</small></div>
       <div><b>{fmt(t.datasets)}</b><small>datasets</small></div>

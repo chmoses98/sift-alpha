@@ -235,6 +235,21 @@ def build() -> tuple:
                        "last_successful_collection": x["history"]["last"] if x["access_status"] == "COLLECTED_ARCHIVE" else None,
                        "last_collection_basis": x["history"]["basis"] if x["access_status"] == "COLLECTED_ARCHIVE" else "NOT_COLLECTED"}
 
+    fam_map = json.loads((OPS / "incumbent_family_map.json").read_text())["map"]
+    cov = {(r["sport"], r["family"]): r["statuses"] for r in json.loads((ROOT / "reports/outcome_intel/coverage_ledger.json").read_text())["ledger"]}
+    missing_fams = sorted(f"{k}->{f}" for k, fs in fam_map.items() for f in fs if (k.split(":")[0], f) not in cov)
+    if missing_fams or set(fam_map) - {a["k"] for a in m["archetypes"]}:
+        raise ValueError(f"incumbent_family_map.json names unknown families/archetypes: {missing_fams}")
+
+    def incumbent(k: str) -> dict:
+        sp = k.split(":")[0]
+        if k not in fam_map:
+            return {"status": "NOT_MAPPED" if TIER[sp] != "P0" else "NO_INCUMBENT_EVALUATION_RECORDED", "cells": {}, "families": []}
+        tot = Counter()
+        for f in fam_map[k]:
+            tot.update(cov[(sp, f)])
+        return {"status": "RECORDED", "cells": dict(sorted(tot.items())), "families": fam_map[k]}
+
     edges = defaultdict(list)
     for a, i, role, cls, *_ in m["edges"]:
         edges[a].append((i, role, cls))
@@ -248,7 +263,7 @@ def build() -> tuple:
                       "at_counts": cnt([i for i, _ in pred]), "at_counts_primary": cnt(prim),
                       "production_active": dict(Counter(inputs[i]["production_active"] for i, _ in pred)),
                       "stopped": dict(Counter(inputs[i]["stop"]["outcome"] for i in prim if inputs[i]["stop"])),
-                      "challengers": sorted(ch_arch.get(k, [])),
+                      "challengers": sorted(ch_arch.get(k, [])), "incumbent_evaluation": incumbent(k),
                       "inputs": [[i, r, c] for i, r, c in edges[k]]}
         markets[k]["next_action"] = _market_next(markets[k], prim, inputs)
 

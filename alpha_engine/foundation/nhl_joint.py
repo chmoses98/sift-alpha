@@ -50,9 +50,9 @@ FEATS = {"full": ["home", "off5", "def5", "pp", "pk", "fin_o", "fin_d", "b2b_t",
          "no_finishing": ["home", "off5", "def5", "pp", "pk", "b2b_t", "b2b_o"],
          "no_rest": ["home", "off5", "def5", "pp", "pk", "fin_o", "fin_d"]}
 HP0 = {"hl": 30.0, "k_prior": 10.0, "carry": 0.6, "xg": "raw", "hl_fin": 80.0, "m_fin": 150.0}
-HP_GRID = {"hl": [10.0, 15.0, 20.0, 30.0, 45.0, 70.0, 110.0, 200.0], "k_prior": [2.0, 5.0, 10.0, 20.0, 40.0],
+HP_GRID = {"hl": [10.0, 15.0, 20.0, 30.0, 45.0, 70.0, 110.0, 200.0], "k_prior": [2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0],
            "carry": [0.2, 0.4, 0.6, 0.8, 1.0], "xg": ["raw", "sva", "fsva"], "hl_fin": [40.0, 80.0, 160.0, 320.0, 1000.0],
-           "m_fin": [50.0, 150.0, 400.0, 1000.0]}
+           "m_fin": [50.0, 150.0, 400.0, 1000.0, 2500.0, 6000.0]}
 VERDICT_RULE = ("verdict_from(ci_lo, ci_hi, p_holm, replicated) for LOSS metrics (diff = challenger - reference, lower is better): "
                 "VALIDATED_IMPROVEMENT needs the 95% paired game-cluster bootstrap CI entirely below 0, Holm-adjusted p < 0.05 AND the "
                 "sign of improvement replicated in BOTH chronological cohorts (2024, 2025); CI below 0 and p_holm < 0.05 without "
@@ -271,6 +271,20 @@ def split_teams(teams, away, home):
 
 
 # ====================================================================== feature construction (pandas, lazy import)
+def resolve_home(mp, games):
+    """MoneyPuck's home/away flag is wrong for some relocated-franchise games (both rows flagged AWAY). The home flag is
+    re-derived from the official record: a row is home when its (franchise-mapped) team_id equals the official home id;
+    rows with a NULL MoneyPuck team_id keep the MoneyPuck flag. Returns (mp copy with corrected ``home``, rows changed)."""
+    ids = games.drop_duplicates("game_id").set_index("game_id")[["home_team_id", "away_team_id"]].astype(float)
+    fr = lambda a: np.array([FRANCHISE.get(int(x), int(x)) if x == x else -1 for x in a])
+    tid = fr(mp["team_id"].astype(float).values)
+    hid = fr(ids["home_team_id"].reindex(mp["game_id"].values).values); aid = fr(ids["away_team_id"].reindex(mp["game_id"].values).values)
+    old = mp["home"].values.astype(bool)
+    new = np.where((tid >= 0) & (tid == hid), True, np.where((tid >= 0) & (tid == aid), False, old))
+    out = mp.copy(); out["home"] = new
+    return out, int((new != old).sum())
+
+
 def build_team_games(games, mp):
     """Two rows per final regular-season game (away row then home row), chronologically sorted, with regulation goals and
     MoneyPuck situation stats. Team identity comes from the official game record (home flag), not from MoneyPuck ids."""
@@ -287,7 +301,8 @@ def build_team_games(games, mp):
                                   "rg": g["rh" if home else "ra"].values, "rga": g["ra" if home else "rh"].values}))
     tg = pd.concat(rows, ignore_index=True)
     tg["team"] = tg["team"].replace(FRANCHISE); tg["opp"] = tg["opp"].replace(FRANCHISE)
-    m = mp[mp["game_type"] == 2]
+    m = resolve_home(mp, games)[0]
+    m = m[m["game_type"] == 2]
     stats = [c for c in m.columns if c not in ("game_id", "home", "situation", "game_type", "season", "game_date", "team_id", "opp_team_id")]
     wide = m.pivot_table(index=["game_id", "home"], columns="situation", values=stats, aggfunc="first")
     wide.columns = [f"{a}_{b}" for a, b in wide.columns]; wide = wide.reset_index(); wide["home"] = wide["home"].astype(int)
@@ -588,7 +603,10 @@ def run(log=print):
     reg_games = fin[fin["game_type"] == 2]
     mar = (fin["home_score"].astype(int) - fin["away_score"].astype(int)).abs()
     extra = fin["last_period_type"].isin(["OT", "SO"])
-    mp_all = mp[mp["situation"] == "all"].merge(fin[["game_id", "home_team_id", "away_team_id", "home_score", "away_score", "last_period_type",
+    raw_dup = int(mp.duplicated(["game_id", "home", "situation"]).sum())
+    raw_dup_seasons = sorted(set(mp["season"].values[mp.duplicated(["game_id", "home", "situation"], keep=False).values].tolist()))
+    mp_fixed, n_home_fixed = resolve_home(mp, games)
+    mp_all = mp_fixed[mp_fixed["situation"] == "all"].merge(fin[["game_id", "home_team_id", "away_team_id", "home_score", "away_score", "last_period_type",
                                                     "game_date"]], on="game_id", how="left", suffixes=("", "_g"))
     off = np.where(mp_all["home"], mp_all["home_score"], mp_all["away_score"]).astype(float)
     won = np.where(mp_all["home"], mp_all["home_score"] > mp_all["away_score"], mp_all["away_score"] > mp_all["home_score"])
@@ -596,9 +614,10 @@ def run(log=print):
     rec = float((mp_all["goalsFor"].values == exp_goals).mean())
     rec_recent = float((mp_all["goalsFor"].values == exp_goals)[mp_all["season"].values >= 2014].mean())
     mism_seasons = sorted(set(mp_all["season"].values[mp_all["goalsFor"].values != exp_goals].tolist()))
-    mp_tid = mp_all["team_id"].astype("float").fillna(-1).values
-    idm = float(np.where(mp_all["home"].values.astype(bool), mp_tid == mp_all["home_team_id"].astype(float).values,
-                         mp_tid == mp_all["away_team_id"].astype(float).values).mean())
+    fr = lambda a: np.array([FRANCHISE.get(int(x), int(x)) if x == x else -1 for x in a])
+    mp_tid = fr(mp_all["team_id"].astype("float").values)
+    idm = float(np.where(mp_all["home"].values.astype(bool), mp_tid == fr(mp_all["home_team_id"].astype(float).values),
+                         mp_tid == fr(mp_all["away_team_id"].astype(float).values)).mean())
     id_missing = int(mp_all["team_id"].isna().sum())
     missing_mp = reg_games[~reg_games["game_id"].isin(set(mp["game_id"]))]
     n_nonfinal = int((~games["final"].astype(bool)).sum())
@@ -621,15 +640,18 @@ def run(log=print):
               f"{len(reg_games)} final regular-season games kept"),
         check("regulation_score_derivable", int((extra & (mar != 1)).sum()) == 0 and int((~extra & (mar == 0)).sum()) == 0,
               f"OT/SO finals with margin != 1: {int((extra & (mar != 1)).sum())}; REG finals tied: {int((~extra & (mar == 0)).sum())} of {len(fin)} final games"),
-        check("moneypuck_no_duplicate_team_game_situation", mp.duplicated(["game_id", "home", "situation"]).sum() == 0,
-              f"{len(mp)} rows; situations {sit_counts}"),
+        check("moneypuck_home_flag_unique_per_game", raw_dup == 0,
+              f"RAW CHECK FAILED: {raw_dup} rows duplicate (game_id, home, situation) in seasons {raw_dup_seasons}: MoneyPuck flags BOTH teams AWAY in "
+              f"{raw_dup // 4} Phoenix home games. Mitigated: home flag re-derived from the official home/away team ids ({n_home_fixed} rows corrected)"),
+        check("moneypuck_no_duplicate_team_game_situation_after_fix", int(mp_fixed.duplicated(["game_id", "home", "situation"]).sum()) == 0,
+              f"{len(mp)} rows; situations {sit_counts}; 0 duplicate (game_id, home, situation) after the home-flag correction"),
         check("moneypuck_goals_reconcile_with_official_score", rec > 0.995,
               f"all-situations goalsFor equals official score minus the shootout-winner goal in {rec:.4%} of {len(mp_all)} team-games "
               f"({rec_recent:.4%} for seasons >= 2014); mismatching seasons: {mism_seasons}"),
         check("moneypuck_team_id_matches_official", idm > 0.999,
-              f"team_id equals the official home/away id in {idm:.4%} of team-games; {id_missing} team-games have a NULL MoneyPuck team_id "
-              "(relocated franchises ATL/PHX, seasons 2008-2013). FAILED as a raw check; mitigated: team identity is taken from the official "
-              "game record via (game_id, home flag), never from the MoneyPuck id"),
+              f"RAW CHECK FAILED: franchise-mapped team_id equals the official home/away id in {idm:.4%} of team-games; {id_missing} team-games have a "
+              "NULL MoneyPuck team_id (Atlanta, seasons 2008-2010). Mitigated: team identity is taken from the official game record via "
+              "(game_id, corrected home flag); NULL-id rows keep the MoneyPuck flag, which is unique per game for them"),
         check("moneypuck_coverage_of_final_regular_season_games", len(missing_mp) <= 5,
               f"{len(missing_mp)} final regular-season games without MoneyPuck rows (seasons {sorted(set(missing_mp['season'].tolist()))}); "
               f"they keep their outcome but do not update ratings ({stat_nan} team-game rows with missing stats)"),
@@ -659,7 +681,7 @@ def run(log=print):
     # and: scrambling ALL outcomes/stats of a late block must not change any earlier feature
     tg2 = tg.copy(); late = tg2["day"].values >= cut
     for ccol in [c for c in tg2.columns if c.startswith(("xGoals", "goals", "iceTime", "scoreVenue", "flurry"))] + ["rg"]:
-        tg2.loc[late, ccol] = tg2.loc[late, ccol].values[::-1] * 1.7
+        col = tg2[ccol].values.astype(float); col[late] = col[late][::-1] * 1.7; tg2[ccol] = col
     F2 = make_features(tg2, hp)
     first_test = np.flatnonzero(late)[0]
     same_day_ok = float(max(np.max(np.abs(F2["f"][n][~late] - F["f"][n][~late])) for n in FEATS["full"]))
@@ -687,7 +709,7 @@ def run(log=print):
     y = {"home_win": G["home_win"][ti], "ot": G["extra"][ti], "total": G["total"][ti], "margin": G["margin"][ti], "hs": G["hs"][ti], "as": G["as"][ti]}
     inc_checks = [
         check("incumbent_csv_same_games", True, f"{len(v1)} games in both incumbent CSVs, identical order; all present in the challenger frame; "
-              f"cohorts {dict(zip(*np.unique(coh, return_counts=True)))}"),
+              f"cohorts {dict((str(a), int(b)) for a, b in zip(*np.unique(coh, return_counts=True)))}"),
         check("incumbent_csv_outcomes_match_official", bool((v1["y_home_win"].values == y["home_win"]).all() and (v1["y_total"].values == y["total"]).all()
               and (v1["y_overtime"].values == y["ot"]).all()), "y_home_win / y_total / y_overtime in the incumbent CSV equal the official record for every game"),
         check("incumbent_v1_columns_identical_across_csvs", float(np.abs(v1["p_home_win"] - v2["V1_p_home_win"]).max()) == 0.0
@@ -844,10 +866,9 @@ def run(log=print):
     prior_day = dsum.shift(1).reindex(gl["day"].values)
     lsv = (prior_day["saves"].values / prior_day["shots_against"].values); lsv = np.where(np.isnan(lsv), 0.905, lsv)
     gl["cs_saves"], gl["cs_shots"], gl["lsv"] = cs["saves"].values, cs["shots_against"].values, lsv
-    st = gl[gl["starter"].astype(bool)].drop_duplicates(["game_id", "is_home"]).set_index(["game_id", "is_home"])
-    key_h = pd.MultiIndex.from_arrays([G["game_id"], np.ones(len(G["game_id"]), bool)])
-    key_a = pd.MultiIndex.from_arrays([G["game_id"], np.zeros(len(G["game_id"]), bool)])
-    sh, sa = st.reindex(key_h), st.reindex(key_a)
+    st = gl[gl["starter"].astype(bool)].drop_duplicates(["game_id", "is_home"])
+    sh = st[st["is_home"].astype(bool)].set_index("game_id").reindex(G["game_id"])
+    sa = st[~st["is_home"].astype(bool)].set_index("game_id").reindex(G["game_id"])
     has_g = (sh["cs_shots"].notna() & sa["cs_shots"].notna()).values
     g_train = has_g & (season_g >= 2021) & (season_g <= TRAIN_LAST)
 
@@ -969,8 +990,8 @@ def run(log=print):
     ] + k_entries
     beta = dict(zip(["intercept"] + FEATS["full"], full.beta.tolist()))
     test_rows = np.repeat(False, len(tg)); test_rows[np.concatenate([2 * ti, 2 * ti + 1])] = True
-    fstats = {n: {"mean": float(F["f"][n][test_rows].mean()), "sd": float(F["f"][n][test_rows].std()), "min": float(F["f"][n][test_rows].min()),
-                  "max": float(F["f"][n][test_rows].max())} for n in FEATS["full"] + ["offall", "defall"]}
+    fstats = {n: {"mean": round(float(F["f"][n][test_rows].mean()), 4), "sd": round(float(F["f"][n][test_rows].std()), 4),
+                  "min": round(float(F["f"][n][test_rows].min()), 4), "max": round(float(F["f"][n][test_rows].max()), 4)} for n in FEATS["full"] + ["offall", "defall"]}
     rng_ok = lambda n, lim: bool(abs(fstats[n]["min"]) < lim and abs(fstats[n]["max"]) < lim)
     pit = "state read before the game's own update; only the team's games with an earlier game_date; league reference = trailing 365 days of strictly earlier dates"
     features = [
@@ -985,19 +1006,19 @@ def run(log=print):
          "pit_rule": pit, "summary_test": {k: fstats[k] for k in ("pp", "pk")},
          "checks": [check("feature_range", rng_ok("pp", 1.0) and rng_ok("pk", 1.0), f"log-ratio range on test rows {fstats['pp']} / {fstats['pk']}"),
                     check("pp_rate_plausible", bool(4 < np.nanmean(F["pp_rate60"][test_rows]) < 10), f"mean shrunk 5on4 xG per 60 on test rows {float(np.nanmean(F['pp_rate60'][test_rows])):.2f}"),
-                    data_checks[3], leak_checks[0]]},
+                    data_checks[4], leak_checks[0]]},
         {"feature_id": "finishing_goals_vs_xg", "catalog_inputs": ["NHL:nhl.finishing"],
          "description": f"regressed all-situations goals / xG for (team finishing) and against (team goaltending+defence finishing): half-life {hp['hl_fin']:g} games, "
                         f"{hp['m_fin']:g} pseudo-xG at the league ratio. MoneyPuck all-situations goals include empty-net goals and exclude the shootout winner goal",
          "pit_rule": pit, "summary_test": {k: fstats[k] for k in ("fin_o", "fin_d")},
-         "checks": [check("feature_range", rng_ok("fin_o", 0.4) and rng_ok("fin_d", 0.4), f"log-ratio range on test rows {fstats['fin_o']} / {fstats['fin_d']}"), data_checks[4], leak_checks[0]]},
+         "checks": [check("feature_range", rng_ok("fin_o", 0.4) and rng_ok("fin_d", 0.4), f"log-ratio range on test rows {fstats['fin_o']} / {fstats['fin_d']}"), data_checks[5], leak_checks[0]]},
         {"feature_id": "home_ice_and_back_to_back", "catalog_inputs": ["NHL:nhl.venue", "NHL:nhl.rest_travel"],
          "description": "fitted home-ice coefficient (not hard-coded) and fitted back-to-back flags for the team and the opponent (team played on the previous calendar day)",
          "pit_rule": "schedule facts known before the game (previous game date of the team)",
          "checks": [check("b2b_rate_plausible", bool(0.1 < tg["b2b"].values[test_rows].mean() < 0.25), f"back-to-back share of test team-games {tg['b2b'].values[test_rows].mean():.4f}"),
                     check("b2b_matches_incumbent_flag", bool((v1["home_b2b"].values == (tg["b2b"].values[2 * ti + 1] == 1)).mean() > 0.99),
                           f"home back-to-back flag equals the incumbent CSV's home_b2b in {(v1['home_b2b'].values == (tg['b2b'].values[2 * ti + 1] == 1)).mean():.4%} of test games"),
-                    data_checks[7]]},
+                    data_checks[8]]},
         {"feature_id": "joint_regulation_score_and_ot", "catalog_inputs": ["NHL:nhl.stat_dist", "NHL:nhl.ot_so", "NHL:nhl.empty_net"],
          "description": "bivariate Poisson regulation score with shared component, tie inflation and one-goal-margin weight; OT/SO resolution 0.5 + k*log(lam_h/lam_a); "
                         "all markets are sums over this one pmf. Empty-net goals are NOT modelled explicitly: they are inside the regulation-goal target, and the "
@@ -1032,7 +1053,8 @@ def run(log=print):
               f"(families {val_fams}); IMPROVED_NOT_VALIDATED: {n_inv}; NOT_IMPROVED: {n_bad} (families {bad_fams}); INCONCLUSIVE: {len(head) - n_val - n_bad - n_inv}. "
               f"Overall rule: VALIDATED_IMPROVEMENT only if every headline log-loss row is validated and none is NOT_IMPROVED; mixed or partial evidence is reported as "
               f"IMPROVED_NOT_VALIDATED (some validated/improved, none worse) or INCONCLUSIVE. Against the Kalshi T-60 mid (2025 cohort only, single cohort so never "
-              f"'replicated'): challenger significantly WORSE than the market in families {m_worse}; CI entirely better than the market in {m_better}.")
+              f"'replicated'): challenger point estimate is worse than the market in {sum(r['diff'] > 0 for r in mrows)} of {len(mrows)} market rows; Holm-significantly "
+              f"worse in families {m_worse}; CI entirely better than the market in {m_better}. The challenger does NOT beat the market.")
     abl = {a["ablation_id"]: a for a in ablations}
 
     def claim(inp, abl_id, what):
@@ -1048,7 +1070,7 @@ def run(log=print):
     core_outcome = "OK" if ml_head["verdict"] == "VALIDATED_IMPROVEMENT" else "PARTIAL"
     oc = claim("NHL:nhl.goalie_start", "d_oracle_as_played_starting_goalie", "ORACLE_NOT_PIT upper bound only: as-played starter, no pregame-knowable source collected")
     oc["stage"], oc["outcome"] = "FEATURE_BUILT", "BLOCKED"
-    oq = claim("NHL:nhl.goalie_quality", "d_oracle_as_played_starting_goalie", "save%-based goalie quality evaluated only through the ORACLE_NOT_PIT ablation")
+    oq = claim("NHL:nhl.goalie_quality", "d_oracle_as_played_starting_goalie", "crude save%-only goalie quality (no GSAx / shot-quality adjustment), evaluated only through the ORACLE_NOT_PIT ablation on top of the team-level goals-against finishing term")
     oq["outcome"] = "PARTIAL" if oq["outcome"] != "REJECTED" else "REJECTED"
     claims = [
         {"input": "NHL:nhl.xg_for", "stage": "EVALUATED", "outcome": core_outcome, "evidence": core_ev},

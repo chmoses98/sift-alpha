@@ -144,9 +144,9 @@ def reference_kind(reference: str) -> str:
         return "MARKET"
     if r.startswith(("challenger:", "prospective:alpha", "alpha-")):
         return "PRIOR_CHALLENGER"
-    if r.startswith(("incumbent", "shadow", "prospective_frozen", "pf_frozen", "sim_frozen", "frozen:", "production:")):
+    if r.startswith(("incumbent", "shadow", "prospective_frozen", "pf_", "sim_frozen", "frozen:", "production:")):
         return "CURRENT_MODEL"
-    if r.startswith(("naive", "baseline", "a0 ", "a1 ", "ablation", "reference_arm:", "reproduction:")):
+    if r.startswith(("naive", "baseline", "a0 ", "a1 ", "ablation", "reference_arm:", "reproduction:", "repro_")):
         return "BASELINE"
     raise ValueError(f"unclassified reference {reference!r}: name it market:*, incumbent:*, shadow:*, challenger:*, baseline:* or naive:*")
 

@@ -177,7 +177,7 @@ almost all `pf-1.3.0`), not a reproduction. 176 games; freeze rule T-60.
 * Frozen incumbent mean absolute error: points 4.48, rebounds 1.83, assists 1.32, threes 0.86, PRA 5.86, minutes 4.77. It beats its shadow baseline.
 * **The market is better.** Against the two-sided Kalshi T-60 mid (118 games) the frozen incumbent's Brier is worse on points (+0.0097
   [+0.0058, +0.0140]), rebounds (+0.0047), assists (+0.0061) and PRA (+0.0147); threes are inconclusive. Spreads (+0.0105) and team totals (+0.0095)
-  are also worse. The incumbent under-forecasts team points by 2.4 and game totals by 4.8.
+  are also worse. The incumbent **over**-forecasts team points by 2.4 and game totals by 4.8 (corrected in Phase 3: the recorded bias is actual minus forecast, −2.40 and −4.80; this line first said "under").
 * Why: given the market-implied median, the model's disagreement with it does not predict the outcome (slope about 0.02). Per-minute rate error
   explains 73–89% of error variance, minutes 9–24%. Information published between the freeze and T-60 is not the cause (90 rows in 30 games).
 * Challenger: a 70/30 blend of the frozen forecast with the 0.1 method. Assists CRPS improves and is validated (−0.0087 [−0.0128, −0.0049],

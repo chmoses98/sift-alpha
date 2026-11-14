@@ -307,3 +307,73 @@ summation defect was fixed).
 * Inputs marked downgraded or point-in-time quarantined (for example `nhl.goalie_quality`) were not resurrected.
 * Built is not used: none of the thirty is yet in a challenger. Process note: the blind re-implementations were written by separate headless agent
   sessions that saw only the briefs and the raw data paths.
+
+## 11. Phase 4 (2026-11-14, fourth pass): integration fixes, archive inputs put to work, CBB tier study
+
+Agent-built, not human verified. RESEARCH_ONLY; nothing is promoted, merged or deployed; every incumbent is retained.
+
+    python -m alpha_engine.foundation.nba_rate_v4
+    python -m alpha_engine.foundation.nhl_input_probe
+    python -m alpha_engine.foundation.cbb_tier_study --arch $SIFT_CBB_ARCH_DIR
+    python -m alpha_engine.foundation.ledger && python -m alpha_engine.foundation.sources && python -m alpha_engine.foundation.loop
+
+### 11.1 Defects repaired
+* **`cbb_venue_prior.build` `KeyError 'tip'`**: the schedule-final extension frame was built from an empty list once the period-score
+  archive had caught up with every finished projected game. The frame now keeps its column schema. Re-run on the current archive:
+  544 games, all period-score verified, verdict unchanged (INCONCLUSIVE, 11/2 headline split; `CBB/alpha-cbb-venue-prior-0.1/rerun_phase4.json`).
+  The committed evaluation is left as it was.
+* **`alpha-nba-rate-0.3` rerun was not byte-identical on a different clone**: the lineage listed commits with git's automatic abbreviation,
+  whose length depends on the clone. Pinned to `--abbrev=11` (the committed length); the 0.3 evaluation now reproduces byte for byte.
+* **Ledger over its 4 MB phone budget** once a tenth challenger was added: the ledger copied every evaluation's full `design` block, which
+  no view reads. It now keeps the key list and the evaluation path.
+* **Ledger counted "built" as "used"**: a catalog input claimed by an earlier challenger with its own implementation (e.g. 0.3's rate for
+  `nba.stat_rate_posterior`) looked like use of the Phase 15 builder. The new Built inputs view separates the two.
+
+### 11.2 NBA: why pf over-forecasts the rate when it cuts minutes, and `alpha-nba-rate-0.4`
+pf's stat mean is a stack, F = wA·A + wD·D + wE·E (frozen weights: D ~0.5, E (LightGBM) 0.33–0.52, A ≤ 0.05). D scales one-for-one with the
+minutes forecast. E sees the minutes forecast only as one tree feature next to per-game averages, and barely moves when the live minutes
+forecast departs from recent minutes. Measured on the frozen forecasts alone, the per-minute rate implied by pf has a slope of −0.30
+(assists −0.50) on log(forecast / recent minutes), stable between TRAIN and TEST. Actual per-minute rates do not rise when minutes fall
+(slope 0 to +0.15). The 14% over-forecast is therefore a coherence defect of the stack, not a basketball effect.
+`alpha-nba-rate-0.4` corrects it walk-forward from forecasts only, widens 0.3's blend grid, and offers two Phase 15 builders.
+* vs frozen pf (88 TEST games): CRPS validated for points −0.042, rebounds −0.008, assists −0.015 and PRA −0.046; threes inconclusive.
+* vs 0.3: no material gain. Assists −0.0024 [−0.0041, −0.0007] (not validated), rebounds +0.0011 [+0.0004, +0.0018] (worse), the rest
+  inconclusive. Team and game totals are inconclusive. Points are still worse than the Kalshi T-60 mid (+0.0046 [+0.0017, +0.0074]).
+* `nba.stat_rate_posterior` (Phase 15 builder) lost to 0.3's rate on TRAIN for every stat and is **rejected**. `nba.own_model_team_totals`
+  took a 0.7 weight in the TRAIN team blend; TEST is inconclusive.
+* Reading: 0.3's blend with a fully minutes-elastic rate had already removed most of the incoherence. 0.3 stays the lead NBA challenger.
+  The durable result is the diagnosis: the production fix belongs in pf (rescale the E rung by forecast/recent minutes, or refit the stack
+  on rows with live minutes forecasts). That is an owner decision; nothing upstream was changed.
+
+### 11.3 NHL: do the Phase 15 inputs add information to 0.3?
+`nhl_input_probe`: 11 one-parameter residual probes (nine inputs) against 0.3's fitted head model, fitted on 2021–23 and scored on 2024 and
+2025 separately (moneyline, regulation tie, overtime winner, total goals). **None adds validated information**; every pooled CI spans zero.
+The ledger records the nine inputs as EVALUATED / REJECTED. 0.3 conditions on the actual starting goalie, so the pre-confirmation starter
+model can only add information through workload. The 2026-27 cohort is not probed: there are no Phase 15 event tables for it.
+
+### 11.4 CBB: conference-tier margin bias (`CBB/conference_tier_study.json`)
+On the same 544 frozen `pure-0.2.0` games: the tier terms (power +4.4, low-major −4.5 points) **survive** controls for the 2025-26 net rating,
+the preseason prior and the projected margin. They hold on home-site games and in both early-season strata. Where the market's ESPN line
+exists, the line's own residual shows no tier effect, so the market already prices it. A correction fitted on the first half of the slates
+**does not improve** the second half (abs error +0.27 [−0.14, +0.68], NLL −0.002 [−0.036, +0.032]); the low-major term shrinks from −7.0
+to −2.5 between halves. Verdict: a genuine mis-specification of the incumbent's conference strength, not yet a usable correction.
+Multi-season validation still needs the data in `MULTISEASON_GAME_DATA_SPEC.md`. Waves 14–16 untouched.
+
+### 11.5 Dashboard
+* **Built inputs** view: the 30 Phase 15 inputs, each marked built (blind match), used by a challenger, evaluated (challenger or probe),
+  selected, and validated. Earlier implementations of the same catalog input are listed apart. Evidence links point at the builder, the
+  replay gate and the blind match. Totals: 30 built, 2 used by a challenger, 11 evaluated, 1 selected, 0 validated.
+* Each P0 sport card states the same five counts. `pages.yml` published-site verification also requires the `df-built` marker; no schedule
+  was added or changed.
+* Tests: Python 1,577 passed, 4 skipped; Node 84 passed; Playwright 92 passed on desktop Chromium and an iPhone 13 viewport in Chromium.
+  WebKit is not installed in this environment, so the `iphone-webkit` project is verified only by CI.
+
+### 11.6 Open, needs the owner
+* The PR stack itself adds a few raw provider rows to this public repository:
+  - `research/audit/input_research/experiments/nfl_passyds_kalshi_v1_contracts.csv` (Kalshi bid/ask/volume per contract);
+  - `docs/capture_workflows/phase11/samples/nhl_20261109T22*.jsonl.gz` (DailyFaceoff goalie rows);
+  - `docs/capture_workflows/phase11/samples/cbb_availability_rows_*_head4.jsonl` (ESPN roster rows).
+
+  Tests read them. Removing or relocating them is part of the public-data decision; a squash merge keeps them out of `main`'s history
+  if they are removed first.
+* NHL #66/#68 Kalshi settlement cross-check on real data needs a fetch of Kalshi settled-market pages (new collection): not run.

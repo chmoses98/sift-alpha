@@ -181,10 +181,16 @@ def build(arch: Path, repo: Path):
             n_unver += 1; continue
         ext.append(dict(game_id=r.game_id, espn=r.espn, tip=r.tip, as_of=r.as_of, site=r.site, home_tid=r.home_tid, away_tid=r.away_tid,
                         margin=r.margin, total=r.total, msd=r.msd, tsd=r.tsd, hw=r.hw, fh=float(fh), fa=float(fa), obs_at=first_obs[key], rel=r.rel, src="schedule_final"))
-    ext = pd.DataFrame(ext)
+    # An empty extension is normal once the period-score archive has caught up with every projected game that has
+    # finished (the remaining selected games have not tipped or have no final yet). Keep the column schema so the
+    # checks and the concat below run on zero rows instead of raising KeyError('tip') (Phase 4 fix).
+    ext = pd.DataFrame(ext, columns=["game_id", "espn", "tip", "as_of", "site", "home_tid", "away_tid", "margin", "total", "msd", "tsd",
+                                     "hw", "fh", "fa", "obs_at", "rel", "src"])
+    if ext.empty:
+        ext = ext.astype({"tip": ver["tip"].dtype, "as_of": ver["as_of"].dtype, "fh": float, "fa": float})
     ext["slate"] = (ext["tip"] - pd.Timedelta(hours=J.SLATE_SHIFT_H)).dt.strftime("%Y-%m-%d")
     obs_ok = bool((ext["obs_at"] > ext["tip"]).all()); asof_ok = bool((ext["as_of"] < ext["tip"]).all())
-    plaus = bool((ext[["fh", "fa"]].min(axis=None) >= 20) and (ext[["fh", "fa"]].max(axis=None) <= 160) and (ext["fh"] != ext["fa"]).all())
+    plaus = bool(ext.empty or ((ext[["fh", "fa"]].min(axis=None) >= 20) and (ext[["fh", "fa"]].max(axis=None) <= 160) and (ext["fh"] != ext["fa"]).all()))
     checks.append(C.check(name="extension_schedule_finals_orientation_by_team_id", passed=n_unver == 0,
                        detail=f"{len(ext)} games after the last period-score tip with a schedule-archive STATUS_FINAL row: {n_swap} neutral-site SWAPPED (remapped), {n_unver} unverified (dropped)"))
     checks.append(C.check(name="extension_final_first_observed_after_tip_and_projection_before_tip", passed=obs_ok and asof_ok,
@@ -194,7 +200,8 @@ def build(arch: Path, repo: Path):
     keep = ["game_id", "espn", "tip", "as_of", "slate", "site", "home_tid", "away_tid", "margin", "total", "msd", "tsd", "hw", "fh", "fa", "obs_at", "src"]
     rel = runs.set_index(["game_id", "as_of"])["rel"]
     ver["rel"] = [rel[(g, a)] for g, a in zip(ver["game_id"], ver["as_of"])]
-    g = pd.concat([ver[keep + ["rel"]], ext[keep + ["rel"]]], ignore_index=True).sort_values(["tip", "game_id"], kind="mergesort").reset_index(drop=True)
+    parts = [ver[keep + ["rel"]]] + ([ext[keep + ["rel"]]] if len(ext) else [])
+    g = pd.concat(parts, ignore_index=True).sort_values(["tip", "game_id"], kind="mergesort").reset_index(drop=True)
     gs = games_seen(arch)
     g["hgs"] = [gs[r][0] for r in g["rel"]]; g["ags"] = [gs[r][1] for r in g["rel"]]
     gmin = np.minimum(g["hgs"], g["ags"]).clip(upper=11).astype(int)

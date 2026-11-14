@@ -33,11 +33,11 @@ class Reconciliation(unittest.TestCase):
         self.assertEqual(R["catalog_edges_all_classes"], 4243)
         self.assertEqual(R["predictive_slots"], 3670)
         self.assertEqual(R["predictive_primary_slots"], 1276)
-        self.assertEqual(R["missing_primary_predictive_slots"], 949)
+        self.assertEqual(R["missing_primary_predictive_slots"], 888)          # 949 before Phase 15 (30 NBA/NHL archive builders: NBA 163 -> 138, NHL 87 -> 51)
 
     def test_matches_market_completeness_per_archetype(self):
         x = R["market_completeness_cross_check"]
-        self.assertEqual((x["n_required_sum"], x["primary_missing_critical_sum"], x["n_primary_sum"]), (3670, 949, 1276))
+        self.assertEqual((x["n_required_sum"], x["primary_missing_critical_sum"], x["n_primary_sum"]), (3670, 888, 1276))
         self.assertTrue(x["per_archetype_predictive_match"])
         self.assertTrue(x["per_archetype_missing_primary_match"])
         mc = {f"{r['sport']}:{r['archetype']}": r for r in D["mc"]["rows"]}
@@ -52,7 +52,7 @@ class Reconciliation(unittest.TestCase):
         self.assertEqual(sum(R["distinct_inputs_by_bucket"].values()), 1649)
         self.assertEqual(R["distinct_inputs_referenced_by_an_archetype"] + len(R["distinct_inputs_with_no_archetype_edge"]), 1649)
         self.assertGreater(R["queue_slot_dataset_pairs"], R["queue_distinct_slots_covered"])      # overlap is real and is not reported as a slot total
-        self.assertEqual(R["queue_distinct_slots_covered"], 949)
+        self.assertEqual(R["queue_distinct_slots_covered"], 888)
 
     def test_non_predictive_classes_never_in_predictive_denominator(self):
         for e in M["edges"]:
@@ -113,8 +113,8 @@ class QueueGroups(unittest.TestCase):
             self.assertIn(q["rank"], self.G["groups"][q["action_group"]]["ranks"])
 
     def test_group_counts_exact_and_not_double_counted(self):
-        self.assertEqual(self.G["distinct_slots"], 949)
-        self.assertEqual(sum(v["slots_exclusive_to_group"] for v in self.G["groups"].values()) + self.G["slots_spanning_groups"], 949)
+        self.assertEqual(self.G["distinct_slots"], 888)
+        self.assertEqual(sum(v["slots_exclusive_to_group"] for v in self.G["groups"].values()) + self.G["slots_spanning_groups"], 888)
         self.assertEqual(sum(v["slot_dataset_pairs"] for v in self.G["groups"].values()), R["queue_slot_dataset_pairs"])
         for g, v in self.G["groups"].items():
             rows = [q for q in M["queue"] if q["action_group"] == g]
@@ -133,7 +133,7 @@ class QueueGroups(unittest.TestCase):
 
     def test_pinned_group_counts(self):
         self.assertEqual({g: v["datasets"] for g, v in self.G["groups"].items()},
-                         {"ARCHIVED_BUILD_NEXT": 1, "RIGHTS_APPROVAL_NEEDED": 86, "FREE_COLLECTION_POSSIBLE": 0, "PROSPECTIVE_CAPTURE_REQUIRED": 26, "BLOCKED_OR_PAID": 8})
+                         {"ARCHIVED_BUILD_NEXT": 1, "RIGHTS_APPROVAL_NEEDED": 85, "FREE_COLLECTION_POSSIBLE": 0, "PROSPECTIVE_CAPTURE_REQUIRED": 26, "BLOCKED_OR_PAID": 8})
 
 
 class Rights(unittest.TestCase):
@@ -170,7 +170,7 @@ class Artifacts(unittest.TestCase):
         e = rows("market_input_edges.csv")
         self.assertEqual(len(e), 4243)
         self.assertEqual(sum(int(r["is_predictive_slot"]) for r in e), 3670)
-        self.assertEqual(sum(int(r["is_missing_primary_slot"]) for r in e), 949)
+        self.assertEqual(sum(int(r["is_missing_primary_slot"]) for r in e), 888)
         i = rows("distinct_inputs.csv")
         self.assertEqual(len(i), 1649)
         self.assertEqual(len({r["input_key"] for r in i}), 1649)

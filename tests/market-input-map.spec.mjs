@@ -25,7 +25,7 @@ test("summary separates distinct inputs, predictive slots and missing PRIMARY sl
   const s = page.getByTestId("mim-summary");
   await expect(s).toContainText("1,649");
   await expect(s).toContainText("3,670");
-  await expect(s).toContainText("949");
+  await expect(s).toContainText("888");
   await expect(page.getByTestId("mim-market-count")).toContainText("170 of 170");
 });
 
@@ -68,7 +68,7 @@ test("queue action groups: five groups, exact committed counts, rank order kept 
   const map = page.getByTestId("market-input-map");
   await map.getByRole("tab", { name: "Queue" }).click();
   await expect(map.getByTestId("mim-group-ARCHIVED_BUILD_NEXT")).toContainText("1 datasets");
-  await expect(map.getByTestId("mim-group-RIGHTS_APPROVAL_NEEDED")).toContainText("86 datasets");
+  await expect(map.getByTestId("mim-group-RIGHTS_APPROVAL_NEEDED")).toContainText("85 datasets");
   await expect(map.getByTestId("mim-group-FREE_COLLECTION_POSSIBLE")).toContainText("0 datasets");
   await expect(map.getByTestId("mim-group-PROSPECTIVE_CAPTURE_REQUIRED")).toContainText("26 datasets");
   await expect(map.getByTestId("mim-group-BLOCKED_OR_PAID")).toContainText("8 datasets");

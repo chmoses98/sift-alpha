@@ -20,7 +20,7 @@ The Export view lists the committed CSV/JSON paths rather than serving them: the
 | distinct inputs | 1,649 | rows of `verified_coverage.json` (sport × input id; 1,572 ids across sports); 1,614 sit under ≥1 market, 35 under none |
 | catalog edges | 4,243 | every (archetype, input) listing: 3,670 predictive, 276 market-derived benchmark, 187 rules/settlement metadata, 110 operational |
 | predictive slots | 3,670 | market_completeness predictive denominator (1,276 PRIMARY) |
-| missing PRIMARY slots | 949 | PRIMARY predictive slots not FULL/PARTIAL/PROXY: FREE_ACCESSIBLE 534, PROSPECTIVE 314, NO_FREE_SOURCE 80, DATA_IN_HAND 11, CONTESTED 10 |
+| missing PRIMARY slots | 888 | PRIMARY predictive slots not FULL/PARTIAL/PROXY: FREE_ACCESSIBLE 490, PROSPECTIVE 300, NO_FREE_SOURCE 80, DATA_IN_HAND 8, CONTESTED 10 (949 before Phase 15: `docs/PHASE15_NBA_NHL_ARCHIVE_BUILDERS.md`) |
 
 The predictive/non-predictive split is imported from `market_completeness.py` (per-archetype match is tested). The display split of the non-predictive
 edges is: RULES_SETTLEMENT_METADATA = m.rules_text, soc.competition_scope_and_win_definition, m.settlement_truth, m.stat_correction_risk, m.stat_source_mismatch;
@@ -37,8 +37,8 @@ A source/dataset is labelled usable (RESEARCH_USE_PERMITTED) only when its tier 
 
 ## Acquisition queue
 
-One row per dataset (121 datasets) for the 949 missing PRIMARY slots; each slot is listed under every dataset its input's requirements name, so the 2,413 slot–dataset pairs
-are not a slot total (distinct slots covered: 949; slots without a dataset: 0). Order uses only recorded factors, no composite score:
+One row per dataset (120 datasets) for the 888 missing PRIMARY slots; each slot is listed under every dataset its input's requirements name (one dataset per requirement: the full definition needs ALL of them; `candidates` are the any-of alternatives for a single requirement and are not queued), so the 2,231 slot–dataset pairs
+are not a slot total (distinct slots covered: 888; slots without a dataset: 0). Order uses only recorded factors, no composite score:
 `access_rank` (datasets.json) → rights tier (strongest first) → `pit_rank` → cost → missing PRIMARY slots → id.
 “Sole outstanding” is an ESTIMATE (every other satisfying dataset already archived; n/a for archived datasets). Next actions are proposals; none is executed.
 
@@ -52,12 +52,12 @@ blocked/prospective rows whose rights are also pending.
 | Group | datasets | distinct slots | only in this group | by access status |
 |---|---|---|---|---|
 | Already archived · build next | 1 | 21 | 8 | archived 1 (ten.matches, Sackmann, non-commercial) |
-| Rights approval needed | 86 | 857 | 542 | archived 14 · free reachable 20 · unprobed 39 · host-blocked 7 · unconfirmed 1 · reference doc 5 |
+| Rights approval needed | 85 | 796 | 495 | archived 14 · free reachable 20 · unprobed 38 · host-blocked 7 · unconfirmed 1 · reference doc 5 |
 | Free collection possible | 0 | 0 | 0 | — every free path is on a source whose rights do not yet permit research use |
-| Prospective capture required | 26 | 332 | 66 | prospective 26 (all also need rights) |
+| Prospective capture required | 26 | 318 | 66 | prospective 26 (all also need rights) |
 | Blocked / paid | 8 | 91 | 4 | paid 3 · sample-only 2 · no free source 3 (7 also need rights) |
 
-Per-group slot counts overlap (329 slots need datasets in several groups); the “only in this group” counts plus 329 equal the 949 distinct slots. In `reconciliation.json` → `queue_groups`.
+Per-group slot counts overlap (315 slots need datasets in several groups); the “only in this group” counts plus 315 equal the 888 distinct slots. In `reconciliation.json` → `queue_groups`.
 
 ### Filters (follow-up)
 

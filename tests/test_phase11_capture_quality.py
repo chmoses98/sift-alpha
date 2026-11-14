@@ -1,4 +1,4 @@
-"""Phase 11 capture-quality helper tests (synthetic fixtures plus real archived samples under docs/capture_workflows/phase11/samples)."""
+"""Phase 11 capture-quality helper tests (synthetic fixtures plus synthetic capture-shaped fixtures under docs/capture_workflows/phase11/samples)."""
 import gzip
 import json
 import unittest
@@ -41,8 +41,8 @@ class CbbAvailability(unittest.TestCase):
         self.assertFalse(is_placeholder_availability_row(dict(PLACEHOLDER, native_status="Questionable")))
 
     def test_real_archived_cbb_capture_is_unusable(self):
-        rows = _jl(S / "cbb_availability_rows_20261110T194051Z_head4.jsonl")
-        payload = json.loads((S / "cbb_league_injuries_20261110T194051Z.json").read_text())
+        rows = _jl(S / "synthetic_cbb_availability_rows.jsonl")
+        payload = json.loads((S / "synthetic_cbb_league_injuries_empty.json").read_text())
         self.assertEqual(len(rows), 4)
         r = classify_availability_capture(rows, payload)
         self.assertFalse(r["usable"]); self.assertEqual(r["reason"], "EMPTY_SOURCE_PAYLOAD")
@@ -83,7 +83,7 @@ class LineupStatus(unittest.TestCase):
         self.assertEqual(r["class"], "UNKNOWN")
 
     def test_real_nhl_rows(self):
-        rows = _jl(S / "nhl_20261109T223826Z.jsonl.gz")
+        rows = _jl(S / "synthetic_nhl_goalies_snapshot_a.jsonl.gz")
         classes = {}
         for r in rows:
             c = classify_lineup_status(r, r["note"].split("game_time_gmt=")[1])["class"]
@@ -112,7 +112,7 @@ class History(unittest.TestCase):
         self.assertEqual(h["final_player"], "A"); self.assertTrue(h["changed_after_first"])
 
     def test_real_nhl_consecutive_snapshots(self):
-        a = _jl(S / "nhl_20261109T223826Z.jsonl.gz"); b = _jl(S / "nhl_20261109T230827Z.jsonl.gz")
+        a = _jl(S / "synthetic_nhl_goalies_snapshot_a.jsonl.gz"); b = _jl(S / "synthetic_nhl_goalies_snapshot_b.jsonl.gz")
         ev = diff_status_snapshots(a, b)
         self.assertTrue(all(e["type"] in {"STATUS_UPGRADE", "STATUS_DOWNGRADE", "PLAYER_CHANGE", "FIRST_SEEN", "DISAPPEARED"} for e in ev))
         # the archive holds 2 sources per team in some files: sanity that the diff is deterministic and keyed per game/team

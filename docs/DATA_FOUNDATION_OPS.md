@@ -369,11 +369,8 @@ Multi-season validation still needs the data in `MULTISEASON_GAME_DATA_SPEC.md`.
   WebKit is not installed in this environment, so the `iphone-webkit` project is verified only by CI.
 
 ### 11.6 Open, needs the owner
-* The PR stack itself adds a few raw provider rows to this public repository:
-  - `research/audit/input_research/experiments/nfl_passyds_kalshi_v1_contracts.csv` (Kalshi bid/ask/volume per contract);
-  - `docs/capture_workflows/phase11/samples/nhl_20261109T22*.jsonl.gz` (DailyFaceoff goalie rows);
-  - `docs/capture_workflows/phase11/samples/cbb_availability_rows_*_head4.jsonl` (ESPN roster rows).
-
-  Tests read them. Removing or relocating them is part of the public-data decision; a squash merge keeps them out of `main`'s history
-  if they are removed first.
+* Resolved before merge (Phase 5): the raw provider rows this stack had added were removed. The NFL pass-yards contracts CSV keeps
+  model outputs and a `quoted_*` flag but no Kalshi bid/ask/volume; the Phase 11 ESPN roster and DailyFaceoff goalie samples were
+  replaced by synthetic fixtures (`docs/capture_workflows/phase11/samples/README.md`). The stack landed as one squash commit, so the
+  originals are not in `main`'s history.
 * NHL #66/#68 Kalshi settlement cross-check on real data needs a fetch of Kalshi settled-market pages (new collection): not run.

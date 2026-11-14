@@ -482,10 +482,14 @@ def main():
     res["structure_test_primary_T-60m"] = structure_test(df)
     res["drift_test_T-24h_to_T-3h_entry_T-60m"] = drift_test(df)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    keep = ["ticker", "game_id", "week", "player", "floor", "result", "kickoff", "stage", "has_model_row", "mu", "sd", "p_model", "p_ridge", "p_history", "actual_yards"] + [f"{p}_{h}" for h in HORIZONS_MIN for p in ("ask", "bid", "vol")]
+    keep = ["ticker", "game_id", "week", "player", "floor", "result", "kickoff", "stage", "has_model_row", "mu", "sd", "p_model", "p_ridge", "p_history", "actual_yards"]
     res["data_vintage"] = {"markets_listed_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "latest_completed_game": str(qb[qb.pass_yards.notna()].gameday.max())}
     (OUT_DIR / "nfl_passyds_kalshi_v1.json").write_text(json.dumps(res, indent=1, default=float))
-    df[df.stage == "ok"][keep].round(4).to_csv(OUT_DIR / "nfl_passyds_kalshi_v1_contracts.csv", index=False)
+    # Public artifact: Kalshi bid/ask/volume are NOT written (redistribution rights unresolved); only whether a quote existed.
+    pub = df[df.stage == "ok"].copy()
+    for h in HORIZONS_MIN:
+        pub[f"quoted_{h}"] = pub[f"ask_{h}"].notna()
+    pub[keep + [f"quoted_{h}" for h in HORIZONS_MIN]].round(4).to_csv(OUT_DIR / "nfl_passyds_kalshi_v1_contracts.csv", index=False)
     print(json.dumps(res["stage_counts"]), json.dumps(res["model"]))
     for hn, h in res["horizons"].items():
         print(hn, json.dumps(h.get("waterfall")), json.dumps(h.get("decisions")))

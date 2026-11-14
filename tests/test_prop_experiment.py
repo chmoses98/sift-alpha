@@ -147,7 +147,8 @@ class PublishedExperiment(unittest.TestCase):
         df = pd.read_csv(ROOT / "research/audit/input_research/experiments/nfl_passyds_kalshi_v1_contracts.csv")
         w = EXP["horizons"]["primary_T-60m"]["waterfall"]
         self.assertEqual(len(df), w["settled_regular_season"])
-        self.assertEqual(int(df["p_model"].notna().sum() - df[df["ask_primary_T-60m"].isna()]["p_model"].notna().sum()), w["eligible_priced"])
+        self.assertFalse(any(c.startswith(("ask_", "bid_", "vol_")) for c in df.columns), "no Kalshi quote values in the public CSV")
+        self.assertEqual(int(df["p_model"].notna().sum() - df[~df["quoted_primary_T-60m"]]["p_model"].notna().sum()), w["eligible_priced"])
 
 
 class Universe(unittest.TestCase):

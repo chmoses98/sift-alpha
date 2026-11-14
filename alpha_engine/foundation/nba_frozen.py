@@ -959,7 +959,6 @@ def report(S, out_dir: Path | None = None, verbose: bool = True) -> dict:
     out_dir = Path(out_dir) if out_dir else OUT_DIR
     X, rr, c1, pf_pmf, c2_pmf = S["X"], S["rr"], S["c1"], S["pf_pmf"], S["c2_pmf"]
     masks = S["masks"]; gid = X.game_id.to_numpy(); played = X.y_play.to_numpy(); has_pf = X.has_pf.to_numpy()
-    allm = {ALLG: np.ones(len(X), bool)}
     R = Results(); acc = {"player_means_given_played": {}, "participation": {}, "props_vs_market": {}, "games_vs_market": {}, "game_means": {}}
 
     # ------------------------------------------------------------------ incumbent accuracy (all 2026-27 games with outcomes)
@@ -1169,15 +1168,15 @@ def build_document(S, Q) -> tuple:
         c2_vs_pf_frozen=v_pf, c2_vs_kalshi_t60_mid=v_mk, incumbent_pf_vs_kalshi_t60_mid_all_games=inc_mk,
         evidence_sufficiency=dict(
             incumbent_vs_market=f"SUFFICIENT for a direction on points/rebounds/assists/PRA ladders, spreads and team totals ({max(v[4] for v in inc_mk.values())} games with T-60 quotes, all market rows NOT_IMPROVED or INCONCLUSIVE for the incumbent); "
-                                "the incumbent never beats the mid",
-            challenger_vs_market=f"INSUFFICIENT_EVIDENCE: only {n_mkt_test_games} TEST games carry T-60 player-prop quotes (the archive has T-60 boards for 118 of 176 games)",
+                                "the incumbent never significantly beats the mid",
+            challenger_vs_market=f"INSUFFICIENT_EVIDENCE: only {n_mkt_test_games} TEST games carry T-60 player-prop quotes and all fall in cohort 1; the projection-data "
+                                 f"market archive has no T-60 boards for games after {_iso(M.tip_ts.max())[:10]}, so no challenger-vs-market row can replicate in cohort 2",
             challenger_vs_incumbent=f"{int(X[S['masks'][POOLED]].game_id.nunique())} TEST games, two cohorts of about one week each; one month of season"),
         retain_incumbent=True,
         reason="The frozen production model pf is clearly better than the frozen shadow baseline but worse than the Kalshi T-60 mid on player-prop ladders over 118 games; "
                "its disagreements with the market carry no outcome information. The 0.2 pool improves pf on assists CRPS (validated) and is neutral elsewhere; it does not "
                "beat the market and is research-only.")
     claims = []
-    c2_ast = R.find("player_assists", "crps_given_played", "C2_alpha-nba-avail-0.2", "pf_frozen")
     claims.append(dict(input="NBA:nba.stat_dist", stage="EVALUATED", outcome="OK" if overall in ("VALIDATED_IMPROVEMENT", "IMPROVED_NOT_VALIDATED") else "PARTIAL",
                        evidence="C2 linear pool vs frozen pf, TEST crps_given_played: " + "; ".join(
                            f"{s} {r['diff']:+.4f} [{r['ci95'][0]:+.4f}, {r['ci95'][1]:+.4f}] {r['verdict']}" for s in STATS
@@ -1242,6 +1241,7 @@ def build_document(S, Q) -> tuple:
         pr_context={"chmoses98/nba-edge-finder#104": "open draft (availability overlay + 2026-27 replay), not merged",
                     "chmoses98/nba-edge-finder#105": "open draft (calibration, stacked on #104), not merged; its own pretip market comparison also found the market better"})
     limitations = [
+        f"Data defect: the projection-data market_snapshots stage archived no T-60 (or any pregame) boards after the {_iso(M.tip_ts.max())[:10]} tips; games of 2026-11-07..13 have forecasts and outcomes but no market reference. The capture-worker boards on data-archive were not read.",
         "One month of 2026-27 regular season (176 games with outcomes, 2026-10-20..2026-11-13); T-60 player-prop quotes exist for 118 games and only 31 TEST games, so every challenger-vs-market row is INSUFFICIENT_EVIDENCE regardless of its point estimate.",
         f"The pf label covered {int(fc[fc.model == 'pf'].version.str.split('+').str[1].nunique())} distinct code commits over the window (pf-1.2.1 on the first slates, then pf-1.3.0); 'the frozen incumbent' is the version stream that was live at each freeze, not one fixed binary.",
         "Spread and total probabilities from the pf team-points forecasts use a normal approximation with the archived rho (the owner's own note calls them approximate); team totals use the archived pmf exactly.",

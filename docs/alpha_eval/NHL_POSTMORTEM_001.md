@@ -179,3 +179,24 @@ The earlier outcome-intelligence audit (`reports/outcome_intel/nba_nhl_SUMMARY.m
 * Map `p_overtime` to `KXNHLOT`.
 * Obtain Kalshi-official results to replace the shootout and stat-correction blocks with exchange truth.
 * Keep accumulating goalie_saves prospectively as a pre-registered single cell before reading anything into it.
+
+## Addendum: second outcome source (reconciliation of PRs #66 and #68)
+
+PR #68 graded the same archive against **Kalshi's own settlement** instead of the official NHL API. On the reconciled branch this adapter
+is unchanged and the settlement is added as a second outcome source by `alpha_eval/nhl_kalshi_settlement.py`
+(`python -m alpha_eval nhl-archive ... --kalshi-dir <pages from scripts/alpha_eval/fetch_kalshi_settled.py>`). Each market's official-API
+outcome is compared with Kalshi's result; an agreeing settlement row collapses, a disagreeing one (value, void-vs-final or event identity)
+is a conflicting outcome row and the standard blocks the market. A market is never graded on the settlement alone. #68's postmortem is kept
+as `NHL_POSTMORTEM_002_KALSHI_SETTLEMENTS.md` and its report under `reports/alpha_eval/nhl/kalshi_settlement_pr68/`.
+
+Status of the direct cross-check: implemented and unit-tested on synthetic fixtures; **not yet run on real data**, because neither raw
+input is committed (the API cache and the settled pages both live outside the repository) and no new collection was made for the
+reconciliation. What the two committed reports already show against the one artefact they share, the producer's settle engine:
+
+| compared with the producer settle engine | agree | disagree | note |
+|---|---:|---:|---|
+| official NHL API derivation (this postmortem, as of 2026-11-13T05:32Z) | 63,548 | 36 | plus 39 shootout-ambiguous markets blocked |
+| Kalshi settlement (#68, as of 2026-11-13T04:23Z) | 64,930 | 44 | 28 goalie saves, 16 assist/point credits; plus 4 Kalshi `scalar` vs producer NO |
+
+Both sources disagree with the producer on a few dozen player-stat markets, consistent with official stat revisions; whether they agree with
+each other on those markets is exactly what the per-market cross-check will report on its first real run.

@@ -21,10 +21,15 @@ def _write(out: Path, stem: str, rep: dict):
     (out / f"{stem}.md").write_text(to_markdown(rep))
 
 
-def run_nhl(root, api_cache, git_log_text, *, title=""):
+def run_nhl(root, api_cache, git_log_text, *, title="", kalshi_dir=None):
     from . import nhl_archive as H
     from . import nba_universe as U
     b = H.build(root, api_cache, git_log_text)
+    if kalshi_dir:
+        # second outcome source: Kalshi's own settlement, cross-checked per market against the official-API outcome. A disagreeing
+        # settlement row is a conflicting outcome row, which the standard blocks; an agreeing one collapses.
+        from . import nhl_kalshi_settlement as K
+        K.apply(b, K.load_kalshi_settled(kalshi_dir), K.load_schedule(root))
     quotes, qinfo, integ = H.quotes_from_board(root, b["quote_lookups"])
     api = b["api"]
     finals = sorted(g["game"]["date"] for g in api.values() if g["res"]["status"] == "final")
@@ -45,6 +50,10 @@ def run_nhl(root, api_cache, git_log_text, *, title=""):
                                     n_official_final=len(finals), n_forecast_rows=len(b["forecasts"]), n_outcome_rows=len(b["outcomes"]),
                                     n_quote_rows=len(quotes), n_eligible_rows=len(eligible), universe_basis="ALL_BOARD_GAME_BOUND",
                                     market_reconciliation=recon)
+    if kalshi_dir:
+        from . import nhl_kalshi_settlement as K
+        rep["source_accounting"]["outcome_sources"] = ["official_nhl_api (sports)", "kalshi_settlement (market_settlement)"]
+        rep["secondary_native_family"] = K.native_family_cells(g["rows"], b["forecasts"])
     return rep
 
 
@@ -66,6 +75,8 @@ def main(argv=None) -> int:
     h.add_argument("--api-cache", required=True, help="dir written by scripts/fetch_nhl_api_outcomes.py")
     h.add_argument("--git-log", required=True, help="output of: git log --no-renames --format='C %%H %%cI %%aI %%s' --name-status <data-archive ref> "
                    "-- predictions predictions_v2 predictions_player predictions_oa")
+    h.add_argument("--kalshi-dir", help="optional dir of settled-market pages written by scripts/alpha_eval/fetch_kalshi_settled.py: adds Kalshi's own "
+                   "settlement as a second outcome source and cross-checks it per market against the official-API outcome")
     h.add_argument("--out-dir", required=True); h.add_argument("--title", default="")
     c = sub.add_parser("coverage"); c.add_argument("--out-dir", required=True)
     e = sub.add_parser("example"); e.add_argument("--out-dir", required=True)
@@ -112,7 +123,12 @@ def main(argv=None) -> int:
                                         market_reconciliation=recon)
         _write(out, "nba_shadow_cumulative", rep)
     elif a.cmd == "nhl-archive":
-        _write(out, "nhl_archive_cumulative", run_nhl(a.root, a.api_cache, Path(a.git_log).read_text(), title=a.title))
+        rep = run_nhl(a.root, a.api_cache, Path(a.git_log).read_text(), title=a.title, kalshi_dir=a.kalshi_dir)
+        _write(out, "nhl_archive_cumulative", rep)
+        if "secondary_native_family" in rep:
+            from . import nhl_kalshi_settlement as K
+            with open(out / "nhl_archive_cumulative.md", "a") as fh:
+                fh.write(K.native_family_markdown(rep["secondary_native_family"]))
     elif a.cmd == "coverage":
         m = cov.build()
         out.mkdir(parents=True, exist_ok=True)

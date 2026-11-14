@@ -185,11 +185,11 @@ def build(arch: Path, repo: Path):
     ext["slate"] = (ext["tip"] - pd.Timedelta(hours=J.SLATE_SHIFT_H)).dt.strftime("%Y-%m-%d")
     obs_ok = bool((ext["obs_at"] > ext["tip"]).all()); asof_ok = bool((ext["as_of"] < ext["tip"]).all())
     plaus = bool((ext[["fh", "fa"]].min(axis=None) >= 20) and (ext[["fh", "fa"]].max(axis=None) <= 160) and (ext["fh"] != ext["fa"]).all())
-    checks.append(dict(name="extension_schedule_finals_orientation_by_team_id", passed=n_unver == 0,
+    checks.append(C.check(name="extension_schedule_finals_orientation_by_team_id", passed=n_unver == 0,
                        detail=f"{len(ext)} games after the last period-score tip with a schedule-archive STATUS_FINAL row: {n_swap} neutral-site SWAPPED (remapped), {n_unver} unverified (dropped)"))
-    checks.append(dict(name="extension_final_first_observed_after_tip_and_projection_before_tip", passed=obs_ok and asof_ok,
+    checks.append(C.check(name="extension_final_first_observed_after_tip_and_projection_before_tip", passed=obs_ok and asof_ok,
                        detail=f"final first observed after scheduled tip: {obs_ok}; as_of < tip: {asof_ok}; walk-forward uses the FIRST final observation time"))
-    checks.append(dict(name="extension_score_plausibility_no_tied_final", passed=plaus, detail=f"{len(ext)} extension finals in 20-160, none tied: {plaus}"))
+    checks.append(C.check(name="extension_score_plausibility_no_tied_final", passed=plaus, detail=f"{len(ext)} extension finals in 20-160, none tied: {plaus}"))
     # verified games: the walk-forward availability clock is the period-score observation time
     keep = ["game_id", "espn", "tip", "as_of", "slate", "site", "home_tid", "away_tid", "margin", "total", "msd", "tsd", "hw", "fh", "fa", "obs_at", "src"]
     rel = runs.set_index(["game_id", "as_of"])["rel"]
@@ -200,7 +200,7 @@ def build(arch: Path, repo: Path):
     gmin = np.minimum(g["hgs"], g["ags"]).clip(upper=11).astype(int)
     model = json.load(open(repo / "models" / "pure" / f"{INCUMBENT_ID}.json"))
     sig = gmin.map(lambda k: model["sigma_margin_by_games"][str(k)])
-    checks.append(dict(name="frozen_margin_sd_equals_sigma_by_min_games_seen", passed=bool(np.allclose(sig, g["msd"], atol=1e-9)),
+    checks.append(C.check(name="frozen_margin_sd_equals_sigma_by_min_games_seen", passed=bool(np.allclose(sig, g["msd"], atol=1e-9)),
                        detail=f"{int(np.isclose(sig, g['msd'], atol=1e-9).sum())} of {len(g)} frozen margin SDs equal sigma_margin_by_games[min(home,away games_seen)] of models/pure/{INCUMBENT_ID}.json"))
     g["y_m"] = g["fh"] - g["fa"]; g["y_t"] = g["fh"] + g["fa"]
     return g, audit, checks, tips, dict(extension_games=len(ext), extension_first_tip=str(ext["tip"].min()), extension_last_tip=str(ext["tip"].max()),
@@ -270,11 +270,11 @@ def load_market_rows(arch, games, tips, workers=None):
     k["tight"] = k["two_sided"] & ((k["ask"] - k["bid"]) <= J.TIGHT_SPREAD + 1e-9)
     k["mid"] = np.where(k["tight"], (k["bid"] + k["ask"]) / 2.0, np.nan)
     k["family"] = np.where(k["mtype"] == "WINNER", "game_moneyline", "game_spread")
-    chk = [dict(name="kalshi_side_resolved_by_subject_team_id", passed=n_unres == 0,
+    chk = [C.check(name="kalshi_side_resolved_by_subject_team_id", passed=n_unres == 0,
                 detail=f"{len(k) + n_unres} full-game winner/spread contracts in used games: {n_flip} contracts in {flip_games} neutral-site games carried the schedule-frame home/away label and were re-labelled by subject_team_id; {n_unres} unresolved (dropped)"),
-           dict(name="own_settlement_matches_kalshi_result", passed=agree == int(have.sum()),
+           C.check(name="own_settlement_matches_kalshi_result", passed=agree == int(have.sum()),
                 detail=f"{int(have.sum())} contracts carry a Kalshi result; {agree} agree with the outcome settled here"),
-           dict(name="non_half_integer_or_non_greater_spread_strikes_excluded", passed=True, detail=f"{int(bad.sum())} excluded")]
+           C.check(name="non_half_integer_or_non_greater_spread_strikes_excluded", passed=True, basis="ATTESTED", detail=f"{int(bad.sum())} excluded")]
     return k, chk, pmeta
 
 
@@ -284,14 +284,14 @@ def run(arch: Path, repo: Path, out_dir: Path = OUT_DIR, workers=None):
     net, ret, tmeta = team_tables(repo)
     g["net_h"] = g["home_tid"].map(net); g["net_a"] = g["away_tid"].map(net); g["ret_h"] = g["home_tid"].map(ret); g["ret_a"] = g["away_tid"].map(ret)
     cov = dict(prior_net_both=int((g["net_h"].notna() & g["net_a"].notna()).sum()), ret_min_both=int((g["ret_h"].notna() & g["ret_a"].notna()).sum()))
-    checks.append(dict(name="checkpoint_tables_match_manifest_sha256", passed=all(tmeta["sha_match"].values()), detail=f"{CKPT}: {tmeta['sha_match']}"))
-    checks.append(dict(name="checkpoint_tables_frozen_before_season", passed=tmeta["preseason_season"] == 2027 and tmeta["finals_seasons"][1] == 2026,
+    checks.append(C.check(name="checkpoint_tables_match_manifest_sha256", passed=all(tmeta["sha_match"].values()), detail=f"{CKPT}: {tmeta['sha_match']}"))
+    checks.append(C.check(name="checkpoint_tables_frozen_before_season", passed=tmeta["preseason_season"] == 2027 and tmeta["finals_seasons"][1] == 2026,
                        detail=f"finals.parquet: {tmeta['finals_rows']} team-seasons {tmeta['finals_seasons']} (end-of-season ratings, last = 2026, i.e. before the 2026-27 season); preseason.parquet: {tmeta['preseason_rows']} teams, season {tmeta['preseason_season']} built at the 2026 boundary"))
-    checks.append(dict(name="team_feature_coverage", passed=True, detail=f"{len(g)} games: prior-season net for both teams {cov['prior_net_both']}, returning-minutes for both teams {cov['ret_min_both']} (missing -> feature 0, i.e. no adjustment)"))
+    checks.append(C.check(name="team_feature_coverage", passed=True, basis="ATTESTED", detail=f"{len(g)} games: prior-season net for both teams {cov['prior_net_both']}, returning-minutes for both teams {cov['ret_min_both']} (missing -> feature 0, i.e. no adjustment)"))
     cut = J._cohort_of(g["slate"]); g["cohort"] = np.where(g["slate"] < cut, "cohort_1", "cohort_2")
     params = walk_forward(g)
     leak_ok = all(p["train_max_slate"] is None or p["train_max_slate"] < d for d, p in params.items())
-    checks.append(dict(name="walk_forward_training_strictly_before_slate", passed=bool(leak_ok),
+    checks.append(C.check(name="walk_forward_training_strictly_before_slate", passed=bool(leak_ok),
                        detail="; ".join(f"{d}: n={p['n_train']}" if "n_train" in p else f"{d}: n={p['n']}" for d, p in params.items())))
     arr = {a: apply_arm(g, params, a) for a in ["INC"] + ARMS}
     ids = g["game_id"].to_numpy(); coh = g["cohort"].to_numpy(); ym = g["y_m"].to_numpy(float); yt = g["y_t"].to_numpy(float)

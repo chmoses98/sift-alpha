@@ -50,11 +50,30 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(C.validate_evaluation({}))
         doc = {"schema": C.EVAL_SCHEMA, "status": "RESEARCH_ONLY", "sport": "NBA", "challenger_id": "x", "incumbent_id": "y", "source_commits": {},
                "data": [{"dataset_id": "d", "repo": "r", "path": "p", "rows": 1, "first": "a", "last": "b", "rights_tier": "t", "kind": "HISTORICAL_BACKFILL"}],
-               "features": [{"feature_id": "f", "catalog_inputs": [], "description": "", "pit_rule": "", "checks": [{"name": "n", "passed": True, "detail": ""}]}],
+               "features": [{"feature_id": "f", "catalog_inputs": [], "description": "", "pit_rule": "", "checks": [C.check("n", True, "")]}],
                "design": {}, "results": [], "verdict": {"overall": "INCONCLUSIVE"}, "limitations": [], "input_stage_claims": [{"input": "NBA:x", "stage": "EVALUATED", "outcome": "OK"}]}
         self.assertEqual(C.validate_evaluation(doc), [])
         doc["verdict"]["overall"] = "PROFITABLE"; doc["data"][0]["kind"] = "LIVE"; doc["input_stage_claims"][0]["stage"] = "DONE"
         self.assertEqual(len(C.validate_evaluation(doc)), 3)
+
+    def test_checks_must_say_how_they_were_obtained(self):
+        self.assertEqual(C.check("n", C.ATTESTED, "design statement"), {"name": "n", "passed": True, "detail": "design statement", "basis": "ATTESTED"})
+        self.assertEqual(C.check("n", 1 > 2, "")["basis"], "COMPUTED")
+        doc = {"schema": C.EVAL_SCHEMA, "status": "RESEARCH_ONLY", "sport": "NBA", "challenger_id": "x", "incumbent_id": "y", "source_commits": {}, "data": [],
+               "features": [{"feature_id": "f", "catalog_inputs": [], "description": "", "pit_rule": "", "checks": [{"name": "n", "passed": True, "detail": ""}]}],
+               "design": {}, "results": [], "verdict": {"overall": "INCONCLUSIVE"}, "limitations": [], "input_stage_claims": []}
+        self.assertEqual(len(C.validate_evaluation(doc)), 1)                       # no basis: rejected
+        doc["features"][0]["checks"] = [{"name": "n", "passed": False, "detail": "", "basis": "ATTESTED"}]
+        self.assertEqual(len(C.validate_evaluation(doc)), 1)                       # an attested check cannot fail
+
+    def test_committed_evaluations_never_count_an_attested_check_as_verified(self):
+        led = json.loads((OPS / "pipeline_ledger.json").read_text())
+        for k, ch in led["challengers"].items():
+            ev = json.loads((ROOT / ch["path"]).read_text())
+            for f, src in zip(ch["features"], ev["features"]):
+                att = [c["name"] for c in src["checks"] if c["basis"] == "ATTESTED"]
+                self.assertEqual(f["checks_attested"], att, k)
+                self.assertEqual(f["checks_passed"] + len(att) + len(f["checks_failed"]), f["checks_total"], k)
 
 
 class StageLogicTests(unittest.TestCase):
@@ -243,6 +262,15 @@ class LoopHealthTests(unittest.TestCase):
     def test_stale_market_watch_degrades_health(self):
         h = loop.finish([self.OK], "2027-03-01T00:00:00Z")
         self.assertEqual(h["overall"], "DEGRADED"); self.assertTrue(h["stale"])
+
+    def test_old_evaluation_data_degrades_health(self):
+        now = json.loads((OPS / "market_watch.json").read_text())["observed_utc"]
+        h = loop.finish([self.OK], now)
+        self.assertEqual(set(h["evaluation_freshness"]), {"NBA", "CBB", "NHL"})
+        newest = max(v["data_through"] for v in h["evaluation_freshness"].values())
+        import datetime as dt
+        later = (dt.date.fromisoformat(newest) + dt.timedelta(days=loop.EVAL_STALE_DAYS + 1)).isoformat() + "T00:00:00Z"
+        self.assertTrue(any("evaluations read data only through" in x for x in loop.finish([self.OK], later)["stale"]))
 
     def test_every_step_has_a_hard_timeout(self):
         self.assertEqual(set(loop.STEP_TIMEOUT_S), {"market_watch", "ledger", *loop.CHALLENGERS})

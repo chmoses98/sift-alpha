@@ -91,7 +91,7 @@ def test_committed_matrix_full_extension_inputs_are_certified_with_evidence():
     audit = {a["id"]: a for a in json.loads((VC.DF / "input_audit.json").read_text())["rows"]}
     sp = {i: s for s, rp in exts.items() for i in rp["inputs"]}
     for r in ext:
-        assert r["verified_status"] in ("VERIFIED_FULL", "VERIFIED_PARTIAL", "REQUIRES_COLLECTION", "REPLAY_FAILED", "DOWNGRADED_BY_VERIFIER", "PIT_QUARANTINED"), r["id"]
+        assert r["verified_status"] in ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY", "REQUIRES_COLLECTION", "REPLAY_FAILED", "DOWNGRADED_BY_VERIFIER", "PIT_QUARANTINED"), r["id"]      # PROXY (Phase 15: nba.lineup_adj_rating) is weaker than PARTIAL; the FULL certification rule below is unchanged
         if r["verified_status"] == "VERIFIED_FULL":
             assert r["evidence"].get("full_certified") and r["id"] in certs, r["id"]
             rpi = exts[sp[r["id"]]]["inputs"][r["id"]]      # independent recomputation of the gate from raw evidence agrees

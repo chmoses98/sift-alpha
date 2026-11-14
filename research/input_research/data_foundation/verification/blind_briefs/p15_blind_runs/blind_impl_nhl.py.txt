@@ -1,0 +1,576 @@
+"""Blind re-implementation of BRIEF.md (Phase 15). Reads only the data dir, writes the out dir."""
+import glob, json, math, os
+import numpy as np
+import pandas as pd
+
+B = '/tmp/claude-0/-home-user/4b121d0a-de18-5db8-915a-3a1ef1a5904f/scratchpad/blind/nhl/'
+D = B + 'data/'
+OUT = B + 'out/'
+os.makedirs(OUT, exist_ok=True)
+
+
+def load(kind, cols=None):
+    fs = sorted(glob.glob(D + kind + '_*.parquet'))
+    return pd.concat([pd.read_parquet(f, columns=cols) for f in fs], ignore_index=True)
+
+
+def prior_sum(df, col, by=()):
+    """Sum of col over rows of df with the same `by` values and date < row's date."""
+    by = list(by)
+    keys = by + ['date']
+    g = df.groupby(keys, sort=True)[col].sum()
+    c = (g.groupby(level=by).cumsum() if by else g.cumsum()) - g
+    idx = pd.MultiIndex.from_frame(df[keys]) if len(keys) > 1 else pd.Index(df['date'])
+    return c.reindex(idx).to_numpy(dtype=float)
+
+
+def sdiv(a, b):
+    a = np.asarray(a, dtype=float); b = np.asarray(b, dtype=float)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.where(b != 0, a / b, np.nan)
+
+
+def ewm_pre(df, col, ent, H, m):
+    return df.groupby(ent, sort=False)[col].transform(
+        lambda s: s.shift(1).ewm(halflife=H, min_periods=m).mean())
+
+
+def other(df, col):
+    s = df.set_index(['game_id', 'team'])[col]
+    return s.reindex(pd.MultiIndex.from_frame(df[['game_id', 'opp']])).to_numpy()
+
+
+def wsum(x, pos, N, H):
+    """x ordered by entity (contiguous) then chronologically; pos = index within entity."""
+    x = np.asarray(x, dtype=float)
+    out = np.zeros(len(x))
+    for k in range(1, N + 1):
+        idx = np.nonzero(pos >= k)[0]
+        if len(idx) == 0:
+            break
+        out[idx] += x[idx - k] * 0.5 ** (k / H)
+    return out
+
+
+# =============================================================== TABLE 1
+g = load('nhl/games')
+g = g[g['final'] == True].copy()
+g['date'] = pd.to_datetime(g['game_date']).dt.normalize()
+rows = []
+for home in (True, False):
+    a, b = ('home', 'away') if home else ('away', 'home')
+    rows.append(pd.DataFrame({
+        'game_id': g['game_id'].astype('int64').values, 'date': g['date'].values,
+        'team': g[a + '_team_id'].astype('int64').values, 'opp': g[b + '_team_id'].astype('int64').values,
+        'home': home, 'season': g['season'].astype('int64').values,
+        'gtype': g['game_type'].astype('int64').values,
+        'gf': g[a + '_score'].astype('float').values, 'ga': g[b + '_score'].astype('float').values,
+        'lpt': g['last_period_type'].astype(str).values}))
+t1 = pd.concat(rows, ignore_index=True).sort_values(['date', 'game_id', 'team']).reset_index(drop=True)
+t1['beyond'] = t1['lpt'].isin(['OT', 'SO']).astype(float)
+t1['win'] = (t1['gf'] > t1['ga']).astype(float)
+t1['one'] = 1.0
+reg = t1['gtype'] == 2
+po = t1['gtype'] == 3
+R1 = t1[reg].copy()
+
+# --- settlement_goal_pmf
+R1['rgd'] = np.where(R1['beyond'] == 1, 0.0, R1['gf'] - R1['ga'])
+R1['r_pre'] = ewm_pre(R1, 'rgd', 'team', 40, 10)
+gap = R1['r_pre'].to_numpy() - other(R1, 'r_pre')
+bucket = np.full(len(R1), np.nan)
+ok = ~np.isnan(gap)
+bucket[ok] = np.select([gap[ok] < -0.75, gap[ok] < -0.25, gap[ok] < 0.25, gap[ok] < 0.75], [0, 1, 2, 3], 4)
+R1['bucket'] = bucket
+dgf = R1['gf'] - R1['ga']
+R1['ev_regtie'] = R1['beyond']
+for n_ in (1, 2, 3):
+    R1['ev_ge%d' % n_] = (dgf >= n_).astype(float)
+Bk = R1[R1['bucket'].notna()].copy()
+nL = prior_sum(Bk, 'one'); nc = prior_sum(Bk, 'one', ['bucket', 'home'])
+for x in ('regtie', 'ge1', 'ge2', 'ge3'):
+    Lx = sdiv(prior_sum(Bk, 'ev_' + x), nL)
+    Sc = prior_sum(Bk, 'ev_' + x, ['bucket', 'home'])
+    Bk['sg_p_%s_pre' % x] = (Sc + 200 * Lx) / (nc + 200)
+    R1['sg_p_%s_pre' % x] = Bk['sg_p_%s_pre' % x]
+
+# --- team_season_points_distribution
+R1['rw'] = ((R1['win'] == 1) & (R1['beyond'] == 0)).astype(float)
+R1['ew'] = ((R1['win'] == 1) & (R1['beyond'] == 1)).astype(float)
+R1['el'] = ((R1['win'] == 0) & (R1['beyond'] == 1)).astype(float)
+gs_ = R1.groupby(['team', 'season'], sort=False)
+n = gs_.cumcount().to_numpy(dtype=float)
+cnt = prior_sum(R1, 'one')
+S, P = {}, {}
+for c in ('rw', 'ew', 'el'):
+    S[c] = (gs_[c].cumsum() - R1[c]).to_numpy()
+    P[c] = (S[c] + 20 * sdiv(prior_sum(R1, c), cnt)) / (n + 20)
+ppg = 2 * (P['rw'] + P['ew']) + P['el']
+var = 4 * (P['rw'] + P['ew']) + P['el'] - ppg ** 2
+Ls = np.where(R1['season'] == 2012, 48, np.where(R1['season'] == 2020, 56, 82))
+Rm = np.maximum(Ls - n, 0)
+pts = 2 * (S['rw'] + S['ew']) + S['el']
+R1['tp_points_pre'] = pts
+R1['tp_exp_final_pre'] = pts + Rm * ppg
+with np.errstate(invalid='ignore'):
+    R1['tp_sd_final_pre'] = np.sqrt(Rm * var)
+
+# --- playoff_context (all rows)
+t1['tot'] = t1['gf'] + t1['ga']
+hr = t1[t1['home']]
+dates = np.sort(t1['date'].unique())
+pc = pd.DataFrame(index=dates)
+for gt, nm in ((3, 'p'), (2, 'r')):
+    sub = hr[hr['gtype'] == gt]
+    for c in ('one', 'tot', 'beyond', 'win'):
+        s = sub.groupby('date')[c].sum().reindex(dates, fill_value=0.0)
+        pc[nm + c] = s.cumsum() - s
+for c, out in (('tot', 'pc_goals_ratio_pre'), ('beyond', 'pc_ot_ratio_pre'), ('win', 'pc_homewin_ratio_pre')):
+    pm = sdiv(pc['p' + c], pc['pone']); rm = sdiv(pc['r' + c], pc['rone'])
+    with np.errstate(invalid='ignore', divide='ignore'):
+        v = np.where((rm > 0) & ~np.isnan(pm), pm / rm, np.nan)
+    t1[out] = pd.Series(v, index=dates).reindex(t1['date']).to_numpy()
+ph_by_date = pd.Series(np.where(pc['pone'] >= 50, sdiv(pc['pwin'], pc['pone']), np.nan), index=dates)
+
+# --- series_context (playoff rows)
+P1 = t1[po].copy()
+P1['lo'] = np.minimum(P1['team'], P1['opp']); P1['hi'] = np.maximum(P1['team'], P1['opp'])
+P1['ph'] = ph_by_date.reindex(P1['date']).to_numpy()
+P1['sc_p_home_hist_pre'] = P1['ph']
+P1['sc_p_series_pre'] = np.nan; P1['sc_goal_diff_pre'] = np.nan
+
+
+def Fser(a, b, g_, ph, memo):
+    if a >= 4: return 1.0
+    if b >= 4: return 0.0
+    if g_ > 7: return 0.5
+    key = (a, b, g_)
+    if key in memo: return memo[key]
+    p = ph if g_ in (1, 2, 5, 7) else 1 - ph
+    v = p * Fser(a + 1, b, g_ + 1, ph, memo) + (1 - p) * Fser(a, b + 1, g_ + 1, ph, memo)
+    memo[key] = v
+    return v
+
+
+for key, grp in P1.groupby(['season', 'lo', 'hi'], sort=False):
+    grp = grp.sort_values(['date', 'game_id'])
+    gids = list(dict.fromkeys(grp['game_id'].tolist()))
+    first = grp[grp['game_id'] == gids[0]]
+    top = int(first.loc[first['home'], 'team'].iloc[0])
+    wins = {}; gd = {}
+    for k, gid in enumerate(gids, start=1):
+        gr = grp[grp['game_id'] == gid]
+        for ix, r in gr.iterrows():
+            tm = int(r['team']); op = int(r['opp'])
+            oth = op if tm == top else tm
+            P1.at[ix, 'sc_goal_diff_pre'] = gd.get(tm, 0.0)
+            ph = r['ph']
+            if not np.isnan(ph):
+                f = Fser(wins.get(top, 0), wins.get(oth, 0), k, ph, {})
+                P1.at[ix, 'sc_p_series_pre'] = f if tm == top else 1 - f
+        for ix, r in gr.iterrows():
+            tm = int(r['team'])
+            wins[tm] = wins.get(tm, 0) + int(r['win'])
+            gd[tm] = gd.get(tm, 0.0) + (r['gf'] - r['ga'])
+
+# --- ratings_script_distribution
+mp = load('moneypuck/team_games', ['game_id', 'team_id', 'situation', 'iceTime',
+                                   'scoreVenueAdjustedxGoalsFor', 'scoreVenueAdjustedxGoalsAgainst'])
+mp = mp[(mp['situation'] == 'all') & mp['team_id'].notna()].drop_duplicates(['game_id', 'team_id'], keep='first')
+mp['team'] = mp['team_id'].astype('int64'); mp['game_id'] = mp['game_id'].astype('int64')
+ice = np.where(mp['iceTime'] > 0, mp['iceTime'] / 3600.0, np.nan)
+mp['xgf60'] = mp['scoreVenueAdjustedxGoalsFor'].astype(float) / ice
+mp['xga60'] = mp['scoreVenueAdjustedxGoalsAgainst'].astype(float) / ice
+R1 = R1.reset_index().merge(mp[['game_id', 'team', 'xgf60', 'xga60']], on=['game_id', 'team'], how='left').set_index('index')
+Rs = R1.sort_values(['team', 'date', 'game_id'])
+pos = Rs.groupby('team', sort=False).cumcount().to_numpy()
+res = {}
+for c in ('xgf60', 'xga60'):
+    v = Rs[c].to_numpy(dtype=float); nn = ~np.isnan(v)
+    num = wsum(np.where(nn, v, 0.0), pos, 40, 20)
+    den = wsum(nn.astype(float), pos, 40, 20)
+    cs = np.concatenate([[0.0], np.cumsum(nn.astype(float))])
+    j = np.arange(len(v)); k = cs[j] - cs[j - np.minimum(pos, 40)]
+    mean = np.where(k >= 5, sdiv(num, den), np.nan)
+    res[c] = (pd.Series(mean, index=Rs.index).reindex(R1.index).to_numpy(),
+              pd.Series(k, index=Rs.index).reindex(R1.index).to_numpy())
+R1['xf0'] = R1['xgf60'].fillna(0.0); R1['xfn'] = R1['xgf60'].notna().astype(float)
+lg = sdiv(prior_sum(R1, 'xf0'), prior_sum(R1, 'xfn'))
+R1['rs_xgf60_pre'] = (res['xgf60'][1] * res['xgf60'][0] + 25 * lg) / (res['xgf60'][1] + 25)
+R1['rs_xga60_pre'] = (res['xga60'][1] * res['xga60'][0] + 25 * lg) / (res['xga60'][1] + 25)
+both = R1['home'] & R1['xgf60'].notna() & R1['xga60'].notna()
+R1['hd'] = np.where(both, R1['xgf60'] - R1['xga60'], 0.0); R1['hn'] = both.astype(float)
+hc = sdiv(prior_sum(R1, 'hd'), prior_sum(R1, 'hn'))
+o_xga = other(R1, 'rs_xga60_pre')
+with np.errstate(invalid='ignore', divide='ignore'):
+    R1['rs_lambda_pre'] = lg * (R1['rs_xgf60_pre'].to_numpy() / lg) * (o_xga / lg) + np.where(R1['home'], 0.5, -0.5) * hc
+
+# --- game_script_prob
+la = R1['rs_lambda_pre'].to_numpy(dtype=float); lb = other(R1, 'rs_lambda_pre').astype(float)
+good = ~np.isnan(la) & ~np.isnan(lb) & (la > 0) & (lb > 0)
+fact = np.array([math.factorial(i) for i in range(16)], dtype=float)
+ii = np.arange(16)
+for T in (20, 40):
+    lead = np.full(len(R1), np.nan); tied = np.full(len(R1), np.nan)
+    a = la[good] * T / 60; b = lb[good] * T / 60
+    Pa = np.exp(-a)[:, None] * a[:, None] ** ii[None, :] / fact[None, :]
+    Pb = np.exp(-b)[:, None] * b[:, None] ** ii[None, :] / fact[None, :]
+    cb = np.cumsum(Pb, axis=1)  # sum_{j<=i}
+    cbl = np.concatenate([np.zeros((len(a), 1)), cb[:, :-1]], axis=1)  # sum_{j<i}
+    lead[good] = (Pa * cbl).sum(axis=1); tied[good] = (Pa * Pb).sum(axis=1)
+    R1['gsp_lead%d_pre' % T] = lead; R1['gsp_tied%d_pre' % T] = tied
+
+C1 = (['sg_p_regtie_pre', 'sg_p_ge1_pre', 'sg_p_ge2_pre', 'sg_p_ge3_pre',
+       'tp_points_pre', 'tp_exp_final_pre', 'tp_sd_final_pre',
+       'pc_goals_ratio_pre', 'pc_ot_ratio_pre', 'pc_homewin_ratio_pre',
+       'sc_p_series_pre', 'sc_goal_diff_pre', 'sc_p_home_hist_pre',
+       'rs_xgf60_pre', 'rs_xga60_pre', 'rs_lambda_pre',
+       'gsp_lead20_pre', 'gsp_tied20_pre', 'gsp_lead40_pre', 'gsp_tied40_pre'])
+for c in C1:
+    if c.startswith('pc_'): continue
+    src = P1 if c.startswith('sc_') else R1
+    t1[c] = src[c].reindex(t1.index)
+t1[['game_id', 'team'] + C1].to_csv(OUT + 'blind_nhl2.csv', index=False)
+print('T1', t1.shape, t1[C1].notna().sum().to_dict())
+
+# =============================================================== TABLE 2
+ts = load('players/team_states')
+ts = ts[(ts['game_type'] == 2) & (ts['season'] <= 2025)].drop_duplicates(['game_id', 'team_id'], keep='first')
+ts = ts[ts.groupby('game_id')['team_id'].transform('size') == 2].copy()
+ts['date'] = pd.to_datetime(ts['game_date']).dt.normalize()
+ts['team'] = ts['team_id'].astype('int64'); ts['home'] = ts['is_home'].astype(bool)
+t2 = ts.sort_values(['date', 'game_id', 'team']).reset_index(drop=True)
+t2['opp'] = t2.groupby('game_id')['team'].transform('sum') - t2['team']
+t2['one'] = 1.0
+ugames = set(t2['game_id'])
+key2 = pd.MultiIndex.from_frame(t2[['game_id', 'home']])
+
+
+def per_side(df, mask):
+    s = df[mask].groupby(['game_id', 'is_home']).size()
+    return s.reindex(key2, fill_value=0).to_numpy(dtype=float)
+
+
+go = load('players/goals', ['game_id', 'period', 'period_type', 't_s', 'is_home', 'scorer_id', 'a1_id', 'a2_id', 'strength'])
+go_all = go
+go = go[go['game_id'].isin(ugames)].copy()
+t2['f10'] = per_side(go, (go['period'] == 1) & (go['t_s'] < 600))
+t2['f5'] = per_side(go, (go['period'] == 1) & (go['t_s'] < 300))
+t2['fot'] = per_side(go, go['period_type'] == 'OT')
+for k in (1, 2, 3):
+    t2['fp%d' % k] = per_side(go, (go['period_type'] == 'REG') & (go['period'] == k))
+for c in ('10', '5', 'ot', 'p1', 'p2', 'p3'):
+    t2['a' + c] = other(t2, 'f' + c)
+# first goal
+tmin = go.groupby('game_id')['t_s'].transform('min')
+fg = go[go['t_s'] == tmin].groupby('game_id')['is_home'].agg(['min', 'max'])
+fgv = pd.Series(np.where(fg['min'] == fg['max'], np.where(fg['max'], 1.0, 0.0), 0.5), index=fg.index)  # 1 = home first
+hv = fgv.reindex(t2['game_id']).to_numpy()
+t2['sf'] = np.where(np.isnan(hv), 0.5, np.where(t2['home'], hv, 1 - hv))
+otmin = go[go['period_type'] == 'OT'].groupby('game_id')['t_s'].min().reindex(t2['game_id']).to_numpy(dtype=float)
+t2['ot_sec'] = np.where(t2['n_seconds'] <= 3600, 0.0, np.where(np.isnan(otmin), 300.0, np.clip(otmin - 3600, 0, 300)))
+sh = load('players/shots', ['game_id', 'is_home', 'kind', 'strength'])
+sh = sh[sh['game_id'].isin(ugames) & sh['kind'].isin(['SOG', 'GOAL'])]
+t2['sog_ev'] = per_side(sh, sh['strength'] == 'EV')
+t2['sog_pp'] = per_side(sh, sh['strength'] == 'PP')
+t2['sog_eva'] = other(t2, 'sog_ev')
+gl = load('players/goalies', ['game_id', 'is_home', 'player_id', 'starter', 'toi_s'])
+gl = gl[gl['game_id'].isin(ugames)].copy()
+gl['hs'] = gl.groupby(['game_id', 'is_home'])['starter'].transform('any')
+gl = gl[(gl['starter'] == True) | (~gl['hs'])]
+gl = gl.sort_values(['game_id', 'is_home', 'toi_s', 'player_id'], ascending=[True, True, False, True])
+gl = gl.drop_duplicates(['game_id', 'is_home'], keep='first').set_index(['game_id', 'is_home'])
+t2['starter_id'] = gl['player_id'].reindex(key2).to_numpy(dtype=float)
+t2['st_toi'] = gl['toi_s'].reindex(key2).to_numpy(dtype=float)
+
+# --- goalie_start
+N2 = len(t2)
+top = np.full(N2, np.nan); share = np.full(N2, np.nan); consec = np.full(N2, np.nan); rest = np.full(N2, np.nan)
+b2b = np.zeros(N2)
+for tm, grp in t2.groupby('team', sort=False):
+    ix = grp.index.to_numpy(); st = grp['starter_id'].to_numpy(); dt = grp['date'].to_numpy()
+    for i in range(len(ix)):
+        if i >= 1 and (dt[i] - dt[i - 1]) == np.timedelta64(1, 'D'):
+            b2b[ix[i]] = 1
+        if i < 5: continue
+        w0 = i - min(20, i)
+        cnts = {}; last = {}
+        for j in range(w0, i):
+            s = st[j]
+            if np.isnan(s): continue
+            cnts[s] = cnts.get(s, 0) + 1; last[s] = j
+        if not cnts: continue
+        tp = max(cnts, key=lambda s: (cnts[s], last[s]))
+        top[ix[i]] = tp; share[ix[i]] = cnts[tp] / (i - w0)
+        c = 0; j = i - 1
+        while j >= w0 and st[j] == tp:
+            c += 1; j -= 1
+        consec[ix[i]] = c
+        rest[ix[i]] = min((dt[i] - dt[last[tp]]) / np.timedelta64(1, 'D'), 14)
+t2['top'] = top; t2['b2b'] = b2b
+t2['gs_top_share_pre'] = share; t2['gs_consec_pre'] = consec; t2['gs_top_rest_pre'] = rest
+t2['y'] = np.where(np.isnan(top), np.nan, (t2['starter_id'].to_numpy() == top).astype(float))
+Y = t2[t2['y'].notna()].copy()
+q = sdiv(prior_sum(Y, 'y', ['b2b']), prior_sum(Y, 'one', ['b2b']))
+gy = Y.groupby(['team', 'b2b'], sort=False)
+sy = (gy['y'].cumsum() - Y['y']).to_numpy(); sn = gy.cumcount().to_numpy(dtype=float)
+Y['gs_p_top_pre'] = (sy + 10 * q) / (sn + 10)
+t2['gs_p_top_pre'] = Y['gs_p_top_pre'].reindex(t2.index)
+
+# --- goalie_minutes_in_net_dist
+st_rows = t2[t2['starter_id'].notna()].copy()
+st_rows['c_lt40'] = (st_rows['st_toi'] < 2400).astype(float)
+st_rows['c_40_55'] = ((st_rows['st_toi'] >= 2400) & (st_rows['st_toi'] < 3300)).astype(float)
+st_rows['c_full'] = (st_rows['st_toi'] >= 3300).astype(float)
+d2 = np.sort(t2['date'].unique())
+qn = st_rows.groupby('date')['one'].sum().reindex(d2, fill_value=0.0); qn = qn.cumsum() - qn
+gdict = {}
+for gid_, grp in st_rows.sort_values('date').groupby('starter_id'):
+    gdict[gid_] = (grp['date'].to_numpy(), {c: np.concatenate([[0.0], np.cumsum(grp['c_' + c].to_numpy())]) for c in ('lt40', '40_55', 'full')})
+tdates = t2['date'].to_numpy()
+for c in ('lt40', '40_55', 'full'):
+    qs = st_rows.groupby('date')['c_' + c].sum().reindex(d2, fill_value=0.0); qs = qs.cumsum() - qs
+    qc = pd.Series(sdiv(qs, qn), index=d2).reindex(t2['date']).to_numpy()
+    out = np.full(N2, np.nan)
+    for i in range(N2):
+        if np.isnan(top[i]): continue
+        dts, cums = gdict[top[i]]
+        nn_ = np.searchsorted(dts, tdates[i], side='left')
+        out[i] = (cums[c][nn_] + 25 * qc[i]) / (nn_ + 25)
+    t2['gm_p_%s_pre' % c] = out
+
+# --- shrunk rates
+tg = t2.groupby('team', sort=False)
+nprev = tg.cumcount().to_numpy(dtype=float)
+cnt2 = prior_sum(t2, 'one')
+
+
+def shr(X):
+    n_ = np.minimum(nprev, 120)
+    return (n_ * ewm_pre(t2, X, 'team', 60, 10).to_numpy() + 30 * sdiv(prior_sum(t2, X), cnt2)) / (n_ + 30)
+
+
+for X in ('f10', 'a10', 'f5', 'a5', 'sf'):
+    t2[X + '_s'] = shr(X)
+la = (t2['f10_s'].to_numpy() + other(t2, 'a10_s')) / 2
+lb = (other(t2, 'f10_s') + t2['a10_s'].to_numpy()) / 2
+t2['ew_gf10_pre'] = t2['f10_s']; t2['ew_ga10_pre'] = t2['a10_s']
+t2['ew_lambda_pre'] = la + lb; t2['ew_p_goal_pre'] = 1 - np.exp(-(la + lb))
+t2['fgh_gf5_pre'] = t2['f5_s']; t2['fgh_ga5_pre'] = t2['a5_s']
+t2['fgh_p_first_pre'] = sdiv(la, la + lb); t2['fgh_first_share_pre'] = t2['sf_s']
+
+# --- period_split
+for k in (1, 2, 3):
+    t2['c%d' % k] = t2['fp%d' % k] + t2['ap%d' % k]
+t2['call'] = t2['c1'] + t2['c2'] + t2['c3']
+Tall = (tg['call'].cumsum() - t2['call']).to_numpy(); Lall = prior_sum(t2, 'call')
+for k in (1, 2, 3):
+    lgk = sdiv(prior_sum(t2, 'c%d' % k), Lall)
+    Tk = (tg['c%d' % k].cumsum() - t2['c%d' % k]).to_numpy()
+    t2['ps_lg_p%d_pre' % k] = lgk
+    t2['ps_dev_p%d_pre' % k] = sdiv((Tk + 300 * lgk) / (Tall + 300), lgk)
+
+# --- ot_3v3_rate
+t2['t5'] = t2['ot_sec'] / 300
+lgo = sdiv(prior_sum(t2, 'fot'), prior_sum(t2, 't5'))
+Fo = (tg['fot'].cumsum() - t2['fot']).to_numpy(); Ao = (tg['aot'].cumsum() - t2['aot']).to_numpy()
+To = (tg['t5'].cumsum() - t2['t5']).to_numpy()
+t2['ot_gf5_pre'] = (Fo + 20 * lgo) / (To + 20); t2['ot_ga5_pre'] = (Ao + 20 * lgo) / (To + 20)
+la2 = (t2['ot_gf5_pre'].to_numpy() + other(t2, 'ot_ga5_pre')) / 2
+lb2 = (other(t2, 'ot_gf5_pre') + t2['ot_ga5_pre'].to_numpy()) / 2
+t2['ot_p_decided_pre'] = 1 - np.exp(-(la2 + lb2)); t2['ot_p_win_pre'] = sdiv(la2, la2 + lb2)
+
+# --- opp_sog_for_rate
+n80 = np.minimum(nprev, 80)
+e = {X: ewm_pre(t2, X, 'team', 40, 5).to_numpy() for X in ('sog_ev', 'sog_pp', 'sog_eva', 'sec_ev', 'sec_pp', 'sec_sh')}
+lg_ev = 3600 * sdiv(prior_sum(t2, 'sog_ev'), prior_sum(t2, 'sec_ev'))
+lg_pp = 3600 * sdiv(prior_sum(t2, 'sog_pp'), prior_sum(t2, 'sec_pp'))
+t2['os_ev60_pre'] = (n80 * 3600 * sdiv(e['sog_ev'], e['sec_ev']) + 15 * lg_ev) / (n80 + 15)
+t2['os_pp60_pre'] = (n80 * 3600 * sdiv(e['sog_pp'], e['sec_pp']) + 15 * lg_pp) / (n80 + 15)
+t2['os_eva60_pre'] = (n80 * 3600 * sdiv(e['sog_eva'], e['sec_ev']) + 15 * lg_ev) / (n80 + 15)
+t2['os_exp_sog_faced_pre'] = (lg_ev * sdiv(other(t2, 'os_ev60_pre'), lg_ev) * sdiv(t2['os_eva60_pre'], lg_ev) * e['sec_ev'] / 3600
+                              + other(t2, 'os_pp60_pre') * e['sec_sh'] / 3600)
+C2 = ['gs_top_share_pre', 'gs_consec_pre', 'gs_top_rest_pre', 'gs_p_top_pre',
+      'gm_p_lt40_pre', 'gm_p_40_55_pre', 'gm_p_full_pre',
+      'ew_gf10_pre', 'ew_ga10_pre', 'ew_lambda_pre', 'ew_p_goal_pre',
+      'fgh_gf5_pre', 'fgh_ga5_pre', 'fgh_p_first_pre', 'fgh_first_share_pre',
+      'ps_lg_p1_pre', 'ps_lg_p2_pre', 'ps_lg_p3_pre', 'ps_dev_p1_pre', 'ps_dev_p2_pre', 'ps_dev_p3_pre',
+      'ot_gf5_pre', 'ot_ga5_pre', 'ot_p_decided_pre', 'ot_p_win_pre',
+      'os_ev60_pre', 'os_pp60_pre', 'os_eva60_pre', 'os_exp_sog_faced_pre']
+t2[['game_id', 'team'] + C2].to_csv(OUT + 'blind_nhl_ev2.csv', index=False)
+print('T2', t2.shape, t2[C2].notna().sum().to_dict())
+
+# =============================================================== TABLE 3
+p = load('players/players', ['game_id', 'season', 'game_date', 'game_type', 'player_id', 'team_id', 'position',
+                             'goals', 'assists', 'points', 'sog', 'toi_s', 'toi_ev_s', 'gf_ev', 'toi_pp_s', 'gf_pp'])
+p = p[(p['game_type'] == 2) & (p['season'] <= 2025)].drop_duplicates(['game_id', 'player_id'], keep='first').copy()
+p['date'] = pd.to_datetime(p['game_date']).dt.normalize()
+p = p.sort_values(['player_id', 'date', 'game_id']).reset_index(drop=True)
+p['pg'] = np.where(p['position'] == 'D', 'D', 'F')
+p['one'] = 1.0
+p['gpf'] = (p['toi_s'] > 0).astype(float)
+for c in ('goals', 'assists', 'points', 'sog'):
+    p[c] = p[c].astype(float)
+# team games
+tgm = p[['season', 'team_id', 'game_id', 'date']].drop_duplicates(['team_id', 'game_id']).sort_values(['date', 'game_id'])
+assert not tgm.duplicated(['team_id', 'date']).any()
+tgm['team_gp'] = tgm.groupby(['season', 'team_id']).cumcount()
+p = p.merge(tgm[['team_id', 'game_id', 'team_gp']], on=['team_id', 'game_id'], how='left')
+assert (p['player_id'].diff().fillna(0) >= 0).all()
+# points by state from goals
+pu_games = set(p['game_id'])
+gg = go_all[go_all['game_id'].isin(pu_games) & go_all['strength'].isin(['EV', 'PP'])]
+lst = []
+for c in ('scorer_id', 'a1_id', 'a2_id'):
+    x = gg[['game_id', 'strength', c]].dropna().rename(columns={c: 'player_id'})
+    x['player_id'] = x['player_id'].astype('int64'); lst.append(x)
+pc_ = pd.concat(lst).groupby(['game_id', 'player_id', 'strength']).size().unstack('strength', fill_value=0)
+kp = pd.MultiIndex.from_frame(p[['game_id', 'player_id']])
+for s_, nm in (('EV', 'pts_ev'), ('PP', 'pts_pp')):
+    p[nm] = pc_[s_].reindex(kp, fill_value=0).to_numpy(dtype=float)
+# ixg from moneypuck shots
+ms = load('moneypuck/shots', ['nhl_game_id', 'isHomeTeam', 'homeSkatersOnIce', 'awaySkatersOnIce', 'xGoal', 'shooterPlayerId'])
+ms = ms[ms['nhl_game_id'].isin(pu_games)].copy()
+mgames = set(ms['nhl_game_id'])
+own = np.where(ms['isHomeTeam'] == 1, ms['homeSkatersOnIce'], ms['awaySkatersOnIce'])
+oth = np.where(ms['isHomeTeam'] == 1, ms['awaySkatersOnIce'], ms['homeSkatersOnIce'])
+ms['state'] = np.where(own == oth, 'ev', np.where(own > oth, 'pp', 'x'))
+ms['xGoal'] = ms['xGoal'].astype('float64')
+xs = ms[ms['state'] != 'x'].groupby(['nhl_game_id', 'shooterPlayerId', 'state'])['xGoal'].sum().unstack('state', fill_value=0.0)
+hasg = p['game_id'].isin(mgames).to_numpy()
+for s_ in ('ev', 'pp'):
+    p['ixg_' + s_] = np.where(hasg, xs[s_].reindex(kp, fill_value=0.0).to_numpy(dtype=float), np.nan)
+# team goals
+p['tgf'] = p.groupby(['game_id', 'team_id'])['goals'].transform('sum')
+p['tga'] = p.groupby('game_id')['goals'].transform('sum') - p['tgf']
+
+pos = p.groupby('player_id', sort=False).cumcount().to_numpy()
+gps = p.groupby(['player_id', 'season'], sort=False)
+tot_ps = {}
+
+
+def cur(col):
+    return (gps[col].cumsum() - p[col]).to_numpy(dtype=float)
+
+
+def prev(col, lag):
+    s = p.groupby(['player_id', 'season'])[col].sum()
+    idx = pd.MultiIndex.from_arrays([p['player_id'], p['season'] - lag])
+    return s.reindex(idx, fill_value=0.0).to_numpy(dtype=float)
+
+
+def pgl(col):
+    return prior_sum(p, col, ['pg'])
+
+
+# --- ixg_player
+ptoi = {}
+for st, m0 in (('ev', 18000.0), ('pp', 3600.0)):
+    us = p['ixg_' + st].notna() & p['toi_%s_s' % st].notna()
+    p['x_'] = np.where(us, p['ixg_' + st], 0.0); p['t_'] = np.where(us, p['toi_%s_s' % st], 0.0)
+    r = sdiv(pgl('x_'), pgl('t_'))
+    p['ix_%s60_pre' % st] = 3600 * (wsum(p['x_'].to_numpy(), pos, 60, 25) + m0 * r) / (wsum(p['t_'].to_numpy(), pos, 60, 25) + m0)
+    tn = p['toi_%s_s' % st]
+    ptoi[st] = sdiv(wsum(tn.fillna(0.0).to_numpy(), pos, 60, 25), wsum(tn.notna().astype(float).to_numpy(), pos, 60, 25))
+p['ix_exp_pre'] = p['ix_ev60_pre'] / 3600 * ptoi['ev'] + p['ix_pp60_pre'] / 3600 * ptoi['pp']
+
+# --- ipp_by_state
+gfpg = {}
+for st in ('ev', 'pp'):
+    gfc_ = p['gf_' + st]
+    p['gfc'] = gfc_.fillna(0.0); p['ptc'] = np.where(gfc_.notna(), p['pts_' + st], 0.0)
+    Pn = cur('ptc') + 0.6 * prev('ptc', 1) + 0.4 * prev('ptc', 2)
+    Gn = cur('gfc') + 0.6 * prev('gfc', 1) + 0.4 * prev('gfc', 2)
+    prior = sdiv(pgl('ptc'), pgl('gfc'))
+    p['ipp_%s_pre' % st] = (Pn + 25 * prior) / (Gn + 25)
+    gfpg[st] = sdiv(wsum(p['gfc'].to_numpy(), pos, 40, 20), wsum(gfc_.notna().astype(float).to_numpy(), pos, 40, 20))
+p['ipp_exp_pts_pre'] = gfpg['ev'] * p['ipp_ev_pre'] + gfpg['pp'] * p['ipp_pp_pre']
+
+# --- season projection
+GP = cur('gpf'); tgp = p['team_gp'].to_numpy(dtype=float)
+avail = np.where(tgp > 0, np.minimum(1.0, sdiv(GP, tgp)), 1.0)
+Rr = np.maximum(82 - tgp, 0) * avail
+pv_gp = prev('gpf', 1); pw_gp = prev('gpf', 2)
+lg_gp = pgl('gpf')
+proj = {}
+for c in ('points', 'goals', 'assists'):
+    S0 = cur(c)
+    p['cg_'] = p[c] * p['gpf']
+    lgpos = sdiv(pgl('cg_'), lg_gp)
+    prior = np.where(pv_gp >= 20, sdiv(prev(c, 1), pv_gp), lgpos)
+    epg = (S0 + 10 * prior) / (GP + 10)
+    proj[c] = (S0, epg, S0 + Rr * epg)
+p['psp_points_pre'], p['psp_exp_pg_pre'], p['psp_proj_final_pre'] = proj['points']
+p['aw_goals_pre'] = proj['goals'][0]; p['aw_assists_pre'] = proj['assists'][0]
+p['aw_proj_goals_pre'] = proj['goals'][2]; p['aw_proj_assists_pre'] = proj['assists'][2]
+
+# --- games_played_hazard
+p['gph_share_pre'] = np.where(tgp >= 5, np.minimum(1.0, sdiv(GP, tgp)), np.nan)
+p['gph_exp_remaining_pre'] = Rr
+w1 = np.where(pv_gp >= 1, 0.5, 0.0); w2 = np.where(pw_gp >= 1, 0.3, 0.0)
+p['gph_prior_missed_pre'] = sdiv(w1 * np.maximum(82 - pv_gp, 0) + w2 * np.maximum(82 - pw_gp, 0), w1 + w2)
+m10 = np.full(len(p), np.nan)
+tgp_i = p['team_gp'].to_numpy(); gpf_a = p['gpf'].to_numpy()
+for _, ix in p.groupby(['player_id', 'season', 'team_id'], sort=False).indices.items():
+    k = tgp_i[ix]
+    played = np.sort(k[gpf_a[ix] > 0])
+    c = np.searchsorted(played, k, 'left') - np.searchsorted(played, k - 10, 'left')
+    m10[ix] = np.where(k > 0, np.minimum(10, k) - c, np.nan)
+p['gph_missed10_pre'] = m10
+
+# --- joint_outcome_correlation
+p['win_'] = np.where(p['tgf'] > p['tga'], 1.0, np.where(p['tgf'] == p['tga'], 0.5, 0.0))
+p['tot_'] = p['tgf'] + p['tga']
+nwin = np.minimum(pos, 82); jj = np.arange(len(p))
+
+
+def rs_(v):
+    cs = np.concatenate([[0.0], np.cumsum(v)])
+    return cs[jj] - cs[jj - nwin]
+
+
+for xn, yn, out in (('points', 'tgf', 'joc_pts_tgf_pre'), ('sog', 'tot_', 'joc_sog_total_pre'), ('points', 'win_', 'joc_pts_win_pre')):
+    x = p[xn].to_numpy(dtype=float); y = p[yn].to_numpy(dtype=float)
+    sx, sy_, sxx, syy, sxy = rs_(x), rs_(y), rs_(x * x), rs_(y * y), rs_(x * y)
+    vx = nwin * sxx - sx ** 2; vy = nwin * syy - sy_ ** 2
+    okk = (nwin >= 20) & (vx > 0) & (vy > 0)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        p[out] = np.where(okk, (nwin * sxy - sx * sy_) / np.sqrt(np.where(okk, vx * vy, 1.0)), np.nan)
+
+C3 = ['ix_ev60_pre', 'ix_pp60_pre', 'ix_exp_pre', 'ipp_ev_pre', 'ipp_pp_pre', 'ipp_exp_pts_pre',
+      'psp_points_pre', 'psp_exp_pg_pre', 'psp_proj_final_pre',
+      'aw_goals_pre', 'aw_assists_pre', 'aw_proj_goals_pre', 'aw_proj_assists_pre',
+      'gph_share_pre', 'gph_missed10_pre', 'gph_prior_missed_pre', 'gph_exp_remaining_pre',
+      'joc_pts_tgf_pre', 'joc_sog_total_pre', 'joc_pts_win_pre']
+t3 = p.sort_values(['date', 'game_id', 'player_id']).copy()
+t3['team'] = t3['player_id']
+t3[['game_id', 'team'] + C3].to_csv(OUT + 'blind_nhl_player2.csv', index=False)
+print('T3', t3.shape, t3[C3].notna().sum().to_dict())
+
+notes = {"ambiguities": [
+    "T1: games rows are restricted to final == True; only game types 2 and 3 occur, so every row is regular or playoff.",
+    "T1 sg: o_r_pre is taken from the opponent's regular row of the same game; cell counts nc may be 0 (value then equals L_x); the row's own date is excluded from all league/cell sums.",
+    "T1 tp: 'win and not beyond' etc. evaluated on the 0/1 win and beyond flags; n counts the team's earlier regular rows of the same season.",
+    "T1 pc: ratios computed for every row (regular and playoff) from HOME rows dated strictly before d; NaN if the playoff or regular set is empty or regular mean <= 0.",
+    "T1 sc: series key (season, min, max) pools every playoff meeting of the two teams in a season (incl. any round-robin/qualifying games) into one series, as literally stated; F is evaluated with the row-date ph; sc_goal_diff_pre is filled even when ph is NaN; sc_p_home_hist_pre is ph(d) for the row's date (NaN when fewer than 50 prior playoff home rows).",
+    "T1 rs: moneypuck rows matched on (game_id, team_id); the 40-row window is over the team's earlier regular rows regardless of NaN; weighted mean = sum(w*v)/sum(w) over non-NaN values; rs_xgf60/xga60 are NaN when k < 5 (NaN mean propagates); lg uses xgf60 for both columns.",
+    "T1 gsp: Poisson pmf truncated at i, j = 0..15 without renormalisation.",
+    "T2: goals, shots and goalie rows are attributed to the home/away row by their is_home flag (not team_id).",
+    "T2 sf/tmin: tmin taken over all goal rows of the game (any period type).",
+    "T2 goalie_start: window rows whose starter is undefined count in the window size (share denominator) but cannot be top; top is undefined if no window row has a starter; y = 0 when top is defined but the row's own starter is undefined; rest days = calendar-day difference; b2b = 0 for a team's first row.",
+    "T2 gs_p_top: q(d,b), sy and sn use only rows with defined y; sn/sy are grouped by (team, b2b).",
+    "T2 gm: n counts starts of the top goalie for any team dated strictly before d; q_c computed over all starts dated before d.",
+    "T2 shr: NaN whenever E(X;60,10) is NaN (fewer than 10 earlier rows), even when n = 0, per the NaN-propagation rule; same for os_* with E(.;40,5).",
+    "T2 ot/period/os league ratios: ratio of sums over all universe rows dated before d; NaN when denominator is 0.",
+    "T3: chronological order per player = (date, game_id); team_gp = index of the game among the team_id's distinct universe (players-table) games of that season ordered by date.",
+    "T3 pts_ev/pts_pp: counted from all goals rows of the same game with that strength (assist ids matched after casting to integer).",
+    "T3 ixg: moneypuck xGoal (float32) cast to float64 before summing; 'game has no rows' tested on nhl_game_id over all shot rows (any state).",
+    "T3 pv/pw: 0 when the player has no rows in season-1 / season-2; they are sums over the whole prior season for the player (any team).",
+    "T3 wsum-based ratios (ptoi, gfpg) are NaN when the denominator is 0 (e.g. the player's first row), making ix_exp_pre / ipp_exp_pts_pre NaN there.",
+    "T3 projection: prior = pv(c)/pv(gpf) if pv(gpf) >= 20 else lgpos (lgpos NaN on the first date -> NaN outputs); avail = 1 when team_gp == 0.",
+    "T3 gph_prior_missed: weighted mean over qualifying k of max(82 - g_k, 0) with weights 0.5 / 0.3.",
+    "T3 gph_missed10: previous min(10,k) games of the row's team_id in that season; a game counts as played only if the player has a universe row for that same team_id with toi_s > 0.",
+    "T3 joc: window sums computed as differences of a global cumulative sum (exact for integers/halves).",
+    "CSV: NaN written as empty cells, floats written with pandas default repr (full precision); T1 sorted by (date, game_id, team), T2 likewise, T3 by (date, game_id, player_id).",
+]}
+json.dump(notes, open(OUT + 'blind_nhl_notes.json', 'w'), indent=1)

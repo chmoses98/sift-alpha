@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import glob
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .contract import OPS, ROOT, STAGES, validate_evaluation, write_json
+from .contract import OPS, ROOT, STAGES, reference_kind, validate_evaluation, write_json
 
 MAP = ROOT / "research/input_research/market_input_map/map.json"
 AUDIT = ROOT / "research/audit/input_research"
@@ -125,7 +126,10 @@ def _chain(inp: dict, dsets: list, datasets: dict, claims: list, feats: list):
         oc[4], ev[4] = "OK", "feature(s) built for challenger: " + ", ".join(sorted({f for f, _ in feats}))
     # challenger stages from evaluation claims
     order = {s: i for i, s in enumerate(CHAIN)}
-    for c in claims:
+    rank = {"OK": 5, "PARTIAL": 4, "REJECTED": 3, "FAILED": 2, "BLOCKED": 1}
+    # Several challengers can claim the same input. The strongest recorded evidence wins regardless of file order
+    # (a later, weaker claim used to overwrite an earlier one); ties keep the later challenger id.
+    for c in sorted(claims, key=lambda c: (order.get(c["stage"], -1), rank.get(c["outcome"], 0), c["challenger"])):
         i = order.get(c["stage"])
         if i is None or i < 5:
             continue
@@ -212,9 +216,11 @@ def build() -> tuple:
             "archetypes": arch, "source_commits": e["source_commits"], "limitations": e["limitations"],
             "data": [{k: d.get(k) for k in ("dataset_id", "repo", "path", "rows", "first", "last", "kind", "rights_tier")} for d in e["data"]],
             "features": [{"feature_id": f["feature_id"], "catalog_inputs": f["catalog_inputs"], "description": f["description"], "pit_rule": f["pit_rule"],
-                          "checks_passed": sum(1 for c in f["checks"] if c["passed"]), "checks_total": len(f["checks"]),
+                          "checks_passed": sum(1 for c in f["checks"] if c["passed"] and c["basis"] == "COMPUTED"), "checks_total": len(f["checks"]),
+                          "checks_attested": [c["name"] for c in f["checks"] if c["basis"] == "ATTESTED"],
                           "checks_failed": [c["name"] + ": " + str(c["detail"]) for c in f["checks"] if not c["passed"]]} for f in e["features"]],
-            "results": [{k: r.get(k) for k in ("market_family", "archetypes", "metric", "reference", "cohort", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "replicated", "verdict", "tested")} for r in headline],
+            "results": [{k: r.get(k) for k in ("market_family", "archetypes", "metric", "reference", "cohort", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "replicated", "verdict", "tested")} | {"reference_kind": reference_kind(r["reference"])} for r in headline],
+            "data_through": max((_day(d.get("last")) for d in e["data"]), default=""),
             "results_total_rows": len(e["results"]), "verdict_counts": dict(Counter(r["verdict"] for r in headline)),
             "ablations": e.get("ablations", []), "design": e.get("design", {})}
     unknown_claims = sorted(set(claims) - set(m["inputs"]))
@@ -324,10 +330,46 @@ def build() -> tuple:
     head = {"schema": "sift-foundation-ledger/1", "status": "RESEARCH_ONLY", "notice": NOTICE, "stages": STAGES, "chain": CHAIN, "sports_order": SPORTS,
             "map_inputs_sha256": m["inputs_sha256"], "evaluations": [e["_path"] for e in evals], "totals": totals, "reconciliation": recon}
     ledger = {**head, "inputs": inputs, "markets": markets, "datasets": datasets, "challengers": challengers, "queue": queue, "sports": sports}
-    summary = {**head, "sports": sports, "market_watch": mw,
-               "challengers": {k: {x: v[x] for x in ("sport", "id", "incumbent", "verdict", "archetypes", "verdict_counts", "results", "limitations", "path")} for k, v in challengers.items()},
+    scoreboard = {s: _scoreboard([c for c in challengers.values() if c["sport"] == s]) for s in SPORTS}
+    ledger["scoreboard"] = scoreboard
+    summary = {**head, "sports": sports, "market_watch": mw, "scoreboard": scoreboard,
+               "challengers": {k: {x: v[x] for x in ("sport", "id", "incumbent", "verdict", "archetypes", "verdict_counts", "results", "limitations", "path", "data_through")} for k, v in challengers.items()},
                "queue_top": {t: [q for q in queue if q["tier"] == t][:8] for t in ("P0", "P1", "P2")}}
     return ledger, summary
+
+
+def _day(x) -> str:
+    """ISO day of a dataset's last record, or '' when the field is not a date (e.g. a season label)."""
+    t = str(x or "")
+    if re.match(r"^\d{4}-\d{2}-\d{2}", t):
+        return t[:10]
+    return f"{t[:4]}-{t[4:6]}-{t[6:8]}" if re.match(r"^\d{8}T", t) else ""
+
+
+def _scoreboard(chs: list) -> dict:
+    """Per sport: is research improving the projection, against what, and where is it weakest. Computed from tested result
+    rows only (descriptive rows are excluded); nothing here is typed by hand and nothing is a profitability statement."""
+    rows = []
+    for c in sorted(chs, key=lambda c: c["id"]):
+        tested = [r for r in c["results"] if r.get("tested")]
+        tally = {k: dict(Counter(r["verdict"] for r in tested if r["reference_kind"] == k)) for k in ("CURRENT_MODEL", "MARKET", "PRIOR_CHALLENGER", "BASELINE")}
+        mk = [r for r in c["results"] if r["reference_kind"] == "MARKET"]       # tested or descriptive: the gap is shown either way, labelled
+        gap = sorted(({"market_family": r["market_family"], "metric": r["metric"], "diff": r["diff"], "ci95": r["ci95"], "n_clusters": r["n_clusters"],
+                       "cohort": r.get("cohort"), "tested": bool(r.get("tested")),
+                       "state": "WORSE_THAN_MARKET" if r["ci95"] and r["ci95"][0] is not None and r["ci95"][0] > 0
+                                else "BETTER_THAN_MARKET" if r["ci95"] and r["ci95"][1] is not None and r["ci95"][1] < 0 else "NO_DETECTABLE_DIFFERENCE"} for r in mk),
+                     key=lambda g: -(g["diff"] or 0))
+        rows.append({"id": c["id"], "overall": c["verdict"]["overall"], "retain_incumbent": c["verdict"].get("retain_incumbent", True),
+                     "data_through": c["data_through"], "tally": {k: v for k, v in tally.items() if v},
+                     "validated_vs_current_model": tally["CURRENT_MODEL"].get("VALIDATED_IMPROVEMENT", 0),
+                     "validated_vs_market": tally["MARKET"].get("VALIDATED_IMPROVEMENT", 0),
+                     "market_gap": gap, "why": c["verdict"].get("reason", "")})
+    worse = Counter(g["market_family"] for r in rows for g in r["market_gap"] if g["state"] == "WORSE_THAN_MARKET")
+    better = Counter(g["market_family"] for r in rows for g in r["market_gap"] if g["state"] == "BETTER_THAN_MARKET")
+    status = ("NO_CHALLENGER" if not rows else "VALIDATED_VS_MARKET" if any(r["validated_vs_market"] for r in rows)
+              else "VALIDATED_VS_CURRENT_MODEL_ONLY" if any(r["validated_vs_current_model"] for r in rows) else "NO_VALIDATED_GAIN")
+    return {"status": status, "challengers": rows, "families_worse_than_market": sorted(worse), "families_better_than_market": sorted(better),
+            "data_through": max((r["data_through"] for r in rows), default="")}
 
 
 def _shown_rows(results: list) -> list:

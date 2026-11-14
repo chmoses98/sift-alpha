@@ -133,6 +133,37 @@ def verdict_from(ci_lo, ci_hi, p_holm, replicated: bool) -> str:
     return "INCONCLUSIVE"
 
 
+REFERENCE_KINDS = ("CURRENT_MODEL", "MARKET", "PRIOR_CHALLENGER", "BASELINE")
+
+
+def reference_kind(reference: str) -> str:
+    """What a result row is compared against. Fail-closed: an unrecognised reference raises, so a new evaluation cannot be
+    silently shown as "a simple baseline" when it is really the market price or the production model."""
+    r = str(reference).lower()
+    if "kalshi" in r or r.startswith(("market", "prospective_market")):
+        return "MARKET"
+    if r.startswith(("challenger:", "prospective:alpha", "alpha-")):
+        return "PRIOR_CHALLENGER"
+    if r.startswith(("incumbent", "shadow", "prospective_frozen", "pf_", "sim_frozen", "frozen:", "production:")):
+        return "CURRENT_MODEL"
+    if r.startswith(("naive", "baseline", "a0 ", "a1 ", "ablation", "reference_arm:", "reproduction:", "repro_")):
+        return "BASELINE"
+    raise ValueError(f"unclassified reference {reference!r}: name it market:*, incumbent:*, shadow:*, challenger:*, baseline:* or naive:*")
+
+
+CHECK_BASES = ("COMPUTED", "ATTESTED")
+ATTESTED = "ATTESTED"   # pass as ``passed`` for a design statement that the run does not independently compute
+
+
+def check(name, passed, detail, basis="COMPUTED") -> dict:
+    """One data/feature check. ``basis`` says how ``passed`` was obtained: COMPUTED = derived from the data in this run;
+    ATTESTED = a statement about the design (e.g. "fitted on train only") that the code does not independently verify.
+    Attested checks are reported separately everywhere and never counted as verified evidence."""
+    if passed is ATTESTED or basis == ATTESTED:
+        return {"name": name, "passed": True, "detail": str(detail), "basis": ATTESTED}
+    return {"name": name, "passed": bool(passed), "detail": str(detail), "basis": "COMPUTED"}
+
+
 def validate_evaluation(doc: dict) -> list:
     """Return a list of contract violations (empty = valid)."""
     errs = []
@@ -158,12 +189,18 @@ def validate_evaluation(doc: dict) -> list:
             if k not in f:
                 errs.append(f"feature {f.get('feature_id')}: missing {k}")
         for c in f.get("checks", []):
-            if not {"name", "passed", "detail"} <= set(c):
-                errs.append(f"feature {f.get('feature_id')}: malformed check")
+            if not {"name", "passed", "detail", "basis"} <= set(c) or c.get("basis") not in CHECK_BASES:
+                errs.append(f"feature {f.get('feature_id')}: malformed check (needs name, passed, detail, basis in {CHECK_BASES})")
+            elif c["basis"] == "ATTESTED" and c["passed"] is not True:
+                errs.append(f"feature {f.get('feature_id')}: an attested check cannot fail; compute it instead")
     for r in doc["results"]:
         for k in ("market_family", "archetypes", "metric", "reference", "n_rows", "n_clusters", "challenger", "reference_value", "diff", "ci95", "p_holm", "verdict"):
             if k not in r:
                 errs.append(f"result {r.get('market_family')}/{r.get('metric')}: missing {k}")
+        try:
+            reference_kind(r.get("reference"))
+        except ValueError as e:
+            errs.append(str(e))
         if r.get("verdict") not in VERDICTS:
             errs.append(f"result {r.get('market_family')}: bad verdict {r.get('verdict')}")
     if doc["verdict"].get("overall") not in VERDICTS:

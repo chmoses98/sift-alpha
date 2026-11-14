@@ -77,7 +77,7 @@ test("Challengers view lists every committed evaluation with data, checks, resul
   const v = df.getByTestId("df-challengers");
   await expect(v.getByTestId("df-challenger")).toHaveCount(Object.keys(S.challengers).length, { timeout: 60000 });
   for (const c of Object.values(S.challengers)) await expect(v).toContainText(c.id);
-  if (Object.keys(S.challengers).length) { await expect(v).toContainText("Data used"); await expect(v).toContainText("Limitations"); await expect(v).toContainText("checks passed"); }
+  if (Object.keys(S.challengers).length) { await expect(v).toContainText("Data used"); await expect(v).toContainText("Limitations"); await expect(v).toContainText("checks computed and passed"); await expect(v).toContainText("attested, not independently computed"); }
 });
 
 test("Queue is ranked P0 first and labels evidence-backed vs hypothesis", async ({ page }) => {
@@ -96,17 +96,35 @@ test("Sources ranks source decisions by missing P0 slots and never presents reac
   const rows = df.getByTestId("df-source-row");
   await expect(rows.first()).toContainText("#1");
   await expect(rows.first()).toContainText(SRC.sources[0].source);
-  await expect(rows.first()).toContainText("Decision needed");
-  await expect(rows.first()).toContainText("terms not read");
+  await expect(rows.first()).toContainText("Next step");
+  await expect(rows.first()).toContainText("terms: " + SRC.sources[0].terms_status.replaceAll("_", " ").toLowerCase());
+  await expect(df.getByTestId("df-p0-distinct")).toContainText(n(SRC.p0_distinct.missing_primary_slots));
+  await expect(df.getByTestId("df-p0-distinct")).toContainText(n(SRC.p0_distinct.archived_datasets_only));
   await expect(df.getByTestId("df-sources")).toContainText("Reachable is not permission");
   await expect(df.getByTestId("df-blockers").locator("li")).toHaveCount(Object.keys(SRC.p0_slots_by_blocker).length);
 });
 
+test("Models shows every sport's status, freshness and gap to the market without loading the ledger", async ({ page }) => {
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Models" }).click();
+  for (const s of S.sports_order) {
+    const card = df.getByTestId("df-model-" + s), b = S.scoreboard[s];
+    await expect(card).toBeVisible();
+    for (const c of b.challengers) await expect(card).toContainText(c.id);
+    if (b.challengers.length) await expect(card).toContainText("Newest data read: " + b.data_through);
+    else await expect(card).toContainText("No challenger has been evaluated");
+  }
+  await expect(df).toHaveAttribute("data-ready", "no");
+  const nba = S.scoreboard.NBA.challengers.at(-1);
+  await df.getByTestId("df-model-NBA").getByRole("button", { name: "challenger " + nba.id }).click();
+  await expect(df.getByTestId("df-challengers")).toContainText(nba.id, { timeout: 60000 });
+});
+
 test("no horizontal overflow in any view (desktop and iPhone)", async ({ page }) => {
   const df = page.getByTestId("data-foundation");
-  for (const tab of ["Summary", "Markets", "Challengers", "Queue", "Sources"]) {
+  for (const tab of ["Summary", "Models", "Markets", "Challengers", "Queue", "Sources"]) {
     await df.getByRole("tab", { name: tab }).click();
-    if (tab !== "Summary" && tab !== "Sources") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
+    if (tab !== "Summary" && tab !== "Sources" && tab !== "Models") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
     const o = await measureOverflow(page);
     expect(o.scroll, tab + " " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
   }

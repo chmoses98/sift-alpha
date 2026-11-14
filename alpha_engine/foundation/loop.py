@@ -62,11 +62,14 @@ def run_pass(market_watch: bool, challengers: bool, now_utc: str) -> dict:
     return finish(steps, now_utc)
 
 
+EVAL_STALE_DAYS = 14
+
+
 def finish(steps: list, now_utc: str) -> dict:
     requested = [s for s in steps if s["status"] != "NOT_REQUESTED"]
     bad = [s for s in requested if s["status"] != "OK"]
     summ = OPS / "summary.json"
-    recon_ok, nxt, stale = False, None, []
+    recon_ok, nxt, stale, freshness = False, None, [], {}
     if summ.exists():
         s = json.loads(summ.read_text())
         recon_ok = bool(s["reconciliation"]["ok"])
@@ -79,6 +82,15 @@ def finish(steps: list, now_utc: str) -> dict:
                 stale.append(f"market_watch is {age} days old")
         else:
             stale.append("market_watch has never run")
+        # Evaluation freshness: a priority sport whose newest challenger data is older than EVAL_STALE_DAYS is reported stale,
+        # so a pass that only reuses committed evaluations cannot stay HEALTHY indefinitely.
+        day = datetime.datetime.fromisoformat(now_utc.replace("Z", "+00:00")).date()
+        for sp, b in sorted((s.get("scoreboard") or {}).items()):
+            if s["sports"][sp]["tier"] == "P0" and b.get("data_through"):
+                age = (day - datetime.date.fromisoformat(b["data_through"])).days
+                freshness[sp] = {"data_through": b["data_through"], "age_days": age}
+                if age > EVAL_STALE_DAYS:
+                    stale.append(f"{sp} evaluations read data only through {b['data_through']} ({age} days old)")
     ledger_step = next(s for s in steps if s["step"] == "ledger")
     if ledger_step["status"] != "OK" or not recon_ok:
         overall = "FAILED"
@@ -87,7 +99,7 @@ def finish(steps: list, now_utc: str) -> dict:
     else:
         overall = "HEALTHY"
     return {"schema": "sift-foundation-loop/1", "status": "RESEARCH_ONLY", "ran_utc": now_utc, "overall": overall, "steps": steps,
-            "ledger_reconciles": recon_ok, "stale": stale, "not_ok_steps": [s["step"] + ":" + s["status"] for s in bad], "next_task": nxt,
+            "ledger_reconciles": recon_ok, "stale": stale, "evaluation_freshness": freshness, "not_ok_steps": [s["step"] + ":" + s["status"] for s in bad], "next_task": nxt,
             "note": "HEALTHY means every requested step succeeded, the ledger reconciles to the Market & Input Map and nothing is stale. It says nothing about model quality or profitability."}
 
 

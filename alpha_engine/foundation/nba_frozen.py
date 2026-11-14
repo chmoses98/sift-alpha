@@ -493,7 +493,7 @@ class Results:
 
 
 def _chk(name, passed, detail):
-    return dict(name=name, passed=bool(passed), detail=str(detail))
+    return C.check(name, passed, detail)
 
 
 def _crps_dense(pmfs: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -730,7 +730,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
                        f"pf {float(lead[fc.model == 'pf'].median()):.0f} min, sim {float(lead[fc.model == 'sim'].median()):.0f} min"))
     pfv = fc[fc.model == "pf"].version
     n_code = int(pfv.str.split("+").str[1].nunique())
-    chk_fc.append(_chk("frozen_model_identity", True,
+    chk_fc.append(_chk("frozen_model_identity", C.ATTESTED,
                        f"pf versions {fc_stats['versions']['pf']} spanning {n_code} distinct code commits under the same pf label (informational: the "
                        f"version label did not pin the code); sim versions {fc_stats['versions']['sim']}"))
     pfp = fc[(fc.model == "pf") & (fc.family == "points")].head(500)
@@ -798,7 +798,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
                          final_weight_on_pf=pool_w[s], train_crps_by_weight=gfull, n_inner_fit=int((base & fit_a).sum()), n_inner_val=int(vb.sum()))
     c2_pmf = {s: pool_pmf(pf_pmf[s], c1["cond"][s], pool_w[s]) if pool_w[s] < 1.0 else pf_pmf[s] for s in STATS}
     c2_pmf["pra"] = pf_pmf["pra"]
-    chk_c2.append(_chk("f2_pool_weight_selected_inside_train_only", True, json.dumps({s: [f2_log[s]["inner_fit_weight_on_pf"], f2_log[s]["accepted"],
+    chk_c2.append(_chk("f2_pool_weight_selected_inside_train_only", C.ATTESTED, json.dumps({s: [f2_log[s]["inner_fit_weight_on_pf"], f2_log[s]["accepted"],
                                                                                          f2_log[s]["final_weight_on_pf"]] for s in STATS})))
     sums = max(float(np.nanmax(np.abs(c2_pmf[s][base].sum(1) - 1))) for s in STATS)
     chk_c2.append(_chk("c2_pmfs_sum_to_one", sums < 1e-6, f"max |sum-1| = {sums:.2e}"))
@@ -841,7 +841,7 @@ def run(repo: Path | None = None, out_dir: Path | None = None, verbose: bool = T
         if f1[s]["accepted"]:
             mk = rr.stat == s
             rr.loc[mk, "p_c2f"] = recal_logit(rr.loc[mk, "p_c2"], f1[s]["final_intercept"], f1[s]["final_slope"])
-    chk_c2.append(_chk("f1_recalibration_selected_inside_train_only", True,
+    chk_c2.append(_chk("f1_recalibration_selected_inside_train_only", C.ATTESTED,
                        json.dumps({s: [round(f1[s]["inner_slope"], 3), f1[s]["accepted"]] for s in STATS})))
     say(f"F2 pool {pool_w}; F1 {[(s, f1[s]['accepted']) for s in STATS]}")
     return dict(X=X, rr=rr, c1=c1, c1a=c1a, pf_pmf=pf_pmf, c2_pmf=c2_pmf, f1=f1, f2=f2_log, M=M, gf=gf, tout=tout, fc=fc, fc_stats=fc_stats,
@@ -1096,7 +1096,7 @@ def build_document(S, Q) -> tuple:
     last_d = str(X.date_s.max()).replace("-", "")
     inj_in = [p for p in inj_files if p.split("dt=")[1][:10].replace("-", "") <= last_d]
     n_rep = int(av.report.nunique())
-    chk_inj_x = _chk("official_report_coverage_vs_data_injury_pit", True,
+    chk_inj_x = _chk("official_report_coverage_vs_data_injury_pit", C.ATTESTED,
                      f"projection-data explicit rows come from {n_rep} distinct official report files; data-injury-pit@{INJ_COMMIT[:7]} holds {len(inj_in)} official "
                      f"report captures dated up to the last evaluated game ({len(inj_files)} in total); data-injury-pit is used only for the staleness diagnosis "
                      f"(design.decomposition.staleness_between_pf_freeze_and_t60), never as a challenger input")
@@ -1248,7 +1248,7 @@ def build_document(S, Q) -> tuple:
         "One month of 2026-27 regular season (176 games with outcomes, 2026-10-20..2026-11-13); T-60 player-prop quotes exist for 118 games and only 31 TEST games, so every challenger-vs-market row is INSUFFICIENT_EVIDENCE regardless of its point estimate.",
         f"The pf label covered {int(fc[fc.model == 'pf'].version.str.split('+').str[1].nunique())} distinct code commits over the window (pf-1.2.1 on the first slates, then pf-1.3.0); 'the frozen incumbent' is the version stream that was live at each freeze, not one fixed binary.",
         "Spread and total probabilities from the pf team-points forecasts use a normal approximation with the archived rho (the owner's own note calls them approximate); team totals use the archived pmf exactly.",
-        "The pf team-points forecasts under-forecast 2026-27 scoring (team points bias in design.accuracy.game_means), which by itself explains part of the total / team-total gap to the market.",
+        "The pf team-points forecasts OVER-forecast 2026-27 scoring: design.accuracy.game_means bias is actual minus forecast (team points -2.40, total -4.80), which by itself explains part of the total / team-total gap to the market. (Corrected 2026-11-14: this line and the ops doc first said 'under-forecast'; the numbers are unchanged.)",
         "C1 is a re-implementation of the 0.1 procedure on 2026-27 data with the frozen pf roster as its population; it is not the 0.1 code path run unchanged (0.1 hard-codes 2025-26 inputs).",
         "During development the author looked at TEST CRPS for a few pool weights before the inner-validation selection rule was fixed in code; the rule itself never reads TEST, but this is disclosed as a mild garden-of-forking-paths risk.",
         "Implicit ACTIVE roster rows in the availability archive are not used (PR #104 found their timestamps can precede the roster evidence); only explicit official-report rows are.",

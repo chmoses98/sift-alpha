@@ -16,7 +16,7 @@ The Market & Input Map (PR #71) and data-foundation Phases 1–14 were never on 
 `claude/funny-einstein-5trimq` (123 commits ahead of `main`, 6 behind). This branch merges that tip into current `main`.
 Three add/add conflicts (the college direct-API probe) were resolved in favour of `main`, whose copy is the later rewrite merged as PR #69.
 After the merge the full suites pass unchanged (1,072 Python tests, 61 probe tests, 74 Node tests), and the map's own counts are unchanged:
-170 archetypes, 1,649 distinct inputs, 949 missing PRIMARY slots.
+170 archetypes, 1,649 distinct inputs, 949 missing PRIMARY slots (888 after the Phase 15 builders, section 10.7).
 
 Not merged, and why: `claude/sift-alpha-eval-catalog-38ni9g` (open PR #66) and `claude/adoring-archimedes-8htgcn` (open draft PR #68) are two
 competing NHL evaluation adapters still under review; `claude/quirky-darwin-zv0rwc` is a docs-only incident record. They are untouched.
@@ -177,7 +177,7 @@ almost all `pf-1.3.0`), not a reproduction. 176 games; freeze rule T-60.
 * Frozen incumbent mean absolute error: points 4.48, rebounds 1.83, assists 1.32, threes 0.86, PRA 5.86, minutes 4.77. It beats its shadow baseline.
 * **The market is better.** Against the two-sided Kalshi T-60 mid (118 games) the frozen incumbent's Brier is worse on points (+0.0097
   [+0.0058, +0.0140]), rebounds (+0.0047), assists (+0.0061) and PRA (+0.0147); threes are inconclusive. Spreads (+0.0105) and team totals (+0.0095)
-  are also worse. The incumbent under-forecasts team points by 2.4 and game totals by 4.8.
+  are also worse. The incumbent **over**-forecasts team points by 2.4 and game totals by 4.8 (corrected in Phase 3: the recorded bias is actual minus forecast, −2.40 and −4.80; this line first said "under").
 * Why: given the market-implied median, the model's disagreement with it does not predict the outcome (slope about 0.02). Per-minute rate error
   explains 73–89% of error variance, minutes 9–24%. Information published between the freeze and T-60 is not the cause (90 rows in 30 games).
 * Challenger: a 70/30 blend of the frozen forecast with the 0.1 method. Assists CRPS improves and is validated (−0.0087 [−0.0128, −0.0049],
@@ -208,3 +208,102 @@ Fitted through 2023; tested on 2024 and 2025 (2,624 games) and on the 309 games 
 * 2026-27 MoneyPuck team games are not archived, so ratings are frozen pre-season there; goalie logs cover only 196 of 309 games this season.
 * PRs #66 and #68 both add the same paths and cannot both merge as they are. Recommendation: keep #66 as the adapter (official outcomes with two
   cross-checks, more models, closing quotes) and add #68's Kalshi settlements as a second outcome source; rename one postmortem.
+
+## 10. Phase 3 (2026-11-14, third pass): review fixes, what the archive unlocks, three new challengers
+
+Agent-built, not human verified. Still RESEARCH_ONLY; every incumbent is retained and nothing is promoted, merged or deployed by this work.
+
+    python -m alpha_engine.foundation.ledger && python -m alpha_engine.foundation.sources && python -m alpha_engine.foundation.loop
+    python -m unittest tests.test_foundation_ops tests.test_foundation_sources tests.test_foundation_nba_rate tests.test_foundation_cbb_mean tests.test_foundation_nhl_v3
+
+### 10.1 Defects found in review of PRs #72 / #73 and repaired
+* **Checks recorded as passed without being computed.** 23 feature checks across the six committed evaluations were literal `True`. Every check now
+  carries `basis`: `COMPUTED` or `ATTESTED`; the contract rejects a check without it, attested checks are counted and shown separately and are never
+  "passed" evidence. The three new challengers have computed checks only. Results of the six earlier evaluations are unchanged.
+* **The "492 slots behind archived data" figure was a multi-count.** It summed per-dataset rows, so a slot needing several datasets counted several
+  times and shared datasets pulled in other sports. Counted once per (market, input): **358** missing PRIMARY slots in NBA, CBB and NHL; **264** list
+  at least one archived dataset (NBA 133, NHL 67, CBB 64); **69** (55 inputs) list archived datasets only.
+* **Dashboard tally mislabelled references.** Rows compared against the market price or the frozen production forecast were shown as "a simple
+  baseline" for two evaluations (the label was guessed from a name prefix). The kind now comes from `contract.reference_kind`, which rejects an
+  unrecognised name.
+* **Stage claims depended on file order** when two challengers claimed one input; the strongest recorded evidence now wins deterministically.
+* **`loop_health.json` was stale** (3 challengers, 2 validated inputs) while saying HEALTHY. Regenerated; evaluation data older than 14 days for a
+  priority sport now degrades health.
+* **Sign error in 9.3.** The frozen NBA model over-forecasts totals by 4.8, it does not under-forecast (see 10.4).
+* Known and not changed: `cbb_venue_prior.build` raises `KeyError 'tip'` when re-run against the current archive tip (empty extension frame); its
+  committed 0.1 evidence is unaffected.
+
+### 10.2 Source rights: what was actually read
+`research/data_foundation_ops/provider_terms.json` records an agent reading of twelve providers' terms (not legal advice, no tier changed).
+Only two governing documents could be fetched: the Kalshi developer agreement and the SportsDataverse repository licences. ESPN, NHL, NBA,
+Sports-Reference, NCAA and CollegeBasketballData were seen through search summaries only; MoneyPuck, Bart Torvik, KenPom, Natural Stat Trick and
+Daily Faceoff had no terms found. No independently open-licensed NBA, CBB or NHL game-level source was found: every free alternative wraps
+ESPN, NHL or NBA data.
+* Builder and challenger work on the owner's archive is internal research, which the current tier already permits. The archive slots were waiting
+  on engineering, not on a rights decision.
+* **Owner decision needed: the sport repositories are public and track raw provider data** (ESPN box scores and play-by-play, MoneyPuck shots,
+  Kalshi boards, NBA injury-report rows). "Internal research only" does not describe a public repository. Nothing was changed.
+* Kalshi's agreement, as read, allows storing API data only to facilitate the member's own trading and bars sharing it without written permission.
+* New external records acquired: 0. New collection from ESPN, the NHL API and SportsDataverse stays frozen.
+
+### 10.3 Dashboard
+* **Models** (new): one block per sport: validated-gain status, newest data read and its age, families worse or better than the market, each
+  challenger's tally by reference kind, gap to the market by family, and the reason for the verdict. Renders from the small summary file.
+* **Sources**: distinct slot counts, terms status per source with the reading and the owner decision, the public-repository finding, free alternatives.
+* **Challengers**: computed and attested checks shown separately.
+* `pages.yml` publishes `main` on its existing 6-hourly schedule and on manual dispatch; no schedule was added or changed. The published-site check
+  now also requires the Sources v2 and Models markers.
+
+### 10.4 NBA: `alpha-nba-rate-0.3` (rate and scoring level): IMPROVED_NOT_VALIDATED
+Correction to 9.3: the frozen incumbent **over**-forecasts team points by 2.40 and totals by 4.80 (overtime −0.67, pace +0.52, efficiency +1.20,
+rest-adjustment stage +1.35); league scoring is lower in 2026-27 than in 2025-26. The challenger blends the frozen forecast with an independent rate
+(usage × efficiency, opponent factor) and an online level ratio; components were validated on 2025-26 first. Against frozen `pf` on 88 test games,
+CRPS improves and is validated for points (−0.043 [−0.064, −0.021]), rebounds, assists, threes and PRA; team points and totals are inconclusive, as is
+every Brier row on market rungs. Against the Kalshi T-60 mid it is still worse on points (+0.0045 [+0.0017, +0.0074]) and inconclusive elsewhere.
+* Weakest incumbent families relative to the market (166 games): spread, PRA, team total, points, total.
+* Rejected: home factor, teammate-out usage, structured prior-season prior, overtime uplift, team online level.
+* T-60 boards restored from `data-archive` for 48 of 56 games after 2026-11-06 (hash-chained deltas, no chain breaks, prices match the owner's
+  snapshots on 28,756 two-sided tickers).
+* `pf-1.3.0` lineage: 28 run revisions, 7 forecast-source changes, 8 segments (`NBA/pf_version_lineage.json`; proposed label fix in
+  `NBA/upstream_patches/PF_MODEL_VERSION_LABEL.md`).
+* PRs #104 and #105 reconciled in `NBA/RECONCILIATION_104_105.md`: #104's overlay should be canonical for status; do not reuse #105's fitted
+  P(play) maps on `pf`.
+* Best next candidate: `pf` over-forecasts rate by 14% when its minutes forecast is 4+ below the recent average.
+
+### 10.5 CBB: `alpha-cbb-mean-0.1`: INCONCLUSIVE
+544 games, 13 slates, frozen `pure-0.2.0`. The margin shortfall is conference structure, not uniform compression: between tiers the gap is too
+small (power-conference side +4.2 [1.4, 7.1], low-major side −4.5 [−7.2, −2.0]); within a tier margins are too wide (slope 0.61 [0.39, 0.86]). The
+market's disagreement with the model shows the same pattern and the market's own error shows none. Home court is not detectably mis-sized. The total
+bias (+2.8; +1.9 in regulation) is mainly efficiency. A walk-forward conference and team re-centring does not yet beat the incumbent (margin NLL
++0.0005 [−0.014, +0.016]; total NLL −0.0135 [−0.030, +0.003]) and still trails the ESPN line and the Kalshi mid. Waves 14–16 are untouched.
+Multi-season validation is blocked on data that is in no owner repository: `CBB/MULTISEASON_GAME_DATA_SPEC.md` gives the two ways to get it.
+
+### 10.6 NHL: `alpha-nhl-joint-0.3`: IMPROVED_NOT_VALIDATED, no market-family gain over 0.2
+Correction to 9.5: 2026-27 MoneyPuck team games **are** archived (`data-archive` `context/team_games*`, 618 of 618 team-games, first capture used,
+point-in-time), and shot events with coordinates cover 309 of 309 games. Ratings now update in-season: moneyline −0.0078 [−0.0147, −0.0010] against
+frozen ratings on 307 games (one cohort, so not validated), closing about half of the gap to the Kalshi mid (+0.0158 to +0.0079 [−0.0019, +0.0183]).
+On 2024–2025 all 14 rows against 0.2 and SIM2 are inconclusive. A two-goal-margin (empty-net) weight improves exact regulation-score NLL by 0.0137
+(replicated) but no traded family. An own shot-xG model matches MoneyPuck closely enough to substitute for it (team-game r 0.85–0.89; one level-drift
+check fails and is recorded as failed). The 2025 moneyline loss to Kalshi is mostly an unstable calibration slope; on totals the market has
+information the model lacks. One parameter (mismatch scale) was added after a first test read and is flagged `post_hoc`.
+* PRs #66 and #68 are reconciled on this branch: #66 is the adapter, #68's Kalshi settlements are a second outcome source with a per-market
+  cross-check (`alpha_eval/nhl_kalshi_settlement.py`), its postmortem is `NHL_POSTMORTEM_002_KALSHI_SETTLEMENTS.md`. The direct cross-check has not
+  run on real data because neither raw input is local.
+
+### 10.7 Phase 15: thirty inputs built from the archive, replayed and blind-matched
+Details in `docs/PHASE15_NBA_NHL_ARCHIVE_BUILDERS.md`. A slot listed under several datasets needs **all** of them, so only slots whose datasets are
+all archived are buildable without new data. Thirty NBA and NHL inputs (29 PARTIAL, 1 PROXY, none FULL; each lists what is missing) passed the
+replay gate and an exact blind re-implementation match (118 columns, identical keys and NaN patterns; `nhl.ixg_player` matched after a float32
+summation defect was fixed).
+
+| Distinct missing PRIMARY slots | Before | After |
+|---|---|---|
+| All eight sports | 949 | 888 |
+| NBA / NHL / CBB | 163 / 87 / 108 | 138 / 51 / 108 |
+| P0 with at least one archived dataset | 264 | 203 |
+| P0 with archived datasets only | 69 | 49 |
+
+* CBB: none built. The archived raw rows are not in any repository this session can read, and the college collector is frozen in the rights registry.
+* Inputs marked downgraded or point-in-time quarantined (for example `nhl.goalie_quality`) were not resurrected.
+* Built is not used: none of the thirty is yet in a challenger. Process note: the blind re-implementations were written by separate headless agent
+  sessions that saw only the briefs and the raw data paths.

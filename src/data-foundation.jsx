@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
-import {OUTCOME_KIND, OUTCOME_LABEL, P0, STAGE_LABEL, VERDICT_KIND, VERDICT_LABEL, challengerResults, referenceTally, fmt, inputStatus, marketInputs, signed, num, sportMarkets, stageRows} from "./data-foundation.mjs";
+import {BOARD_KIND, BOARD_LABEL, GAP_KIND, GAP_LABEL, ageDays, OUTCOME_KIND, OUTCOME_LABEL, P0, STAGE_LABEL, VERDICT_KIND, VERDICT_LABEL, challengerResults, referenceTally, fmt, inputStatus, marketInputs, signed, num, sportMarkets, stageRows} from "./data-foundation.mjs";
 // The small summary file renders the executive view immediately; the multi-megabyte ledger loads only when the explorer is opened or scrolled to.
 import SUMMARY from "../research/data_foundation_ops/summary.json";
 import SOURCES from "../research/data_foundation_ops/source_acquisition.json";
@@ -60,7 +60,7 @@ function ChallengerFull({ch}) {
     <ul className="mim-list">{ch.data.map(d => <li key={d.dataset_id + d.path}><b>{d.dataset_id}</b> <Chip>{d.kind === "PROSPECTIVE_CAPTURE" ? "prospective capture" : d.kind === "WALK_FORWARD_REPRODUCTION" ? "walk-forward reproduction" : "historical backfill"}</Chip>
       <div className="ir-why">{fmt(d.rows)} rows · {d.first || "?"} → {d.last || "?"} · {d.repo} · <code>{d.path}</code> · rights: {d.rights_tier}</div></li>)}</ul>
     <h4>Features and checks</h4>
-    <ul className="mim-list">{ch.features.map(f => <li key={f.feature_id}><b>{f.feature_id}</b> <Chip k={f.checks_passed === f.checks_total ? "ok" : "chipwarn"}>{f.checks_passed}/{f.checks_total} checks passed</Chip>
+    <ul className="mim-list">{ch.features.map(f => <li key={f.feature_id}><b>{f.feature_id}</b> <Chip k={f.checks_failed.length ? "chipwarn" : "ok"}>{f.checks_passed} of {f.checks_total} checks computed and passed</Chip>{f.checks_attested.length ? <Chip k="unv" title={f.checks_attested.join(", ")}>{f.checks_attested.length} attested, not independently computed</Chip> : null}
       <div className="ir-why">{f.description}</div><div className="ir-why">Point-in-time rule: {f.pit_rule}</div>
       <div className="ir-why">Catalog inputs: {f.catalog_inputs.join(", ") || "none"}</div>
       {f.checks_failed.map((c, i) => <div key={i} className="ir-why mim-missing">Failed check — {c}</div>)}</li>)}</ul>
@@ -152,30 +152,68 @@ const low = x => String(x).replaceAll("_", " ").toLowerCase();
 // Source acquisition board: which single source decision unlocks the most missing PRIMARY slots. Reachable is not permission.
 function SourcesView() {
   const [p0, setP0] = useState(true); const [n, setN] = useState(PAGE);
-  const rows = SOURCES.sources.filter(r => !p0 || r.p0_missing_primary_slots > 0);
+  const rows = SOURCES.sources.filter(r => !p0 || r.p0_missing_primary_slots > 0); const D = SOURCES.p0_distinct;
   return <div data-testid="df-sources">
     <p className="ir-fine">{SOURCES.notice}</p>
     <div className="mim-cards">
       <div><b>{fmt(SOURCES.new_external_records_acquired)}</b><small>new external records acquired in the latest pass</small></div>
-      <div><b>{fmt(SOURCES.sources.filter(r => r.terms_read).length)}</b><small>of {fmt(SOURCES.sources.length)} sources with provider terms read</small></div>
+      <div><b>{fmt(SOURCES.sources.filter(r => r.terms_read).length)}</b><small>of {fmt(SOURCES.sources.length)} sources whose governing terms were read directly ({fmt(SOURCES.sources.filter(r => r.terms_status === "SEARCH_SNIPPET_ONLY").length)} more from search summaries only)</small></div>
       <div><b>{fmt(SOURCES.sources.filter(r => r.reachability === "REACHABLE").length)}</b><small>reachable from the research environment (not permission)</small></div>
     </div>
-    <h4>Why NBA, CBB and NHL primary slots are missing</h4>
+    {SOURCES.public_repository_exposure && <div className="ir-warn" data-testid="df-exposure"><b>Owner decision needed — raw provider data in public repositories.</b> {SOURCES.public_repository_exposure.finding} {SOURCES.public_repository_exposure.what_is_not_affected} <b>{SOURCES.public_repository_exposure.owner_decision_needed}</b></div>}
+    <h4>NBA, CBB and NHL: missing PRIMARY slots, each counted once</h4>
+    <div className="mim-cards" data-testid="df-p0-distinct">
+      <div><b>{fmt(D.missing_primary_slots)}</b><small>missing PRIMARY slots ({P0.map(s => s + " " + D.by_sport[s]).join(" · ")})</small></div>
+      <div><b>{fmt(D.with_an_archived_dataset)}</b><small>list at least one dataset already in an owner archive ({P0.map(s => s + " " + D.with_an_archived_dataset_by_sport[s]).join(" · ")})</small></div>
+      <div><b>{fmt(D.archived_datasets_only)}</b><small>need archived data only: buildable now ({P0.map(s => s + " " + D.archived_datasets_only_by_sport[s]).join(" · ")})</small></div>
+    </div>
+    <p className="ir-fine">{D.note} Earlier per-dataset sum: {fmt(D.per_dataset_sum_previously_reported)}.</p>
+    <h4>What stands between those slots and a built input</h4>
     <ul className="mim-list" data-testid="df-blockers">{Object.entries(SOURCES.p0_slots_by_blocker).map(([k, v]) => <li key={k}><b>{fmt(v)}</b> slots · {low(k)}</li>)}</ul>
-    <p className="ir-fine">{SOURCES.terms_reading} Reachability observed {SOURCES.probe_observed_utc}. {SOURCES.counting_note}</p>
+    <p className="ir-fine">{SOURCES.terms_reading} Terms read {SOURCES.terms_fetched_utc}; reachability observed {SOURCES.probe_observed_utc}. {SOURCES.counting_note}</p>
+    <details className="mim-units"><summary>Free alternatives checked ({SOURCES.free_alternatives.length})</summary>
+      <p className="ir-fine">{SOURCES.free_alternatives_note}</p>
+      <ul className="mim-list">{SOURCES.free_alternatives.map(a => <li key={a.url}><b>{a.name}</b><div className="ir-why">{a.licence} · {a.caveat} · <code>{a.url}</code></div></li>)}</ul></details>
     <label className="mim-tog"><input type="checkbox" checked={p0} onChange={e => { setP0(e.target.checked); setN(PAGE); }}/> only sources behind NBA, CBB or NHL slots</label>
     <ul className="mim-queue">{rows.slice(0, n).map(r => <li key={r.source} className="mim-card" data-testid="df-source-row">
       <span className="mim-qrank">#{r.rank} · {r.sports.join(", ")}</span>
       <div className="mim-title"><code>{r.source}</code></div>
       <div className="mim-stats"><Chip>{fmt(r.p0_missing_primary_slots)} P0 missing PRIMARY slots</Chip> <Chip>{fmt(r.missing_primary_slots)} all sports</Chip> <Chip>{r.datasets.length} datasets</Chip>
-        {r.archived_slots ? <Chip k="ok">{fmt(r.archived_slots)} already archived</Chip> : null} <Chip k={REACH_KIND[r.reachability] || "plain"}>{low(r.reachability)}</Chip>
-        <Chip k="unv">terms {r.terms_read ? "read" : "not read"}</Chip> <Chip>rights: {r.rights_tiers.join(", ")}</Chip> <Chip>{r.costs.join(", ")}</Chip></div>
+        {r.p0_archived_slots ? <Chip k="ok">{fmt(r.p0_archived_slots)} P0 slots behind archived data</Chip> : null} <Chip k={REACH_KIND[r.reachability] || "plain"}>{low(r.reachability)}</Chip>
+        <Chip k={r.terms_read ? "ok" : "unv"}>terms: {low(r.terms_status)}</Chip> <Chip>rights: {r.rights_tiers.join(", ")}</Chip> <Chip>{r.costs.join(", ")}</Chip></div>
       <div className="ir-why">Collector: {r.collector.collector || "none recorded"} — {low(r.collector.state)}{r.collector.repo ? " (" + r.collector.repo + ")" : ""}</div>
-      <div className="ir-why"><b>Decision needed:</b> {r.decision_needed}</div>
+      <div className="ir-why"><b>Next step:</b> {r.decision_needed}</div>
+      {r.terms && <details className="mim-units"><summary>Terms reading ({r.terms.provider})</summary>
+        <p className="ir-fine">Internal research: {low(r.terms.assessment.internal_noncommercial_research)} · automated collection: {low(r.terms.assessment.automated_collection)} · raw redistribution: {low(r.terms.assessment.raw_redistribution)} · commercial use: {low(r.terms.assessment.commercial_use)}. {r.terms.assessment.reasoning}</p>
+        {r.terms.lead_note && <p className="ir-fine">{r.terms.lead_note}</p>}
+        {r.terms.owner_decision_needed && <p className="ir-fine"><b>Owner decision:</b> {r.terms.owner_decision_needed}</p>}</details>}
       <details className="mim-units"><summary>Datasets</summary><p className="ir-fine">{r.datasets.join(", ")}</p></details></li>)}</ul>
     {rows.length > n && <button className="mim-more" onClick={() => setN(x => x + PAGE)}>Show more ({rows.length - n} left)</button>}
   </div>;
 }
+
+// Models: for each sport, is research improving the projection, against what, and where is it weakest. All from summary.scoreboard.
+function ModelsView({onChallenger}) {
+  const B = SUMMARY.scoreboard;
+  return <div data-testid="df-models">
+    <p className="ir-fine">One line per sport from the committed challenger evaluations. “Validated” needs a 95% interval that excludes zero, a Holm-adjusted p below 0.05 and the same sign in both test cohorts. A gap against the market price is a forecast-accuracy comparison against quote mid-points, not an executable or profitable edge. Every current production model is retained; nothing is promoted from here.</p>
+    {SUMMARY.sports_order.map(s => { const b = B[s]; const age = ageDays(b.data_through); return <div key={s} className="df-sport" data-testid={"df-model-" + s}>
+      <h3>{s} <Chip>{SUMMARY.sports[s].tier}</Chip> <Chip k={BOARD_KIND[b.status]}>{BOARD_LABEL[b.status]}</Chip></h3>
+      {b.challengers.length === 0 ? <p className="ir-fine">No challenger has been evaluated. Next: {SUMMARY.sports[s].top_queue.length ? "build inputs from " + SUMMARY.sports[s].top_queue.slice(0, 3).join(", ") : "no queued dataset"}.</p> : <>
+        <p className="ir-fine">Newest data read: <b>{b.data_through || "not recorded"}</b>{age == null ? "" : age === 0 ? " (today)" : ` (${age} day${age === 1 ? "" : "s"} ago)`}.
+          {b.families_worse_than_market.length ? <> Worse than the market on: <b>{b.families_worse_than_market.map(low).join(", ")}</b>.</> : " No market family is measurably worse."}
+          {b.families_better_than_market.length ? <> Better than the market on: <b>{b.families_better_than_market.map(low).join(", ")}</b>.</> : " No market family is measurably better."}</p>
+        <ul className="mim-list">{b.challengers.map(c => <li key={c.id}>
+          <Link onClick={() => onChallenger(s + ":" + c.id)} label={"challenger " + c.id}>{c.id}</Link> <Verdict v={c.overall}/> {c.retain_incumbent !== false && <Chip>current model retained</Chip>} <Chip>data to {c.data_through || "n/a"}</Chip>
+          <div className="mim-stats">{Object.entries(c.tally).map(([k, v]) => <span key={k} className="df-tallyk">vs {REF[k]}: {Object.entries(v).map(([vv, n]) => <Chip key={vv} k={VERDICT_KIND[vv]}>{n} {VERDICT_LABEL[vv]}</Chip>)}</span>)}</div>
+          {c.market_gap.length ? <details className="mim-units"><summary>Gap to the market price by family ({c.market_gap.length})</summary>
+            <ul className="mim-list">{c.market_gap.map((g, i) => <li key={i}><b>{low(g.market_family)}</b> · {g.metric} <Chip k={GAP_KIND[g.state]}>{GAP_LABEL[g.state]}</Chip>{g.tested ? null : <Chip k="plain">descriptive</Chip>}
+              <div className="ir-why">difference {signed(g.diff)} [{signed(g.ci95?.[0])}, {signed(g.ci95?.[1])}] · {fmt(g.n_clusters)} games · lower is better</div></li>)}</ul></details> : <div className="ir-why">No comparison against the market price is recorded for this challenger.</div>}
+          <details className="mim-units"><summary>Why</summary><p className="ir-fine">{c.why}</p></details></li>)}</ul></>}
+    </div>; })}
+  </div>;
+}
+const REF = {CURRENT_MODEL: "current model", MARKET: "market price", PRIOR_CHALLENGER: "earlier challenger", BASELINE: "simple baseline"};
 
 export function DataFoundation() {
   const [L, setL] = useState(null); const [err, setErr] = useState(null); const [want, setWant] = useState(false);
@@ -184,7 +222,7 @@ export function DataFoundation() {
   const top = useRef(null);
   useEffect(() => { if (!want) return; let live = true; Object.values(LEDGER)[0]().then(x => live && setL(x.default || x)).catch(e => live && setErr(String(e))); return () => { live = false; }; }, [want]);
   const S = SUMMARY; const chs = Object.values(S.challengers);
-  const open = v => { setView(v); setFocus(null); if (v !== "summary" && v !== "sources") setWant(true); };
+  const open = v => { setView(v); setFocus(null); if (v !== "summary" && v !== "sources" && v !== "models") setWant(true); };
   const go = (kind, key) => { setStack(s => [...s, {view, focus}].slice(-20)); setFocus({kind, key}); setWant(true); if (kind === "challenger") setView("challengers"); else setView("markets"); requestAnimationFrame(() => top.current?.scrollIntoView({block: "start"})); };
   const back = () => setStack(s => { if (!s.length) { setFocus(null); return s; } const p = s[s.length - 1]; setView(p.view); setFocus(p.focus); return s.slice(0, -1); });
   const markets = useMemo(() => L ? sportMarkets(L, sport, {q, sort, onlyChallenger: onlyCh}) : [], [L, sport, q, sort, onlyCh]);
@@ -211,7 +249,7 @@ export function DataFoundation() {
         <li>A challenger is “validated” only when its 95% interval excludes zero, the Holm-adjusted p-value is below 0.05 and the sign repeats in both chronological test cohorts. Nothing here is a profitability claim.</li>
       </ul></details>
     <div className="mim-tabs df-tabs" role="tablist" aria-label="Data foundation view">
-      {[["summary", "Summary"], ["markets", "Markets"], ["challengers", "Challengers"], ["queue", "Queue"], ["sources", "Sources"]].map(([v, l]) => <button key={v} role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => open(v)}>{l}</button>)}
+      {[["summary", "Summary"], ["models", "Models"], ["markets", "Markets"], ["challengers", "Challengers"], ["queue", "Queue"], ["sources", "Sources"]].map(([v, l]) => <button key={v} role="tab" aria-selected={view === v} className={view === v ? "on" : ""} onClick={() => open(v)}>{l}</button>)}
     </div>
     {err && <p className="ir-warn">Could not load the pipeline ledger: {err}</p>}
     {(focus || stack.length > 0) && view !== "summary" && <button className="mim-back" onClick={back} data-testid="df-back">← Back</button>}
@@ -230,7 +268,7 @@ export function DataFoundation() {
       <p className="ir-fine" data-testid="df-recon">Reconciles to the Market & Input Map: {fmt(S.reconciliation.map_archetypes)} archetypes, {fmt(S.reconciliation.map_inputs)} inputs, {fmt(S.reconciliation.map_datasets)} datasets, {fmt(S.reconciliation.map_missing_primary)} missing PRIMARY slots — {S.reconciliation.ok ? "all totals match" : "MISMATCH, do not trust this view"}.</p>
     </div>}
 
-    {view !== "summary" && view !== "sources" && !L && !err && <p className="ir-fine" data-testid="df-loading">Loading the pipeline ledger…</p>}
+    {view !== "summary" && view !== "sources" && view !== "models" && !L && !err && <p className="ir-fine" data-testid="df-loading">Loading the pipeline ledger…</p>}
 
     {view === "markets" && L && (focus?.kind === "market" ? <MarketDetail L={L} k={focus.key} go={go}/> : focus?.kind === "input" ? <InputDetail L={L} k={focus.key} go={go}/> : <div>
       <div className="ir-sports" role="tablist" aria-label="Sport">{L.sports_order.map(s => <button key={s} role="tab" aria-selected={s === sport} className={"ir-sport" + (s === sport ? " on" : "")} onClick={() => { setSport(s); setN(PAGE); }}>
@@ -255,6 +293,7 @@ export function DataFoundation() {
     </div>}
 
     {view === "sources" && <SourcesView/>}
+    {view === "models" && <ModelsView onChallenger={k => go("challenger", k)}/>}
 
     {view === "queue" && L && <div data-testid="df-queue">
       <p className="ir-fine">Ranked by recorded factors only, in this order: sport priority → action group (archived build → free collection → rights approval → prospective capture → blocked/paid) → already archived → missing PRIMARY slots → markets affected. No composite score and no predicted model gain. “Evidence-backed” means a committed challenger ablation tested an input this dataset feeds; everything else is a hypothesis.</p>

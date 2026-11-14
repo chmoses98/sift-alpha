@@ -11,7 +11,7 @@ test("index covers every archetype, edge and distinct input", () => {
   assert.equal(ix.edges.length, 4243);
   assert.equal(Object.keys(m.inputs).length, 1649);
   assert.equal(ix.edges.filter(e => e.cls === "PREDICTIVE").length, 3670);
-  assert.equal(ix.edges.filter(isMissingPrimary).length, 949);
+  assert.equal(ix.edges.filter(isMissingPrimary).length, 888);
 });
 
 test("unfiltered views list all 170 markets, 1,649 inputs and 165 datasets", () => {
@@ -20,9 +20,9 @@ test("unfiltered views list all 170 markets, 1,649 inputs and 165 datasets", () 
   assert.equal(filterDatasets(ix, EMPTY_FILTERS).length, 165);
 });
 
-test("filters: missing-primary edges across markets total 949; class and sport filters partition", () => {
+test("filters: missing-primary edges across markets total 888; class and sport filters partition", () => {
   const rows = filterMarkets(ix, {...EMPTY_FILTERS, missing: true});
-  assert.equal(rows.reduce((s, r) => s + r.edges.length, 0), 949);
+  assert.equal(rows.reduce((s, r) => s + r.edges.length, 0), 888);
   const pred = filterMarkets(ix, {...EMPTY_FILTERS, cls: "PREDICTIVE"}).reduce((s, r) => s + r.edges.length, 0);
   assert.equal(pred, 3670);
   const bySport = ["NFL", "CFB", "NBA", "CBB", "NHL", "MLB", "SOCCER", "TENNIS"].reduce((s, sp) => s + filterInputs(ix, {...EMPTY_FILTERS, sport: sp}).length, 0);
@@ -45,7 +45,7 @@ test("queue rows are unique datasets and their slots are real missing-primary ed
   assert.equal(new Set(m.queue.map(q => q.dataset)).size, m.queue.length);
   const covered = new Set();
   for (const q of m.queue) for (const [a, i] of q.slots) { assert.ok(missing.has(a + "|" + i)); covered.add(a + "|" + i); }
-  assert.equal(covered.size, 949);
+  assert.equal(covered.size, 888);
 });
 
 // ---- Linked dependency filtering: every view is derived from the same matching-edge set, recomputed here by brute force.

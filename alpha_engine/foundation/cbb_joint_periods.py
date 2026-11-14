@@ -430,7 +430,7 @@ def build_games(arch: Path, teams_csv: Path):
     audit, checks = {}, []
 
     def chk(name, passed, detail):
-        checks.append(dict(name=name, passed=bool(passed), detail=str(detail)))
+        checks.append(C.check(name, passed, detail))
 
     # ---- scheduled tip: last pre-game ESPN schedule observation with a valid time; never later than the projection's own listed start
     pre = sched[(sched["status_type_state"] == "pre") & (sched["time_valid"] == True)].sort_values(["game_id", "observed_at"], kind="mergesort")  # noqa: E712
@@ -525,7 +525,7 @@ def build_games(arch: Path, teams_csv: Path):
     lo, hi = used.groupby("slate")["tip"].min(), used.groupby("slate")["tip"].max()
     gap = [(lo.iloc[i] - hi.iloc[i - 1]).total_seconds() / 3600.0 for i in range(1, len(lo))]
     chk("slates_do_not_overlap_in_time", bool(min(gap) > 2.5) if gap else True, f"minimum gap between the last tip of a slate and the first tip of the next: {min(gap):.2f} h" if gap else "single slate")
-    chk("projection_period_score_join_rate", True,
+    chk("projection_period_score_join_rate", C.ATTESTED,
         f"{int(scored.sum())} of {int((g['tip'] <= last_scored_tip).sum())} projected games tipping on or before the last scored tip have a verified period score; "
         f"{int(ps_ok['espn_game_id'].isin(runs['espn']).sum())} of {len(ps_ok)} period-score games have an incumbent projection "
         f"({int((~ps_ok['espn_game_id'].isin(runs['espn'])).sum())} without one, i.e. never projected by the incumbent)")
@@ -655,7 +655,7 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
     games["cohort"] = np.where(games["slate"] < cut, "cohort_1", "cohort_2")
     params = walk_forward_params(games)
     leak_ok = all(p["train_max_slate"] is None or p["train_max_slate"] < d for d, p in params.items())
-    checks.append(dict(name="walk_forward_training_strictly_before_slate", passed=bool(leak_ok),
+    checks.append(C.check(name="walk_forward_training_strictly_before_slate", passed=bool(leak_ok),
                        detail="for every slate D the newest training game is on a slate < D and its period score was archived before the first tip of D; "
                               + "; ".join(f"{d}: n={p['n_train']} (not yet archived {p['n_not_yet_archived']})" for d, p in params.items())))
     variants = ["challenger", "naive", "no_cross_team_corr", "share_050", "level_share", "kappa_1", "prior_only"]
@@ -676,7 +676,7 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
     kal = panel[panel["family"].notna() & panel["in_used_game"]].copy()
     strike_needed = kal["mtype"].isin(["MARGIN", "TOTAL", "TEAM_TOTAL"])
     bad_strike = strike_needed & ~((kal["strike"] * 2) % 2 == 1) | (strike_needed & (kal["direction"] != "greater"))
-    checks.append(dict(name="kalshi_strikes_are_half_integer_greater_than", passed=not bool(bad_strike.any()),
+    checks.append(C.check(name="kalshi_strikes_are_half_integer_greater_than", passed=not bool(bad_strike.any()),
                        detail=f"{int(bad_strike.sum())} of {int(strike_needed.sum())} listed threshold contracts in used games with a non-half-integer strike or a direction other than 'greater' (excluded)"))
     kal = kal[~bad_strike].copy()
     kal["gi"] = kal["game_id"].map(gidx).astype(int); kal["universe"] = "kalshi_listed"
@@ -685,7 +685,7 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
     by_id = np.where(kal["subject_tid"].to_numpy() == ht, "home", np.where(kal["subject_tid"].to_numpy() == at, "away", "unresolved"))
     n_flip = int((teamed & (by_id != kal["side"]) & (by_id != "unresolved")).sum()); n_unres = int((teamed & (by_id == "unresolved")).sum())
     kal["side"] = np.where(teamed, by_id, kal["side"]); kal = kal[kal["side"] != "unresolved"].copy()
-    checks.append(dict(name="kalshi_subject_side_resolved_by_team_id", passed=n_unres == 0,
+    checks.append(C.check(name="kalshi_subject_side_resolved_by_team_id", passed=n_unres == 0,
                        detail=f"{int(teamed.sum())} team-sided contracts in used games: {n_flip} had the panel's home/away label reversed relative to the projection frame (neutral-site SWAPPED games) and were re-labelled by subject_team_id; {n_unres} unresolved (dropped)"))
     kal["lead_min"] = (games["tip"].to_numpy()[kal["gi"]] - _ts(kal["captured_at"]).to_numpy()) / np.timedelta64(1, "m")
     rows = pd.concat([syn, kal[["gi", "mtype", "period", "side", "strike", "universe", "ticker", "mid", "two_sided", "tight", "lead_min", "panel_inc_prob", "panel_inc_as_of"]]], ignore_index=True)
@@ -703,14 +703,14 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
     have = kr.notna().to_numpy(); agree = (kr[have] == "yes").to_numpy() == (rows.loc[isk, "y"].to_numpy()[have] == 1)
     fam_k = rows.loc[isk, "family"].to_numpy()[have]
     dis = {f: int((~agree[fam_k == f]).sum()) for f in FAMILY_ORDER if (fam_k == f).any() and (~agree[fam_k == f]).any()}
-    checks.append(dict(name="own_settlement_matches_kalshi_settled_result", passed=bool(agree.all()),
+    checks.append(C.check(name="own_settlement_matches_kalshi_settled_result", passed=bool(agree.all()),
                        detail=f"{int(have.sum())} listed contracts in used games carry a Kalshi result in a later panel; {int(agree.sum())} agree with the outcome settled here from verified half scores"
                               f" (first-half TIE contracts included: a tied half settles both team contracts NO); disagreements by family {dis}"))
     same_asof = isk & (_ts(rows["panel_inc_as_of"]).to_numpy() == games["as_of"].to_numpy()[rows["gi"]]) & np.isfinite(pd.to_numeric(rows["panel_inc_prob"], errors="coerce").to_numpy(float))
     dmax = float(np.nanmax(np.abs(pd.to_numeric(rows["panel_inc_prob"], errors="coerce").to_numpy(float)[same_asof] - p_inc[same_asof]))) if same_asof.any() else float("nan")
-    checks.append(dict(name="incumbent_probability_reproduces_panel", passed=bool(same_asof.any() and dmax < 1e-9),
+    checks.append(C.check(name="incumbent_probability_reproduces_panel", passed=bool(same_asof.any() and dmax < 1e-9),
                        detail=f"{int(same_asof.sum())} full-game contracts where the panel's as-of incumbent record is the same frozen file used here: max |panel probability - recomputed| = {dmax:.2e}"))
-    checks.append(dict(name="panel_quote_strictly_before_tip", passed=bool((rows.loc[isk, 'lead_min'] > 0).all()),
+    checks.append(C.check(name="panel_quote_strictly_before_tip", passed=bool((rows.loc[isk, 'lead_min'] > 0).all()),
                        detail=f"all {int(isk.sum())} used quotes captured before this module's tip; {pmeta['pretip_rows_at_or_after_tip']} panel rows labelled PRETIP but captured at/after the tip used here were discarded"))
 
     # ---------------- results
@@ -817,7 +817,7 @@ def run(arch: Path, teams_csv: Path, repo: Path, out_dir: Path = OUT_DIR, worker
                team_means_sum_to_total_max_abs_dev=float(np.abs(arrs["challenger"]["mean"].sum(1) - games["total"].to_numpy()).max()),
                halves_sum_to_team_mean_max_abs_dev=float(np.abs(arrs["challenger"]["mean"][:, 0] + arrs["challenger"]["mean"][:, 2] - games["mu_h"].to_numpy()).max()),
                all_probabilities_in_unit_interval=bool(((P["challenger"] >= 0) & (P["challenger"] <= 1)).all()))
-    checks.append(dict(name="joint_distribution_coherence_on_real_forecasts", passed=bool(coh["first_half_winner_three_way_sum_max_abs_dev"] < 1e-9 and coh["team_means_sum_to_total_max_abs_dev"] < 1e-6 and coh["all_probabilities_in_unit_interval"]),
+    checks.append(C.check(name="joint_distribution_coherence_on_real_forecasts", passed=bool(coh["first_half_winner_three_way_sum_max_abs_dev"] < 1e-9 and coh["team_means_sum_to_total_max_abs_dev"] < 1e-6 and coh["all_probabilities_in_unit_interval"]),
                        detail=json.dumps(C._clean(coh), sort_keys=True)))
 
     shas = git_shas(repo); a = audit["games"]; dr = audit["data_rows"]

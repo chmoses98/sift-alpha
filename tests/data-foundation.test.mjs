@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {STAGE_LABEL, OUTCOME_KIND, challengerResults, referenceTally, inputStatus, marketInputs, reconcile, sportMarkets, stageRows} from "../src/data-foundation.mjs";
+import {STAGE_LABEL, OUTCOME_KIND, BOARD_LABEL, GAP_LABEL, REF_LABEL, ageDays, challengerResults, referenceTally, inputStatus, marketInputs, reconcile, sportMarkets, stageRows} from "../src/data-foundation.mjs";
 
 const L = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/pipeline_ledger.json", import.meta.url)));
 const S = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/summary.json", import.meta.url)));
@@ -79,4 +79,27 @@ test("challenger tally counts every pooled result row exactly once", () => {
     assert.equal(t.reduce((a, x) => a + x.rows, 0), ch.results.length, ch.id);
     for (const x of t) assert.equal(Object.values(x.verdicts).reduce((a, b) => a + b, 0), x.rows);
   }
+});
+
+test("every result row has a known reference kind and the scoreboard reconciles to the challengers", () => {
+  for (const ch of Object.values(L.challengers)) for (const r of ch.results) assert.ok(REF_LABEL[r.reference_kind], ch.id + " " + r.reference);
+  for (const s of L.sports_order) {
+    const b = L.scoreboard[s]; assert.ok(BOARD_LABEL[b.status], s);
+    assert.deepEqual(b.challengers.map(c => c.id).sort(), Object.values(L.challengers).filter(c => c.sport === s).map(c => c.id).sort());
+    for (const c of b.challengers) {
+      const ch = L.challengers[s + ":" + c.id];
+      assert.equal(c.market_gap.length, ch.results.filter(r => r.reference_kind === "MARKET").length);
+      for (const g of c.market_gap) { assert.ok(GAP_LABEL[g.state]); if (g.state === "WORSE_THAN_MARKET") assert.ok(g.ci95[0] > 0); if (g.state === "BETTER_THAN_MARKET") assert.ok(g.ci95[1] < 0); }
+      assert.equal(c.validated_vs_market, ch.results.filter(r => r.tested && r.reference_kind === "MARKET" && r.verdict === "VALIDATED_IMPROVEMENT").length);
+    }
+    // a sport is never shown as beating the market unless a tested, validated market row exists
+    if (b.status === "VALIDATED_VS_MARKET") assert.ok(b.challengers.some(c => c.validated_vs_market > 0));
+  }
+});
+
+test("freshness is computed in whole days and never negative", () => {
+  assert.equal(ageDays("2026-11-14", new Date("2026-11-14T10:00:00Z")), 0);
+  assert.equal(ageDays("2026-11-10", new Date("2026-11-14T10:00:00Z")), 4);
+  assert.equal(ageDays("", new Date()), null);
+  assert.equal(ageDays("2027-01-01", new Date("2026-11-14T10:00:00Z")), 0);
 });

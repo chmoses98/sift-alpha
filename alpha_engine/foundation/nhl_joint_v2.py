@@ -33,6 +33,7 @@ import numpy as np
 
 from . import nhl_goalie as NG
 from . import nhl_joint as J
+from . import contract as C
 from .contract import (EVAL_SCHEMA, OPS, brier_rows, calibration_slope, logloss_rows, paired_cluster_bootstrap, repos_dir,
                        sha256_file, validate_evaluation, write_json)
 
@@ -439,8 +440,8 @@ def run(log=print):
         J.check("moneypuck_goals_reconcile_with_goalie_log", ga_rec > 0.97, f"MoneyPuck non-empty-net goals (periods 1-4) equal the official goalie goals_against in {ga_rec:.2%} of goalie-games"),
         J.check("pit_starter_candidates_cover_actual", bool(in_c.mean() > 0.9),
                 f"actual starter is among the PIT candidates (started for the team in the prior 365 days, top-{NG.MAX_CAND} by recency) in {in_c.mean():.2%} of {len(in_c)} team-games"),
-        J.check("goalie_state_strictly_earlier", True, "quality lookups use the goalie's last row with day < game day; candidate features use starts with day < game day"),
-        J.check("starter_flag_used_only_as_label_or_oracle", True, "as-played starter = conditional-logit training label (2021-2023) and ablation (i) ORACLE_NOT_PIT input only"),
+        J.check("goalie_state_strictly_earlier", C.ATTESTED, "quality lookups use the goalie's last row with day < game day; candidate features use starts with day < game day"),
+        J.check("starter_flag_used_only_as_label_or_oracle", C.ATTESTED, "as-played starter = conditional-logit training label (2021-2023) and ablation (i) ORACLE_NOT_PIT input only"),
     ]
     # leak guard: perturb all goalie rows from the first test date; no pre-test feature may change
     cut = int(tg["day"].values[season > J.TRAIN_LAST].min())
@@ -800,7 +801,7 @@ def run(log=print):
          "checks": [J.check("reproduces_committed_0_1", rep_err < 1e-5, f"max |pooled log loss - committed 0.1| over {len(HEAD)} families = {rep_err:.2e}")]},
         {"feature_id": "team_extensions_validation_selected", "catalog_inputs": ["NHL:nhl.shot_rate", "NHL:nhl.rest_travel"],
          "description": "high-danger xG rates, score-adjusted shot-attempt volume, long-rest (>= 3 days) flags; each accepted only if 2019-2023 validation deviance falls",
-         "pit_rule": "walk-forward state from earlier dates; selection never reads 2024+", "checks": [J.check(f"selection_{s['extension']}", True,
+         "pit_rule": "walk-forward state from earlier dates; selection never reads 2024+", "checks": [J.check(f"selection_{s['extension']}", C.ATTESTED,
                     f"val deviance {s['val_deviance_with']:.6f} vs base {s['val_deviance_base']:.6f} -> {'ACCEPTED' if s['accepted'] else 'REJECTED'}") for s in team_sel]},
         {"feature_id": "pit_goalie_mixture_quality", "catalog_inputs": ["NHL:nhl.goalie_quality", "NHL:nhl.goalie_start_forecast", "NHL:nhl.goalie_workload"],
          "description": "expected shrunk log(goals allowed / expected goals) of the opposing starter under the PIT conditional-logit starter model",

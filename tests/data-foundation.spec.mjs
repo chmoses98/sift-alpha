@@ -7,14 +7,16 @@ const n = x => x.toLocaleString("en-US");
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
-  await page.waitForSelector("[data-testid=df-totals]", { timeout: 60000 });
+  await page.waitForSelector("[data-testid=acq-totals]", { timeout: 60000 });   // Acquire is the default view
 });
+const summary = page => page.getByTestId("data-foundation").getByRole("tab", { name: "Summary" }).click();
 
 test("executive summary renders from the small summary file without fetching the ledger", async ({ page }) => {
   const urls = [];
   page.on("request", r => urls.push(r.url()));
   await page.reload();
   const df = page.getByTestId("data-foundation");
+  await summary(page);
   await expect(df.getByTestId("df-totals")).toContainText(n(S.totals.inputs));
   await expect(df.getByTestId("df-totals")).toContainText(n(S.totals.archetypes));
   await expect(df.getByTestId("df-recon")).toContainText("all totals match");
@@ -24,6 +26,7 @@ test("executive summary renders from the small summary file without fetching the
 });
 
 test("P0 cards show committed counts, the stage ladder and each sport's challenger verdict", async ({ page }) => {
+  await summary(page);
   for (const s of ["NBA", "CBB", "NHL"]) {
     const card = page.getByTestId("df-sport-" + s), d = S.sports[s];
     await expect(card).toContainText(n(d.inputs_predictive));
@@ -123,6 +126,7 @@ test("Models shows every sport's status, freshness and gap to the market without
 test("Built inputs separates built, used, evaluated, selected and validated for the 30 archive inputs", async ({ page }) => {
   const df = page.getByTestId("data-foundation");
   const B = S.built_inputs;
+  await summary(page);
   await expect(df.getByTestId("df-built-NBA")).toContainText(`${B.filter(x => x.sport === "NBA").length} built`);
   await df.getByRole("tab", { name: "Built inputs" }).click();
   const v = df.getByTestId("df-built");
@@ -142,9 +146,9 @@ test("Built inputs separates built, used, evaluated, selected and validated for 
 
 test("no horizontal overflow in any view (desktop and iPhone)", async ({ page }) => {
   const df = page.getByTestId("data-foundation");
-  for (const tab of ["Summary", "Models", "Built inputs", "Markets", "Challengers", "Queue", "Sources"]) {
+  for (const tab of ["Acquire", "Training", "Summary", "Models", "Built inputs", "Markets", "Challengers", "Queue", "Sources"]) {
     await df.getByRole("tab", { name: tab }).click();
-    if (tab !== "Summary" && tab !== "Sources" && tab !== "Models" && tab !== "Built inputs") await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
+    if (!["Acquire", "Training", "Summary", "Sources", "Models", "Built inputs"].includes(tab)) await expect(df).toHaveAttribute("data-ready", "yes", { timeout: 60000 });
     const o = await measureOverflow(page);
     expect(o.scroll, tab + " " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
   }

@@ -91,6 +91,27 @@ def finish(steps: list, now_utc: str) -> dict:
             "note": "HEALTHY means every requested step succeeded, the ledger reconciles to the Market & Input Map and nothing is stale. It says nothing about model quality or profitability."}
 
 
+def _lock_is_stale() -> bool:
+    """A lock is stale when its owner process is gone, or it is older than every step timeout combined (a killed pass).
+    An unreadable or legacy empty lock is judged by age alone. A live owner inside the time budget is never broken."""
+    try:
+        age = time.time() - LOCK.stat().st_mtime
+        parts = LOCK.read_text().split()
+    except FileNotFoundError:
+        return False
+    if age > sum(STEP_TIMEOUT_S.values()) + 300:
+        return True
+    try:
+        os.kill(int(parts[0]), 0)
+    except (IndexError, ValueError):
+        return False
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--market-watch", action="store_true"); ap.add_argument("--challengers", action="store_true")
@@ -98,12 +119,16 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     now = a.now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     OPS.mkdir(parents=True, exist_ok=True)
+    if _lock_is_stale():
+        print("removing a stale lock left by a pass that is no longer running", file=sys.stderr)
+        LOCK.unlink(missing_ok=True)
     try:
         fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         print("another pass holds the lock; refusing to run concurrently", file=sys.stderr)
         return 3
     try:
+        os.write(fd, f"{os.getpid()} {int(time.time())}\n".encode())
         os.close(fd)
         h = run_pass(a.market_watch, a.challengers, now)
         write_json(OPS / "loop_health.json", h)

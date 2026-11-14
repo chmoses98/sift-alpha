@@ -1,6 +1,6 @@
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {OUTCOME_KIND, OUTCOME_LABEL, P0, STAGE_LABEL, VERDICT_KIND, VERDICT_LABEL, challengerResults, referenceTally, fmt, inputStatus, marketInputs, signed, num, sportMarkets, stageRows} from "./data-foundation.mjs";
-// The ~35 KB summary renders the executive view immediately; the 2.9 MB ledger loads only when the explorer is opened or scrolled to.
+// The small summary file renders the executive view immediately; the multi-megabyte ledger loads only when the explorer is opened or scrolled to.
 import SUMMARY from "../research/data_foundation_ops/summary.json";
 import SOURCES from "../research/data_foundation_ops/source_acquisition.json";
 
@@ -31,7 +31,7 @@ function ResultRow({r}) {
   return <li className="df-res">
     <div><b>{r.market_family}</b> · {r.metric} vs <code>{r.reference}</code> <Verdict v={r.verdict}/></div>
     <div className="ir-why">challenger {num(r.challenger)} · reference {num(r.reference_value)} · difference <b>{signed(r.diff)}</b> ({better ? "challenger lower" : "challenger higher"}; lower is better)
-      · 95% CI [{signed(r.ci95?.[0])}, {signed(r.ci95?.[1])}] · Holm p {num(r.p_holm, 3)} · {fmt(r.n_rows)} rows / {fmt(r.n_clusters)} games · cohort {String(r.cohort).replaceAll("_", " ")}{r.replicated == null ? "" : r.replicated ? " · same sign in both cohorts" : " · sign not replicated across cohorts"}</div>
+      · 95% CI [{signed(r.ci95?.[0])}, {signed(r.ci95?.[1])}] · {r.p_holm == null ? "no adjusted p-value (outside the tested family)" : "Holm p " + num(r.p_holm, 3)} · {fmt(r.n_rows)} rows / {fmt(r.n_clusters)} games · cohort {String(r.cohort).replaceAll("_", " ")}{r.replicated == null ? "" : r.replicated ? " · same sign in both cohorts" : " · sign not replicated across cohorts"}</div>
   </li>;
 }
 
@@ -97,7 +97,7 @@ function InputDetail({L, k, go}) {
     <div className="mim-stats"><Chip>{inp.sport}</Chip> <code>{inp.id}</code> <Chip>{inp.predictive ? "predictive input" : inp.classes.join(", ").toLowerCase()}</Chip> <Chip>point-in-time: {inp.pit || "UNKNOWN"}</Chip> <Chip>rights: {inp.rights_tier}</Chip></div>
     <h4>Pipeline</h4>
     <ol className="df-chain" data-testid="df-chain">
-      {L.chain.map((s, i) => <li key={s} className={i <= inp.at ? "on" : ""}><span className="df-cname">{STAGE_LABEL[s]}</span> <Outcome o={inp.chain[i]}/><div className="ir-why">{inp.evidence[i] || (i > inp.at + 1 ? "not reached" : "")}</div></li>)}
+      {L.chain.map((s, i) => <li key={s} className={i <= inp.at ? "on" : ""}><span className="df-cname">{STAGE_LABEL[s]}</span> {i > inp.at + 1 ? <Chip k="plain">not reached</Chip> : <Outcome o={inp.chain[i]}/>}<div className="ir-why">{i > inp.at + 1 ? (inp.chain[i] === "OK" || inp.chain[i] === "PARTIAL" ? "Not counted: an earlier stage is not complete. Recorded evidence: " + (inp.evidence[i] || "none") : inp.evidence[i] || "not reached") : inp.evidence[i] || ""}</div></li>)}
       <li className="df-prod"><span className="df-cname">{STAGE_LABEL.PRODUCTION_APPROVED}</span> <Outcome o={inp.production_approved}/><div className="ir-why">No approval record exists in this repository.</div></li>
       <li className="df-prod"><span className="df-cname">{STAGE_LABEL.PRODUCTION_ACTIVE}</span> <Outcome o={inp.production_active}/><div className="ir-why">{inp.production_evidence} (tracked separately from the research chain)</div></li>
     </ol>
@@ -139,7 +139,7 @@ function MarketDetail({L, k, go}) {
     </div>
     <ul className="mim-list" data-testid="df-inputs">{rows.slice(0, n).map(r => { const st = inputStatus(L, r); return <li key={r.key} className={r.stop && ["BLOCKED", "FAILED", "REJECTED"].includes(r.stop.outcome) ? "mim-missing" : ""}>
       <Link onClick={() => go("input", r.key)} label={"input " + r.label}>{r.label}</Link> <Chip>{r.role}</Chip>
-      <div className="mim-stats"><Chip k="ok">at: {STAGE_LABEL[st.at]}</Chip>{st.next && <Chip k={OUTCOME_KIND[st.outcome]}>{STAGE_LABEL[st.next]}: {OUTCOME_LABEL[st.outcome]}</Chip>}
+      <div className="mim-stats"><Chip k={OUTCOME_KIND[r.chain[r.at]] || "ok"}>at: {STAGE_LABEL[st.at]}{r.chain[r.at] === "PARTIAL" ? " (partial)" : ""}</Chip>{st.next && <Chip k={OUTCOME_KIND[st.outcome]}>{STAGE_LABEL[st.next]}: {OUTCOME_LABEL[st.outcome]}</Chip>}
         <Chip k={OUTCOME_KIND[r.production_active]}>production use: {r.production_active === "OK" ? "yes" : r.production_active === "PARTIAL" ? "partial" : r.production_active === "MISSING" ? "no" : "unknown"}</Chip></div>
       <div className="ir-why">{st.why}</div></li>; })}</ul>
     {rows.length > n && <button className="mim-more" onClick={() => setN(x => x + PAGE)}>Show more ({rows.length - n} left)</button>}

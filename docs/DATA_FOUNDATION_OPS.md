@@ -64,7 +64,7 @@ Raw rows never enter this repository. Challengers read the owner's sport reposit
 * Health is fail-closed: `HEALTHY` requires every requested step to succeed, the ledger to reconcile to the map and the market watch to be under 8 days old.
   A skipped, failed or timed-out step makes the pass `DEGRADED` or `FAILED`.
 
-`.github/workflows/data-foundation-refresh.yml` runs that pass **only on manual dispatch**. It has no schedule, read-only permissions, a 30-minute
+`.github/workflows/data-foundation-refresh.yml` runs that pass **only on manual dispatch**. It has no schedule, read-only permissions, an 85-minute
 timeout and uploads an artifact instead of committing. **Adding a schedule is an owner decision and has not been made.**
 
 ## 5. Dashboard
@@ -72,7 +72,7 @@ timeout and uploads an artifact instead of committing. **Adding a schedule is an
 `src/data-foundation.jsx` adds the "Data foundation pipeline" section at the top of Input Research:
 Summary (P0 executive cards, all eight sports, unclassified new listings), Markets (sport → market → required inputs → input → datasets and
 collectors → challenger), Challengers (data, features and checks, results, ablations, limitations) and Queue (ranked next engineering actions).
-The summary (≈35 KB) is in the main bundle; the 2.9 MB ledger loads when a detail view is opened.
+The summary (≈0.15 MB) is in the main bundle; the ≈3.4 MB ledger loads when a detail view is opened.
 `pages.yml` now also requires the new section's markers in the published bundle.
 
 ## 6. Source rights (unchanged, and binding)

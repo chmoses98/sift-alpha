@@ -1,0 +1,137 @@
+import pandas as pd, numpy as np, glob, json
+D='/tmp/claude-0/-home-user/32225307-99da-5b07-99a7-4e3ae00b9c7e/scratchpad/blind/nhl/data/'
+def load(sub,kind):
+    return pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f'{D}{sub}/{kind}_*.parquet'))],ignore_index=True)
+ts=load('players','team_states'); goals=load('players','goals'); shots=load('players','shots'); pl=load('players','players'); mp=load('moneypuck','shots')
+
+def W(df,cols,key):
+    """window sums; df has season, date. key: column name or None. returns DataFrame indexed like df, columns W_<c>"""
+    d=df[['season','date']+([key] if key else [])+cols].copy()
+    if not key: key='_k'; d[key]=0
+    for c in cols: d[c]=d[c].fillna(0).astype('float64')
+    d['_i']=np.arange(len(d))
+    agg=d.groupby([key,'season','date'],as_index=False)[cols].sum().sort_values([key,'season','date'])
+    cs=agg.groupby([key,'season'])[cols].cumsum()-agg[cols]
+    cur=agg[[key,'season','date']].copy()
+    for c in cols: cur['cur_'+c]=cs[c].values
+    tot=d.groupby([key,'season'],as_index=False)[cols].sum()
+    tot['season']=tot['season']+1
+    tot=tot.rename(columns={c:'prv_'+c for c in cols})
+    m=d[['_i',key,'season','date']].merge(cur,on=[key,'season','date'],how='left').merge(tot,on=[key,'season'],how='left').sort_values('_i')
+    out=pd.DataFrame(index=df.index)
+    for c in cols: out[c]=m['cur_'+c].fillna(0).values+m['prv_'+c].fillna(0).values
+    return out
+def ratio(a,b):
+    a=np.asarray(a,float); b=np.asarray(b,float)
+    with np.errstate(all='ignore'):
+        return np.where(b>0,a/np.where(b>0,b,1),np.nan)
+
+ts['date']=pd.to_datetime(ts['game_date'])
+T=ts.drop_duplicates(['game_id','team_id'],keep='first').reset_index(drop=True)
+MPG=set(mp['nhl_game_id'].unique())
+mp=mp.copy(); mp['xGoal']=mp['xGoal'].astype('float64')
+mp['sen']=mp['shotOnEmptyNet'].fillna(0)
+
+# ---- Table A
+A=T[['game_id','team_id','season','date','is_home']].copy()
+gg=goals[goals['period'].isin([1,2,3])&~(goals['empty_net']==True)]
+cnt=gg.groupby(['game_id','team_id']).size().rename('g_reg')
+cnt2=gg[gg['period']==2].groupby(['game_id','team_id']).size().rename('g_p2')
+A=A.merge(cnt,on=['game_id','team_id'],how='left').merge(cnt2,on=['game_id','team_id'],how='left')
+k=mp[mp['period'].isin([1,2,3])&(mp['sen']==0)].copy()
+k['home']=(k['isHomeTeam']==1)
+xr=k.groupby(['nhl_game_id','home'])['xGoal'].sum()
+xp=k[k['period']==2].groupby(['nhl_game_id','home'])['xGoal'].sum()
+A['home']=A['is_home']==True
+A=A.merge(xr.rename('x_reg').reset_index().rename(columns={'nhl_game_id':'game_id'}),on=['game_id','home'],how='left')
+A=A.merge(xp.rename('x_p2').reset_index().rename(columns={'nhl_game_id':'game_id'}),on=['game_id','home'],how='left')
+inm=A['game_id'].isin(MPG)
+for c in ['g_p2','g_reg','x_p2','x_reg']: A[c]=A[c].fillna(0.0).astype(float)
+A.loc[~inm,['x_p2','x_reg']]=0.0
+A['sel_h']=A['home'].astype(float); A['sel_a']=1.0-A['sel_h']
+out=A[['game_id','team_id']].rename(columns={'team_id':'team'}).copy()
+for kind,name in [('g','g'),('x','xg')]:
+    p2,reg=kind+'_p2',kind+'_reg'
+    L=ratio(W(A,[p2],None)[p2],W(A,[reg],None)[reg])
+    ms={}
+    for v,s in [('home','sel_h'),('away','sel_a')]:
+        B=A[['season','date','team_id']].copy(); B['a']=A[p2]*A[s]; B['b']=A[reg]*A[s]
+        w=W(B,['a','b'],'team_id')
+        ms[v]=((w['a'].values+250*L)/(w['b'].values+250))/L
+    out[f'lce_{name}_mult_home_pre']=ms['home']; out[f'lce_{name}_mult_away_pre']=ms['away']
+    out[f'lce_{name}_ha_diff_pre']=ms['home']-ms['away']
+    out[f'lce_{name}_mult_pre']=np.where(A['home'],ms['home'],ms['away'])
+out.to_csv('blind_nhl_lce.csv',index=False,float_format='%.17g')
+
+# ---- Table B1
+opp=T[['game_id','team_id']].merge(T[['game_id','team_id']],on='game_id',suffixes=('','_o'))
+opp=opp[opp['team_id']!=opp['team_id_o']].drop_duplicates(['game_id','team_id'])
+P=T[['game_id','team_id','season','date','is_home','sec_sh']].merge(opp,on=['game_id','team_id'],how='left')
+P['sec_sh']=P['sec_sh'].astype(float)
+s=shots[shots['strength']=='PP'].copy()
+s['sog']=s['kind'].isin(['SOG','GOAL']).astype(float)
+s['att']=s['kind'].isin(['SOG','GOAL','MISS']).astype(float)
+ax=s['x'].abs(); ay=s['y'].abs()
+s['pt']=s['att']*((s['zone']=='O')&(ax<=54)).astype(float)
+s['slot']=s['att']*((ax>=69)&(ay<=22)).astype(float)
+sa=s.groupby(['game_id','team_id'])[['sog','att','pt','slot']].sum().reset_index().rename(columns={'team_id':'team_id_o'})
+P=P.merge(sa,on=['game_id','team_id_o'],how='left')
+m=mp[(((mp['isHomeTeam']==1)&(mp['homeSkatersOnIce'].astype(float)>mp['awaySkatersOnIce'].astype(float)))|
+      ((mp['isHomeTeam']!=1)&(mp['awaySkatersOnIce'].astype(float)>mp['homeSkatersOnIce'].astype(float))))&(mp['sen']==0)].copy()
+m['shome']=(m['isHomeTeam']==1)
+xs=m.groupby(['nhl_game_id','shome'])['xGoal'].sum().rename('xga').reset_index().rename(columns={'nhl_game_id':'game_id'})
+P['tside_home']=P['is_home']==True
+P['shome']=~P['tside_home']
+P=P.merge(xs,on=['game_id','shome'],how='left')
+for c in ['sog','att','pt','slot','xga']: P[c]=P[c].fillna(0.0)
+inm=P['game_id'].isin(MPG)
+P.loc[~inm,'xga']=0.0
+P['sh_mp']=np.where(inm,P['sec_sh'],0.0)
+cols=['sec_sh','sog','att','pt','slot','xga','sh_mp']
+Wt=W(P,cols,'team_id'); Wl=W(P,cols,None)
+lg_soga=3600*ratio(Wl.sog,Wl.sec_sh); lg_xga=3600*ratio(Wl.xga,Wl.sh_mp)
+lg_pt=ratio(Wl.pt,Wl.att); lg_slot=ratio(Wl.slot,Wl.att)
+P['pko_soga60']=3600*(Wt.sog+7200*lg_soga/3600)/(Wt.sec_sh+7200)
+P['pko_xga60']=3600*(Wt.xga+7200*lg_xga/3600)/(Wt.sh_mp+7200)
+P['pko_point_share']=(Wt.pt+150*lg_pt)/(Wt.att+150)
+P['pko_slot_share']=(Wt.slot+150*lg_slot)/(Wt.att+150)
+P['lg_soga']=lg_soga; P['lg_pt']=lg_pt
+
+# ---- B2
+pl['date']=pd.to_datetime(pl['game_date'])
+S=pl[pl['position']!='G'].drop_duplicates(['game_id','player_id'],keep='first').reset_index(drop=True)
+S['grp']=np.where(S['position']=='D','D','F')
+S['toi_pp']=S['toi_pp_s'].fillna(0.0); S['sog_pp']=S['sog_pp'].fillna(0.0)
+q=shots[(shots['strength']=='PP')&shots['kind'].isin(['SOG','GOAL','MISS'])].copy()
+q['att']=1.0; q['pt']=((q['zone']=='O')&(q['x'].abs()<=54)).astype(float)
+qa=q.groupby(['game_id','shooter_id'])[['att','pt']].sum().reset_index().rename(columns={'shooter_id':'player_id'})
+S=S.merge(qa,on=['game_id','player_id'],how='left')
+S['att']=S['att'].fillna(0.0); S['pt']=S['pt'].fillna(0.0)
+c4=['toi_pp','sog_pp','att','pt']
+Wp=W(S,c4,'player_id'); Wg=W(S,c4,'grp')
+g_rate=ratio(Wg.sog_pp,Wg.toi_pp); g_pt=ratio(Wg.pt,Wg.att)
+S['pp_sog60_pre']=3600*(Wp.sog_pp+3600*g_rate)/(Wp.toi_pp+3600)
+S['pp_point_share_pre']=(Wp.pt+20*g_pt)/(Wp.att+20)
+S=S.merge(opp.rename(columns={'team_id':'team_id','team_id_o':'opp_id'}),on=['game_id','team_id'],how='left')
+Pj=P[['game_id','team_id','pko_soga60','pko_xga60','pko_point_share','pko_slot_share','lg_soga','lg_pt']].rename(columns={'team_id':'opp_id'})
+S=S.merge(Pj,on=['game_id','opp_id'],how='left')
+pp=S['pp_point_share_pre']; pk=S['pko_point_share']
+S['pko_combo_pp_sog60_pre']=S['pp_sog60_pre']*(S['pko_soga60']/S['lg_soga'])*(pp*(pk/S['lg_pt'])+(1-pp)*((1-pk)/(1-S['lg_pt'])))
+o=S[['game_id','player_id','pko_soga60','pko_xga60','pko_point_share','pko_slot_share','pp_sog60_pre','pp_point_share_pre','pko_combo_pp_sog60_pre']].rename(
+ columns={'player_id':'team','pko_soga60':'pko_soga60_pre','pko_xga60':'pko_xga60_pre','pko_point_share':'pko_point_share_pre','pko_slot_share':'pko_slot_share_pre'})
+o=o[['game_id','team','pko_soga60_pre','pko_xga60_pre','pko_point_share_pre','pko_slot_share_pre','pp_sog60_pre','pp_point_share_pre','pko_combo_pp_sog60_pre']]
+o.to_csv('blind_nhl_pk.csv',index=False,float_format='%.17g')
+json.dump({
+"window":"cumulative sums by (key,season,date) minus same-date rows, plus full prior-season (season-1) totals of same key; NaN->0",
+"ratio":"NaN when denominator NaN or <=0",
+"dedupe":"team_states and players dedup keep first; goals/shots/mp not deduped",
+"A_goals":"period in 1-3, empty_net==True excluded (NaN kept); missing games 0",
+"A_x":"mp rows period 1-3, shotOnEmptyNet NaN->0 ==0; side by isHomeTeam==1; game not in MPG -> 0",
+"m_v":"NaN when L NaN or 0 (ratio rule)",
+"B1_opp":"opp = other team_id in deduped team_states for game; if absent NaN",
+"B1_shots":"PP shots grouped by shots.team_id == opponent; no dedupe; slot/pt NaN coords false (comparison False)",
+"B1_xga":"mp PP shots by skater-count comparison as float; shooting side opposite of T's side; is_home True=home",
+"B2":"skater's opponent from own team's team_states row (by player's team_id); skaters whose team/game not in team_states get NaN pko; output rows = all deduped non-G skater rows",
+"combo":"1-lg_pt zero would give inf/NaN naturally (no guard)",
+"dates":"pd.to_datetime of game_date; players dates from players table game_date"
+},open('notes.json','w'),indent=1)

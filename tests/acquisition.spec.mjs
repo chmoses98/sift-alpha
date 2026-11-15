@@ -59,3 +59,18 @@ test("market drill-down lists data requirements with have/need, datasets and blo
   const o = await measureOverflow(page);
   expect(o.scroll, "market requirements " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
 });
+
+test("Phase 6 tab keeps probed, collected, verified, built and training-ready apart and shows the before/after counts from the evidence file", async ({ page }) => {
+  const P6 = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/phase6_acquisition.json", import.meta.url)));
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Phase 6" }).click();
+  const v = page.getByTestId("p6");
+  await expect(v.getByTestId("p6-ladder").locator("> li")).toHaveCount(P6.stage_order.length);
+  await expect(v.getByTestId("p6-totals")).toContainText(`${P6.baseline.training_ready_inputs} → ${P6.after.training_ready_inputs}`);
+  await expect(v.getByTestId("p6-built").locator("> li")).toHaveCount(P6.built.length);
+  await expect(v.getByTestId("p6-probes").locator("> li")).toHaveCount(P6.probes.length);
+  await expect(v.getByTestId("p6-blockers")).toContainText("owner decision");
+  await expect(v.getByTestId("p6-capture")).toContainText("req/day");
+  const o = await measureOverflow(page);
+  expect(o.scroll, "phase 6 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
+});

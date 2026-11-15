@@ -1,8 +1,11 @@
 """Classification and roll-up.  Pure functions over (games, specs, observations); no I/O."""
+import re
 from collections import Counter, defaultdict
 
 from .model import (COMPLETE, MISSING, NOT_APPLICABLE, PARTIAL, RIGHTS_BLOCKED, STALE, STATUSES, UNVERIFIED,
                     DatasetSpec, Game, Observation)
+
+_NUM = re.compile(r"\d+(\.\d+)?")          # group reasons that differ only by a measured number
 
 
 def classify(game: Game, spec: DatasetSpec, obs: Observation | None) -> tuple[str, str]:
@@ -65,7 +68,7 @@ def rollup(cells, specs):
         by_ds[c["dataset"]][c["status"]] += 1
         by_ds_season[c["dataset"]][c["season"]][c["status"]] += 1
         if c["status"] not in (COMPLETE, NOT_APPLICABLE):
-            reasons[c["dataset"]][c["status"] + ": " + c["reason"].split(" (")[0][:90]] += 1
+            reasons[c["dataset"]][c["status"] + ": " + _NUM.sub("N", c["reason"].split(" (")[0])[:90]] += 1
 
     def block(cnt):
         expected = sum(cnt[s] for s in STATUSES)

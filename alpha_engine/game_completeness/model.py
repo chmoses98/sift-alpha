@@ -1,4 +1,5 @@
 """Data model: what is expected (Game, DatasetSpec) and what was read back (Observation)."""
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Optional
@@ -24,6 +25,9 @@ RECOVERABILITY = (RECOVERABLE, PROSPECTIVE_ONLY, UNAVAILABLE)
 FINAL, SCHEDULED, POSTPONED, CANCELLED = "FINAL", "SCHEDULED", "POSTPONED", "CANCELLED"
 
 
+_COMPACT = re.compile(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?")
+
+
 def parse_ts(v) -> Optional[datetime]:
     """ISO-8601 / epoch seconds -> aware UTC datetime; None when absent or unparseable (never 'now')."""
     if v is None or v == "":
@@ -32,9 +36,11 @@ def parse_ts(v) -> Optional[datetime]:
         return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
     if isinstance(v, (int, float)):
         return datetime.fromtimestamp(v / 1000 if v > 1e11 else v, tz=timezone.utc)
-    s = str(v).strip().replace("Z", "+00:00")
-    if len(s) == 16 and s[8] == "T":                      # 20261115T204835 (compact, as used in archive file names)
-        s = f"{s[:4]}-{s[4:6]}-{s[6:8]}T{s[9:11]}:{s[11:13]}:{s[13:15]}+00:00"
+    s = str(v).strip()
+    m = _COMPACT.fullmatch(s)                             # 20261115T204835Z, as used in archive file names
+    if m:
+        s = "{}-{}-{}T{}:{}:{}+00:00".format(*m.groups())
+    s = s.replace("Z", "+00:00")
     try:
         d = datetime.fromisoformat(s)
     except ValueError:

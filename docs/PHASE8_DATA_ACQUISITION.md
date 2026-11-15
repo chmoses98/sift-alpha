@@ -16,6 +16,7 @@ Dashboard: Data foundation → **Phase 8** tab, rendered from `research/data_fou
   * 3,907 forecast vintages from 222 capture runs.
   * 117 completed 2026 games (weeks 1–8) have a kickoff-hour forecast retrieved before kickoff (`features/nfl_weather_fcst.py`).
   * Validation against observed game weather on open-air games: temperature r 0.95 (MAE 2.3 °F), wind r 0.72 (MAE 2.2 mph).
+* **Verified after the fix.** Diagnostic run 43755891909 (2026-11-15 20:48Z) archived `data/context/2026-11-15/20261115T204835Z.*` on `market-data` (commit 08146a5). Re-reading the archived file shows 24 of 24 fetchable games with forecasts, health HEALTHY.
 * **Lost.** 16 completed games (2026-11-01..11-15) have no pre-game forecast, and point-in-time forecasts cannot be backfilled. Five international games have no venue coordinates by design.
 
 ## 2. PR #77 / #78 CI (this PR, stacked on #78)

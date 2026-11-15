@@ -4,6 +4,7 @@ import {CHECK_KIND, STATE_KIND, STATE_LABEL, TIER_KIND, TIER_SHORT, decisions, f
 import PLAN from "../research/data_foundation_ops/acquisition_plan.json";
 import P6 from "../research/data_foundation_ops/phase6_acquisition.json";
 import P7 from "../research/data_foundation_ops/phase7_acquisition.json";
+import P8 from "../research/data_foundation_ops/phase8_acquisition.json";
 
 const INPUTS = import.meta.glob("../research/data_foundation_ops/acquisition_inputs.json");
 let inputsPromise = null;
@@ -234,5 +235,50 @@ export function Phase7View() {
 
     <h3>Best next acquisitions</h3>
     <ul className="mim-list">{P7.priority_changes.map((t, i) => <li key={i}><div className="ir-why">{t}</div></li>)}</ul>
+  </div>;
+}
+
+// Phase 8 log: weather-capture health, data actually collected vs code merely prepared, per-sport training datasets, completed vs
+// upcoming feature coverage, blockers. Rendered only from research/data_foundation_ops/phase8_acquisition.json (alpha_engine.foundation.phase8).
+const P8_STATUS = {ACQUIRED: "ok", VERIFIED: "ok", BUILT: "chipwarn", TRAINING_READY: "ok", PREPARED: "unv", LOST: "miss", STALLED: "miss", RESTORED_PENDING_VERIFY: "chipwarn", VERIFIED_ARCHIVED: "ok"};
+export function Phase8View() {
+  const W = P8.weather || {}, U = P8.upcoming, T = P8.totals || {};
+  return <div data-testid="p8">
+    <p className="ir-fine">{P8.notice}</p>
+    <ol className="p6-ladder" aria-label="Stages, weakest to strongest">{P8.stage_order.map(s => <li key={s}>{lc(s)}</li>)}</ol>
+    <div className="mim-cards" data-testid="p8-totals">
+      <div><b>{fmt(T.training_ready_inputs)}</b><small>training-ready inputs (unchanged: nothing new certified this phase)</small></div>
+      <div><b>{fmt(T.missing_primary_slots)}</b><small>missing PRIMARY slots</small></div>
+      <div><b>{P8.training_sets.length}</b><small>sport training datasets assembled ({P8.training_sets.filter(t => !/BUILT_NOT_CERTIFIED/.test(t.admission)).length} from training-ready inputs only)</small></div>
+      <div><b>{U ? fmt(U.rows) : "0"}</b><small>upcoming NFL games with pre-game features</small></div>
+    </div>
+
+    <h3>NFL weather capture</h3>
+    <ul className="mim-list" data-testid="p8-weather"><li><b>context-capture.yml</b> <Chip k={P8_STATUS[W.status] || "unv"}>{lc(W.status || "unknown")}</Chip>
+      <div className="ir-why">Root cause: {W.root_cause}</div>
+      <div className="ir-why">Fix: {W.fix} · {W.fix_pr}</div>
+      <div className="ir-why">Archive: {fmt(W.vintages)} forecast vintages for {fmt(W.games)} games, last verified forecast retrieved {W.last_verified_forecast} · lost window: {W.lost_window}</div>
+      <div className="ir-why">Forecast vs observed (open-air games): {W.validation}</div></li></ul>
+
+    <h3>Data collected this phase (real rows, held outside the repository)</h3>
+    <ul className="mim-list" data-testid="p8-collected">{P8.collected.map(c => <li key={c.id}><b>{c.id}</b> <Chip>{c.sport}</Chip> <Chip k={P8_STATUS[c.status] || "plain"}>{lc(c.status)}</Chip><div className="ir-why">{c.detail} · rights: {c.rights}</div></li>)}</ul>
+
+    <h3>Training datasets</h3>
+    <ul className="mim-list" data-testid="p8-sets">{P8.training_sets.map(t => <li key={t.sport}><b>{t.sport}</b> <Chip k={t.deterministic && t.keys_unique ? "ok" : "miss"}>{t.deterministic ? "regenerates identically" : "not deterministic"}</Chip> <Chip k={/BUILT_NOT_CERTIFIED/.test(t.admission) ? "chipwarn" : "ok"}>{/BUILT_NOT_CERTIFIED/.test(t.admission) ? "built, not certified" : "training-ready inputs only"}</Chip> <Chip>{fmt(t.rows)} games · {t.seasons[0]}..{t.seasons[1]}</Chip> <Chip>{t.n_inputs} inputs · {t.n_feature_columns} columns</Chip>
+      <div className="ir-why">splits: {Object.entries(t.rows_by_split).map(([k, v]) => k + " " + fmt(v)).join(" · ")} · both sides present {t.both_sides_share == null ? "n/a" : Math.round(100 * t.both_sides_share) + "%"}{t.truncation_check != null ? " · truncation check " + (t.truncation_check ? "exact" : "FAILED") : ""}</div>
+      <div className="ir-why">Walk-forward (market-free ridge, diagnostic only): MAE {t.walk_forward_mean.mae_model} vs constant {t.walk_forward_mean.mae_constant}; winner accuracy {t.walk_forward_mean.winner_acc_model == null ? "n/a" : Math.round(100 * t.walk_forward_mean.winner_acc_model) + "%"} · {t.file}</div></li>)}</ul>
+
+    <h3>Completed-game vs upcoming-game feature coverage</h3>
+    <ul className="mim-list" data-testid="p8-coverage">{P8.coverage.map(c => <li key={c.sport}><b>{c.sport}</b> <Chip k={c.upcoming_ready ? "ok" : "chipwarn"}>{c.upcoming_ready ? "upcoming games scored" : "completed games only"}</Chip><div className="ir-why">{c.detail}</div></li>)}</ul>
+    {U && <p className="ir-fine" data-testid="p8-upcoming">NFL upcoming path: {U.rows} games ({U.rows_pregame_at_build} still pre-kickoff at build {U.built_at_utc}), {U.n_feature_columns} columns, coverage {Math.round(100 * U.feature_coverage)}%, features as of {U.asof}. Truncation equivalence on {U.equivalence_dates} past dates ({U.equivalence_games} games): {U.equivalence_all_equal ? "exact match" : "MISMATCH"}.</p>}
+
+    <h3>Code prepared (not data)</h3>
+    <ul className="mim-list" data-testid="p8-prepared">{P8.prepared_code.map(c => <li key={c.id}><b>{c.id}</b> <Chip k="unv">prepared</Chip><div className="ir-why">{c.detail} · {c.pr}</div></li>)}</ul>
+
+    <h3>Remaining blockers</h3>
+    <ul className="mim-list" data-testid="p8-blockers">{P8.blockers.map(b => <li key={b.id}><Chip k={/OWNER/.test(b.kind) ? "miss" : "chipwarn"}>{lc(b.kind)}</Chip> <Chip>{b.sports.join(" · ")}</Chip><div className="ir-why">{b.text}</div></li>)}</ul>
+
+    <h3>Highest-value next datasets</h3>
+    <ol className="mim-list" data-testid="p8-next">{P8.next.map((t, i) => <li key={i}><div className="ir-why">{t}</div></li>)}</ol>
   </div>;
 }

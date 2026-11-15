@@ -24,6 +24,10 @@ def load_raw(p: Paths) -> dict:
 
 
 def compute(raw: dict) -> dict:
+    return {"team": _pre_features(_team_stats(raw))}
+
+
+def _team_stats(raw: dict) -> pd.DataFrame:
     pb = raw["pbp"]; pb = pb[pb.posteam.notna() & pb.epa.notna() & pb.season_type.isin(["REG", "POST"])].copy()
     pb["dropback"] = pb.qb_dropback.fillna(0)
     pb["explosive"] = np.where((pb["pass"] == 1) & (pb.yards_gained >= 20) | (pb.rush == 1) & (pb.yards_gained >= 10), 1.0, 0.0)
@@ -56,6 +60,12 @@ def compute(raw: dict) -> dict:
     dd = t[["game_id", "opp", "epa", "success", "pass_epa", "rush_epa", "pass_sr", "rush_sr", "sack_rate", "expl", "rz_epa", "to_rate", "qbhit", "pen_rate"]].rename(columns={"opp": "team", **{c: f"def_{c}" for c in ["epa", "success", "pass_epa", "rush_epa", "pass_sr", "rush_sr", "sack_rate", "expl", "rz_epa", "to_rate", "qbhit", "pen_rate"]}})
     t = t.merge(dd, on=["game_id", "team"], how="left")
     t = t.sort_values(["date", "game_id", "home"], ascending=[True, True, False], kind="mergesort").reset_index(drop=True)
+    return t
+
+
+def _pre_features(t: pd.DataFrame) -> pd.DataFrame:
+    """Every *_pre column from the team-game stat table (rows sorted by date, game, home first). Split out of compute() so scheduled-game stub
+    rows (stats NaN, appended after every completed game) get exactly the same formulas: see features/nfl_upcoming.py."""
     stats = ["epa", "success", "pass_epa", "rush_epa", "pass_sr", "rush_sr", "rz_epa", "rz_td", "expl", "sack_rate", "to_rate", "pen_rate", "pass_rate", "xpass", "pass_oe", "nohud", "shot", "air", "cpoe", "plays", "drives", "gtshare", "ed_pass", "pts", "pts_a", "total", "margin", "win", "qbhit",
              "def_epa", "def_success", "def_pass_epa", "def_rush_epa", "def_pass_sr", "def_rush_sr", "def_sack_rate", "def_expl", "def_rz_epa", "def_to_rate", "def_qbhit", "def_pen_rate"]
     for c in stats:
@@ -84,7 +94,7 @@ def compute(raw: dict) -> dict:
     # coach tenure in games and head-to-head familiarity (earlier meetings of the pair, same division)
     t["coach_games_pre"] = t.groupby(["team", "coach"], sort=False).cumcount()
     t["season_week"] = t.week
-    return {"team": t}
+    return t
 
 
 def specs() -> list[FeatureSpec]:

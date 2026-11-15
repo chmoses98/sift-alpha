@@ -123,6 +123,20 @@ def monthly(price):
     return None
 
 
+RIGHTS_REG = ROOT / "research/input_research/data_foundation/rights_registry.json"
+
+
+def collection_rights_blocked(ds) -> bool:
+    """True when a NOT-held dataset has at least one source with a rights reading and none of its read sources allows collection (sources with no reading are not permitted routes either).
+    Phase 6: a reachable source is not a permitted one."""
+    if ds["access_status"] in HELD or not RIGHTS_REG.exists():
+        return False
+    reg = json.load(open(RIGHTS_REG))["sources"]
+    matched = [[e for e in reg if any(t in s.lower() for t in e["tokens"])] for s in ds["sources"]]
+    known = [m for m in matched if m]     # a source with no rights reading at all is not a permitted route either
+    return bool(known) and not any(e.get("collection_allowed") for m in known for e in m)
+
+
 def classify(d, ds, provs, board):
     """Cost tier and the blocker that keeps the dataset from being acquired today."""
     access = ds["access_status"]
@@ -145,6 +159,8 @@ def classify(d, ds, provs, board):
         blockers.append("HISTORY: forward capture only; history accumulates from the first collection")
     if access in ("FREE_UNPROBED", "FREE_PATH_UNCONFIRMED"):
         blockers.append("VERIFICATION: free path documented but not yet probed")
+    if collection_rights_blocked(ds):
+        blockers.append("RIGHTS: new collection not permitted (no source with a rights reading allows collection in rights_registry.json); needs an owner rights decision")
     if paid_label and not free_prov:
         if cheapest is None:
             tier = "UNRESOLVED"
@@ -360,6 +376,10 @@ def next_step(x, catalog):
         return ("Write and blind-verify builders for the inputs this archive feeds; record a rights reading before any public output.",
                 "Confirm personal-research use of the archived provider data (rights stay UNRESOLVED_INTERNAL_ONLY until read).",
                 f"Already in an owner archive; feeds {x['feeds_missing_inputs']} missing PRIMARY inputs at no cost.")
+    if any(b.startswith("RIGHTS: new collection") for b in x.get("blockers", [])):
+        return ("Owner rights decision first: the source is reachable but recorded as not permitted for new collection; then a call-capped manual collector, backfill, replay and blind-match gates.",
+                "Decide whether personal non-commercial research use of this source is acceptable (rights_registry.json); until then nothing is collected.",
+                f"Reachable free source; feeds {x['feeds_missing_inputs']} missing PRIMARY inputs; blocked only by the recorded rights posture.")
     step = {"FREE_REACHABLE": "Write a call-capped collector (manual run only), backfill history, then the replay and blind-match gates.",
             "FREE_UNPROBED": "Probe the documented free path once (one request), record history depth and fields, then decide on a collector.",
             "FREE_PATH_UNCONFIRMED": "Confirm the free path (one probe) before writing a collector.",

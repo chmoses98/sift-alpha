@@ -1,4 +1,4 @@
-"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
+"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2, Phase 6 nhl3, nhl_player3 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
 Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
 
     python -m alpha_engine.input_research.data_foundation.replay_ext_run tennis RAW_DIR OUT.json [--quick]
@@ -89,6 +89,14 @@ def main(a=None) -> int:
         from ...features import nhl_player_ext2 as X
         raw = X.load_raw(a[1]); out = a[2]
         r = G.run(X, raw, "NHL", {"players": ("game_id", X.PL_CONTENT), "goals": ("game_id", X.GO_CONTENT), "mp": ("nhl_game_id", X.MP_CONTENT)}, games_table="players", games_date_col="game_date", quick=quick)
+    elif fam == "nhl3":               # Phase 6 (data acquisition): nhl.long_change_effect
+        from ...features import nhl_ext3 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NHL", {"team_states": ("game_id", []), "goals": ("game_id", X.GO_CONTENT), "mp": ("nhl_game_id", X.MP_CONTENT)}, games_table="team_states", games_date_col="game_date", quick=quick)
+    elif fam == "nhl_player3":        # Phase 6 (data acquisition): nhl.pk_structure_opp
+        from ...features import nhl_player_ext3 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NHL", {"players": ("game_id", X.PL_CONTENT), "team_states": ("game_id", X.TS_CONTENT), "shots": ("game_id", X.SH_CONTENT), "mp": ("nhl_game_id", X.MP_CONTENT)}, games_table="players", games_date_col="game_date", quick=quick)
     else:
         raise SystemExit("unknown family " + fam)
     Path(out).write_text(json.dumps(r, default=str, indent=0)); print("replayed", len(r["inputs"]), r["seconds"], "s"); return 0

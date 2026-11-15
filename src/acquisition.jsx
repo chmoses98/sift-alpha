@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from "react";
 import {CHECK_KIND, STATE_KIND, STATE_LABEL, TIER_KIND, TIER_SHORT, decisions, filterShortlist, lc, marketRequirements, money, priceLine, providersFor, rankForSport, requirementTally} from "./acquisition.mjs";
 // The plan (shortlist, roadmap, providers, per-sport readiness) renders immediately; per-input detail loads on demand.
 import PLAN from "../research/data_foundation_ops/acquisition_plan.json";
+import P6 from "../research/data_foundation_ops/phase6_acquisition.json";
 
 const INPUTS = import.meta.glob("../research/data_foundation_ops/acquisition_inputs.json");
 let inputsPromise = null;
@@ -145,5 +146,47 @@ export function MarketAcquisition({mk}) {
       <div className="ir-why">Checks: {Object.entries(r.tr.c).map(([k, v]) => k + " " + lc(v)).join(" · ")}</div>
     </li>)}</ul>
     {rows.length > n && <button className="mim-more" onClick={() => setN(x => x + PAGE)}>Show more ({rows.length - n} left)</button>}
+  </div>;
+}
+
+// Phase 6 acquisition log: what was probed, collected, verified, built and made training-ready, kept on separate rungs. Rendered only from
+// research/data_foundation_ops/phase6_acquisition.json (alpha_engine.foundation.phase6); no number is typed here.
+const P6_RUNG = {RESEARCHED: "researched (documented only)", PROBED: "probed (a request answered)", COLLECTED: "collected (rows held)", REPLAY_VERIFIED: "replay-verified (leak gates)",
+  BLIND_MATCHED_FEATURE_BUILT: "feature built + blind-matched", TRAINING_READY: "training-ready"};
+const P6_RESULT = {REACHABLE: "ok", NOT_PROBED: "miss"};
+export function Phase6View() {
+  const B = P6.baseline, F = P6.after;
+  const delta = (k, label) => <div key={k}><b>{fmt(B[k])} → {fmt(F[k])}</b><small>{label}</small></div>;
+  return <div data-testid="p6">
+    <p className="ir-fine">{P6.notice}</p>
+    <ol className="p6-ladder" data-testid="p6-ladder" aria-label="Stages, weakest to strongest">{P6.stage_order.map(s => <li key={s}>{P6_RUNG[s]}</li>)}</ol>
+    <div className="mim-cards" data-testid="p6-totals">
+      {delta("training_ready_inputs", "training-ready predictive inputs")}
+      {delta("verified_full", "inputs VERIFIED_FULL (certified)")}
+      {delta("missing_primary_slots", "missing PRIMARY slots")}
+      {delta("missing_primary_inputs", "distinct inputs behind them")}
+    </div>
+    <p className="ir-fine">Baseline: {B.as_of}. The new inputs feed no market where they are a missing PRIMARY slot, so the slot count does not move.</p>
+
+    <h3>New training-ready inputs</h3>
+    <ul className="mim-list" data-testid="p6-built">{P6.built.map(b => <li key={b.input}><b>{b.input}</b> <Chip k={b.replay_ok ? "ok" : "miss"}>replay {b.replay_ok ? "passed" : "failed"}</Chip> <Chip k={b.blind_match.split("/")[0] === b.blind_match.split("/")[1] ? "ok" : "miss"}>blind match {b.blind_match}</Chip> <Chip k={b.verified_status === "VERIFIED_FULL" ? "ok" : "chipwarn"}>{lc(b.verified_status)}</Chip> <Chip k={STATE_KIND[b.training_state] || "plain"}>{STATE_LABEL[b.training_state] || lc(b.training_state)}</Chip>
+      <div className="ir-why">{b.builder} · {b.columns.length} columns · {b.span[0]} .. {b.span[1]} · min coverage {Math.round(100 * b.min_coverage)}% · {lc(b.pit)} · next: {b.training_blocker}</div></li>)}</ul>
+
+    <h3>Sources probed</h3>
+    <ul className="mim-list" data-testid="p6-probes">{P6.probes.map(p => <li key={p.id}><b>{p.id}</b> <Chip>{p.sport}</Chip> <Chip k={P6_RESULT[p.result] || "unv"}>{lc(p.result)}{p.http ? " · HTTP " + p.http : ""}</Chip><div className="ir-why">{p.description}</div></li>)}</ul>
+    <p className="ir-fine">Reachable is not permitted: rights stay as recorded in the rights registry.</p>
+
+    <h3>Data actually read or collected</h3>
+    <ul className="mim-list" data-testid="p6-collected">{P6.collected.map(c => <li key={c.dataset}><b>{c.dataset}</b> <Chip k={c.status === "READ_FROM_OWNER_ARCHIVE" ? "ok" : "miss"}>{lc(c.status)}</Chip><div className="ir-why">{c.files} files · about {Math.round(c.bytes / 1e6)} MB · {c.why}</div></li>)}</ul>
+
+    <h3>Blockers and decisions for you</h3>
+    <ul className="mim-list" data-testid="p6-blockers">{P6.blockers.map(b => <li key={b.id}><Chip k={b.kind === "OWNER_DECISION" ? "miss" : "chipwarn"}>{lc(b.kind)}</Chip> <Chip>{b.sports.join(" · ")}</Chip><div className="ir-why">{b.text}</div></li>)}</ul>
+
+    <h3>Acquisition priorities that changed</h3>
+    <ul className="mim-list">{P6.priority_changes.map((t, i) => <li key={i}><div className="ir-why">{t}</div></li>)}</ul>
+
+    <h3>Forward-capture proposal (not scheduled)</h3>
+    <p className="ir-fine">{P6.capture_note}</p>
+    <ul className="mim-list" data-testid="p6-capture">{P6.capture_proposal.map(c => <li key={c.feed}><b>{c.feed}</b> <Chip>{String(c.requests_per_day)} req/day</Chip><div className="ir-why">when: {c.times} · unlocks: {c.unlocks} · storage: {c.storage} · checks: {c.quality} · reuse: {c.reuse}</div></li>)}</ul>
   </div>;
 }

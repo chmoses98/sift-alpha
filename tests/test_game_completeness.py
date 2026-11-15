@@ -94,6 +94,42 @@ class Misc(unittest.TestCase):
         self.assertEqual(r["unknown_map_datasets"], ["no.such_dataset"])
 
 
+class OfficialSettlement(unittest.TestCase):
+    def test_compare_never_forces_non_binary_into_agreement(self):
+        from alpha_engine.game_completeness.kalshi_official import compare
+        off = {"A": {"result": "yes"}, "B": {"result": "no"}, "C": {"result": "yes"}, "D": {"result": ""}, "Z": {"result": "no"}}
+        comp = {"A": "YES", "B": "YES", "C": "UNSETTLEABLE", "D": "NO", "E": "NO"}
+        r = compare(off, comp)
+        self.assertEqual(r["counts"]["agree"], 1)
+        self.assertEqual(r["counts"]["disagree"], 1)
+        self.assertEqual(r["disagreements"], ["B"])
+        self.assertEqual(r["counts"]["computed_not_binary"], 1)
+        self.assertEqual(r["counts"]["official_available_for_unsettleable"], 1)
+        self.assertEqual(r["counts"]["official_not_binary"], 1)
+        self.assertEqual(r["counts"]["computed_without_official"], 1)
+        self.assertEqual(r["counts"]["official_without_computed"], 1)
+
+    def test_fetch_pages_until_cursor_ends(self):
+        import io, tempfile
+        from alpha_engine.game_completeness.kalshi_official import fetch_series
+        pages = [{"markets": [{"ticker": "T1", "result": "yes"}], "cursor": "c"}, {"markets": [{"ticker": "T2", "result": "no"}], "cursor": ""}]
+        calls = []
+
+        class R(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def opener(req, timeout=0):
+            calls.append(req.full_url)
+            return R(json.dumps(pages[len(calls) - 1]).encode())
+        with tempfile.TemporaryDirectory() as d:
+            r = fetch_series("KXTEST", d, pause=0, opener=opener)
+            rows = [json.loads(x) for x in open(Path(d) / "KXTEST.jsonl")]
+        self.assertEqual((r["contracts"], r["pages"], r["truncated"]), (2, 2, False))
+        self.assertIn("cursor=c", calls[1])
+        self.assertTrue(all(x["_retrieved_at_utc"] for x in rows))
+
+
 class CommittedEvidence(unittest.TestCase):
     """The committed summaries must be internally consistent: counts add up and name only registered datasets."""
     ROOT = Path(__file__).resolve().parents[1] / "research" / "game_completeness"

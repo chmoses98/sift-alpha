@@ -75,6 +75,23 @@ Where the denominator is the owner's own file, a game absent from that file is i
 
 Full numbers: `docs/GAME_COMPLETENESS.md`.
 
+## Official settlement cross-check (local run, 2026-11-16)
+
+Kalshi's own results were fetched with `kalshi_official.py` to a local directory (not archived on any branch) and
+compared with each repo's computed settlements. Evidence: `research/game_completeness/kalshi_official_crosscheck.json`.
+
+| Sport | Official contracts fetched | Computed YES/NO compared | Agree | Disagree | Computed UNSETTLEABLE that the exchange did settle |
+|---|---|---|---|---|---|
+| NHL | 80,280 (20 series, closes 2026-09-20 .. 11-15) | 70,576 | 70,529 | 47 | 1,565 of 2,897 |
+| NBA | 122,360 (34 of 50 series, closes 2026-10-04 .. 11-15) | 112,337 | 112,206 | 131 | 3,007 of 5,201 |
+
+* NHL disagreements are all player props: saves 29, points 9, assists 9. Cause not investigated; stat corrections
+  after the box score was read are the obvious candidate.
+* NBA disagreements cluster in second-half markets (2H total 66, 2H spread 21, 2H winner 6), which points at a
+  semantics difference (for example overtime treatment) rather than noise; the rest are player props.
+* 51,841 NBA computed contracts were not compared: 16 series were not fetched in this run.
+* Every disagreeing ticker is listed in the evidence file so each engine's owner can check the rule.
+
 ## Not assessed in this pass
 
 * Kalshi quote and order-book *content* for NBA and NHL (files listed on the branch, not read: UNVERIFIED).

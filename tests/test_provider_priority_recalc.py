@@ -20,8 +20,8 @@ class Reproducible(unittest.TestCase):
 
     def test_pinned_universe(self):
         self.assertEqual(RES["rights_group_datasets"], 85)
-        self.assertEqual(RES["distinct_missing_primary_slots"], 796)
-        self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 888)
+        self.assertEqual(RES["distinct_missing_primary_slots"], 794)  # Phase 7: 796 -> 794 (two NFL slots closed)
+        self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 886)
 
 
 class NeedLevelRules(unittest.TestCase):

@@ -1,0 +1,192 @@
+import json, glob, numpy as np, pandas as pd
+B='/tmp/claude-0/-home-user/fe2fcd93-36fe-556b-87d8-e4244ab88677/scratchpad/blind/nfl/'
+D=B+'data/'; OUT=B+'out/'
+REN={'OAK':'LV','SD':'LAC','STL':'LA'}
+notes=[]
+g=pd.read_csv(D+'games.csv')
+g=g[(g.season>=1999)&g.home_score.notna()].copy()
+g['home_team']=g.home_team.replace(REN); g['away_team']=g.away_team.replace(REN)
+g['date']=pd.to_datetime(g.gameday).dt.normalize()
+g=g.reset_index(drop=True)
+cols=['game_id','season','season_type','pass','rush','qb_kneel','qb_spike','rush_attempt','epa','wp','xpass','qtr','rushing_yards','play_id','posteam','defteam','rusher_player_id']
+files=sorted(glob.glob(D+'pbp/pbp_*.parquet'))
+p=pd.concat([pd.read_parquet(f,columns=cols) for f in files],ignore_index=True)
+for c in ['pass','rush','qb_kneel','qb_spike','rush_attempt']: p[c]=p[c].fillna(0).astype('float64')
+for c in ['posteam','defteam']: p[c]=p[c].replace(REN)
+notes.append('pbp files concatenated in ascending season order (file name sort); this is the tie order for the stable carry sort when (date, game_id, play_id) tie')
+
+# ---------------- TABLE A
+reg=g[g.game_type=='REG'].copy()
+gi=pd.Series(np.arange(len(g)),index=g.game_id)
+pl=p[(p.season_type=='REG')&((p['pass']==1)|(p['rush']==1))&(p.qb_kneel!=1)&(p.qb_spike!=1)&p.epa.notna()&p.wp.notna()&(p.wp>=0.05)&(p.wp<=0.95)&p.posteam.notna()&p.defteam.notna()].copy()
+pl=pl[pl.game_id.isin(set(reg.game_id))]
+pl['kind']=np.where(pl['pass']==1,'pass','rush')
+obs=pl.groupby(['game_id','posteam','defteam','kind'],sort=True).agg(n=('epa','size'),s=('epa','sum')).reset_index()
+obs['y']=obs.s/obs.n
+obs['gidx']=gi[obs.game_id].values
+obs['date']=g.date.values[obs.gidx]
+neu=pl[(pl.qtr<=3)&(pl.wp>=0.2)&(pl.wp<=0.8)&pl.xpass.notna()]
+neu=neu.groupby(['game_id','posteam']).agg(nn=('xpass','size'),sx=('xpass','sum'),sp=('pass','sum')).reset_index()
+neu['gidx']=gi[neu.game_id].values
+teams_all=sorted(set(g.home_team)|set(g.away_team)|set(obs.posteam)|set(obs.defteam)|set(neu.posteam))
+tix={t:i for i,t in enumerate(teams_all)}; NT=len(teams_all)
+obs['o']=obs.posteam.map(tix).values; obs['d']=obs.defteam.map(tix).values
+neu['o']=neu.posteam.map(tix).values
+NG=len(g)
+# team game lists (REG)
+reg_s=reg.sort_values(['date','game_id'])
+tg={}
+for t in teams_all:
+    m=reg_s[(reg_s.home_team==t)|(reg_s.away_team==t)]
+    tg[tix[t]]=(gi[m.game_id].values, m.date.values)
+gdate=g.date.values
+o_g=obs.gidx.values; o_o=obs.o.values; o_d=obs.d.values; o_n=obs.n.values.astype(float); o_y=obs.y.values; o_date=obs.date.values
+o_kind=(obs.kind.values=='pass')
+n_g=neu.gidx.values; n_o=neu.o.values; n_nn=neu.nn.values.astype(float); n_sx=neu.sx.values; n_sp=neu.sp.values
+res={}
+for d in np.sort(g.date.unique()):
+    rank=np.full((NG,NT),np.nan)  # rank of (game,team)
+    for t,(gs,ds) in tg.items():
+        k=np.searchsorted(ds,d,side='left')
+        kept=gs[max(0,k-12):k]
+        rank[kept,t]=np.arange(len(kept))[::-1]
+    rO=rank[o_g,o_o]; rD=rank[o_g,o_d]
+    ent=(o_date<d)&(~np.isnan(rO)|~np.isnan(rD))
+    r=np.fmin(rO,rD)
+    out={}
+    for kind,K in (('pass',150.),('rush',100.)):
+        m=ent&(o_kind==(kind=='pass'))
+        if not m.any(): out[kind]=None; continue
+        oo=o_o[m]; dd=o_d[m]; w=o_n[m]*0.5**(r[m]/6); y=o_y[m]; nn=o_n[m]
+        tm=np.unique(np.concatenate([oo,dd])); M=len(tm); loc={t:i for i,t in enumerate(tm)}
+        li=np.searchsorted(tm,oo); lj=np.searchsorted(tm,dd)
+        P=1+2*M
+        X=np.zeros((len(w),P)); X[:,0]=1; X[np.arange(len(w)),1+li]=1; X[np.arange(len(w)),1+M+lj]=1
+        A=X.T@(X*w[:,None]); A[np.arange(1,P),np.arange(1,P)]+=50.
+        bvec=X.T@(w*y)
+        beta=np.linalg.solve(A,bvec)
+        b0=beta[0]; off=b0+beta[1:1+M]; de=b0+beta[1+M:]
+        nO=np.bincount(li,weights=nn,minlength=M); nD=np.bincount(lj,weights=nn,minlength=M)
+        offS=np.full(NT,np.nan); defS=np.full(NT,np.nan)
+        offS[tm]=b0+nO/(nO+K)*(off-b0); defS[tm]=b0+nD/(nD+K)*(de-b0)
+        out[kind]=(b0,offS,defS)
+    eg=np.zeros(NG,bool); eg[o_g[ent]]=True
+    nm=eg[n_g]; den=n_nn[nm].sum()
+    lx=n_sx[nm].sum()/den if den!=0 else np.nan
+    rn=rank[n_g,n_o]; jm=~np.isnan(rn); wg=0.5**(rn[jm]/6)
+    numT=np.bincount(n_o[jm],weights=wg*(n_sp[jm]-n_sx[jm]),minlength=NT)
+    denT=np.bincount(n_o[jm],weights=wg*n_nn[jm],minlength=NT)
+    proe=np.where(denT>0,numT/np.where(denT>0,denT,1),np.nan)
+    res[d]=(out,lx,proe)
+rows=[]
+for side in ('home','away'):
+    u=pd.DataFrame({'game_id':g.game_id,'team':g[side+'_team'],'opp':g[('away' if side=='home' else 'home')+'_team'],'date':g.date})
+    rows.append(u)
+U=pd.concat(rows,ignore_index=True)
+cols_out={c:np.full(len(U),np.nan) for c in ['prs_off_pass_pre','prs_off_rush_pre','prs_def_pass_pre','prs_def_rush_pre','prs_pass_rate_pre','prs_exp_epa_pre']}
+T=U.team.map(tix).values; Uo=U.opp.map(tix).values
+for i,(d,t,uo) in enumerate(zip(U.date.values,T,Uo)):
+    out,lx,proe=res[d]
+    nanv=(np.nan,np.full(NT,np.nan),np.full(NT,np.nan))
+    bp,oP,dP=out['pass'] if out['pass'] else nanv
+    br,oR,dR=out['rush'] if out['rush'] else nanv
+    cols_out['prs_off_pass_pre'][i]=oP[t]; cols_out['prs_off_rush_pre'][i]=oR[t]
+    cols_out['prs_def_pass_pre'][i]=dP[t]; cols_out['prs_def_rush_pre'][i]=dR[t]
+    pA=lx+proe[t]; cols_out['prs_pass_rate_pre'][i]=pA
+    cols_out['prs_exp_epa_pre'][i]=pA*(oP[t]+dP[uo]-bp)+(1-pA)*(oR[t]+dR[uo]-br)
+A_df=U[['game_id','team']].copy()
+for c,v in cols_out.items(): A_df[c]=v
+A_df.to_csv(OUT+'blind_nfl_prs.csv',index=False,float_format='%.17g')
+print('A',A_df.shape, A_df.isna().mean().round(3).to_dict())
+notes+=['TABLE A universe ordered: all home rows (schedule order) then all away rows',
+ 'TABLE A: rank lookup is per (game_id, team) in the team kept-list; an obs whose O/D is not a schedule team of that game gets no rank for that side',
+ 'TABLE A: team game lists use date < d strictly (games on the same date as d excluded); entering obs also require obs date < d',
+ 'TABLE A: lx uses neutral rows of all game_ids appearing in entering obs (pass or rush), with no rank weighting',
+ 'TABLE A: if a kind has no entering obs, b0/offS/defS for it are NaN so prs_exp_epa_pre is NaN',
+ 'TABLE A: team indices for the ridge are only teams appearing as O or D in that kind entering obs; others NaN',
+ 'TABLE A: neutral grouping uses the same filtered plays (REG, pass/rush, no kneel/spike, epa/wp valid, 0.05<=wp<=0.95) then qtr<=3, 0.2<=wp<=0.8, xpass notna; sp = sum of pass flag']
+
+# ---------------- TABLE B
+c=p[(p.rush_attempt==1)&(p.qb_kneel!=1)&p.rusher_player_id.notna()&p.rushing_yards.notna()&p.posteam.notna()&p.defteam.notna()].copy()
+c=c[c.game_id.isin(set(g.game_id))].drop(columns=['season'])
+gg=g.set_index('game_id')
+c['season']=gg.season.reindex(c.game_id).values; c['date']=gg.date.reindex(c.game_id).values
+c=c.sort_values(['date','game_id','play_id'],kind='mergesort').reset_index(drop=True)
+pls=pd.read_parquet(D+'players.parquet',columns=['gsis_id','position']).drop_duplicates('gsis_id',keep='first')
+isqb=set(pls.gsis_id[pls.position=='QB'])
+c['grp']=np.where(c.rusher_player_id.isin(isqb),'QB','RB')
+y=c.rushing_yards.values; KS=[7,10,15,20,30,40]
+E=np.stack([(y>=k).astype(float) for k in KS],1); ST=(y<=0).astype(float)
+cs=c.season.values.astype(int); cd=c.date.values.astype('datetime64[ns]')
+u=c.groupby(['game_id','rusher_player_id'],sort=False).agg(opp=('defteam','first'),grp=('grp','first')).reset_index()
+u['season']=gg.season.reindex(u.game_id).values.astype(int); u['date']=gg.date.reindex(u.game_id).values.astype('datetime64[ns]')
+nq=len(u); qs=u.season.values; qd=u.date.values
+def cumcount(mask_rows, qmask, seasons_back):
+    """for queries in qmask: counts of rows in mask_rows (array of indices) with season in [s-sb,s] and date<d; returns cnt, sums of E, sum ST"""
+    pass
+# generic helper: rows subset idx (sorted by date), queries subset
+def agg(rows, qidx, sb):
+    n=np.zeros(len(qidx)); e=np.zeros((len(qidx),len(KS))); st=np.zeros(len(qidx))
+    if len(rows)==0 or len(qidx)==0: return n,e,st
+    rs=cs[rows]; rd=cd[rows]
+    for q in np.unique(rs):
+        sel=rows[rs==q]  # date-sorted
+        dsel=cd[sel]; ce=np.vstack([np.zeros((1,len(KS))),np.cumsum(E[sel],0)]); cst=np.concatenate([[0],np.cumsum(ST[sel])])
+        qm=(qs[qidx]-sb<=q)&(q<=qs[qidx])
+        if not qm.any(): continue
+        k=np.searchsorted(dsel,qd[qidx][qm],side='left')
+        n[qm]+=k; e[qm]+=ce[k]; st[qm]+=cst[k]
+    return n,e,st
+allrows=np.arange(len(c)); allq=np.arange(nq)
+# league [s-1,s]
+Ln,Le,Lst=agg(allrows,allq,1)
+with np.errstate(invalid='ignore',divide='ignore'):
+    L=Le/Ln[:,None]; Lstuff=Lst/Ln
+L[Ln==0]=np.nan; Lstuff[Ln==0]=np.nan
+# group prior [s-2,s]
+P=np.full((nq,len(KS)),np.nan)
+for gr in ['QB','RB']:
+    rows=np.where(c.grp.values==gr)[0]; qi=np.where(u.grp.values==gr)[0]
+    n,e,_=agg(rows,qi,2)
+    with np.errstate(invalid='ignore',divide='ignore'):
+        P[qi]=np.where(n[:,None]>0,e/np.where(n>0,n,1)[:,None],np.nan)
+# defence [s-1,s]
+Dn=np.zeros(nq); De=np.zeros((nq,len(KS))); Dst=np.zeros(nq)
+dvals=c.defteam.values; uopp=u.opp.values
+for t in np.unique(uopp):
+    rows=np.where(dvals==t)[0]; qi=np.where(uopp==t)[0]
+    n,e,st=agg(rows,qi,1); Dn[qi]=n; De[qi]=e; Dst[qi]=st
+# rusher
+num=np.zeros((nq,len(KS))); W=np.zeros(nq)
+rid=c.rusher_player_id.values
+rgroups=pd.Series(np.arange(len(c))).groupby(rid).indices
+for r_,qi in pd.Series(np.arange(nq)).groupby(u.rusher_player_id.values).indices.items():
+    rows=rgroups[r_]  # in sorted order
+    rs=cs[rows]; rd=cd[rows]; er=E[rows]
+    for q in qi:
+        m=(rs>=qs[q]-2)&(rs<=qs[q])&(rd<qd[q])
+        N=m.sum()
+        if N==0: continue
+        w=0.5**((N-1-np.arange(N))/25.)
+        num[q]=w@er[m]; W[q]=w.sum()
+with np.errstate(invalid='ignore',divide='ignore'):
+    rk=(num+60*P)/(W[:,None]+60)
+    ek=(De+100*L)/(Dn[:,None]+100)
+    val=np.minimum(1, rk*ek/L)  # np.minimum propagates NaN
+    val[~(L>0)]=np.nan
+    stuff=((Dst+100*Lstuff)/(Dn+100))/Lstuff
+    stuff[~(Lstuff>0)]=np.nan
+Bdf=pd.DataFrame({'game_id':u.game_id,'team':u.rusher_player_id})
+for i,k in enumerate(KS): Bdf[f'ryt_p{k}_pre']=val[:,i]
+Bdf['ryt_opp_stuff_pre']=stuff
+Bdf.to_csv(OUT+'blind_nfl_ryt.csv',index=False,float_format='%.17g')
+print('B',Bdf.shape,Bdf.isna().mean().round(3).to_dict())
+notes+=['TABLE B universe rows ordered by first appearance in the sorted carry order',
+ 'TABLE B: carry season/date taken from G (pbp season column dropped); play_id NaN sorts last within (date, game_id) (pandas default na_position)',
+ 'TABLE B: grp uses players.parquet first row per gsis_id; position null or missing rusher -> RB',
+ 'TABLE B: r_k is NaN whenever P_k is NaN (even if the rusher has own carries W>0), literal arithmetic',
+ 'TABLE B: rusher weight window index j is over the filtered subset (season in [s-2,s], date<d) of that rusher, not over all his carries',
+ 'TABLE B: date < d strict, so carries from other games on the same date are excluded from all windows',
+ 'TABLE B: min(1, x) with x NaN gives NaN; e_k uses L_k NaN -> NaN',
+ 'TABLE B: group of the universe row is the rusher grp (constant per rusher); opp = defteam of the first carry in sorted order within that game']
+json.dump({'ambiguities':notes},open(OUT+'notes.json','w'),indent=1)

@@ -3,6 +3,7 @@ import {CHECK_KIND, STATE_KIND, STATE_LABEL, TIER_KIND, TIER_SHORT, decisions, f
 // The plan (shortlist, roadmap, providers, per-sport readiness) renders immediately; per-input detail loads on demand.
 import PLAN from "../research/data_foundation_ops/acquisition_plan.json";
 import P6 from "../research/data_foundation_ops/phase6_acquisition.json";
+import P7 from "../research/data_foundation_ops/phase7_acquisition.json";
 
 const INPUTS = import.meta.glob("../research/data_foundation_ops/acquisition_inputs.json");
 let inputsPromise = null;
@@ -188,5 +189,50 @@ export function Phase6View() {
     <h3>Forward-capture proposal (not scheduled)</h3>
     <p className="ir-fine">{P6.capture_note}</p>
     <ul className="mim-list" data-testid="p6-capture">{P6.capture_proposal.map(c => <li key={c.feed}><b>{c.feed}</b> <Chip>{String(c.requests_per_day)} req/day</Chip><div className="ir-why">when: {c.times} · unlocks: {c.unlocks} · storage: {c.storage} · checks: {c.quality} · reuse: {c.reuse}</div></li>)}</ul>
+  </div>;
+}
+
+// Phase 7 log: real collection, new certified inputs, per-sport training datasets and capture status. Rendered only from
+// research/data_foundation_ops/phase7_acquisition.json (alpha_engine.foundation.phase7); no number is typed here.
+const P7_RESULT = {COLLECTED: "ok", OWNER_ARCHIVE_CURRENT: "ok", REACHABLE: "plain", REACHABLE_NOT_USED: "chipwarn", NOT_PUBLISHED: "unv", BLOCKED: "miss", CAPTURE_STALLED: "miss"};
+const pct = x => x == null ? "n/a" : Math.round(100 * x) + "%";
+export function Phase7View() {
+  const B = P7.baseline, F = P7.after;
+  const delta = (k, label) => <div key={k}><b>{fmt(B[k])} → {fmt(F[k])}</b><small>{label}</small></div>;
+  return <div data-testid="p7">
+    <p className="ir-fine">{P7.notice}</p>
+    <ol className="p6-ladder" aria-label="Stages, weakest to strongest">{P7.stage_order.map(s => <li key={s}>{P6_RUNG[s]}</li>)}</ol>
+    <div className="mim-cards" data-testid="p7-totals">
+      {delta("training_ready_inputs", "training-ready predictive inputs")}
+      {delta("verified_full", "inputs VERIFIED_FULL (certified)")}
+      {delta("missing_primary_slots", "missing PRIMARY slots")}
+      {delta("missing_primary_inputs", "distinct inputs behind them")}
+    </div>
+    <p className="ir-fine">Baseline: {B.as_of}. Training-ready by sport now: {Object.entries(P7.training_ready_by_sport).map(([s, n]) => s + " " + n).join(" · ")}.</p>
+
+    <h3>Training datasets</h3>
+    <ul className="mim-list" data-testid="p7-sets">{P7.training_sets.map(t => <li key={t.sport}><b>{t.sport}</b> <Chip k={t.checks.keys_unique && t.checks.deterministic_regeneration ? "ok" : "miss"}>{t.checks.deterministic_regeneration ? "regenerates identically" : "not deterministic"}</Chip> <Chip>{fmt(t.rows)} games · {t.seasons[0]}..{t.seasons[1]}</Chip> <Chip>{t.n_inputs} inputs · {t.n_feature_columns} columns</Chip>
+      <div className="ir-why">{t.unit} · splits: {Object.entries(t.rows_by_split).map(([k, v]) => k + " " + fmt(v)).join(" · ")} · latest game {t.latest_game_date}</div>
+      <div className="ir-why">Outcomes reconciled with play-by-play: {fmt(t.outcome_reconciliation.games_with_pbp)} games, {fmt(t.outcome_reconciliation.outcome_mismatches)} mismatches · cutoff: {t.prediction_cutoff}</div>
+      <div className="ir-why">Walk-forward check (market-free ridge, test seasons): home-margin MAE {t.walk_forward.all.mae_model} with all ready inputs vs {t.walk_forward.legacy.mae_model} with the earlier ready inputs only vs {t.walk_forward.all.mae_constant} constant; winner accuracy {pct(t.walk_forward.all.winner_acc_model)}. Diagnostic only, not a model promotion.</div>
+      <div className="ir-why">{t.file}</div></li>)}
+      {Object.entries(P7.no_training_set).map(([s, why]) => <li key={s}><b>{s}</b> <Chip k="chipwarn">no dataset yet</Chip><div className="ir-why">{why}</div></li>)}</ul>
+
+    <h3>New training-ready inputs</h3>
+    <ul className="mim-list" data-testid="p7-built">{P7.built.map(b => <li key={b.input}><b>{b.input}</b> <Chip k={b.replay_ok ? "ok" : "miss"}>replay {b.replay_ok ? "passed" : "failed"}</Chip> <Chip k={b.blind_match.split("/")[0] === b.blind_match.split("/")[1] ? "ok" : "miss"}>blind match {b.blind_match}</Chip> <Chip k={b.verified_status === "VERIFIED_FULL" ? "ok" : "chipwarn"}>{lc(b.verified_status)}</Chip> <Chip k={STATE_KIND[b.training_state] || "plain"}>{STATE_LABEL[b.training_state] || lc(b.training_state)}</Chip>
+      <div className="ir-why">{b.builder} · {b.columns.length} columns · {b.span[0]} .. {b.span[1]} · min coverage {pct(b.min_coverage)} · {lc(b.pit)} · next: {b.training_blocker}</div></li>)}</ul>
+
+    <h3>Sources tested and data collected</h3>
+    <ul className="mim-list" data-testid="p7-sources">{P7.sources.map(p => <li key={p.id}><b>{p.id}</b> <Chip>{p.sport}</Chip> <Chip k={P7_RESULT[p.result] || "unv"}>{lc(p.result)}</Chip><div className="ir-why">{p.detail} · rights: {p.rights}</div></li>)}</ul>
+
+    <h3>Capture status (nothing new scheduled)</h3>
+    <p className="ir-fine">{P7.capture_note}</p>
+    <ul className="mim-list" data-testid="p7-capture">{P7.capture.map(c => <li key={c.feed}><b>{c.feed}</b> <Chip k={/STALLED/.test(c.status) ? "miss" : "plain"}>{c.status}</Chip><div className="ir-why">action: {c.action} · requests/day: {c.requests_per_day} · value: {c.value}</div></li>)}</ul>
+
+    <h3>Blockers and decisions for you</h3>
+    <ul className="mim-list" data-testid="p7-blockers">{P7.blockers.map(b => <li key={b.id}><Chip k={/OWNER/.test(b.kind) ? "miss" : "chipwarn"}>{lc(b.kind)}</Chip> <Chip>{b.sports.join(" · ")}</Chip><div className="ir-why">{b.text}</div></li>)}</ul>
+
+    <h3>Best next acquisitions</h3>
+    <ul className="mim-list">{P7.priority_changes.map((t, i) => <li key={i}><div className="ir-why">{t}</div></li>)}</ul>
   </div>;
 }

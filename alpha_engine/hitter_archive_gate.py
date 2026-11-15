@@ -11,6 +11,10 @@ import hashlib
 import json
 import re
 from pathlib import Path
+import os
+import sys
+import time
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from . import research_repair as rr
@@ -174,11 +178,55 @@ def analyze(report, tree_payload, snapshot_raw):
     }
 
 
-def _fetch(url, limit):
-    with urlopen(Request(url, headers={"User-Agent": "SIFT-Alpha-hitter-archive/1"}), timeout=15) as response:
-        if response.geturl() != url:
-            raise ValueError("Source redirected")
-        raw = response.read(limit + 1)
+class SourceRateLimited(RuntimeError):
+    """The source refused the read for quota reasons (HTTP 403/429 with a rate-limit signal).
+
+    This is NOT evidence that the pinned archive is missing or altered, and it is NOT a pass: the gate still
+    fails closed and writes no evidence file. It only exits with a distinct code (EXIT_RATE_LIMITED) and
+    message so CI and humans can tell a transient quota refusal from a genuine integrity failure.
+    """
+
+
+EXIT_RATE_LIMITED = 75          # EX_TEMPFAIL
+RATE_LIMIT_ATTEMPTS = 3
+
+
+def _is_rate_limited(code, headers, body):
+    if code == 429:
+        return True
+    if code != 403:
+        return False
+    text = (body or b"")[:400].decode("utf-8", "replace").lower()
+    return (headers or {}).get("X-RateLimit-Remaining") == "0" or "rate limit" in text
+
+
+def _request(url):
+    headers = {"User-Agent": "SIFT-Alpha-hitter-archive/1"}
+    # Unauthenticated api.github.com reads share a 60/hour quota per runner IP (run 43737659905: 403 "rate
+    # limit exceeded"). Authenticating raises the quota; it changes nothing about WHAT is read -- the tree is
+    # still addressed by its pinned SHA and the snapshot by its pinned blob hash, both re-verified below.
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {token}"
+    return Request(url, headers=headers)
+
+
+def _fetch(url, limit, opener=None, sleep=time.sleep, attempts=RATE_LIMIT_ATTEMPTS):
+    opener = opener or urlopen
+    for attempt in range(1, attempts + 1):
+        try:
+            with opener(_request(url), timeout=15) as response:
+                if response.geturl() != url:
+                    raise ValueError("Source redirected")
+                raw = response.read(limit + 1)
+            break
+        except HTTPError as e:
+            body = e.read() if hasattr(e, "read") else b""
+            if not _is_rate_limited(e.code, e.headers, body):
+                raise
+            if attempt == attempts:
+                raise SourceRateLimited(f"{url}: HTTP {e.code} rate limited after {attempts} attempts") from e
+            sleep(min(60, 10 * attempt))
     if not 0 < len(raw) <= limit:
         raise ValueError("Remote source outside budget")
     return raw
@@ -195,7 +243,13 @@ def run():
 
 
 def main():
-    result = run()
+    try:
+        result = run()
+    except SourceRateLimited as e:
+        # Fail closed (no evidence file, non-zero exit) -- but say WHY, distinctly from a missing/altered archive.
+        print(f"::error::RATE_LIMITED_NOT_VERIFIED: {e}. The pinned archive was NOT verified and NOT found "
+              "missing; rerun when the quota resets. No evidence written.")
+        sys.exit(EXIT_RATE_LIMITED)
     out = Path("artifacts/mlb_hitter_archive_gate.json")
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")

@@ -13,7 +13,7 @@ All new work is on branch `claude/fable-phase-11-settlement-p9pm9t` in each repo
 | nfl-edge-finder | **#286** | #285 | `nfl-settlement-overlay-1.0.0`: 728 week-wins contracts (116,480 rows) recomputed on 2026. 668 settled, 668 of 668 agree with the exchange, 122 flips, 60 pending. Not activated. |
 | nba-edge-finder | **#110** | #109 | `NBA_BASELINE_2026_PRESEASON_V2` prepared beside V1 (digest `2a05589f...`). V1 digest unchanged and V1 prices 2H as frozen again; `ACTIVE_BASELINE_ID` is V1. |
 | edge-finder-api | **#320** | #319 | Reschedule-aware event-to-game rule + 2026 audit. Derives both ALCS overrides from the schedule; no other postponement mismatch. Not wired into ingest. |
-| sift-alpha | this branch's PR | #84 | NFL overlay dialect in `settlement_reconcile`; first MLB dataset certified; this checkpoint. |
+| sift-alpha | **#85** | #84 | NFL overlay dialect in `settlement_reconcile`; first MLB dataset certified; this checkpoint. |
 
 Findings that change earlier notes:
 * The 728 NFL contracts are `26W4`, `26W8` and `26W12` (not only W12). W4 and W8 are final; 60 W12 contracts stay pending
@@ -31,8 +31,10 @@ Findings that change earlier notes:
 * #84 integration check: #80-#83 heads are all ancestors of #84; all 59 files of #83 are byte-identical; the only files
   that differ from #82 are the four Phase 11 edits. Full suite 1,656 passed locally on the #84 head; merges cleanly into main.
 
-CI at the time of writing: NFL #285 pytest passed. NBA #109 `test` passed, `pf-injury-correctness` queued (runner backlog).
-Alpha #84 `research-desk` passed, `test` running, `e2e` and `dashboard` queued. Re-read with one `get_check_runs` call per PR.
+CI at 2026-11-16 19:35Z (final heads): Alpha #84 `research-desk`, `test`, `dashboard` passed, `e2e` still queued (runner
+backlog, never started). NFL #285 and #286 `pytest` passed. NBA #109 `test` and `pf-injury-correctness` passed; #110 `test`
+passed, one `pf-injury-correctness` run passed and one queued. edge-finder-api #320 `test` running; Alpha #85 just opened.
+Re-read with one `get_check_runs` call per PR.
 
 Cheap resume for this session's tools (scratch is gone; restore from the vault):
 
@@ -60,7 +62,7 @@ The two workstreams share **no file**; the merge is conflict-free and the full s
 | NHL-edge-finder | #129 | draft | offline period scores (keep) |
 
 Recommended merge order (owner action, nothing merged by an agent):
-1. sift-alpha #84, then this branch's PR (docs, evidence, research tooling only; no production path). Close #80-#83.
+1. sift-alpha #84, then #85 (docs, evidence, research tooling only; no production path). Close #80-#83.
 2. edge-finder-api #318, #319, #320. 3. NHL #129. 4. NFL #283, #285, #286.
 5. NBA #108, #109, #110 together (with #110, V1 stays intact, so no baseline decision blocks the merge); close #107.
 Each stacked PR targets its parent's branch: merge parents first, or retarget the child to main after the parent merges.

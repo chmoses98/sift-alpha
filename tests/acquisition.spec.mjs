@@ -89,3 +89,18 @@ test("Phase 7 tab shows collected sources, training datasets, new inputs and cap
   const o = await measureOverflow(page);
   expect(o.scroll, "phase 7 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
 });
+
+test("Phase 8 tab shows weather capture health, collected data, training datasets, coverage and blockers from the evidence file", async ({ page }) => {
+  const P8 = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/phase8_acquisition.json", import.meta.url)));
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Phase 8" }).click();
+  const v = page.getByTestId("p8");
+  await expect(v.getByTestId("p8-weather")).toContainText("Root cause");
+  await expect(v.getByTestId("p8-collected").locator("> li")).toHaveCount(P8.collected.length);
+  await expect(v.getByTestId("p8-sets").locator("> li")).toHaveCount(P8.training_sets.length);
+  await expect(v.getByTestId("p8-coverage").locator("> li")).toHaveCount(P8.coverage.length);
+  await expect(v.getByTestId("p8-prepared").locator("> li")).toHaveCount(P8.prepared_code.length);
+  await expect(v.getByTestId("p8-blockers").locator("> li")).toHaveCount(P8.blockers.length);
+  const o = await measureOverflow(page);
+  expect(o.scroll, "phase 8 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
+});

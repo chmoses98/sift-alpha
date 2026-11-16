@@ -93,6 +93,84 @@ def nfl_dataset(raw_dir: Path) -> tuple[pd.DataFrame, dict]:
     return d, meta
 
 
+def nfl_upcoming_dataset(raw_dir: Path, truncate_at: str | None = None) -> tuple[pd.DataFrame, dict]:
+    """Rows for SCHEDULED games (each team's next game) with exactly the training set's feature columns, from completed games only.
+
+    truncate_at (YYYY-MM-DD, testing/verification): pretend every game on/after that date is unplayed (scores and plays hidden)."""
+    from ..features import nfl as N, nfl_pbp_ext3 as X3, nfl_upcoming as U
+    from ..features.core import Paths
+    from ..features.nfl_ext import TEAM_FIX
+    import tempfile
+    ready = ready_inputs("NFL")
+    tmp = Path(tempfile.mkdtemp(prefix="nfl_legacy_up_")); (tmp / "pbp").mkdir()
+    for f in sorted((raw_dir / "pbp").glob("pbp_*.parquet")):
+        if int(f.stem.split("_")[1]) >= LEGACY_FIRST:
+            (tmp / "pbp" / f.name).symlink_to(f.resolve())
+    (tmp / "games.csv").symlink_to((raw_dir / "games.csv").resolve())
+    raw_l = N.load_raw(Paths(nfl=str(tmp)))
+    raw_x = X3.load_raw(raw_dir / "pbp", raw_dir / "games.csv", raw_dir / "players.parquet")
+    if truncate_at:
+        d = pd.Timestamp(truncate_at)
+        raw_l, _ = U.truncate(raw_l, raw_l["games"], d)
+        raw_x, _ = U.truncate(raw_x, raw_x["games"], d)
+    sched = U.next_games(raw_l["games"])
+    if truncate_at:
+        sched = sched[sched.date == pd.Timestamp(truncate_at)].reset_index(drop=True)
+    cols_by_input = {}
+    for s in N.specs():
+        if s.catalog_id in ready and s.pit != "final_postgame":
+            cols_by_input[s.catalog_id] = list(s.columns)
+    lt = U.legacy_scheduled(raw_l, sched)
+    if lt.duplicated(["game_id", "team"]).any():
+        raise ValueError("scheduled legacy rows duplicated")
+    feats = lt[["game_id", "team"] + sorted({c for v in cols_by_input.values() for c in v})].copy()
+    ext = [s for s in X3.specs() if s.catalog_id in ready]
+    if ext:
+        x = U.ext3_scheduled(raw_x, sched)
+        for s in ext:
+            cols_by_input[s.catalog_id] = list(s.columns)
+        feats = feats.merge(x[["game_id", "team"] + [c for s in ext for c in s.columns]], on=["game_id", "team"], how="outer")
+    g = sched.copy()
+    g["home_team"] = g.home_team.replace(TEAM_FIX); g["away_team"] = g.away_team.replace(TEAM_FIX)
+    t = g.gameday.astype(str) + " " + pd.read_csv(raw_dir / "games.csv", usecols=["game_id", "gametime"]).set_index("game_id").gametime.reindex(g.game_id).fillna("13:00").astype(str).str.slice(0, 5).to_numpy()
+    g["cutoff_utc"] = pd.to_datetime(t, errors="coerce").dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="shift_forward").dt.tz_convert("UTC")
+    fcols = [c for c in feats.columns if c not in ("game_id", "team")]
+    h = feats.rename(columns={c: "home_" + c for c in fcols}).rename(columns={"team": "home_team"})
+    a = feats.rename(columns={c: "away_" + c for c in fcols}).rename(columns={"team": "away_team"})
+    dd = g[["game_id", "season", "week", "game_type", "gameday", "cutoff_utc", "home_team", "away_team"]].merge(h, on=["game_id", "home_team"], how="left").merge(a, on=["game_id", "away_team"], how="left")
+    st = U.staleness(raw_l["games"], raw_l["pbp"], pd.Timestamp(sched.date.min()) if len(sched) else pd.Timestamp.max)
+    stale = U.stale_teams(raw_l["games"], raw_l["pbp"], sched)
+    st["stale_games"] = stale
+    dd["inputs_complete"] = ~dd.game_id.isin(set(stale))
+    dd["features_asof_last_completed_game"] = str(pd.to_datetime(raw_l["games"][raw_l["games"].home_score.notna()].gameday).max().date())
+    dd["split"] = "upcoming"
+    # a row is a PREGAME prediction only if it was built before kickoff; rows of games already under way keep their (still
+    # completed-games-only) features but are flagged so no consumer mistakes them for a pregame forecast
+    built = pd.Timestamp(truncate_at, tz="UTC") if truncate_at else pd.Timestamp.now(tz="UTC")
+    dd["built_at_utc"] = built.isoformat()
+    dd["kickoff_passed_at_build"] = (dd.cutoff_utc <= built).fillna(True) if not truncate_at else False
+    meta = {"inputs": cols_by_input, "feature_columns": [c for c in dd.columns if c.startswith(("home_", "away_")) and c not in ("home_team", "away_team")], "staleness": st}
+    return dd.sort_values(["gameday", "game_id"], kind="mergesort").reset_index(drop=True), meta
+
+
+def nfl_upcoming_equivalence(raw_dir: Path, dates: list[str], full: pd.DataFrame | None = None) -> dict:
+    """For past dates D: hide D onward, score D's games as scheduled, compare to the full build. Exact match required (rtol=1e-9)."""
+    if full is None:
+        full, _ = nfl_dataset(raw_dir)
+    res = {}
+    for d in dates:
+        up, meta = nfl_upcoming_dataset(raw_dir, truncate_at=d)
+        fc = meta["feature_columns"]
+        ref = full.set_index("game_id").loc[up.game_id, fc]
+        got = up.set_index("game_id")[fc]
+        a, b = ref.to_numpy(float), got.to_numpy(float)
+        same_nan = bool((np.isnan(a) == np.isnan(b)).all())
+        close = bool(np.allclose(np.nan_to_num(a, nan=0.0), np.nan_to_num(b, nan=0.0), rtol=1e-9, atol=1e-9))
+        res[d] = {"games": int(len(up)), "columns": len(fc), "nan_pattern_equal": same_nan, "values_equal": close,
+                  "max_abs_diff": float(np.nanmax(np.abs(a - b))) if np.isfinite(a - b).any() else 0.0}
+    return {"dates": res, "all_equal": all(v["nan_pattern_equal"] and v["values_equal"] and v["games"] > 0 for v in res.values())}
+
+
 def nfl_reconcile(d: pd.DataFrame, raw_dir: Path) -> dict:
     """Schedule outcome vs the last play-by-play score of the game."""
     import glob
@@ -153,11 +231,42 @@ def build_nfl(raw_dir: Path, out_dir: Path, write_manifest: bool) -> dict:
     return m
 
 
+EQUIVALENCE_DATES = ["2026-11-08", "2026-11-09", "2026-11-12", "2026-10-18", "2025-11-16", "2024-12-01"]
+
+
+def build_nfl_upcoming(raw_dir: Path, out_dir: Path, write_manifest: bool) -> dict:
+    """Scheduled-game rows + the truncation-equivalence evidence that they equal what the completed-game builders produce."""
+    full, _ = nfl_dataset(raw_dir)
+    eq = nfl_upcoming_equivalence(raw_dir, EQUIVALENCE_DATES, full=full)
+    up, um = nfl_upcoming_dataset(raw_dir)
+    out_dir.mkdir(parents=True, exist_ok=True); up.to_parquet(out_dir / "nfl_upcoming.parquet", index=False)
+    fc = um["feature_columns"]
+    m = {"schema": "upcoming-feature-manifest-1.0", "status": "RESEARCH_ONLY", "sport": "NFL",
+         "what": "pre-game feature rows for each team's NEXT scheduled game, same 70 columns as the training set, computed from completed games only",
+         "method": "stub team-game rows appended after every completed game (legacy builder `_pre_features`); ext3 `_pass_run_split` evaluated at the scheduled date; see features/nfl_upcoming.py",
+         "equivalence_check": {"rule": "hide every game on/after D, score D's games as scheduled, require exact equality with the full build (rtol=atol=1e-9, identical NaN pattern)", **eq},
+         "built_at_utc": str(up.built_at_utc.iloc[0]) if len(up) else None, "features_asof_last_completed_game": str(up.features_asof_last_completed_game.iloc[0]) if len(up) else None,
+         "rows": int(len(up)), "rows_pregame_at_build": int((~up.kickoff_passed_at_build).sum()) if len(up) else 0,
+         "games": up[["game_id", "gameday", "home_team", "away_team", "kickoff_passed_at_build", "inputs_complete"]].astype(str).values.tolist(),
+         "rows_inputs_complete": int(up.inputs_complete.sum()) if len(up) else 0,
+         "feature_coverage": round(float(up[fc].notna().mean().mean()), 4) if len(up) else None, "inputs_complete": bool(up.inputs_complete.all()) if len(up) else None,
+         "staleness": um["staleness"], "n_feature_columns": len(fc),
+         "limits": ["features only: no model is fitted or promoted here", "games already under way at build time are flagged kickoff_passed_at_build and are NOT pregame forecasts",
+                    "availability (injury report) and weather forecast inputs are not training-ready and are not in these columns"]}
+    if write_manifest:
+        MANIFEST_DIR.mkdir(parents=True, exist_ok=True); (MANIFEST_DIR / "NFL_upcoming.json").write_text(json.dumps(m, indent=1, default=str) + "\n")
+    return m
+
+
 def main(a=None) -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("sport"); ap.add_argument("--raw", required=True); ap.add_argument("--out", required=True); ap.add_argument("--write-manifest", action="store_true")
     x = ap.parse_args(a)
+    if x.sport.lower() == "nfl-upcoming":
+        m = build_nfl_upcoming(Path(x.raw), Path(x.out), x.write_manifest)
+        print(json.dumps({k: m[k] for k in ("rows", "rows_pregame_at_build", "feature_coverage", "inputs_complete")}), json.dumps(m["equivalence_check"]["all_equal"]))
+        return 0 if m["equivalence_check"]["all_equal"] else 1
     if x.sport.lower() != "nfl":
-        raise SystemExit("only nfl is implemented in this phase")
+        raise SystemExit("implemented: nfl, nfl-upcoming (NHL/NBA/CBB: alpha_engine.foundation.training_sets_multi)")
     m = build_nfl(Path(x.raw), Path(x.out), x.write_manifest)
     print(json.dumps({k: m[k] for k in ("rows", "rows_by_split", "n_inputs", "n_feature_columns", "outcome_reconciliation", "checks")}, default=str)[:1500])
     print(json.dumps(m["walk_forward_home_margin"]["all_ready_inputs"]["mean"]), json.dumps(m["walk_forward_home_margin"]["legacy_ready_inputs_only"]["mean"]))

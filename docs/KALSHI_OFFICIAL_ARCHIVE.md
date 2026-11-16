@@ -16,10 +16,17 @@ scratch directory of one session and are lost when that session ends, until the 
 
 ## 2. What was recovered (local scratch, read-back verified)
 
-These are the live-listing and historical counts at the time of the run. `research/game_completeness/kalshi_official_crosscheck.json`
-holds the exact figures and the date spans per sport. Every fetched file re-hashed equal to its manifest entry
-(`verify`: 0 problems). The historical endpoint reaches back to each series' first market: for example KXMLBGAME from
-2025-04-16, CBB from 2025-11, and CFB from 2025-08-23.
+All 166 series were fetched from both endpoints, with no truncation, no errors and 0 read-back problems.
+
+| Sport | Live contracts (close span) | Historical contracts (close span) |
+|---|---|---|
+| MLB | 125,288 (2026-09-06 .. 10-29) | 782,320 (2025-04-16 .. 2026-09-15) |
+| NFL | 93,764 (2026-09-10 .. 11-16) | 74,786 (2025-08-01 .. 2026-09-15) |
+| NBA | 181,083 (2026-10-04 .. 11-16) | 155,051 (2025-04-16 .. 2026-06-14) |
+| NHL | 80,345 (2026-09-20 .. 11-16) | 149,794 (2025-04-20 .. 2026-06-15) |
+| CBB | 25,091 (2026-11-01 .. 11-16) | 129,535 (2025-11-03 .. 2026-04-07) |
+| CFB | 141,293 (2026-09-05 .. 11-15) | 52,993 (2025-08-23 .. 2026-09-13) |
+| **Total** | **646,864** | **1,344,479** |
 
 Rights note: the rows are Kalshi Data. See `docs/KALSHI_RIGHTS_IMPACT_AUDIT.md`. DA §3.1 limits storing it, except to
 facilitate the member's own trading, and prohibits sharing it.
@@ -30,8 +37,18 @@ facilitate the member's own trading, and prohibits sharing it.
 
 | Sport | Compared YES/NO | Agree | Disagree | Computed UNSETTLEABLE that the exchange settled |
 |---|---|---|---|---|
+| MLB (edgelab settlements, 21 series) | 245,218 | 244,266 | 952 | 6,318 |
 | NBA (all 50 computed series) | 113,525 | 113,394 | 131 | **52,648** |
 | NHL (20 series) | 70,576 | 70,529 | 47 | 1,565 |
+| NFL (settle_v2 on market-data, 63 games) | 32,892 | 32,879 | 13 | 2 |
+
+* **MLB: 914 of the 952 disagreements are stale August 2026 records.** In KXMLBTOTAL, F5TOTAL and F5SPREAD, the
+  engine of that time read the ticker strike N as "more than N", where the rule says "more than N - 0.5". For example,
+  a total of 6 against "more than 5.5" was recorded NO. That August slice (8,838 contracts) is about 10% wrong.
+  September has 0 disagreements, so the code was fixed later. The archived rows were never corrected, and any
+  evaluation over August totals inherits the error. The official results correct it.
+* **NFL: all 13 disagreements are 2H contracts in two overtime games on 2026-09-20.** GB@NYJ was 17-17 after
+  regulation: the engine's 2H total was 20 and Kalshi's was 23. This is the rule change in 3b, and nfl #283 fixes it.
 
 * **NBA 2H: root cause found and fixed (nba-edge-finder #107, draft).** Kalshi's rule is "2nd half (including
   overtime)", but the engine summed only Q3 and Q4. All 93 2H disagreements are in overtime games, and there are
@@ -100,7 +117,6 @@ Private storage reduces the redistribution risk. It does not settle whether rese
 
 ## 5. Remaining gaps
 
-* MLB, NFL, NBA and NHL `/historical` pulls were still running when this file was written (see
-  `docs/SIX_SPORT_CHECKPOINT.md`).
-* The NFL, CBB and CFB computed settlements have not yet been joined to the official results.
+* CBB and CFB settle at evaluation time and keep no computed-settlement archive to join. Their official results
+  are recovered (above), but not cross-checked.
 * A durable archive of anything listed above still needs the section 4 approval.

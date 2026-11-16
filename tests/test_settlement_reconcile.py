@@ -82,3 +82,16 @@ def test_sport_without_computed_archive_reports_official_only(tmp_path):
     write(tmp_path / "CFB" / "CFB" / "KXC.live.jsonl", [off("KXC-1-A")])
     b = R.run(tmp_path, {}, {}, [], "t", sports=["CFB"])["sports"]["CFB"]
     assert b["computed"] is None and b["official"]["by_class"] == {"VALUE_SETTLED": 1}
+
+
+def test_nfl_overlay_dialect_corrects_settled_and_withdraws_pending_labels():
+    """The NFL correction overlay carries dict entries; a pending or refused correction removes the label."""
+    ov = {"corrections": {
+        "A": {"archived": {"settled_yes": 1.0}, "corrected": {"status": "CORRECTED_SETTLED", "settled_yes": 0.0}},
+        "B": {"archived": {"settled_yes": 1.0}, "corrected": {"status": "CORRECTED_PENDING"}},
+        "C": {"archived": {"settled_yes": 0.0}, "corrected": {"status": "INVALIDATED_REFUSED"}},
+        "Z": {"archived": {"settled_yes": 0.0}, "corrected": {"status": "CORRECTED_SETTLED", "settled_yes": 1.0}}}}
+    out, applied = R.apply_overlay({"A": "YES", "B": "YES", "C": "NO", "D": "NO"}, ov)
+    assert out == {"A": "NO", "B": "CORRECTED_PENDING", "C": "INVALIDATED_REFUSED", "D": "NO"} and applied == 3
+    with pytest.raises(ValueError):
+        R.apply_overlay({"A": "NO"}, ov)

@@ -1,8 +1,44 @@
 # SIFT Alpha unified checkpoint (resume here)
 
-Updated 2026-11-16 ~20:00Z (Phase 11 unification session). RESEARCH_ONLY. Agent-run, not human verified.
+Updated 2026-11-16 ~19:30Z (Phase 11 settlement-integrity session; section 0 is the newest). RESEARCH_ONLY. Agent-run, not human verified.
 This file supersedes `docs/SIX_SPORT_CHECKPOINT.md` (workstream B) and the "Next steps" of
 `docs/PHASE10_DATA_PRESERVATION.md` (workstream A) as the place to resume. Both remain as historical records.
+
+## 0. Latest session (2026-11-16, settlement integrity) - read this first
+
+All new work is on branch `claude/fable-phase-11-settlement-p9pm9t` in each repo, as draft PRs stacked on the earlier ones.
+
+| Repo | New draft PR | Stacked on | What |
+|---|---|---|---|
+| nfl-edge-finder | **#286** | #285 | `nfl-settlement-overlay-1.0.0`: 728 week-wins contracts (116,480 rows) recomputed on 2026. 668 settled, 668 of 668 agree with the exchange, 122 flips, 60 pending. Not activated. |
+| nba-edge-finder | **#110** | #109 | `NBA_BASELINE_2026_PRESEASON_V2` prepared beside V1 (digest `2a05589f...`). V1 digest unchanged and V1 prices 2H as frozen again; `ACTIVE_BASELINE_ID` is V1. |
+| edge-finder-api | **#320** | #319 | Reschedule-aware event-to-game rule + 2026 audit. Derives both ALCS overrides from the schedule; no other postponement mismatch. Not wired into ingest. |
+| sift-alpha | this branch's PR | #84 | NFL overlay dialect in `settlement_reconcile`; first MLB dataset certified; this checkpoint. |
+
+Findings that change earlier notes:
+* The 728 NFL contracts are `26W4`, `26W8` and `26W12` (not only W12). W4 and W8 are final; 60 W12 contracts stay pending
+  until week 12 is final (2026-11-30). Then rerun `scripts/research/build_settlement_overlay.py` with a new `--as-of`
+  (writes a second overlay file; never overwrite the first).
+* NFL with the overlay: 135 disagreements -> 13, none introduced (`research/settlement_reconcile/NFL_with_overlay.json`).
+  The 13 are the 2H overtime contracts fixed by #283.
+* MLB postponements: "use the originally scheduled date" (old section 7 item 2) is WRONG for the postseason. The exchange
+  follows the series game number, not the gamePk. Regular season: same gamePk follows to the makeup. Rule and evidence in #320.
+* MLB dataset v1: 12,148 regular-season games 2022-2026, 22 pregame features (team run form, starter form), sha
+  `f598384b...`. Blind re-implementation identical on 12,148 x 35; truncation and future-scramble leakage checks pass.
+  Evidence `research/certification/certification_mlb_v1.json`, spec `docs/certification/MLB_FEATURE_SPEC.md`.
+  Registered in `dataset_versions.json` with `training_ready: false`: its inputs are NOT yet in the acquisition catalog,
+  so the training-ready count is still 48.
+* #84 integration check: #80-#83 heads are all ancestors of #84; all 59 files of #83 are byte-identical; the only files
+  that differ from #82 are the four Phase 11 edits. Full suite 1,656 passed locally on the #84 head; merges cleanly into main.
+
+CI at the time of writing: NFL #285 pytest passed. NBA #109 `test` passed, `pf-injury-correctness` queued (runner backlog).
+Alpha #84 `research-desk` passed, `test` running, `e2e` and `dashboard` queued. Re-read with one `get_check_runs` call per PR.
+
+Cheap resume for this session's tools (scratch is gone; restore from the vault):
+
+    python scripts/research/build_settlement_overlay.py --settlements <nfl market-data>/data/shadow/v2/settlements --schedule-csv <nflverse games.csv> --as-of <ts> --official <vault NFL>/KXNFLWINSWEEK.live.jsonl --out research/settlement_overlay   # nfl-edge-finder
+    python scripts/edgelab/audit_reschedule_identity.py --start 2026-08-01 --end 2026-11-05 --out <file>                                                # edge-finder-api, one public schedule request
+    python -m alpha_engine.certify.mlb_game_v1 --feed-root <restored MLB postgame_feed_compact, one dir per season> --out mlb.parquet --evidence ev.json   # ~1 min
 
 ## 1. What is unified
 
@@ -24,9 +60,10 @@ The two workstreams share **no file**; the merge is conflict-free and the full s
 | NHL-edge-finder | #129 | draft | offline period scores (keep) |
 
 Recommended merge order (owner action, nothing merged by an agent):
-1. sift-alpha #84 (docs, evidence, research tooling only; no production path).
-2. edge-finder-api #318, then #319. 3. NHL #129. 4. NFL #283, then #285.
-5. NBA #108 after the baseline decision below, then #109; close #107.
+1. sift-alpha #84, then this branch's PR (docs, evidence, research tooling only; no production path). Close #80-#83.
+2. edge-finder-api #318, #319, #320. 3. NHL #129. 4. NFL #283, #285, #286.
+5. NBA #108, #109, #110 together (with #110, V1 stays intact, so no baseline decision blocks the merge); close #107.
+Each stacked PR targets its parent's branch: merge parents first, or retarget the child to main after the parent merges.
 
 ## 2. Official vs computed settlements (all six sports)
 
@@ -94,7 +131,7 @@ Not yet in the overlay: NBA and NFL postgame archives, CBB player boxes, pregame
 ## 4. Inputs
 
 Training-ready inputs: **48** (unchanged this session; 41 -> 48 came from #83 and is now on the integration branch).
-Model-active: 0. No MLB input is certified yet; the MLB postgame records it needs are now verified per game (section 3).
+Model-active: 0. MLB: dataset v1 certified (section 0) but its 22 features are not yet catalogued as inputs, so MLB training-ready inputs are still 0.
 
 ## 5. How to resume (cheap)
 
@@ -115,11 +152,11 @@ Do not re-download Kalshi results: the vault snapshot is the record. A newer pul
 ## 6. Owner decisions
 
 1. Merge order in section 1 (start with the sift-alpha integration PR).
-2. NBA: approve a versioned corrected baseline. #108 pins the frozen preseason baseline to `settle-1.0` so its digest is
-   unchanged; recommended: mint `NBA_BASELINE_2026_PRESEASON_V2` (2H priced including overtime) beside V1, publish
-   before / after 2H evaluation, switch only on approval. Until then nothing is activated.
-3. NFL: invalidate the 728 wrongly settled `KXNFLWINSWEEK-26W12` contracts (new settlement version or an overlay);
-   the corpus is append-only so this is not done silently.
+2. NBA: V2 is minted beside V1 in #110 and is not active. Decision: activate V2 (one line, own PR, with a before / after
+   2H evaluation) or stay on V1.
+3. NFL: the overlay for the 728 wrongly settled week-wins contracts is prepared in #286. Decision: adopt it in
+   evaluation readers.
+3b. MLB: wire the reschedule rule (#320) into ingest. Production-path change; season is over, no exposure until spring.
 4. MLB: adopt the #319 overlay in evaluation readers; approve the 2022-2026 linescore backfill (#318).
 5. CFB: 2H including overtime in research packets (changes frozen packet numbers).
 6. CFBD raw responses on three public cfb-edge-finder branches: remedy in `docs/SPORTS_DATA_FOUNDATION.md`. The cache
@@ -128,11 +165,9 @@ Do not re-download Kalshi results: the vault snapshot is the record. A newer pul
 
 ## 7. Next engineering (no approval needed)
 
-1. **MLB inputs**: build the first MLB training dataset from the verified compact feeds (team run-scoring and
-   starting-pitcher form, strictly pregame, chronological), then certify fail-closed like CBB / CFB.
-2. MLB postponed-game identity at the source: the event-to-game mapping is assigned at market ingest, not in
-   `scripts/edgelab/settle_markets.py`; use the exchange's "originally scheduled" date when two games share a matchup
-   within a day. The overlay covers only the two known events.
+1. **MLB inputs (highest value)**: catalogue the 22 certified MLB features as inputs (acquisition catalog + phase
+   progress), so training-ready goes 48 -> 70 with MLB no longer at zero. Then add bullpen, lineup and park inputs as v2.
+2. After 2026-11-30: second NFL overlay snapshot to settle the 60 pending W12 contracts (command in section 0).
 3. Review the 32 MLB hitter-prop and 1 new NBA prop disagreements against vault box scores (`prop_review` needs MLB
    and ESPN readers).
 4. CFB alias table for the 346 unjoined events; CBB join for the 1,047 unjoined events.

@@ -109,7 +109,7 @@ Nothing was copied anywhere in this session.
 | Sport | What | Result | Where |
 |---|---|---|---|
 | NBA | 2026-27 history, shot events, full play-by-play, stints, lineup certification | history +105 games (to 11-15); 197 regular-season games of play-by-play (98,854 events); stints for 197 (150 lineup-certified); 60,137 shot events (77% located); refetch spot-check 4/4 identical | nba-edge-finder branch `claude/sift-alpha-certify-historical-vkb4ou` |
-| NHL | 2026-27 skater / goalie / shot / goal tables from the official box score and play-by-play | see the NHL commit; shift charts unavailable (`api.nhle.com` denied here), so TOI / on-ice tables are degraded and must be re-run on a runner | NHL-edge-finder branch `claude/sift-alpha-certify-historical-vkb4ou` |
+| NHL | 2026-27 skater / goalie / shot / goal tables from the official box score and play-by-play | 322 / 322 final games, 0 errors: 36,835 shots, 1,288 goalie-games, 11,592 skater-games, 2,016 goals. Shift charts unavailable (`api.nhle.com` denied here), so TOI / on-ice tables are not produced and must be re-run on a runner | NHL-edge-finder branch `claude/sift-alpha-certify-historical-vkb4ou` |
 | CBB | 2006–2027 team box and schedules re-fetched and hashed | 44 files, drift measured | session only, pinned in `recovery_manifest.json` |
 | CFB / NFL | — | Blocked. CFBD 2026 needs owner authorisation, and `api.collegefootballdata.com` is denied here. NFL has no durable owner-held store for nflverse yet (§3). | — |
 

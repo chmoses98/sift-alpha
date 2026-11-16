@@ -1,5 +1,17 @@
 import { test, expect } from "@playwright/test";
 import { measureOverflow } from "./overflow-helper.mjs";
+import { readFileSync } from "node:fs";
+import { indexMap, isMissingPrimary } from "../src/market-input-map.mjs";
+
+// Expected counts are DERIVED from the catalog the page renders, never hard-coded: a hard-coded 888 broke CI
+// when Phase 7 legitimately closed two NFL slots (886). The derivation recomputes missing PRIMARY slots from the
+// edge index (same predicate the map uses) and requires the summary file to agree with it, so a stale
+// reconciliation.json still fails instead of being silently rebaselined.
+const MAP_DIR = new URL("../research/input_research/market_input_map/", import.meta.url);
+const MAP = JSON.parse(readFileSync(new URL("map.json", MAP_DIR)));
+const RECON = JSON.parse(readFileSync(new URL("reconciliation.json", MAP_DIR)));
+const MISSING_PRIMARY = indexMap(MAP).edges.filter(isMissingPrimary).length;
+const fmt = n => n.toLocaleString("en-US");
 
 test.beforeEach(async ({ page }, info) => {
   if (info.title.startsWith("initial load")) return;
@@ -25,7 +37,8 @@ test("summary separates distinct inputs, predictive slots and missing PRIMARY sl
   const s = page.getByTestId("mim-summary");
   await expect(s).toContainText("1,649");
   await expect(s).toContainText("3,670");
-  await expect(s).toContainText("888");
+  expect(RECON.missing_primary_predictive_slots).toBe(MISSING_PRIMARY);
+  await expect(s.locator("div", { hasText: "missing PRIMARY predictive slots" }).locator("b")).toHaveText(fmt(MISSING_PRIMARY));
   await expect(page.getByTestId("mim-market-count")).toContainText("170 of 170");
 });
 

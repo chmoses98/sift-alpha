@@ -107,7 +107,7 @@ def test_full_promotion_audit_matches_matrix_and_has_no_uncertified_full():
     rms = next(x for x in a["rows"] if x["key"] == "TENNIS:ten.retirement_margin_state")     # the one Phase 9 candidate: refused because the catalog says pregame_knowable = partial
     assert rms["status"] == "VERIFIED_PARTIAL" and rms["first_failed_stage"] == "S2" and "NOT_FULL" in rms["review"]
     assert vc["TENNIS:ten.retirement_margin_state"]["verified_status"] == "VERIFIED_PARTIAL"
-    assert sum(r["verified_status"] == "VERIFIED_FULL" for r in vc.values()) == 60              # Phase 10 promotes exactly one: ten.tiebreak_base_rate_by_event (certification phase10_round1); Phase 6 (data acquisition) certifies nhl.long_change_effect and nhl.pk_structure_opp (phase6_round1)
+    assert sum(r["verified_status"] == "VERIFIED_FULL" for r in vc.values()) == 62              # Phase 7 certifies nfl.pass_run_split_epa_both_sides and nfl.rush_yardage_tail (phase7_round1); Phase 10 promotes exactly one: ten.tiebreak_base_rate_by_event (certification phase10_round1); Phase 6 (data acquisition) certifies nhl.long_change_effect and nhl.pk_structure_opp (phase6_round1)
     certs = VC.load_full_certifications()
     for k, r in vc.items():
         if r["verified_status"] == "VERIFIED_FULL" and r["evidence"].get("promoted_from") == "VERIFIED_PARTIAL":

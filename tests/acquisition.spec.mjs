@@ -74,3 +74,33 @@ test("Phase 6 tab keeps probed, collected, verified, built and training-ready ap
   const o = await measureOverflow(page);
   expect(o.scroll, "phase 6 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
 });
+
+test("Phase 7 tab shows collected sources, training datasets, new inputs and capture status from the evidence file", async ({ page }) => {
+  const P7 = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/phase7_acquisition.json", import.meta.url)));
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Phase 7" }).click();
+  const v = page.getByTestId("p7");
+  await expect(v.getByTestId("p7-totals")).toContainText(`${P7.baseline.training_ready_inputs} → ${P7.after.training_ready_inputs}`);
+  await expect(v.getByTestId("p7-built").locator("> li")).toHaveCount(P7.built.length);
+  await expect(v.getByTestId("p7-sources").locator("> li")).toHaveCount(P7.sources.length);
+  await expect(v.getByTestId("p7-sets").locator("> li")).toHaveCount(P7.training_sets.length + Object.keys(P7.no_training_set).length);
+  await expect(v.getByTestId("p7-capture")).toContainText("STALLED");
+  await expect(v.getByTestId("p7-blockers")).toContainText("owner decision");
+  const o = await measureOverflow(page);
+  expect(o.scroll, "phase 7 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
+});
+
+test("Phase 8 tab shows weather capture health, collected data, training datasets, coverage and blockers from the evidence file", async ({ page }) => {
+  const P8 = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/phase8_acquisition.json", import.meta.url)));
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Phase 8" }).click();
+  const v = page.getByTestId("p8");
+  await expect(v.getByTestId("p8-weather")).toContainText("Root cause");
+  await expect(v.getByTestId("p8-collected").locator("> li")).toHaveCount(P8.collected.length);
+  await expect(v.getByTestId("p8-sets").locator("> li")).toHaveCount(P8.training_sets.length);
+  await expect(v.getByTestId("p8-coverage").locator("> li")).toHaveCount(P8.coverage.length);
+  await expect(v.getByTestId("p8-prepared").locator("> li")).toHaveCount(P8.prepared_code.length);
+  await expect(v.getByTestId("p8-blockers").locator("> li")).toHaveCount(P8.blockers.length);
+  const o = await measureOverflow(page);
+  expect(o.scroll, "phase 8 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
+});

@@ -19,7 +19,7 @@ class AcquisitionPlan(unittest.TestCase):
 
     def test_totals_reconcile_with_the_map(self):
         t = self.plan["totals"]
-        self.assertEqual((t["inputs"], t["archetypes"], t["missing_primary_slots"]), (1649, 170, 888))
+        self.assertEqual((t["inputs"], t["archetypes"], t["missing_primary_slots"]), (1649, 170, 886))   # Phase 7: nfl.pass_run_split_epa_both_sides (NFL:team_total) and nfl.rush_yardage_tail (NFL:game_events) close 2 slots
         self.assertEqual(sum(s["missing_primary_inputs"] for s in self.plan["sports"].values()), t["missing_primary_inputs"])
         self.assertEqual(sum(s["missing_primary_slots"] for s in self.plan["sports"].values()), t["missing_primary_slots"])
         self.assertLessEqual(t["complete_with_archives"], t["complete_after_free"])

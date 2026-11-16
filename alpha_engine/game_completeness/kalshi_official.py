@@ -150,6 +150,67 @@ def verify_manifest(out):
     return {"series": len(man["series"]), "problems": bad}
 
 
+def _sha_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def snapshot(roots, archive):
+    """Pack verified fetch folders ({tag: folder}, e.g. live / historical) into one .tar.gz plus a sidecar
+    <archive>.sha256.json.  Refuses to pack a folder whose read-back fails.  Member order and mtimes are fixed, so
+    the same input gives the same tar stream.  The archive holds exchange data: PRIVATE storage only."""
+    import tarfile
+    archive = Path(archive)
+    summary = {}
+    for tag, root in sorted(roots.items()):
+        v = verify_manifest(root)
+        if v["problems"]:
+            raise ValueError(f"{tag}: read-back failed before packing: {v['problems'][:5]}")
+        man = json.loads((Path(root) / "manifest.json").read_text())
+        summary[tag] = {"series": len(man["series"]), "rows": sum(e.get("rows", 0) for e in man["series"].values()),
+                        "manifest_sha256": _sha_file(Path(root) / "manifest.json")}
+    with open(archive, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0, compresslevel=6) as gz, \
+            tarfile.open(fileobj=gz, mode="w") as tar:
+        for tag, root in sorted(roots.items()):
+            for f in sorted(p for p in Path(root).rglob("*") if p.is_file()):
+                info = tar.gettarinfo(str(f), arcname=f"{tag}/{f.relative_to(root).as_posix()}")
+                info.mtime, info.uid, info.gid, info.uname, info.gname = 0, 0, 0, "", ""
+                with open(f, "rb") as fh:
+                    tar.addfile(info, fh)
+    side = {"schema": "kalshi-official-snapshot-1.0", "archive": archive.name, "bytes": archive.stat().st_size,
+            "sha256": _sha_file(archive), "roots": summary,
+            "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    Path(str(archive) + ".sha256.json").write_text(json.dumps(side, indent=1, sort_keys=True) + "\n")
+    return side
+
+
+def restore(archive, dest):
+    """Check the archive against its sidecar, unpack into an EMPTY dest and re-hash every series file against the
+    packed manifests.  A snapshot counts as protected only after this passes on a copy read back from storage."""
+    import tarfile
+    archive, dest = Path(archive), Path(dest)
+    side = json.loads(Path(str(archive) + ".sha256.json").read_text())
+    if _sha_file(archive) != side["sha256"]:
+        raise ValueError("archive sha256 does not match its sidecar")
+    if dest.exists() and any(dest.iterdir()):
+        raise ValueError("restore target must be empty")
+    dest.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "r:gz") as tar:
+        tar.extractall(dest, filter="data")                       # refuses absolute paths, links and traversal
+    out = {"archive_sha256": side["sha256"], "roots": {}}
+    for tag, meta in side["roots"].items():
+        v = verify_manifest(dest / tag)
+        man = json.loads((dest / tag / "manifest.json").read_text())
+        rows = sum(e.get("rows", 0) for e in man["series"].values())
+        out["roots"][tag] = {"series": v["series"], "rows": rows, "problems": v["problems"],
+                             "matches_sidecar": (v["series"], rows) == (meta["series"], meta["rows"])}
+    out["ok"] = all(not r["problems"] and r["matches_sidecar"] for r in out["roots"].values())
+    return out
+
+
 def load_official(folder):
     off = {}
     for f in sorted(Path(folder).glob("**/*.jsonl")):
@@ -314,6 +375,12 @@ def main(argv=None):
     rp.add_argument("--computed", nargs="*", default=[], help="SPORT=glob of computed settlements")
     rp.add_argument("--as-of", required=True)
     rp.add_argument("--out", required=True)
+    sn = sub.add_parser("snapshot", help="pack verified folders into one archive + sha256 sidecar (private storage only)")
+    sn.add_argument("--root", nargs="+", required=True, metavar="TAG=FOLDER")
+    sn.add_argument("--archive", required=True)
+    rs = sub.add_parser("restore", help="unpack a snapshot into an empty folder and re-verify every file")
+    rs.add_argument("--archive", required=True)
+    rs.add_argument("--dest", required=True)
     v = sub.add_parser("verify")
     v.add_argument("--out", required=True)
     a = ap.parse_args(argv)
@@ -324,6 +391,12 @@ def main(argv=None):
     elif a.cmd == "report":
         r = report(a.live, a.historical, dict(x.split("=", 1) for x in a.computed), a.as_of)
         Path(a.out).write_text(json.dumps(r, indent=1, sort_keys=True) + "\n")
+    elif a.cmd == "snapshot":
+        print(json.dumps(snapshot(dict(x.split("=", 1) for x in a.root), a.archive), indent=1))
+    elif a.cmd == "restore":
+        r = restore(a.archive, a.dest)
+        print(json.dumps(r, indent=1))
+        raise SystemExit(0 if r["ok"] else 1)
     elif a.cmd == "verify":
         print(json.dumps(verify_manifest(a.out), indent=1))
     elif a.cmd == "fetch":

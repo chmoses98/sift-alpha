@@ -1,10 +1,28 @@
 # SIFT Alpha unified checkpoint (resume here)
 
-Updated 2026-11-16 ~21:45Z (Phase 11 integration session; section 0 is the newest). RESEARCH_ONLY. Agent-run, not human verified.
+Updated 2026-11-16 ~22:30Z (Phase 11 finalization; section 00 is the newest). RESEARCH_ONLY. Agent-run, not human verified.
 This file supersedes `docs/SIX_SPORT_CHECKPOINT.md` (workstream B) and the "Next steps" of
 `docs/PHASE10_DATA_PRESERVATION.md` (workstream A) as the place to resume. Both remain as historical records.
 
-## 0. Phase 11 integration (2026-11-16 evening) - read this first
+## 00. Phase 11 finalization (2026-11-16 night) - read this first
+
+Phase 12 starts from `docs/PHASE12_HANDOFF.md`. This section closes Phase 11.
+
+| Item | State |
+|---|---|
+| sift-alpha #86 (MLB PIT audit, catalog decision: promote none) | integrated via the finalization PR from `claude/opus-sift-phase-11-final-yn2f6l` (contains #86 unchanged). Full suite on that head: 1,666 passed, 8 skipped |
+| nfl-edge-finder **#288** | #283 + #285 + #286 in one PR; live-settlement changes behind `NFL_SETTLE_PHASE11_RULES` (unset = off). Main's own settlement tests pass unmodified on it; full suite 3,679 passed. Merge-ready, **not merged** (owner sign-off on code that sits in the live settle path). Supersedes #283/#285/#286 |
+| nba-edge-finder **#111** | #108 + #109 + #110 in one PR; settle-1.1 behind `NBA_SETTLE_1_1` (unset = settle-1.0); V1 active, digest `5a4cbda0...` unchanged; V2 `2a05589f...` prepared. Main's settlement/contract/settle-job tests pass unmodified; full suite 946 passed; ruff clean. Merge-ready, **not merged**. Supersedes #107-#110 |
+| MLB 32 hitter-prop disagreements | reviewed: `research/settlement_reconcile/mlb_prop_review.json` (tool `scripts/research/mlb_prop_review.py`). 29 = exchange differs from the final MLB box score (engine agrees with the box); 3 = MLB stat correction after the engine settled (engine stale; exchange equals the corrected box). **No engine logic defect.** Ingest unchanged |
+| Vault | `verify`: 24/24 archives OK, 1,525,282,312 bytes (shallow) |
+| Inputs | training-ready 48 (NFL 13, NHL 8, CBB 4, CFB 3, NBA 3, MLB 0), model-active 0; 7 registered dataset versions unchanged |
+
+Activation is separate from merging and needs the owner: see each repo's `docs/PHASE11_SETTLEMENT_ACTIVATION.md`.
+Once #288 / #111 merge, close the superseded drafts (NFL #283 #285 #286; NBA #107 #108 #109 #110).
+Unrelated stale drafts (Alpha #1 #19 #60 #62 #66 #68; NFL #30 #200 #229 #232 #241 #245; NBA #59-#106) are pre-Phase-11
+and untouched; triage list in `docs/PHASE12_HANDOFF.md`.
+
+## 0. Phase 11 integration (2026-11-16 evening)
 
 Merged (merge commits, no squash; final heads verified unchanged and green before each merge):
 

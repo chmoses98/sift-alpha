@@ -58,7 +58,7 @@ and treat engine-only settlements as a secondary check.
 | Repo | Active | Prepared, inactive |
 |---|---|---|
 | NFL | shadow-v2 settle `settle-2.0.0`, 2H excludes OT always, week tickers read via expiration year | #288: `NFL_SETTLE_PHASE11_RULES` (date-aware 2H OT, week-ticker season fail-closed), overlay `nfl-settlement-overlay-1.0.0` |
-| NBA | `settle-1.0`, V1 pricing `5a4cbda0...` | #111: `NBA_SETTLE_1_1`; V2 baseline `2a05589f...` (`ACTIVE_BASELINE_ID` one-line switch) |
+| NBA | `settle-1.0`, V1 pricing `5a4cbda0...` | merged #111 (on main, off): `NBA_SETTLE_1_1`; V2 baseline `2a05589f...` (`ACTIVE_BASELINE_ID` one-line switch) |
 | MLB | ingest unchanged | #319 overlay (research), #320 reschedule rule (not wired into ingest) |
 | All | no model, trading or scheduled-workflow change from Phase 11 | |
 
@@ -105,6 +105,6 @@ W12 pending); season-long futures (sparse labels).
 ## 7. Owner decisions outstanding
 
 1. Merge/activate NFL #288 (`NFL_SETTLE_PHASE11_RULES`) - recommended, it stops the week-ticker fail-open.
-2. Merge/activate NBA #111 (`NBA_SETTLE_1_1`); separately, V2 pricing (keep V1 until the OT evaluation).
+2. Activate NBA settle-1.1 (`NBA_SETTLE_1_1`; code merged in #111); separately, V2 pricing (keep V1 until the OT evaluation).
 3. Adopt MLB #319 and NFL #286 overlays in evaluation readers; wire the MLB reschedule rule (#320) into ingest before 2027.
 4. CFB 2H including overtime in research packets; CFBD raw responses on public branches (remedy in `docs/SPORTS_DATA_FOUNDATION.md`).

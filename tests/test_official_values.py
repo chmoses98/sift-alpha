@@ -84,3 +84,10 @@ def test_official_events_reads_only_settled_known_series(tmp_path):
     events, ladders = ov.official_events([tmp_path], "CFB")
     assert dict(events["26OCT03WSUMIA"]) == {"KXNCAAFTOTAL": Counter({"34": 1})}
     assert ladders["26OCT03WSUMIA"]["KXNCAAFTOTAL"] == [(34, "yes")]
+
+
+def test_ladder_uses_the_stated_strike_when_the_row_has_one():
+    # 2025 rungs: ticker 55 = "over 55.5" (floor 55.5); 2026 rungs: ticker 55 = "55 or more" (floor 54.5)
+    assert ov.ladder_mismatches([(55, "no", 55.5)], 55) == 0
+    assert ov.ladder_mismatches([(55, "yes", 54.5)], 55) == 0
+    assert ov.ladder_mismatches([(55, "no")], 55) == 1          # no stated strike: ticker rule

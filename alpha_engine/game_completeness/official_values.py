@@ -81,19 +81,23 @@ def official_events(folders, sport):
     from kalshi_official output folders.  Strikes are kept for total ladders only (integer ticker suffix)."""
     ev = defaultdict(lambda: defaultdict(Counter))
     ladders = defaultdict(lambda: defaultdict(list))
+    seen = set()  # a contract served by both the historical and the live tier is counted once
     for folder in folders:
         for f in sorted(glob.glob(str(Path(folder) / "*.jsonl"))):
             for line in open(f, encoding="utf-8"):
                 r = json.loads(line)
-                if r.get("result") not in ("yes", "no"):
+                if r.get("result") not in ("yes", "no") or r["ticker"] in seen:
                     continue
+                seen.add(r["ticker"])
                 series, _, suffix = r["event_ticker"].partition("-")
                 cls = classify_series(sport, series)
                 if cls:
                     ev[suffix][series][r.get("expiration_value")] += 1
                     strike = r["ticker"].rsplit("-", 1)[-1]
                     if cls[1] == "TOTAL" and strike.isdigit():
-                        ladders[suffix][series].append((int(strike), r["result"]))
+                        fs = r.get("floor_strike")   # the exchange's own strike: present in vault rows
+                        ladders[suffix][series].append((int(strike), r["result"], float(fs)) if isinstance(fs, (int, float))
+                                                       else (int(strike), r["result"]))
     return ev, ladders
 
 
@@ -145,6 +149,67 @@ def load_espn_scoreboards(folder):
     return list(out.values())
 
 
+def load_espn_summaries(folders, since="2025-07-01"):
+    """Final games from archived ESPN game summaries (private vault `espn_summary_postgame`), one JSON per game.
+    Same fields as the scoreboard loader, read from `header.competitions[0]`.  `since` skips games that predate
+    the exchange's first contracts so a decade of files is not parsed for nothing."""
+    out = {}
+    for folder in folders:
+        for f in sorted(glob.glob(str(Path(folder) / "*.json"))):
+            try:
+                comp = json.loads(Path(f).read_text())["header"]["competitions"][0]
+            except (ValueError, KeyError, IndexError, TypeError):
+                continue
+            if (comp.get("date") or "") < since or not ((comp.get("status") or {}).get("type") or {}).get("completed"):
+                continue
+            side = {}
+            for c in comp.get("competitors") or []:
+                t = c.get("team") or {}
+                names = [t.get("location"), t.get("displayName"), t.get("shortDisplayName"), t.get("name"), t.get("nickname")]
+                try:
+                    side[c["homeAway"]] = {"abbr": (t.get("abbreviation") or "").upper(), "score": int(c["score"]),
+                                           "names": {norm_name(n) for n in names if n},
+                                           "periods": [int(x["displayValue"]) for x in c.get("linescores") or []]}
+                except (KeyError, TypeError, ValueError):
+                    side = {}
+                    break
+            if set(side) == {"home", "away"}:
+                out[str(comp["id"])] = _game(comp["id"], comp["date"], side["away"], side["home"])
+    return list(out.values())
+
+
+_LINESCORE_RE = re.compile(r"'value':\s*([0-9.]+)")
+
+
+def load_sdv_schedules(folder, since="2025-01-01"):
+    """Final games from SportsDataverse ESPN schedule parquet files (private vault `espn_team_box_schedules`).
+    Period scores come from the schedule's own linescore column; a game without one keeps its final score and
+    its period markets are counted as `no_period_scores`, never guessed."""
+    import pandas as pd
+    cols = ["game_id", "date", "status_type_completed", "home_score", "away_score", "home_linescores", "away_linescores"] + [
+        f"{s}_{k}" for s in ("home", "away") for k in ("abbreviation", "location", "display_name", "short_display_name", "name")]
+    out = {}
+    for f in sorted(glob.glob(str(Path(folder) / "**" / "*schedule*.parquet"), recursive=True)):
+        d = pd.read_parquet(f)
+        d = d[[c for c in cols if c in d.columns]]
+        d = d[(d["date"].astype(str) >= since) & (d["status_type_completed"] == True)]  # noqa: E712
+        for r in d.to_dict("records"):
+            side = {}
+            for s in ("home", "away"):
+                try:
+                    score = int(r[f"{s}_score"])
+                except (TypeError, ValueError):
+                    break
+                ls = r.get(f"{s}_linescores")
+                names = [r.get(f"{s}_{k}") for k in ("location", "display_name", "short_display_name", "name")]
+                side[s] = {"abbr": str(r.get(f"{s}_abbreviation") or "").upper(), "score": score,
+                           "names": {norm_name(n) for n in names if isinstance(n, str) and n},
+                           "periods": [int(float(x)) for x in _LINESCORE_RE.findall(ls)] if isinstance(ls, str) else []}
+            if set(side) == {"home", "away"}:
+                out[str(r["game_id"])] = _game(r["game_id"], str(r["date"]), side["away"], side["home"])
+    return list(out.values())
+
+
 def _key(day):
     return day.strftime("%y%b%d").upper()
 
@@ -189,8 +254,12 @@ def _meets(bound, x):
 
 
 def ladder_mismatches(ladder, total):
-    """Total-ladder contracts whose official result differs from 'ticker rung N pays YES iff total >= N'."""
-    return sum(1 for n, res in ladder if (res == "yes") != (total >= n))
+    """Total-ladder contracts whose official result differs from the rung's rule.  A row that carries the
+    exchange's own `floor_strike` is graded on it (YES iff total > floor_strike); only a row without one falls
+    back to 'ticker rung N pays YES iff total >= N'.  The ticker rule holds for 2026 (floor = N - 0.5) but NOT
+    for the 2025 seasons, whose rungs were 'over N' (floor = N + 0.5): grading those by ticker is wrong exactly
+    when the total lands on the rung."""
+    return sum(1 for n, res, *fs in ladder if (res == "yes") != ((total > fs[0]) if fs else (total >= n)))
 
 
 def _int(v):
@@ -322,12 +391,19 @@ def main(argv=None):
     ap.add_argument("--official", nargs="+", required=True, help="kalshi_official output folder(s) for the sport")
     ap.add_argument("--cfb-season-dir", nargs="*", default=[])
     ap.add_argument("--espn-scoreboards")
+    ap.add_argument("--espn-summaries", nargs="*", default=[], help="restored vault espn_summary_postgame folder(s)")
+    ap.add_argument("--sdv-schedules", help="restored vault espn_team_box_schedules folder (SportsDataverse parquet)")
     ap.add_argument("--as-of", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     games = [g for d in a.cfb_season_dir for g in load_cfb(d)]
     if a.espn_scoreboards:
         games += load_espn_scoreboards(a.espn_scoreboards)
+    if a.espn_summaries or a.sdv_schedules:
+        have = {g["id"] for g in games}            # the owner-held / scoreboard source wins where both carry a game
+        extra = load_espn_summaries(a.espn_summaries) if a.espn_summaries else []
+        extra += load_sdv_schedules(a.sdv_schedules) if a.sdv_schedules else []
+        games += [g for g in extra if g["id"] not in have and not have.add(g["id"])]
     events, ladders = official_events(a.official, a.sport)
     if games:                                   # only events inside the box-score window are in the denominator
         lo = min(g["start"] for g in games).astimezone(ET).date() - timedelta(days=1)

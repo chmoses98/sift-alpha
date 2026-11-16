@@ -120,3 +120,37 @@ Private storage reduces the redistribution risk. It does not settle whether rese
 * CBB and CFB settle at evaluation time and keep no computed-settlement archive to join. Their official results
   are recovered (above), but not cross-checked.
 * A durable archive of anything listed above still needs the section 4 approval.
+
+## 6. Third session, 2026-11-16: storage check, full re-fetch, snapshot, new checks
+
+**Durability: none yet.** The scratch copy from section 2 did not survive. This session found no persistent mount,
+no connected computer folder and only public repositories. The results were fetched again and still exist only in
+session scratch.
+
+| Sport | Live contracts (close span) | Historical contracts (close span) |
+|---|---|---|
+| MLB | 125,288 (2026-09-06 .. 10-29) | 782,320 (2025-04-16 .. 2026-09-15) |
+| NFL | 94,421 (2026-09-10 .. 11-16) | 74,786 (2025-08-01 .. 2026-09-15) |
+| NBA | 184,615 (2026-10-04 .. 11-16) | 155,051 (2025-04-16 .. 2026-06-14) |
+| NHL | 81,558 (2026-09-20 .. 11-16) | 149,794 (2025-04-20 .. 2026-06-15) |
+| CBB | 25,277 (2026-11-01 .. 11-16) | 129,535 (2025-11-03 .. 2026-04-07) |
+| CFB | 141,348 (2026-09-05 .. 11-16) | 52,993 (2025-08-23 .. 2026-09-13) |
+| **Total** | **652,507** | **1,344,479** |
+
+* Cost of a full recovery: about 45 minutes, about 2,000 unauthenticated requests, one transient failure that the
+  resumable `fetch-scope` retried. The historical set is identical in size to the previous session's.
+* `kalshi_official snapshot` packs both folders into one deterministic `.tar.gz` (266 MB for this run) with a
+  sha256 sidecar. It refuses a folder that fails read-back. `kalshi_official restore` checks the archive hash,
+  unpacks into an empty folder and re-hashes every series file. The round trip passed in scratch: 332 series files,
+  1,996,986 rows, 0 problems. A copy counts as protected only after `restore` passes on bytes read back from the
+  destination.
+* `expiration_value` on a settled row is the figure the exchange settled on (total, margin, winner, per-team
+  points, overtime count). It can be a lower bound ("at least 28") when a market settled early, and for CBB half
+  winners it is an internal id. `official_values.py` uses it for the CFB / CBB checks in
+  `research/game_completeness/official_values_{CFB,CBB}.json`.
+* Value differences that do not change any contract: in 6 CBB games the exchange's total or margin differs from
+  ESPN's final by 1 or 2 points, yet all 11,473 total-ladder contracts grade the same. Read `expiration_value` as
+  "the figure at settlement", not as a box score.
+* Exchange-side anomalies found: CFB WKU@MTSU 2026-11-07 (exchange total 87 and margin 3, ESPN 51-42);
+  NHL 2026-09-29, where 24 saves contracts for 7 goalies resolved No although each goalie reached the line.
+  For these the official result is the label and a computed result is wrong by construction.

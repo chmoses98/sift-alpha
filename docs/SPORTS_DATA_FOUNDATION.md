@@ -145,6 +145,14 @@ See `docs/KALSHI_OFFICIAL_ARCHIVE.md` and `docs/SIX_SPORT_CHECKPOINT.md`. In sho
 * MLB linescore backfill prepared and verified against 3,272 official inning results (edge-finder-api #318).
 * nfl #278 meets the owner's recorded merge conditions.
 
+## Update 2026-11-16 (third session)
+
+See `docs/SIX_SPORT_CHECKPOINT.md`. In short: official results re-fetched (1,996,986 contracts) but still not in
+durable storage; MLB archived settlements have a verified correction overlay (920 rows, edge-finder-api); CFB and
+CBB are now checked against the exchange's settled figures (`official_values.py`); all 47 NHL prop disagreements
+are explained without an engine bug (`prop_review.py`); NBA protected props agree with the engine's base-family
+result in 40,267 of 40,286 binary settlements (`protected_props.py`).
+
 ## Backlog, in priority order
 
 1. Capture Kalshi's official result at settlement for every sport (and backfill what the API still serves) before

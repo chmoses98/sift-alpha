@@ -10,7 +10,7 @@ Phase 12 starts from `docs/PHASE12_HANDOFF.md`. This section closes Phase 11.
 
 | Item | State |
 |---|---|
-| sift-alpha #86 (MLB PIT audit, catalog decision: promote none) | integrated via the finalization PR from `claude/opus-sift-phase-11-final-yn2f6l` (contains #86 unchanged). Full suite on that head: 1,666 passed, 8 skipped |
+| sift-alpha #86 (MLB PIT audit, catalog decision: promote none) | integrated via **#87** (contains #86 unchanged). Full suite on that head: 1,666 passed, 8 skipped |
 | nfl-edge-finder **#288** | #283 + #285 + #286 in one PR; live-settlement changes behind `NFL_SETTLE_PHASE11_RULES` (unset = off). Main's own settlement tests pass unmodified on it; full suite 3,679 passed. Merge-ready, **not merged** (owner sign-off on code that sits in the live settle path). Supersedes #283/#285/#286 |
 | nba-edge-finder **#111** | #108 + #109 + #110 in one PR; settle-1.1 behind `NBA_SETTLE_1_1` (unset = settle-1.0); V1 active, digest `5a4cbda0...` unchanged; V2 `2a05589f...` prepared. Main's settlement/contract/settle-job tests pass unmodified; full suite 946 passed; ruff clean. Merge-ready, **not merged**. Supersedes #107-#110 |
 | MLB 32 hitter-prop disagreements | reviewed: `research/settlement_reconcile/mlb_prop_review.json` (tool `scripts/research/mlb_prop_review.py`). 29 = exchange differs from the final MLB box score (engine agrees with the box); 3 = MLB stat correction after the engine settled (engine stale; exchange equals the corrected box). **No engine logic defect.** Ingest unchanged |

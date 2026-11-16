@@ -113,6 +113,38 @@ compared with each repo's computed settlements. Evidence: `research/game_complet
   history or forks, so the remedy (private repository, history rewrite, or a licence that permits it) is an owner
   decision.
 
+### CFBD exposure: metadata and proposed remedy (2026-11-16, metadata only, no blob content read)
+
+* `data/research_cache/` exists on three branches: `research-data` (227 paths), `research-data-shard-migration-proof`
+  (227) and `research-data-v2enrich` (6). It was introduced in 5 commits between 2026-08-28 and 2026-09-02. At the
+  tip of `research-data` it holds 154 files, about 25.6 MB: per-season directories for 2014-2026, a per-season JSON
+  for 2019 and 2021-2026, and `manifest.json` and `venues.json.gz`.
+* The repository is public, with 0 forks and 0 stars (GitHub API). Zero forks means no fork copies to chase, but
+  anyone could already have cloned it.
+* The risk: the repository's own notes say redistribution of raw CFBD API output is prohibited and the licence is
+  unresolved. Publishing it on a public branch is redistribution for as long as it stays reachable, and that
+  includes history.
+* Proposed remedy, in order. Each step is an owner action, and none has been taken.
+  1. **Contain without rewriting history.** Make `cfb-edge-finder` private, or move the three branches to a private
+     repository and delete them from the public one. Before doing this, check the readers: sift-alpha CI pins and
+     reads public sibling archives, and the cfb script engine commits to this repository many times a day. Those
+     jobs need a token or a new source first.
+  2. If the repository must stay public, **rewrite history on the three branches only** (`git filter-repo --path
+     data/research_cache --invert-paths`, then force-push). Then ask GitHub Support to purge cached views and dangling
+     objects. Do this in coordination with the automated writers. Derived tables (`data/research/v2/*`,
+     `data/research_inputs/`) need their own licence decision.
+  3. Or **obtain written permission** from CFBD that covers redistribution. The cheapest route is if it is granted.
+  4. Going forward, keep raw CFBD responses out of any public tree. The adapter already records CFB 2026 advanced
+     stats as RIGHTS_BLOCKED.
+
+## Update 2026-11-16 (continuation session)
+
+See `docs/KALSHI_OFFICIAL_ARCHIVE.md` and `docs/SIX_SPORT_CHECKPOINT.md`. In short:
+* Official results are recoverable well beyond the live window through the unauthenticated `/historical/markets`.
+* NBA 2H and NFL 2H settlement bugs were found from Kalshi's own rules text and fixed in draft PRs (nba #107, nfl #283).
+* MLB linescore backfill prepared and verified against 3,272 official inning results (edge-finder-api #318).
+* nfl #278 meets the owner's recorded merge conditions.
+
 ## Backlog, in priority order
 
 1. Capture Kalshi's official result at settlement for every sport (and backfill what the API still serves) before

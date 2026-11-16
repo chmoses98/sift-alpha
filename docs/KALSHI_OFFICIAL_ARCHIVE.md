@@ -1,0 +1,106 @@
+# Kalshi official results: recovery, verification and archive proposal (RESEARCH_ONLY)
+
+Agent-run, **not human verified**. Nothing here is archived on any branch yet. Official rows sit in a local
+scratch directory of one session and are lost when that session ends, until the owner approves a destination
+(section 4). Only counts, series names and contract identifiers are committed.
+
+## 1. What changed in this pass
+
+| Item | State |
+|---|---|
+| `kalshi_official.py`: `fetch-scope` (resumable, per-series `.done` marker, `manifest.json` with sha256, row count and close-date span), `verify` (re-hashes every file against the manifest), `report` (writes the evidence file) | code, 17 tests pass |
+| **`/historical/markets` support.** Markets settled before the exchange's historical cutoff (`GET /historical/cutoff` → `market_settled_ts`, 2026-09-16 when read) leave the live listing. They are still served unauthenticated from `/historical/markets`. | code; verified live |
+| Scope: `research/game_completeness/kalshi_official_scope.json`, 166 series in 6 sports (MLB, NBA and NHL: every series in the repo's computed archive; NFL, CBB and CFB: per-game series their code uses) | committed |
+| `kalshi_rules_audit.py`: classifies every contract's rules text for its overtime / extra-innings clause | code |
+| Evidence: `research/game_completeness/kalshi_official_crosscheck.json` (schema 2.0) | regenerated |
+
+## 2. What was recovered (local scratch, read-back verified)
+
+These are the live-listing and historical counts at the time of the run. `research/game_completeness/kalshi_official_crosscheck.json`
+holds the exact figures and the date spans per sport. Every fetched file re-hashed equal to its manifest entry
+(`verify`: 0 problems). The historical endpoint reaches back to each series' first market: for example KXMLBGAME from
+2025-04-16, CBB from 2025-11, and CFB from 2025-08-23.
+
+Rights note: the rows are Kalshi Data. See `docs/KALSHI_RIGHTS_IMPACT_AUDIT.md`. DA §3.1 limits storing it, except to
+facilitate the member's own trading, and prohibits sharing it.
+
+## 3. Findings from the official results
+
+### 3a. Engine vs exchange disagreements
+
+| Sport | Compared YES/NO | Agree | Disagree | Computed UNSETTLEABLE that the exchange settled |
+|---|---|---|---|---|
+| NBA (all 50 computed series) | 113,525 | 113,394 | 131 | **52,648** |
+| NHL (20 series) | 70,576 | 70,529 | 47 | 1,565 |
+
+* **NBA 2H: root cause found and fixed (nba-edge-finder #107, draft).** Kalshi's rule is "2nd half (including
+  overtime)", but the engine summed only Q3 and Q4. All 93 2H disagreements are in overtime games, and there are
+  0 in regulation games. Overtime games were identified independently from Kalshi's own `KXNBAOT` results: 11 of
+  194 games. 4Q markets say "excluding overtime", and the engine already agrees with them.
+* **NBA, 52,648 recoverable labels.** The engine marks whole families UNSETTLEABLE ("semantics not proven"):
+  `*PROT` player props, `TOTALPRECISE`, `PTSLEADER`, `WINMARGIN`, `STOCK`, `RACE`. The exchange settled them. An
+  official archive turns these into usable evaluation labels without guessing the semantics.
+* **NBA and NHL player props (the other 38 NBA and all 47 NHL disagreements) are a source or timing difference,
+  not an engine bug.** Three NHL cases were checked against the current NHL boxscore:
+  * Ersson: the engine read 23 saves, and the NHL now says 24. This is a stat correction after settlement.
+  * Saros: the engine read 25, the NHL now says 24, and Kalshi says 26.
+  * Shea: the NHL says 1 assist and Kalshi says 0.
+
+  Kalshi's stats source differs from the league boxscore at about 0.07%. For player props the official result
+  has to be the label. A computed result is a proxy.
+
+### 3b. Settlement-rule audit across sports (`kalshi_rules_audit`)
+
+| Market | Rule text | Engine |
+|---|---|---|
+| NBA 2H | including OT (always) | excluded OT; **fixed in nba #107** |
+| NBA / NFL / CFB 4Q | excluding OT | correct |
+| **NFL 2H** | excluding OT for games through 2026-09-13, **including OT from 2026-09-17**, both texts on 09-14 | always excluded; **fixed in nfl #283** (settle_v2, date-aware, refuses 09-14 OT games) |
+| **CFB 2H** | excluding OT through 2026-09-07, **including OT from 2026-09-17** | `research_packet/history.py` states "Kalshi's 2H markets settle on the same" as Q3+Q4. That is stale, but not changed here, because it feeds production packets (owner decision). |
+| CBB 2H | including OT | correct (`cbb_edge/kalshi/semantics.py`) |
+| MLB inning markets | no extra-innings clause | n/a (F3 / F5 / F7 / RFI verified against linescores, below) |
+
+The rule changed in the middle of the season. Settlement semantics therefore have to come from each contract's
+own rules text, or from a dated rule table. One constant per market family is not enough.
+
+### 3c. MLB inning results reproducible from linescores
+
+edge-finder-api #318 (draft) adds a manual linescore backfill. On a bounded test (2026-09, 368 games), all 3,272
+official F3 / F5 / F7 / RFI results agree with the linescore, and 0 disagree.
+
+## 4. Proposed durable destination (owner approval needed; nothing published)
+
+All seven in-scope repositories are **public** (checked through the GitHub API on 2026-11-16). No cloud credentials
+exist in this environment. The session was refused access to `kalshi-bet-router`, so its visibility is unknown.
+
+**Recommendation: a new private GitHub repository**, for example `chmoses98/sift-kalshi-official`, created by the
+owner and added to the session's repository scope.
+
+| Aspect | Proposal |
+|---|---|
+| Access | Private, owner only. Public CI never reads it. Public repos receive counts, identifiers and sha256 only. |
+| Layout | `<SPORT>/<series>.jsonl.gz` (live) and `<SPORT>/<series>__historical.jsonl.gz`; `<SPORT>/<series>[__historical].rules.json.gz`; `manifest.json` (per file: rows, sha256, close span, retrieval time, endpoint) |
+| Row fields | ticker, event_ticker, status, result, expiration_value, settlement_value_dollars, close_time, settlement_ts, rules_sha256, `_retrieved_at_utc`, `_source`. No prices or order book. |
+| Size | Measured on the rows fetched so far, gzipped: about 60 bytes per contract for rows, plus about the same for rules text. The rules text is unique per contract, because it names the player, threshold and date. Expected total for full history: a few hundred MB, with every file under 100 MB, so no LFS is needed. |
+| Cost | $0 (private repo, no LFS, no Actions minutes needed: the publish is a manual push) |
+| Provenance | Each row carries its retrieval timestamp and endpoint. The manifest hash is checked after push by a fresh clone and `kalshi_official verify`. |
+| Compatibility | `compare` and `report` read a local clone directly. Adapters stay unchanged. |
+| Updates | Manual re-runs of `fetch-scope` (resumable). A recurring capture would be a separate, later approval. |
+| Option | Store `rules_sha256` only and drop the rules text, which halves the size and minimises stored Kalshi Data. **Not recommended**: the rules text is what exposed the NFL / CFB / NBA overtime rules. |
+
+Rejected:
+* A branch, release asset or Actions artifact on any of the public repos. That is redistribution under DA §3.1,
+  and artifacts expire.
+* A cloud bucket. No credentials or billing exist, so it would be new paid infrastructure.
+* `kalshi-bet-router`. It may fit best, because it is the owner's own-trading repo, but this session could not
+  verify that it is private.
+
+Private storage reduces the redistribution risk. It does not settle whether research storage counts as
+"facilitating own trading" (audit item 1, counsel and owner).
+
+## 5. Remaining gaps
+
+* MLB, NFL, NBA and NHL `/historical` pulls were still running when this file was written (see
+  `docs/SIX_SPORT_CHECKPOINT.md`).
+* The NFL, CBB and CFB computed settlements have not yet been joined to the official results.
+* A durable archive of anything listed above still needs the section 4 approval.

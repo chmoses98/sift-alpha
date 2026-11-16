@@ -130,6 +130,59 @@ class OfficialSettlement(unittest.TestCase):
         self.assertTrue(all(x["_retrieved_at_utc"] for x in rows))
 
 
+    def test_historical_endpoint_has_no_status_filter_and_own_file(self):
+        import io, tempfile
+        from alpha_engine.game_completeness.kalshi_official import HISTORICAL_API, fetch_series
+        calls = []
+
+        class R(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def opener(req, timeout=0):
+            calls.append(req.full_url)
+            return R(json.dumps({"markets": [{"ticker": "H1", "result": "no"}], "cursor": ""}).encode())
+        with tempfile.TemporaryDirectory() as d:
+            fetch_series("KXTEST", d, pause=0, opener=opener, historical=True)
+            self.assertTrue((Path(d) / "KXTEST__historical.jsonl").exists())
+            row = json.loads(open(Path(d) / "KXTEST__historical.jsonl").readline())
+        self.assertTrue(calls[0].startswith(HISTORICAL_API + "?"))
+        self.assertNotIn("status=", calls[0])
+        self.assertEqual(row["_source"], HISTORICAL_API)
+
+    def test_fetch_scope_resumes_marks_only_complete_and_verifies(self):
+        import tempfile
+        from alpha_engine.game_completeness.kalshi_official import fetch_scope, verify_manifest
+        calls = []
+
+        def fake(series, out, max_pages=0, pause=0, **kw):
+            calls.append(series)
+            Path(out).mkdir(parents=True, exist_ok=True)
+            with open(Path(out) / f"{series}.jsonl", "w") as fh:
+                fh.write(json.dumps({"ticker": series + "-1", "result": "yes", "close_time": "2026-10-01T00:00:00Z"}) + "\n")
+            return {"series": series, "contracts": 1, "pages": 1, "truncated": series == "KXCUT"}
+        scope = {"sports": {"NBA": ["KXA", "KXCUT"], "NHL": ["KXB"]}}
+        with tempfile.TemporaryDirectory() as d:
+            man = fetch_scope(scope, d, fetch=fake)
+            self.assertEqual(man["series"]["NBA/KXA"]["rows"], 1)
+            self.assertEqual(man["series"]["NBA/KXA"]["close_min"], "2026-10-01")
+            self.assertFalse((Path(d) / "NBA" / "KXCUT.done").exists())     # truncated -> never marked complete
+            fetch_scope(scope, d, fetch=fake)                                # resume: only the truncated one again
+            self.assertEqual(calls, ["KXA", "KXCUT", "KXB", "KXCUT"])
+            self.assertEqual(verify_manifest(d)["problems"], [])
+            (Path(d) / "NHL" / "KXB.jsonl").write_text("{}\n")              # tamper -> read-back fails
+            self.assertEqual(verify_manifest(d)["problems"], [("NHL/KXB", "hash mismatch")])
+
+    def test_compare_by_series_and_value_delta(self):
+        from alpha_engine.game_completeness.kalshi_official import compare
+        off = {"KXNBA2HTOTAL-G-129": {"result": "yes", "expiration_value": "142"},
+               "KXNBA2HTOTAL-G-131": {"result": "yes", "expiration_value": "142"}}
+        comp = {"KXNBA2HTOTAL-G-129": "NO", "KXNBA2HTOTAL-G-131": "YES"}
+        r = compare(off, comp, {"KXNBA2HTOTAL-G-129": 127, "KXNBA2HTOTAL-G-131": 127})
+        self.assertEqual(r["by_series"]["KXNBA2HTOTAL"], {"agree": 1, "disagree": 1})
+        self.assertEqual(r["official_minus_computed_value_on_disagreement"], {"KXNBA2HTOTAL:15.0": 1})
+
+
 class CommittedEvidence(unittest.TestCase):
     """The committed summaries must be internally consistent: counts add up and name only registered datasets."""
     ROOT = Path(__file__).resolve().parents[1] / "research" / "game_completeness"

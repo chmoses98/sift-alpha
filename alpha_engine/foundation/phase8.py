@@ -33,7 +33,7 @@ def _set_row(m: dict) -> dict:
 
 def build() -> dict:
     ev = _j(EVIDENCE) or {}
-    sets = [_set_row(m) for s in ("NFL", "NHL", "NBA", "CBB") if (m := _j(TS / f"{s}.json"))]
+    sets = [_set_row(m) for s in ("NFL", "NHL", "NBA", "CBB", "CFB") if (m := _j(TS / f"{s}.json"))]
     up = _j(TS / "NFL_upcoming.json")
     out = {"schema": "phase8-acquisition-1.0", "status": "RESEARCH_ONLY",
            "notice": "Agent verification only, not human verified. No model retrained or promoted, no schedule created or activated, no purchase, credential or rights-tier change. "

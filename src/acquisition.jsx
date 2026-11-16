@@ -249,7 +249,7 @@ export function Phase8View() {
     <div className="mim-cards" data-testid="p8-totals">
       <div><b>{fmt(T.training_ready_inputs)}</b><small>training-ready inputs (unchanged: nothing new certified this phase)</small></div>
       <div><b>{fmt(T.missing_primary_slots)}</b><small>missing PRIMARY slots</small></div>
-      <div><b>{P8.training_sets.length}</b><small>sport training datasets assembled ({P8.training_sets.filter(t => !/BUILT_NOT_CERTIFIED/.test(t.admission)).length} from training-ready inputs only)</small></div>
+      <div><b>{P8.training_sets.length}</b><small>sport training datasets assembled ({P8.training_sets.filter(t => !/BUILT_NOT_CERTIFIED/.test(t.admission)).length} training-ready or certified)</small></div>
       <div><b>{U ? fmt(U.rows) : "0"}</b><small>upcoming NFL games with pre-game features</small></div>
     </div>
 
@@ -264,7 +264,7 @@ export function Phase8View() {
     <ul className="mim-list" data-testid="p8-collected">{P8.collected.map(c => <li key={c.id}><b>{c.id}</b> <Chip>{c.sport}</Chip> <Chip k={P8_STATUS[c.status] || "plain"}>{lc(c.status)}</Chip><div className="ir-why">{c.detail} · rights: {c.rights}</div></li>)}</ul>
 
     <h3>Training datasets</h3>
-    <ul className="mim-list" data-testid="p8-sets">{P8.training_sets.map(t => <li key={t.sport}><b>{t.sport}</b> <Chip k={t.deterministic && t.keys_unique ? "ok" : "miss"}>{t.deterministic ? "regenerates identically" : "not deterministic"}</Chip> <Chip k={/BUILT_NOT_CERTIFIED/.test(t.admission) ? "chipwarn" : "ok"}>{/BUILT_NOT_CERTIFIED/.test(t.admission) ? "built, not certified" : "training-ready inputs only"}</Chip> <Chip>{fmt(t.rows)} games · {t.seasons[0]}..{t.seasons[1]}</Chip> <Chip>{t.n_inputs} inputs · {t.n_feature_columns} columns</Chip>
+    <ul className="mim-list" data-testid="p8-sets">{P8.training_sets.map(t => <li key={t.sport}><b>{t.sport}</b> <Chip k={t.deterministic && t.keys_unique ? "ok" : "miss"}>{t.deterministic ? "regenerates identically" : "not deterministic"}</Chip> <Chip k={/BUILT_NOT_CERTIFIED/.test(t.admission) ? "chipwarn" : "ok"}>{/BUILT_NOT_CERTIFIED/.test(t.admission) ? "built, not certified" : /CERTIFIED_TRAINING_READY/.test(t.admission) ? "certified (blind re-implementation)" : "training-ready inputs only"}</Chip> <Chip>{fmt(t.rows)} games · {t.seasons[0]}..{t.seasons[1]}</Chip> <Chip>{t.n_inputs} inputs · {t.n_feature_columns} columns</Chip>
       <div className="ir-why">splits: {Object.entries(t.rows_by_split).map(([k, v]) => k + " " + fmt(v)).join(" · ")} · both sides present {t.both_sides_share == null ? "n/a" : Math.round(100 * t.both_sides_share) + "%"}{t.truncation_check != null ? " · truncation check " + (t.truncation_check ? "exact" : "FAILED") : ""}</div>
       <div className="ir-why">Walk-forward (market-free ridge, diagnostic only): MAE {t.walk_forward_mean.mae_model} vs constant {t.walk_forward_mean.mae_constant}; winner accuracy {t.walk_forward_mean.winner_acc_model == null ? "n/a" : Math.round(100 * t.walk_forward_mean.winner_acc_model) + "%"} · {t.file}</div></li>)}</ul>
 

@@ -8,7 +8,7 @@ NHL / NBA admit ONLY inputs whose readiness state is TRAINING_READY (acquisition
 player-level inputs (nhl.shot_rate, nhl.toi_trend, nba.minutes, nba.steal_block_rates) stay in their player tables, except columns that
 are constant within a team-game (opponent-team quantities attached to every player row), which are lifted unchanged.
 CBB has no training-ready input. Its dataset uses the Phase 8 builder `features/cbb_box.py` (BUILT + replay-checked here, NOT certified,
-no blind re-implementation): it is labelled `admission: BUILT_NOT_CERTIFIED` and is not counted as training-ready.
+certified 2026-11-16 by a blind re-implementation and leakage suite, see research/certification/): `admission: CERTIFIED_TRAINING_READY`.
 Checks per dataset: unique keys, both sides present, outcome sanity, missingness by season, deterministic regeneration (canonical hash
 twice), a market-free walk-forward ridge diagnostic, and for CBB a truncation check (rebuild with every game after D removed; D's values
 must be identical).
@@ -235,9 +235,9 @@ def build(sport: str, args) -> dict:
     elif sport == "NBA":
         f = lambda: nba_dataset(Path(args.raw)); target, first, adm = "y_home_margin", 2023, "TRAINING_READY inputs only (team-level / team-constant columns)"
     elif sport == "CFB":
-        f = lambda: cfb_dataset(Path(args.cfb)); target, first, adm = "y_home_margin", 2014, "BUILT_NOT_CERTIFIED (Phase 8 builder; no CFB input is training-ready)"
+        f = lambda: cfb_dataset(Path(args.cfb)); target, first, adm = "y_home_margin", 2014, "CERTIFIED_TRAINING_READY (2026-11-16, research/certification/certification.json; drive-points defect documented)"
     else:
-        f = lambda: cbb_dataset(Path(args.cbb)); target, first, adm = "y_home_margin", 2006, "BUILT_NOT_CERTIFIED (Phase 8 builder; no CBB input is training-ready)"
+        f = lambda: cbb_dataset(Path(args.cbb)); target, first, adm = "y_home_margin", 2006, "CERTIFIED_TRAINING_READY (2026-11-16, research/certification/certification.json)"
     d, meta = f(); d2, _ = f()
     h1, h2 = canonical_hash(d.drop(columns=["cutoff_utc"])), canonical_hash(d2.drop(columns=["cutoff_utc"]))
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True); d.to_parquet(out / f"{sport.lower()}_game_training.parquet", index=False)

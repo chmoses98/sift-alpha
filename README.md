@@ -51,6 +51,10 @@ The dashboard's **Input research** section lets you pick any sport and market fa
 
 The dashboard's **Data foundation pipeline** section follows every market from its required inputs to datasets, collectors, features, research challengers and evaluations, with ten explicit stages per input (never one percentage). See [docs/DATA_FOUNDATION_OPS.md](docs/DATA_FOUNDATION_OPS.md). **RESEARCH_ONLY**: the three P0 challengers (NBA, CBB, NHL) are research results on archived data; none beats the market price and every incumbent is retained.
 
+## Certification and historical data
+
+CBB and CFB game datasets are **CERTIFIED** (2026-11-16). Blind re-implementations from written specs reproduce every cell, and the future-scramble, own-game and truncation checks show no leakage. Outcomes reconcile with independent result tables. Every expected game is reconciled against PR #80's completeness ledger, and dataset versions are registered append-only. Nothing is model-active. See [docs/CERTIFICATION_HISTORICAL_DATA.md](docs/CERTIFICATION_HISTORICAL_DATA.md).
+
 ## Universal evaluation standard
 
 [Alpha Universal Evaluation Standard v1](docs/ALPHA_EVALUATION_STANDARD_V1.md) (`alpha_eval/`, `python -m alpha_eval ...`) scores every sport, model and market on accuracy, directional calibration, model-vs-market, fee-adjusted hypothetical economics and signed CLV, with explicit GRADED / PENDING / UNSUPPORTED / BLOCKED accounting. See the generated [coverage and adoption matrix](docs/alpha_eval/COVERAGE_MATRIX.md). RESEARCH_ONLY; example reports are synthetic.

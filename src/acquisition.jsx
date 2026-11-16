@@ -5,6 +5,7 @@ import PLAN from "../research/data_foundation_ops/acquisition_plan.json";
 import P6 from "../research/data_foundation_ops/phase6_acquisition.json";
 import P7 from "../research/data_foundation_ops/phase7_acquisition.json";
 import P8 from "../research/data_foundation_ops/phase8_acquisition.json";
+import P10 from "../research/data_foundation_ops/phase10_progress.json";
 
 const INPUTS = import.meta.glob("../research/data_foundation_ops/acquisition_inputs.json");
 let inputsPromise = null;
@@ -280,5 +281,55 @@ export function Phase8View() {
 
     <h3>Highest-value next datasets</h3>
     <ol className="mim-list" data-testid="p8-next">{P8.next.map((t, i) => <li key={i}><div className="ir-why">{t}</div></li>)}</ol>
+  </div>;
+}
+
+
+// Phase 10: durable archive, official settlements, certification and collection progress. Rendered only from
+// research/data_foundation_ops/phase10_progress.json (alpha_engine.foundation.phase10); every number comes from an evidence file.
+const mb = b => (b / 1e6).toFixed(b >= 1e7 ? 0 : 1) + " MB";
+const P10_K = {COMPLETE: "ok", PARTIAL: "chipwarn", MISSING: "miss", PROSPECTIVE_ONLY: "unv", RETROSPECTIVE: "ok", PROSPECTIVE: "unv", BOTH: "ok", BLOCKED: "miss", OWNER_DECISION: "miss"};
+export function Phase10View() {
+  const T = P10.training_ready, V = P10.vault, K = P10.official_settlements || {}, R = P10.settlement_repair || {};
+  return <div data-testid="p10">
+    <p className="ir-fine">{P10.notice}</p>
+    <ol className="p6-ladder" aria-label="Stages, weakest to strongest">{P10.stage_order.map(s => <li key={s}>{lc(s)}</li>)}</ol>
+    <div className="mim-cards" data-testid="p10-totals">
+      <div><b>{fmt(T.after)}</b><small>training-ready inputs (was {fmt(T.baseline.training_ready_inputs)}; {T.promoted_by_certification.length} promoted by certification; {T.model_active} model-active)</small></div>
+      <div><b>{mb(V.totals.stored_bytes || 0)}</b><small>durably archived in the private vault ({fmt(V.totals.archives || 0)} archives, {fmt(V.totals.pins || 0)} hash-only pins)</small></div>
+      <div><b>{fmt(K.total_markets || 0)}</b><small>official Kalshi settlements recovered ({fmt(K.total_events || 0)} events)</small></div>
+      <div><b>{fmt(P10.gaps_closed.reduce((a, g) => a + (g.games || 0), 0))}</b><small>game x category gaps closed against the completeness ledger</small></div>
+    </div>
+
+    <h3>Durably archived (hash-verified)</h3>
+    <p className="ir-fine">{V.repository}. Verification: {V.verify.summary || "not recorded"} · Restore test: {V.restore_test.summary || "not recorded"}</p>
+    <ul className="mim-list" data-testid="p10-vault">{Object.entries(V.by_sport).map(([s, x]) => <li key={s}><b>{s}</b> <Chip k={x.archives ? "ok" : "miss"}>{x.archives} archives</Chip> <Chip>{mb(x.stored_bytes)} stored</Chip>{x.pins ? <Chip k="unv">{x.pins} pin-only</Chip> : null}
+      <div className="ir-why">{x.datasets.map(d => d.dataset + " " + d.season + " (" + d.source + (d.kind === "PIN_ONLY" ? ", pin" : "") + ")").join(" · ") || "nothing archived"}</div></li>)}</ul>
+
+    <h3>Certified training-ready inputs and dataset versions</h3>
+    <ul className="mim-list" data-testid="p10-ready">{Object.entries(T.inputs).map(([s, ids]) => <li key={s}><b>{s}</b> <Chip k={ids.length ? "ok" : "miss"}>{ids.length} training-ready</Chip><div className="ir-why">{ids.join(" · ") || "none"}</div></li>)}</ul>
+    <ul className="mim-list" data-testid="p10-versions">{P10.dataset_versions.map(v => <li key={v.sport + v.hash}><b>{v.sport}</b> <Chip>{v.hash}</Chip> <Chip k={v.training_ready ? "ok" : "chipwarn"}>{v.training_ready ? "training-ready dataset" : "not training-ready"}</Chip>{v.superseded_by ? <Chip k="unv">superseded</Chip> : null} <Chip>{fmt(v.rows)} rows</Chip>
+      <div className="ir-why">{v.builder} · registered {v.registered} · {v.verified}</div><div className="ir-why">Completeness: {String(v.complete)}</div></li>)}</ul>
+
+    <h3>Official settlement reconciliation</h3>
+    <p className="ir-fine">{K.note}</p>
+    <ul className="mim-list" data-testid="p10-official">{(K.sports || []).map(x => <li key={x.sport}><b>{x.sport}</b> <Chip k={x.markets ? "ok" : "miss"}>{fmt(x.markets)} markets</Chip> <Chip>{fmt(x.events)} events</Chip> <Chip>{x.first} .. {x.last}</Chip>
+      <div className="ir-why">{Object.entries(x.classes).map(([k, n]) => lc(k) + " " + fmt(n)).join(" · ")}</div></li>)}</ul>
+    {R.summary ? <ul className="mim-list" data-testid="p10-repair"><li><b>NBA 2nd-half overtime</b> <Chip k="chipwarn">{R.status}</Chip><div className="ir-why">{R.summary}</div><div className="ir-why">{R.pr}</div></li></ul> : null}
+
+    <h3>Collected this phase (content-verified)</h3>
+    <ul className="mim-list" data-testid="p10-collected">{P10.collection.map(c => <li key={c.id}><b>{c.id}</b> <Chip>{c.sport}</Chip> <Chip k={P10_K[c.kind] || "plain"}>{lc(c.kind)}</Chip> <Chip k={c.archived ? "ok" : "chipwarn"}>{c.archived ? "archived" : "not archived"}</Chip><div className="ir-why">{c.detail}</div></li>)}</ul>
+
+    <h3>Postgame gaps closed and remaining</h3>
+    <ul className="mim-list" data-testid="p10-closed">{P10.gaps_closed.map(g => <li key={g.id}><b>{g.sport}</b> <Chip k="ok">{fmt(g.games)} games</Chip> <Chip>{g.category}</Chip><div className="ir-why">{g.detail}</div></li>)}</ul>
+    <ul className="mim-list" data-testid="p10-remaining">{P10.remaining_gaps.map(g => <li key={g.id}><b>{g.sport}</b> <Chip k={P10_K[g.kind] || "chipwarn"}>{lc(g.kind)}</Chip> <Chip>{g.category}</Chip><div className="ir-why">{g.detail}</div></li>)}</ul>
+
+    <h3>Complete versus partial datasets</h3>
+    <ul className="mim-list" data-testid="p10-complete">{P10.completeness.map(c => <li key={c.id}><b>{c.sport}</b> <Chip k={P10_K[c.status] || "plain"}>{lc(c.status)}</Chip> <Chip k={P10_K[c.coverage] || "plain"}>{lc(c.coverage)}</Chip> <Chip>{c.dataset}</Chip><div className="ir-why">{c.detail}</div></li>)}</ul>
+
+    <h3>Blockers</h3>
+    <ul className="mim-list" data-testid="p10-blockers">{P10.blockers.map(b => <li key={b.id}><Chip k={/OWNER/.test(b.kind) ? "miss" : "chipwarn"}>{lc(b.kind)}</Chip> <Chip>{b.sports.join(" · ")}</Chip><div className="ir-why">{b.text}</div></li>)}</ul>
+    <h3>Next steps</h3>
+    <ol className="mim-list" data-testid="p10-next">{P10.next.map((t, i) => <li key={i}><div className="ir-why">{t}</div></li>)}</ol>
   </div>;
 }

@@ -419,34 +419,37 @@ def load_certification() -> dict:
     non-superseded, training-ready entry of the append-only dataset_versions.json. Held-back inputs are never returned. Seasons of
     history are counted from the per-game index (games that carry the certified dataset version). Missing files -> {} (no promotion)."""
     try:
-        cert = json.loads((CERT / "certification.json").read_text()); vers = json.loads((CERT / "dataset_versions.json").read_text())["versions"]
+        vers = json.loads((CERT / "dataset_versions.json").read_text())["versions"]
+        certs = [json.loads(p.read_text()) for p in sorted(CERT.glob("certification*.json"))]
     except (OSError, ValueError, KeyError):
         return {}
     live = {(e["sport"], e["canonical_sha256"]) for e in vers if not e.get("superseded_by") and (e.get("tiers") or {}).get("training_ready") is True
             and (e.get("tiers") or {}).get("model_active") is False}
-    elig = cert.get("catalog_inputs_eligible_for_promotion", {}); held_back = set(elig.get("held_back", {}))
     out = {}
-    for sport, ids in elig.items():
-        c = cert.get("sports", {}).get(sport)
-        if not isinstance(ids, list) or not c:
-            continue
-        b = c.get("blind_reimplementation", {}); lk = c.get("leakage", {})
-        ok = (c.get("verdict") == "CERTIFIED" and b.get("identical") is True and b.get("cells_mismatched") == 0 and b.get("rows_common") == c.get("rows")
-              and c.get("fresh_rebuild_hash_matches_manifest") is True and c.get("truncation_check") is True and lk
-              and all(d.get("future_scramble_identical") is True and d.get("own_game_identical") is True for d in lk.values())
-              and (sport, c.get("dataset_sha256")) in live)
-        if not ok:
-            continue
-        idx = CERT / "game_index" / f"{sport}.csv.gz"
-        seasons = set()
-        if idx.exists():
-            import gzip
-            with gzip.open(idx, "rt") as f:
-                seasons = {r["season"] for r in csv.DictReader(f) if r.get("dataset_version") == c["dataset_sha256"][:12]}
-        for i in ids:
-            if i not in held_back:
-                out[f"{sport}:{i}"] = {"dataset_sha256": c["dataset_sha256"], "spec": c.get("spec"), "seasons": len(seasons), "rows": c["rows"],
-                                       "evidence": "research/certification/certification.json"}
+    for cert in certs:
+        elig = cert.get("catalog_inputs_eligible_for_promotion", {}); held_back = set(elig.get("held_back", {}))
+        for sport, ids in elig.items():
+            c = cert.get("sports", {}).get(sport)
+            if not isinstance(ids, list) or not c:
+                continue
+            b = c.get("blind_reimplementation", {}); lk = c.get("leakage", {})
+            ok = (c.get("verdict") == "CERTIFIED" and b.get("identical") is True and b.get("cells_mismatched") == 0 and b.get("rows_common") == c.get("rows")
+                  and c.get("fresh_rebuild_hash_matches_manifest") is True and c.get("truncation_check") is True and lk
+                  and all(d.get("future_scramble_identical") is True and d.get("own_game_identical") is True for d in lk.values())
+                  and (sport, c.get("dataset_sha256")) in live)
+            if not ok:
+                continue
+            # A later builder version over the SAME games (e.g. CFB v2) points at the index rows of the version it shares rows with.
+            idx = CERT / "game_index" / f"{sport}.csv.gz"; key = (c.get("game_index_dataset_sha256") or c["dataset_sha256"])[:12]
+            seasons = set()
+            if idx.exists():
+                import gzip
+                with gzip.open(idx, "rt") as f:
+                    seasons = {r["season"] for r in csv.DictReader(f) if r.get("dataset_version") == key}
+            for i in ids:
+                if i not in held_back:
+                    out[f"{sport}:{i}"] = {"dataset_sha256": c["dataset_sha256"], "spec": c.get("spec"), "seasons": len(seasons), "rows": c["rows"],
+                                           "evidence": f"research/certification/{cert.get('file', 'certification.json')}"}
     return out
 
 

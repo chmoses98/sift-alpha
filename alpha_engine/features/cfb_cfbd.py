@@ -62,7 +62,8 @@ def games_table(raw: dict) -> pd.DataFrame:
               "homeClassification", "awayClassification", "homePoints", "awayPoints", "venueId"]].rename(columns={"id": "game_id"})
 
 
-def team_games(raw: dict, g: pd.DataFrame) -> pd.DataFrame:
+def team_games(raw: dict, g: pd.DataFrame, drive_points=None) -> pd.DataFrame:
+    """`drive_points` (drives frame -> points array) overrides the v1 drive-points rule; None keeps v1 exactly (certified dataset a73a3e14)."""
     rows = []
     for r in raw["adv"]:
         o, d = r.get("offense") or {}, r.get("defense") or {}
@@ -74,7 +75,7 @@ def team_games(raw: dict, g: pd.DataFrame) -> pd.DataFrame:
     t = pd.DataFrame(rows).drop_duplicates(["game_id", "team"])
     dr = pd.DataFrame(raw["drives"])
     if not dr.empty:
-        dr["pts"] = np.where(dr.driveResult.astype(str).str.contains("TD") & ~dr.driveResult.astype(str).str.contains("DEF|INT TD|FUMBLE TD|PUNT TD"), 7.0,
+        dr["pts"] = drive_points(dr) if drive_points is not None else np.where(dr.driveResult.astype(str).str.contains("TD") & ~dr.driveResult.astype(str).str.contains("DEF|INT TD|FUMBLE TD|PUNT TD"), 7.0,
                              np.where(dr.driveResult.astype(str).eq("FG"), 3.0, 0.0))
         a = dr.groupby(["gameId", "offense"]).agg(drives=("pts", "size"), ppd=("pts", "mean"), start_ytg=("startYardsToGoal", "mean")).reset_index()
         t = t.merge(a.rename(columns={"gameId": "game_id", "offense": "team", "ppd": "ppd_o", "start_ytg": "start_ytg_o"}), on=["game_id", "team"], how="left")
@@ -151,8 +152,8 @@ def priors(raw: dict) -> pd.DataFrame:
     return p.merge(rec4, on=["team", "season"], how="outer").merge(portal, on=["team", "season"], how="outer")
 
 
-def compute(raw: dict) -> dict:
-    g = games_table(raw); t = team_games(raw, g)
+def compute(raw: dict, drive_points=None) -> dict:
+    g = games_table(raw); t = team_games(raw, g, drive_points)
     # every team of every game gets a row (postseason games too: they receive features even though their own stats are not in the window)
     long = pd.concat([g.assign(team=g.homeTeam, opp=g.awayTeam), g.assign(team=g.awayTeam, opp=g.homeTeam)])[["game_id", "date", "season", "team", "opp"]]
     base = long.merge(t.drop(columns=["date", "season", "opp"]), on=["game_id", "team"], how="left")

@@ -105,13 +105,16 @@ def cbb_outcomes(cbb_dir: Path, d: pd.DataFrame) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------------------------- CFB
+CFB_BUILDER = "v1"  # set by --cfb-builder; v2 = corrected drive points
+
+
 def _cfb_build(cache: Path, raw: dict):
     from ..features import cfb_cfbd as F
     from ..foundation import training_sets_multi as T
     orig = F.load_raw
     try:
         F.load_raw = lambda c, _r=raw: _r
-        return T.cfb_dataset(cache)
+        return T.cfb_dataset(cache, CFB_BUILDER)
     finally:
         F.load_raw = orig
 
@@ -148,7 +151,7 @@ def cfb_checks(cache: Path, dates: list[str], seed: int = 7) -> dict:
                                 b[sub]["ppa"] = float(rng.normal())
             for x in r["drives"]:
                 if x["gameId"] in ids:
-                    x["driveResult"] = ["TD", "FG", "PUNT"][int(rng.integers(0, 3))]; x["startYardsToGoal"] = int(rng.integers(1, 99))
+                    x["driveResult"] = (["TD", "FG", "PUNT"] if CFB_BUILDER == "v1" else ["TD", "FG", "PUNT", "PUNT RETURN TD", "FUMBLE RETURN TD"])[int(rng.integers(0, 3 if CFB_BUILDER == "v1" else 5))]; x["startYardsToGoal"] = int(rng.integers(1, 99)); x["endYardsToGoal"] = int(rng.integers(0, 3)) * 20
             return r
         scr, _ = _cfb_build(cache, scramble(lim, fut, 3.0))
         r_future = _compare(base[base.date == D], scr[scr.date == D], fc)
@@ -190,7 +193,10 @@ def cfb_outcomes(cache: Path, d: pd.DataFrame) -> dict:
 def main(a=None) -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("sport", choices=["cbb", "cfb"]); ap.add_argument("--cbb"); ap.add_argument("--cfb")
     ap.add_argument("--dates", required=True); ap.add_argument("--dataset", help="full-build parquet for outcome reconciliation"); ap.add_argument("--out", required=True)
+    ap.add_argument("--cfb-builder", choices=["v1", "v2"], default="v1")
     x = ap.parse_args(a); dates = x.dates.split(",")
+    global CFB_BUILDER
+    CFB_BUILDER = x.cfb_builder
     if x.sport == "cbb":
         res = {"leakage": cbb_checks(Path(x.cbb), dates)}
         if x.dataset:

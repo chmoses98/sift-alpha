@@ -138,14 +138,15 @@ def test_catalog_promotes_only_certified_inputs():
     from alpha_engine.foundation import acquisition as A
     from alpha_engine.foundation.contract import OPS
     certs = A.load_certification()
-    assert set(certs) == {"CBB:cbb.adj_off", "CBB:cbb.adj_def", "CBB:cbb.tempo", "CBB:cbb.conf_strength", "CFB:cfb.off_ppa", "CFB:cfb.def_ppa"}
+    assert set(certs) == {"CBB:cbb.adj_off", "CBB:cbb.adj_def", "CBB:cbb.tempo", "CBB:cbb.conf_strength", "CFB:cfb.off_ppa", "CFB:cfb.def_ppa", "CFB:cfb.drives"}
     inputs = json.loads((OPS / "acquisition_inputs.json").read_text())["inputs"]
     for k, c in certs.items():
         tr = inputs[k]["tr"]
         assert tr["state"] == "TRAINING_READY" and tr["cert"]["dataset"] == c["dataset_sha256"][:12] and c["seasons"] >= 3
-    assert inputs["CFB:cfb.drives"]["tr"]["state"] != "TRAINING_READY" and "cert" not in inputs["CFB:cfb.drives"]["tr"]
-    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 47
-    assert sum(1 for v in inputs.values() if "cert" in v["tr"]) == 6
+    # cfb.drives is certified ONLY on the corrected v2 dataset (v1 keeps it held back for the drive-points defect)
+    assert inputs["CFB:cfb.drives"]["tr"]["cert"]["dataset"] == "0b9226c089fa" and inputs["CFB:cfb.off_ppa"]["tr"]["cert"]["dataset"] == "a73a3e141af4"
+    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 48
+    assert sum(1 for v in inputs.values() if "cert" in v["tr"]) == 7
 
 
 def test_certification_overlay_fails_closed(monkeypatch, tmp_path):
@@ -163,10 +164,28 @@ def test_certification_overlay_fails_closed(monkeypatch, tmp_path):
         else:
             next(e for e in vers["versions"] if e["sport"] == "CBB")["superseded_by"] = "x"
         (d / "certification.json").write_text(json.dumps(cert)); (d / "dataset_versions.json").write_text(json.dumps(vers))
+        shutil.copy(src / "certification_cfb_v2.json", d / "certification_cfb_v2.json")
         for f in (src / "game_index").glob("C*.csv.gz"):
             shutil.copy(f, d / "game_index" / f.name)
         monkeypatch.setattr(A, "CERT", d)
         got = A.load_certification()
-        assert not any(k.startswith("CBB:") for k in got) and sum(k.startswith("CFB:") for k in got) == 2
+        assert not any(k.startswith("CBB:") for k in got) and sum(k.startswith("CFB:") for k in got) == 3
     monkeypatch.setattr(A, "CERT", tmp_path / "missing")
     assert A.load_certification() == {}
+
+
+def test_cfb_v2_drive_points_rule_and_v1_immutability():
+    import numpy as np
+    import pandas as pd
+    import pytest
+    from alpha_engine.features import cfb_cfbd_v2 as V2
+    dr = pd.DataFrame({"driveResult": ["TD", "RUSHING TD", "FG", "FG GOOD", "PUNT", "PUNT RETURN TD", "FUMBLE RETURN TD", "FUMBLE RETURN TD", "DOWNS TD", "DOWNS TD",
+                                       "INT TD", "END OF HALF TD", "END OF GAME TD", "MISSED FG TD", "MISSED FG", "END OF HALF"],
+                       "endYardsToGoal": [0, 12, 20, 20, 60, 0, 0, 55, 0, 40, 0, 0, 30, 80, 25, 50]})
+    assert V2.drive_points(dr).tolist() == [7, 7, 3, 3, 0, 0, 7, 0, 7, 0, 0, 0, 0, 0, 0, 0]
+    with pytest.raises(ValueError):
+        V2.drive_points(pd.DataFrame({"driveResult": ["KICKOFF RETURN TD"], "endYardsToGoal": [0]}))
+    from alpha_engine.certify.registry import load_versions
+    cfb = [e for e in load_versions()["versions"] if e["sport"] == "CFB"]
+    assert [e["canonical_sha256"][:8] for e in cfb] == ["a73a3e14", "0b9226c0"] and all(e["superseded_by"] is None for e in cfb)
+    assert np.isfinite(V2.drive_points(dr)).all()

@@ -230,6 +230,22 @@ def _computed(pattern, ticker="ticker", outcome=("outcome", "result"), values=No
     return out
 
 
+def _computed_rows(pattern, ticker="ticker"):
+    """Latest full row per ticker (same ordering rule as _computed)."""
+    out = {}
+    for f in sorted(glob.glob(pattern, recursive=True)):
+        op = gzip.open if f.endswith(".gz") else open
+        with op(f, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get(ticker):
+                    out[r[ticker]] = r
+    return out
+
+
 def report(live, hist, computed_globs, as_of):
     """Evidence file: per sport, what official data was recovered (counts, close-date span, truncation, read-back)
     and, where a computed archive exists, the cross-check.  Identifiers and counts only; no rules text, no prices."""

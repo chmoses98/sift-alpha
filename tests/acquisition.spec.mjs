@@ -104,3 +104,20 @@ test("Phase 8 tab shows weather capture health, collected data, training dataset
   const o = await measureOverflow(page);
   expect(o.scroll, "phase 8 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
 });
+
+test("Phase 10 tab shows archive, certification, official settlements, collection and gaps from the evidence file", async ({ page }) => {
+  const P10 = JSON.parse(readFileSync(new URL("../research/data_foundation_ops/phase10_progress.json", import.meta.url)));
+  const df = page.getByTestId("data-foundation");
+  await df.getByRole("tab", { name: "Phase 10" }).click();
+  const v = page.getByTestId("p10");
+  await expect(v.getByTestId("p10-totals")).toContainText(String(P10.training_ready.after));
+  await expect(v.getByTestId("p10-vault").locator("> li")).toHaveCount(Object.keys(P10.vault.by_sport).length);
+  await expect(v.getByTestId("p10-versions").locator("> li")).toHaveCount(P10.dataset_versions.length);
+  await expect(v.getByTestId("p10-official").locator("> li")).toHaveCount(P10.official_settlements.sports.length);
+  await expect(v.getByTestId("p10-collected").locator("> li")).toHaveCount(P10.collection.length);
+  await expect(v.getByTestId("p10-closed").locator("> li")).toHaveCount(P10.gaps_closed.length);
+  await expect(v.getByTestId("p10-remaining").locator("> li")).toHaveCount(P10.remaining_gaps.length);
+  await expect(v.getByTestId("p10-blockers").locator("> li")).toHaveCount(P10.blockers.length);
+  const o = await measureOverflow(page);
+  expect(o.scroll, "phase 10 " + JSON.stringify(o)).toBeLessThanOrEqual(o.view);
+});

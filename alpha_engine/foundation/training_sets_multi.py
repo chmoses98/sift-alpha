@@ -8,7 +8,7 @@ NHL / NBA admit ONLY inputs whose readiness state is TRAINING_READY (acquisition
 player-level inputs (nhl.shot_rate, nhl.toi_trend, nba.minutes, nba.steal_block_rates) stay in their player tables, except columns that
 are constant within a team-game (opponent-team quantities attached to every player row), which are lifted unchanged.
 CBB has no training-ready input. Its dataset uses the Phase 8 builder `features/cbb_box.py` (BUILT + replay-checked here, NOT certified,
-no blind re-implementation): it is labelled `admission: BUILT_NOT_CERTIFIED` and is not counted as training-ready.
+certified 2026-11-16 by a blind re-implementation and leakage suite, see research/certification/): `admission: CERTIFIED_TRAINING_READY`.
 Checks per dataset: unique keys, both sides present, outcome sanity, missingness by season, deterministic regeneration (canonical hash
 twice), a market-free walk-forward ridge diagnostic, and for CBB a truncation check (rebuild with every game after D removed; D's values
 must be identical).
@@ -164,8 +164,13 @@ def cbb_dataset(cbb_dir: Path, raw: dict | None = None) -> tuple[pd.DataFrame, d
     return d.sort_values(["date", "game_id"], kind="mergesort").reset_index(drop=True), {"inputs": {"cbb_box (Phase 8 builder)": fc0}, "feature_columns": fc}
 
 
-def cfb_dataset(cache: Path) -> tuple[pd.DataFrame, dict]:
-    from ..features import cfb_cfbd as F
+def _cfb_builder(builder: str):
+    from ..features import cfb_cfbd, cfb_cfbd_v2
+    return {"v1": cfb_cfbd, "v2": cfb_cfbd_v2}[builder]
+
+
+def cfb_dataset(cache: Path, builder: str = "v1") -> tuple[pd.DataFrame, dict]:
+    F = _cfb_builder(builder)
     out = F.compute(F.load_raw(cache)); t, g = out["team"], out["games"]
     fc0 = F.PRE + F.PRIOR
     gg = g.assign(home_team=g.homeTeam, away_team=g.awayTeam, cutoff_utc=g.start_utc, neutral=g.neutralSite.fillna(False).astype(float),
@@ -193,7 +198,7 @@ def cbb_truncation(cbb_dir: Path, full: pd.DataFrame, dates: list[str]) -> dict:
             "all_equal": all(v["games"] > 0 and v["nan_pattern_equal"] and v["values_equal"] for v in res.values())}
 
 
-def cfb_truncation(cache: Path, full: pd.DataFrame, dates: list[str]) -> dict:
+def cfb_truncation(cache: Path, full: pd.DataFrame, dates: list[str], builder: str = "v1") -> dict:
     from ..features import cfb_cfbd as F
     import tempfile
     raw = F.load_raw(cache); res = {}
@@ -205,7 +210,7 @@ def cfb_truncation(cache: Path, full: pd.DataFrame, dates: list[str]) -> dict:
         F_load = F.load_raw
         try:
             F.load_raw = lambda c, _r=r2: _r
-            part, meta = cfb_dataset(cache)
+            part, meta = cfb_dataset(cache, builder)
         finally:
             F.load_raw = F_load
         fc = meta["feature_columns"]
@@ -235,27 +240,32 @@ def build(sport: str, args) -> dict:
     elif sport == "NBA":
         f = lambda: nba_dataset(Path(args.raw)); target, first, adm = "y_home_margin", 2023, "TRAINING_READY inputs only (team-level / team-constant columns)"
     elif sport == "CFB":
-        f = lambda: cfb_dataset(Path(args.cfb)); target, first, adm = "y_home_margin", 2014, "BUILT_NOT_CERTIFIED (Phase 8 builder; no CFB input is training-ready)"
+        cb = getattr(args, "cfb_builder", "v1")
+        f = lambda: cfb_dataset(Path(args.cfb), cb); target, first = "y_home_margin", 2014
+        adm = "CERTIFIED_TRAINING_READY (2026-11-16, research/certification/certification.json; drive-points defect documented)" if cb == "v1" else \
+              "CERTIFIED_TRAINING_READY (v2 builder: corrected drive-points attribution; research/certification/certification_cfb_v2.json)"
     else:
-        f = lambda: cbb_dataset(Path(args.cbb)); target, first, adm = "y_home_margin", 2006, "BUILT_NOT_CERTIFIED (Phase 8 builder; no CBB input is training-ready)"
+        f = lambda: cbb_dataset(Path(args.cbb)); target, first, adm = "y_home_margin", 2006, "CERTIFIED_TRAINING_READY (2026-11-16, research/certification/certification.json)"
     d, meta = f(); d2, _ = f()
     h1, h2 = canonical_hash(d.drop(columns=["cutoff_utc"])), canonical_hash(d2.drop(columns=["cutoff_utc"]))
-    out = Path(args.out); out.mkdir(parents=True, exist_ok=True); d.to_parquet(out / f"{sport.lower()}_game_training.parquet", index=False)
+    tag = "_v2" if sport == "CFB" and getattr(args, "cfb_builder", "v1") == "v2" else ""
+    out = Path(args.out); out.mkdir(parents=True, exist_ok=True); d.to_parquet(out / f"{sport.lower()}{tag}_game_training.parquet", index=False)
     extra = {}
     if sport == "CFB":
-        extra["truncation_check"] = cfb_truncation(Path(args.cfb), d, ["2019-10-12", "2023-11-25", "2025-09-06"])
+        extra["truncation_check"] = cfb_truncation(Path(args.cfb), d, ["2019-10-12", "2023-11-25", "2025-09-06"], getattr(args, "cfb_builder", "v1"))
     if sport == "CBB":
         extra["truncation_check"] = cbb_truncation(Path(args.cbb), d, ["2019-02-16", "2025-01-11", "2026-11-14"])
     src, rights = SOURCES[sport]
     m = _manifest(sport, d, meta["feature_columns"], meta["inputs"], adm, src, rights, extra, h1, h2, target, first)
     if args.write_manifest:
-        MANIFEST_DIR.mkdir(parents=True, exist_ok=True); (MANIFEST_DIR / f"{sport}.json").write_text(json.dumps(m, indent=1, default=str) + "\n")
+        MANIFEST_DIR.mkdir(parents=True, exist_ok=True); (MANIFEST_DIR / f"{sport}{tag}.json").write_text(json.dumps(m, indent=1, default=str) + "\n")
     return m
 
 
 def main(a=None) -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("sport", choices=["nhl", "nba", "cbb", "cfb"]); ap.add_argument("--cfb"); ap.add_argument("--out", required=True)
     ap.add_argument("--nhl-history"); ap.add_argument("--raw"); ap.add_argument("--cbb"); ap.add_argument("--write-manifest", action="store_true")
+    ap.add_argument("--cfb-builder", choices=["v1", "v2"], default="v1", help="v1 = certified a73a3e14 (immutable); v2 = corrected drive points (new hash, CFB_v2.json)")
     x = ap.parse_args(a)
     m = build(x.sport, x)
     print(json.dumps({k: m[k] for k in ("sport", "rows", "rows_by_split", "n_inputs", "n_feature_columns", "checks")}, default=str))

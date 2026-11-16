@@ -13,20 +13,20 @@ The two workstreams share **no file**; the merge is conflict-free and the full s
 | Repo | PR | State | Role after unification |
 |---|---|---|---|
 | sift-alpha | #77, #78, #79 | merged | unchanged |
-| sift-alpha | **Phase 11 integration PR** (this branch) | draft | **the one to review and merge**; contains #80-#83 |
+| sift-alpha | **#84** (this branch) | draft | **the one to review and merge**; contains #80-#83 |
 | sift-alpha | #80, #81, #82, #83 | draft | superseded by the integration PR once it merges; close them then, not before |
 | nba-edge-finder | #108 | draft | preferred 2H overtime repair |
 | nba-edge-finder | #107 | draft | superseded by #108 (its tests pass unmodified on #108's code); close after #108 merges |
-| nba-edge-finder | Phase 11 PR (stacked on #108) | draft | offline re-verification from the vault, 108 of 108 |
+| nba-edge-finder | #109 (stacked on #108) | draft | offline re-verification from the vault, 108 of 108 |
 | nfl-edge-finder | #283 | draft | date-aware 2H overtime rule (keep) |
-| nfl-edge-finder | Phase 11 PR (stacked on #283) | draft | week-ticker season fix (new defect, section 3) |
+| nfl-edge-finder | #285 (stacked on #283) | draft | week-ticker season fix (new defect, section 3) |
 | edge-finder-api | #318 -> #319 | draft, stacked | linescore backfill tool, then the 920-row correction overlay (keep both) |
 | NHL-edge-finder | #129 | draft | offline period scores (keep) |
 
 Recommended merge order (owner action, nothing merged by an agent):
-1. sift-alpha integration PR (docs, evidence, research tooling only; no production path).
-2. edge-finder-api #318, then #319. 3. NHL #129. 4. NFL #283, then the stacked season fix.
-5. NBA #108 after the baseline decision below, then the stacked evidence PR; close #107.
+1. sift-alpha #84 (docs, evidence, research tooling only; no production path).
+2. edge-finder-api #318, then #319. 3. NHL #129. 4. NFL #283, then #285.
+5. NBA #108 after the baseline decision below, then #109; close #107.
 
 ## 2. Official vs computed settlements (all six sports)
 
@@ -58,7 +58,7 @@ CFB 14,371, NFL 14,108); the two tiers never disagree on a result.
   causes (22 exchange differs from the league box score, 1 stat correction, 1 traded saves contract). No engine defect.
 * **NFL (new defect)**: 122 of the 135 are `KXNFLWINSWEEK-26W12-*`. Every one of the 116,480 projection rows for
   these 728 contracts was stamped season 2025 and settled on 2026-09-18 against the finished 2025 season. Fixed
-  fail-closed in the stacked NFL PR; the wrong rows in the append-only corpus are not rewritten (owner decision).
+  fail-closed in nfl-edge-finder #285; the wrong rows in the append-only corpus are not rewritten (owner decision).
   The other 13 are the known 2H overtime contracts fixed by #283.
 * **CFB / CBB independent check** (`official_values`, now reading vault box scores): CFB 2,057 of 2,403 events joined,
   12,192 settled figures agree, 9 differ; total ladders 55,201 agree, 8 differ. CBB went from 655 to 5,983 events:

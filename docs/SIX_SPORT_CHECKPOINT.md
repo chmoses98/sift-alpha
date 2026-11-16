@@ -22,9 +22,9 @@ data and Kalshi official outcomes for MLB, CFB, CBB, NFL, NBA and NHL. RESEARCH_
 | sift-alpha | #77, #78, #79 | merged | input development (separate mission, untouched) |
 | sift-alpha | #80 | draft | completeness verifier (base) |
 | sift-alpha | #81 | draft, stacked on #80 | official-results recovery, rules audit |
-| sift-alpha | branch `claude/sift-alpha-six-sport-foundation-ro0xsn` | draft PR, stacked on #81 | this session (below) |
+| sift-alpha | #82 | draft, stacked on #81 | this session (below) |
 | edge-finder-api | #318 | draft | MLB linescore backfill tool |
-| edge-finder-api | branch `claude/sift-alpha-six-sport-foundation-ro0xsn` | draft PR, stacked on #318 | MLB settlement regrade overlay |
+| edge-finder-api | #319 | draft, stacked on #318 | MLB settlement regrade overlay |
 | nba-edge-finder | #107 | draft | 2H includes OT (engine version not bumped: owner re-freeze) |
 | nfl-edge-finder | #283 | draft | date-aware 2H overtime rule |
 | nfl-edge-finder | #278 | merged | weather archive repair |

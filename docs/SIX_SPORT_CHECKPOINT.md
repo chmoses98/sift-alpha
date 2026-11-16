@@ -1,5 +1,7 @@
 # Six-sport data foundation: checkpoint (resume here)
 
+> Superseded as the resume point by `docs/UNIFIED_CHECKPOINT.md` (2026-11-16). Kept as the record of workstream B.
+
 Updated 2026-11-16 ~06:10Z (third session). Mission: complete, durable, independently verified game data, pregame
 data and Kalshi official outcomes for MLB, CFB, CBB, NFL, NBA and NHL. RESEARCH_ONLY. Agent-run, not human verified.
 

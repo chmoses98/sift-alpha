@@ -71,6 +71,13 @@ def specs():
     ]
 
 
+def _positive(v):
+    try:
+        return float(v) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _pq(path, cols):
     import pyarrow.parquet as pq
     names = pq.ParquetFile(path).schema.names
@@ -120,7 +127,9 @@ def load(roots):
         for r in rows:
             g = str(r[0])
             n[g] += 1
-            ok[g] = ok[g] and all(v is not None for v in r[2:])
+            # A row of zeros is not a box score: ESPN serves an all-zero team box for some games (e.g. 310573129,
+            # final 78-76).  A team that attempted no field goal did not have its box recorded.
+            ok[g] = ok[g] and all(v is not None for v in r[2:]) and _positive(r[2])
         for g in n:
             obs[(g, "team_box")] = Observation(n[g], frozenset({"four_factor_counts"} if ok[g] else ()), evidence=f.name)
     for f in sorted(ref.glob("player_box_*.parquet")):

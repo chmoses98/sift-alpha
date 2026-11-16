@@ -22,7 +22,8 @@ def test_phase7_built_inputs_pass_every_gate():
 
 def test_phase7_counts_are_recomputed_not_typed():
     p7 = _j(OPS / "phase7_acquisition.json"); plan = _j(OPS / "acquisition_plan.json")
-    assert p7["after"]["training_ready_inputs"] == plan["totals"]["training_ready_inputs"] == p7["baseline"]["training_ready_inputs"] + 2
+    # Phase 7 is a dated snapshot (41). Later certification (research/certification) may only add to the live catalog count.
+    assert p7["after"]["training_ready_inputs"] == p7["baseline"]["training_ready_inputs"] + 2 <= plan["totals"]["training_ready_inputs"]
     assert sum(p7["training_ready_by_sport"].values()) == p7["after"]["training_ready_inputs"]
 
 

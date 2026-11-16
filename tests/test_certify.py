@@ -130,3 +130,43 @@ class TestRegistry(unittest.TestCase):
             self.assertEqual(x["blind_reimplementation"]["cells_mismatched"], 0)
             self.assertTrue(x["truncation_check"])
             self.assertTrue(all(d["future_scramble_identical"] and d["own_game_identical"] for d in x["leakage"].values()))
+
+
+def test_catalog_promotes_only_certified_inputs():
+    """The generated catalog is training-ready for exactly the certified, non-held-back inputs, and each carries its evidence pointer."""
+    import json
+    from alpha_engine.foundation import acquisition as A
+    from alpha_engine.foundation.contract import OPS
+    certs = A.load_certification()
+    assert set(certs) == {"CBB:cbb.adj_off", "CBB:cbb.adj_def", "CBB:cbb.tempo", "CBB:cbb.conf_strength", "CFB:cfb.off_ppa", "CFB:cfb.def_ppa"}
+    inputs = json.loads((OPS / "acquisition_inputs.json").read_text())["inputs"]
+    for k, c in certs.items():
+        tr = inputs[k]["tr"]
+        assert tr["state"] == "TRAINING_READY" and tr["cert"]["dataset"] == c["dataset_sha256"][:12] and c["seasons"] >= 3
+    assert inputs["CFB:cfb.drives"]["tr"]["state"] != "TRAINING_READY" and "cert" not in inputs["CFB:cfb.drives"]["tr"]
+    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 47
+    assert sum(1 for v in inputs.values() if "cert" in v["tr"]) == 6
+
+
+def test_certification_overlay_fails_closed(monkeypatch, tmp_path):
+    """A failed check, a superseded dataset version or missing evidence promotes nothing."""
+    import json, shutil
+    from alpha_engine.foundation import acquisition as A
+    src = A.CERT
+    for mutate in ("mismatch", "superseded", "leak"):
+        d = tmp_path / mutate; d.mkdir(); (d / "game_index").mkdir()
+        cert = json.loads((src / "certification.json").read_text()); vers = json.loads((src / "dataset_versions.json").read_text())
+        if mutate == "mismatch":
+            cert["sports"]["CBB"]["blind_reimplementation"]["cells_mismatched"] = 1
+        elif mutate == "leak":
+            next(iter(cert["sports"]["CBB"]["leakage"].values()))["future_scramble_identical"] = False
+        else:
+            next(e for e in vers["versions"] if e["sport"] == "CBB")["superseded_by"] = "x"
+        (d / "certification.json").write_text(json.dumps(cert)); (d / "dataset_versions.json").write_text(json.dumps(vers))
+        for f in (src / "game_index").glob("C*.csv.gz"):
+            shutil.copy(f, d / "game_index" / f.name)
+        monkeypatch.setattr(A, "CERT", d)
+        got = A.load_certification()
+        assert not any(k.startswith("CBB:") for k in got) and sum(k.startswith("CFB:") for k in got) == 2
+    monkeypatch.setattr(A, "CERT", tmp_path / "missing")
+    assert A.load_certification() == {}

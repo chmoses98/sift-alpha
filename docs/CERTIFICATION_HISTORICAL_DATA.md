@@ -173,3 +173,11 @@ PR #80 verifier gaps to raise on that PR (not edited here):
    workflow should be split off first) to restore shift charts.
 6. Rebuild the NBA dataset with history through 11-15 and register it as a new version.
 7. CBB: test whether the 803 missing team boxes are recoverable from ESPN summaries (485 are in 2006–07).
+
+## 9. Phase 10 update (2026-11-16)
+
+* The catalog was regenerated with this evidence: 41 -> 47 training-ready inputs (`alpha_engine.foundation.acquisition.load_certification`, fail-closed).
+* CFB v2 builder (`features/cfb_cfbd_v2.py`, spec `docs/certification/CFB_FEATURE_SPEC_V2.md` v2.2) corrects the drive-points defect. The
+  independent verifier rejected spec v2.0 and v2.1 on label evidence; v2.2 passed every check. Dataset `0b9226c0…` is appended to
+  `dataset_versions.json`; v1 `a73a3e14…` is unchanged and still registered. `cfb.drives` is certified on v2 only: 48 training-ready inputs.
+* The private vault proposed in §3 exists and is populated; see `docs/PHASE10_DATA_PRESERVATION.md` (generated).

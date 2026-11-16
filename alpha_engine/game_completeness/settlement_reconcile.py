@@ -129,14 +129,34 @@ def load_computed(pattern):
     return out, meta
 
 
+def _yn(v):
+    return "YES" if v == 1 else "NO" if v == 0 else None
+
+
+def overlay_pair(c):
+    """(archived side, corrected side) of one overlay entry, for either overlay dialect.
+
+    MLB regrade (edge-finder-api): {"archived": "YES", "regraded": "NO"}.
+    NFL correction overlay (nfl-edge-finder nfl-settlement-overlay-1.x): {"archived": {"settled_yes": 1.0, ...},
+    "corrected": {"status": "CORRECTED_SETTLED" | "CORRECTED_PENDING" | "INVALIDATED_REFUSED", "settled_yes": ...}}.
+    A corrected entry that is not settled returns its status, so the contract leaves the judged set instead of
+    keeping the withdrawn label."""
+    if isinstance(c.get("archived"), dict):
+        a, k = c["archived"], c["corrected"]
+        new = _yn(k.get("settled_yes")) if k.get("status") == "CORRECTED_SETTLED" else None
+        return _yn(a.get("settled_yes")), new or str(k.get("status"))
+    return c["archived"], c["regraded"]
+
+
 def apply_overlay(computed, overlay):
     """Layer 3.  Refuses a stale overlay (archived side differs from the archive read here)."""
     out, applied = dict(computed), 0
     for t, c in overlay["corrections"].items():
         if t in out:
-            if out[t] != c["archived"]:
-                raise ValueError(f"overlay is stale for {t}: archive {out[t]}, overlay expected {c['archived']}")
-            out[t] = c["regraded"]
+            archived, corrected = overlay_pair(c)
+            if out[t] != archived:
+                raise ValueError(f"overlay is stale for {t}: archive {out[t]}, overlay expected {archived}")
+            out[t] = corrected
             applied += 1
     return out, applied
 

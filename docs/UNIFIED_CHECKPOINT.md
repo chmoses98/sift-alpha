@@ -1,10 +1,52 @@
 # SIFT Alpha unified checkpoint (resume here)
 
-Updated 2026-11-16 ~19:30Z (Phase 11 settlement-integrity session; section 0 is the newest). RESEARCH_ONLY. Agent-run, not human verified.
+Updated 2026-11-16 ~21:45Z (Phase 11 integration session; section 0 is the newest). RESEARCH_ONLY. Agent-run, not human verified.
 This file supersedes `docs/SIX_SPORT_CHECKPOINT.md` (workstream B) and the "Next steps" of
 `docs/PHASE10_DATA_PRESERVATION.md` (workstream A) as the place to resume. Both remain as historical records.
 
-## 0. Latest session (2026-11-16, settlement integrity) - read this first
+## 0. Phase 11 integration (2026-11-16 evening) - read this first
+
+Merged (merge commits, no squash; final heads verified unchanged and green before each merge):
+
+| Repo | PR | Merge commit | Post-merge check |
+|---|---|---|---|
+| sift-alpha | #84 | `865efee` | full suite on main `f0f2112`: 1,664 passed, 8 skipped |
+| sift-alpha | #85 (retargeted to main) | `f0f2112` | same |
+| edge-finder-api | #318 | `f043faf` | merge simulated on current main first: only the 10 intended research files differ |
+| edge-finder-api | #319 (retargeted) | `624caea` | 26 targeted tests pass on main (no push-triggered test workflow in this repo) |
+| edge-finder-api | #320 (retargeted) | `c7590af` | same |
+| NHL-edge-finder | #129 | `1a39685` | targeted test passes |
+
+Closed as superseded (heads are ancestors of main): sift-alpha #80, #81, #82, #83.
+
+**Blocked, needs explicit owner approval (live settlement activation, not just a merge):**
+* nfl-edge-finder #283 -> #285 -> #286. `nfl_edge/settlement/settle_v2.py` / `reachability.py` run from `main` in
+  `shadow-v2-settle.yml` (cron `49 */3 * * *`), which publishes to the append-only `market-data` corpus. Merging changes
+  live 2H-overtime settlement (#283) and week-ticker season handling (#285). #286 itself (overlay module + research
+  script, `activated: false`) is not imported by any job. Heads green; 64 settlement tests pass locally on #286.
+  Approval needed: "change live shadow-v2 settlement to the date-aware 2H OT rule and week-ticker season rule".
+  Note: until #285 lands, future `KXNFLWINSWEEK-26Wnn` contracts can keep being settled against 2025 (fail-open bug).
+* nba-edge-finder #108 -> #109 -> #110. #108 bumps the global `ENGINE_VERSION` to `settle-1.1`; `capture_worker.yml`
+  (every 5 min) runs `nba settle` from main, so merging appends settle-1.1 records live. Pricing is safe with #110 (V1
+  digest `5a4cbda0...` unchanged, `ACTIVE_BASELINE_ID` = V1, V2 `2a05589f...` prepared); 75 baseline/sim/settlement
+  tests pass on #110. Approval needed: "activate settle-1.1 in live NBA settlement". Close #107 only after #108 merges.
+  Alternative if the owner wants V2-prep merged without settlement activation: gate settle-1.1 behind a flag (new PR).
+
+MLB inputs (P1): see `docs/certification/MLB_PIT_AUDIT.md`. Dataset rebuilt from the vault, hash `f598384b...` reproduced.
+Team form (12 cols) is verified point-in-time but final by T-24h on only 29% of rows; starter form (10 cols) rests on
+box-score starter identity (pregame captures: 28% of 2026 slots, 0% earlier; 0.66% disagree). No existing catalog
+input is fully implemented, so **training-ready stays 48** (regenerated catalog byte-identical; map 1,649; predictive 1,536).
+
+Checks: vault `verify` 24/24 archives, 1,525,282,312 bytes, repo private; 894 research JSON files parse; six sports in
+phase10 progress (TR: NFL 13, NHL 8, CBB 4, CFB 3, NBA 3, MLB 0); reconciliation keeps official / computed /
+with_overlay as separate keys.
+
+Next session, in order: (1) if approved, merge NFL #283, #285, #286 and NBA #108, #109, #110 (retarget each child to
+main after its parent; rerun CI on the retargeted head), then close NBA #107; (2) after 2026-11-30 the second NFL overlay
+snapshot (command below, new `--as-of`, never overwrite); (3) NBA V1-vs-V2 2H evaluation on out-of-sample OT games
+(not started: needs sim runs per historical game); (4) MLB v1.1 per `MLB_PIT_AUDIT.md`.
+
+## 0b. Settlement-integrity session (2026-11-16 afternoon)
 
 All new work is on branch `claude/fable-phase-11-settlement-p9pm9t` in each repo, as draft PRs stacked on the earlier ones.
 
@@ -61,7 +103,7 @@ The two workstreams share **no file**; the merge is conflict-free and the full s
 | edge-finder-api | #318 -> #319 | draft, stacked | linescore backfill tool, then the 920-row correction overlay (keep both) |
 | NHL-edge-finder | #129 | draft | offline period scores (keep) |
 
-Recommended merge order (owner action, nothing merged by an agent):
+Recommended merge order (sift-alpha, MLB and NHL items DONE 2026-11-16, see section 0; NFL and NBA blocked):
 1. sift-alpha #84, then #85 (docs, evidence, research tooling only; no production path). Close #80-#83.
 2. edge-finder-api #318, #319, #320. 3. NHL #129. 4. NFL #283, #285, #286.
 5. NBA #108, #109, #110 together (with #110, V1 stays intact, so no baseline decision blocks the merge); close #107.
@@ -132,7 +174,7 @@ Not yet in the overlay: NBA and NFL postgame archives, CBB player boxes, pregame
 
 ## 4. Inputs
 
-Training-ready inputs: **48** (unchanged this session; 41 -> 48 came from #83 and is now on the integration branch).
+Training-ready inputs: **48** (unchanged; MLB audit in `docs/certification/MLB_PIT_AUDIT.md` promotes none; 41 -> 48 came from #83 and is now on the integration branch).
 Model-active: 0. MLB: dataset v1 certified (section 0) but its 22 features are not yet catalogued as inputs, so MLB training-ready inputs are still 0.
 
 ## 5. How to resume (cheap)
@@ -167,8 +209,7 @@ Do not re-download Kalshi results: the vault snapshot is the record. A newer pul
 
 ## 7. Next engineering (no approval needed)
 
-1. **MLB inputs (highest value)**: catalogue the 22 certified MLB features as inputs (acquisition catalog + phase
-   progress), so training-ready goes 48 -> 70 with MLB no longer at zero. Then add bullpen, lineup and park inputs as v2.
+1. **MLB inputs**: audited 2026-11-16 (section 0): 48 -> 70 is NOT supported; follow the v1.1 path in `docs/certification/MLB_PIT_AUDIT.md`.
 2. After 2026-11-30: second NFL overlay snapshot to settle the 60 pending W12 contracts (command in section 0).
 3. Review the 32 MLB hitter-prop and 1 new NBA prop disagreements against vault box scores (`prop_review` needs MLB
    and ESPN readers).

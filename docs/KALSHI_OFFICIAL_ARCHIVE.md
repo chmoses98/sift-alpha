@@ -148,7 +148,7 @@ session scratch.
   points, overtime count). It can be a lower bound ("at least 28") when a market settled early, and for CBB half
   winners it is an internal id. `official_values.py` uses it for the CFB / CBB checks in
   `research/game_completeness/official_values_{CFB,CBB}.json`.
-* Value differences that do not change any contract: in 6 CBB games the exchange's total or margin differs from
+* Value differences that do not change any contract: in 5 CBB games the exchange's total or margin differs from
   ESPN's final by 1 or 2 points, yet all 11,473 total-ladder contracts grade the same. Read `expiration_value` as
   "the figure at settlement", not as a box score.
 * Exchange-side anomalies found: CFB WKU@MTSU 2026-11-07 (exchange total 87 and margin 3, ESPN 51-42);

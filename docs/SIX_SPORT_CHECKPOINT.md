@@ -75,7 +75,7 @@ re-running `fetch-scope`. If a snapshot exists in private storage, `restore` rep
 ## Next engineering (no approval needed)
 * MLB: fix the event-to-game join for postponed games in `settle_markets` (use the exchange's "originally
   scheduled" date); the overlay only corrects the 2 known events.
-* NBA prop disagreements (54): the NHL-style review needs an ESPN box-score reader in `prop_review.py`.
+* NBA prop disagreements (39 of the 147; the other 108 are 2H overtime, fixed by #107): the NHL-style review needs an ESPN box-score reader in `prop_review.py`.
 * CBB history: join 2025-26 official results (129,535 contracts) to sportsdataverse box scores.
 * CFB: 183 events not joined (mostly FCS or differing abbreviations); a committed alias table would close it.
 * NFL: recompute the cross-check (needs settle_v2 over the market-data archive; carried over unchanged here).

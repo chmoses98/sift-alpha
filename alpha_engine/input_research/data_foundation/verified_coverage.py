@@ -38,9 +38,9 @@ import re
 # tables whose rows were NOT re-read this session (ledger schema only): a verdict resting on them can never count as verified
 UNMEASURED_TABLES = re.compile(r"pbp|play.?by.?play|stint|nhl_shots|nhl\.shots|shots_extension|moneypuck_shots", re.I)
 SCHEDULE_COLS = {"games_left_pre", "games_remaining"}
-VERIFIED_COMPUTABLE = ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY", "DATA_IN_HAND_CONFIRMED")
+VERIFIED_COMPUTABLE = ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY", "DATA_IN_HAND_CONFIRMED", "VERIFIED_DATASET_CERTIFIED")
 # status -> headline bucket. FULL / PARTIAL / PROXY / DATA_IN_HAND are verified; UNVERIFIED claims and FAILED claims are never mixed into them.
-HEADLINE = {"VERIFIED_FULL": "FULL", "VERIFIED_PARTIAL": "PARTIAL", "VERIFIED_PROXY": "PROXY", "DATA_IN_HAND_CONFIRMED": "DATA_IN_HAND",
+HEADLINE = {"VERIFIED_DATASET_CERTIFIED": "PARTIAL", "VERIFIED_FULL": "FULL", "VERIFIED_PARTIAL": "PARTIAL", "VERIFIED_PROXY": "PROXY", "DATA_IN_HAND_CONFIRMED": "DATA_IN_HAND",
             "REPLAYED_PIT_CAVEAT": "CAVEAT", "CLAIMED_NOT_REPLAYED": "UNVERIFIED", "DATA_IN_HAND_SCHEMA_ONLY": "UNVERIFIED", "REPLAY_FAILED": "FAILED", "DOWNGRADED_BY_VERIFIER": "FAILED", "PIT_QUARANTINED": "FAILED",
             "REQUIRES_COLLECTION": "REQUIRES_COLLECTION", "BLOCKED_CONFIRMED": "BLOCKED", "BLOCKED_BY_POLICY": "BLOCKED", "BLOCKED_CONTESTED": "UNVERIFIED", "EXCLUDED_BENCHMARK_ONLY": "EXCLUDED"}
 BUCKET_ORDER = ("FULL", "PARTIAL", "PROXY", "DATA_IN_HAND", "CAVEAT", "UNVERIFIED", "FAILED", "REQUIRES_COLLECTION", "BLOCKED", "EXCLUDED")
@@ -297,6 +297,60 @@ def certify_extension_full(row: dict, cols: list[str], rp_input: dict | None, vs
     return "VERIFIED_FULL", {**ev, "full_certified": True, "certification": {k: cert[k] for k in ("catalog_clauses", "timing_rule", "required_history", "reviewed_by", "excluded_model_steps") if k in cert}}
 
 
+# ---------------------------------------------------------------------------------------------- dataset certifications (Phase 12)
+CERT_DIR = ROOT / "research" / "certification"
+# a recorded failure, exclusion or block is never overridden by a dataset certification
+CERT_NOT_OVERRIDABLE = ("DOWNGRADED_BY_VERIFIER", "REPLAY_FAILED", "PIT_QUARANTINED", "EXCLUDED_BENCHMARK_ONLY", "BLOCKED_CONFIRMED", "BLOCKED_BY_POLICY")
+
+
+def load_dataset_certifications(cert_dir: Path | None = None) -> dict:
+    """Inputs promoted by a dataset certification (blind re-implementation route, research/certification/certification*.json).
+
+    An input qualifies only when its file lists it under `catalog_inputs_eligible_for_promotion[SPORT]` AND the sport block has
+    verdict CERTIFIED, a blind re-implementation that is identical with 0 mismatched cells, truncation_check true, and at least one
+    leakage test where EVERY entry has future_scramble_identical and own_game_identical true. These are the same properties the
+    replay gates test (independent determinism, truncation, perturbation, own-game). Returns {(SPORT, input_id): evidence}; inputs
+    named by a file whose gates do not all pass are returned with `passed: False` and are never promoted."""
+    out: dict = {}
+    for f in sorted((cert_dir or CERT_DIR).glob("certification*.json")):
+        d = rd(f)
+        elig = d.get("catalog_inputs_eligible_for_promotion")
+        if not isinstance(elig, dict):
+            continue
+        for sp, ids in elig.items():
+            if not isinstance(ids, list) or not ids:
+                continue
+            b = (d.get("sports") or {}).get(sp) or {}
+            blind = b.get("blind_reimplementation") or {}
+            leak = b.get("leakage") or {}
+            leak_ok = bool(leak) and all(isinstance(x, dict) and x.get("future_scramble_identical") is True and x.get("own_game_identical") is True
+                                         for x in leak.values())
+            gates = {"verdict_certified": b.get("verdict") == "CERTIFIED", "blind_identical": blind.get("identical") is True and blind.get("cells_mismatched") == 0,
+                     "truncation": b.get("truncation_check") is True, "leakage": leak_ok}
+            ev = {"certification_file": f"research/certification/{f.name}", "dataset_sha256": b.get("dataset_sha256"), "spec": b.get("spec"),
+                  "rows": b.get("rows"), "gates": gates, "passed": all(gates.values()),
+                  "blind_module": blind.get("module"), "cells_compared": (blind.get("rows_common") or 0) * (blind.get("columns_compared") or 0) or None}
+            for i in ids:
+                prev = out.get((sp, i))
+                if prev is None or (ev["passed"] and not prev["passed"]):
+                    out[(sp, i)] = ev
+    return out
+
+
+def apply_dataset_certification(vs: str, ev: dict, cert: dict | None) -> tuple[str, dict]:
+    """Promote to VERIFIED_DATASET_CERTIFIED (headline PARTIAL) only when the certification passed every gate and nothing stronger or
+    a recorded failure already decides the input. A verified status is kept (and the certification noted); a failure is kept and
+    the conflict recorded."""
+    if not cert:
+        return vs, ev
+    if vs.startswith("VERIFIED"):
+        return vs, {**ev, "dataset_certification": cert}
+    if vs in CERT_NOT_OVERRIDABLE or not cert["passed"]:
+        return vs, {**ev, "dataset_certification": cert, "dataset_certification_not_applied": vs if cert["passed"] else "gates not all passed"}
+    return "VERIFIED_DATASET_CERTIFIED", {**ev, "dataset_certification": cert, "promoted_from": vs,
+                                         "limits": ["dataset certification: the certified columns are verified; the full catalog definition is not claimed (headline PARTIAL)"]}
+
+
 # statuses a measured extension builder (replay gates + blind exact match) may promote from: no builder existed yet. DOWNGRADED_BY_VERIFIER is deliberately NOT promotable.
 PROMOTABLE = ("REQUIRES_COLLECTION", "DATA_IN_HAND_CONFIRMED", "DATA_IN_HAND_SCHEMA_ONLY")
 
@@ -305,6 +359,7 @@ def build(write: bool = True) -> dict:
     rows = rd(DF / "input_audit.json")["rows"]
     replays = load_replays(); exts = load_ext_replays(); ind = load_independent(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); certs = load_full_certifications(); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
     prov = {sp: provenance_check(sp, rp) for sp, rp in replays.items()}
+    dscert = load_dataset_certifications()
     out = []
     for r in rows:
         sp = r["sport"]; ev = {}; no_verdict = False
@@ -353,6 +408,7 @@ def build(write: bool = True) -> dict:
                     vs, ev = vs3, {**ev3, "promoted_from": "VERIFIED_PARTIAL", "earlier_partial_missing": ev.get("limits")}
                 else:
                     ev = {**ev, "full_candidate": True, "full_candidate_evidence": ev3, "earlier_partial_missing": ev.get("limits")}
+        vs, ev = apply_dataset_certification(vs, ev, dscert.get((sp, r["id"])))
         if r["computed_prior"] and not r["status"].startswith("COMPUTED") and r["status"] != "EXCLUDED_BENCHMARK_ONLY":
             ps, pe = assess_computed(r, replays.get(sp), prov.get(sp))   # the earlier milestone computed it but a reviewer/dependency later demoted it: keep what the replay found
             ev = {**ev, "earlier_computation_replay_status": ps, "earlier_computation_replay": pe}

@@ -2,7 +2,7 @@
 
     python -m alpha_engine.certify.compare --a ORIGINAL.parquet --b INDEPENDENT.parquet --out OUT.json
 
-Keys: game_id. Every column present in both is compared: numeric columns with |a-b| <= 1e-6*max(1,|a|) and an
+Keys: game_id (or --key). Every column present in both is compared: numeric columns with |a-b| <= 1e-6*max(1,|a|) and an
 identical missing pattern; other columns by exact equality after string normalisation.
 """
 from __future__ import annotations
@@ -17,8 +17,8 @@ import pandas as pd
 RTOL = 1e-6
 
 
-def compare(a: pd.DataFrame, b: pd.DataFrame) -> dict:
-    a = a.drop_duplicates("game_id").set_index("game_id"); b = b.drop_duplicates("game_id").set_index("game_id")
+def compare(a: pd.DataFrame, b: pd.DataFrame, key: str = "game_id") -> dict:
+    a = a.drop_duplicates(key).set_index(key); b = b.drop_duplicates(key).set_index(key)
     common = a.index.intersection(b.index)
     cols = [c for c in a.columns if c in b.columns]
     res, worst = {}, []
@@ -46,8 +46,9 @@ def compare(a: pd.DataFrame, b: pd.DataFrame) -> dict:
 
 def main(x=None) -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("--a", required=True); ap.add_argument("--b", required=True); ap.add_argument("--out")
+    ap.add_argument("--key", default="game_id", help="row key column (default game_id; player datasets use key)")
     p = ap.parse_args(x)
-    r = compare(pd.read_parquet(p.a), pd.read_parquet(p.b))
+    r = compare(pd.read_parquet(p.a), pd.read_parquet(p.b), p.key)
     if p.out:
         Path(p.out).write_text(json.dumps(r, indent=1) + "\n")
     print(json.dumps(r, indent=1)[:4000])

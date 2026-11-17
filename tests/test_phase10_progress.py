@@ -18,7 +18,7 @@ def test_training_ready_matches_catalog_and_certification():
     o = P.build(); plan = _j(OPS / "acquisition_plan.json")["totals"]
     assert o["training_ready"]["after"] == plan["training_ready_inputs"] == sum(o["training_ready"]["by_sport"].values()) + sum(
         1 for v in _j(OPS / "acquisition_inputs.json")["inputs"].values() if v["tr"]["state"] == "TRAINING_READY" and v["s"] not in P.SPORTS)
-    assert o["training_ready"]["after"] - o["training_ready"]["baseline"]["training_ready_inputs"] == len(o["training_ready"]["promoted_by_certification"]) + len(o["training_ready"]["promoted_by_archived_data"]) == 13   # 7 in Phase 10/11; +5 certified and +1 data-held in Phase 12
+    assert o["training_ready"]["after"] - o["training_ready"]["baseline"]["training_ready_inputs"] == len(o["training_ready"]["promoted_by_certification"]) + len(o["training_ready"]["promoted_by_archived_data"]) == 17   # 7 in Phase 10/11; +5 certified and +1 data-held in Phase 12; +4 NBA player-box certified (Phase 12 continued)
     assert o["training_ready"]["model_active"] == 0 and all(v["hash"] for v in o["dataset_versions"])
     hashes = {v["hash"] for v in o["dataset_versions"]}      # a superseded version must point at a registered successor (Phase 12: NFL d0616511 -> 9c1893bd)
     assert all((not v["superseded_by"]) or v["superseded_by"] in hashes or any(h.startswith(v["superseded_by"][:12]) for h in hashes) for v in o["dataset_versions"])

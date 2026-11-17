@@ -233,6 +233,9 @@ def hypotheses(d: pd.DataFrame, prereg: dict, seasons: list[int], cols: set[str]
 
 
 def run(prereg: dict, d: pd.DataFrame, mkt: pd.DataFrame | None, holdout: bool = False) -> dict:
+    d = d.copy()
+    for name, (x, y) in (prereg.get("derive_targets") or {}).items():       # outcome columns only (e.g. margin = home runs - away runs); never features
+        d[name] = d[x].astype(float) - d[y].astype(float)
     cols = set(d.columns)
     d = d[d["season"] >= prereg.get("first_season", 0)]
     d = d.sort_values(["season", prereg["order_column"], "game_id"], kind="mergesort").reset_index(drop=True)

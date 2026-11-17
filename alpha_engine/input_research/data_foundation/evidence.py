@@ -104,7 +104,9 @@ def resolve_all() -> dict:
         else:
             status = "FREE_UNPROBED"
         hist = dict(d["history"])
-        if led and dmin and dmax and hist["basis"] != "MEASURED":
+        vault_led = any((ev.get(k) or (None,))[0] == "vault_ledger.json" for k in ("ledger", "ledger2"))
+        if led and dmin and dmax and (hist["basis"] != "MEASURED" or vault_led):
+            # a vault-held dataset reports the HELD range (counted from the archive), not the range the provider documents upstream
             hist.update(first=min(dmin), last=max(dmax), basis="MEASURED")
         srcs = [SRC.public(s) for s in d["sources"] if s in SRC.SOURCES]
         out[did] = {**{k2: d[k2] for k2 in ("id", "sports", "title", "pit", "freshness", "missingness", "kind", "notes")}, "history": hist, "sources": d["sources"], "source_kinds": sorted({s["kind"] for s in srcs}),

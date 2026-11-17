@@ -461,7 +461,9 @@ def readiness(inp, needs_i, held, datasets, cert=None):
     per-need labels are superseded by that direct evidence). `built` and `history` are still required independently."""
     ch = inp["chain"]
     held_ds = [d for opts in needs_i.values() for d in opts if d in held]
-    years = max([_years(datasets[d].get("history") or {}) or 0 for d in held_ds] or [0])
+    # history must hold for EVERY data need: per need the longest held option, then the shortest need (a 2-season archive cannot pass on another need's depth)
+    per_need = [max([_years(datasets[d].get("history") or {}) or 0 for d in opts if d in held] or [0]) for opts in needs_i.values()]
+    years = min(per_need) if per_need and all(o & held for o in needs_i.values()) else max(per_need or [0])
     c = {"data": "OK" if needs_i and all(o & held for o in needs_i.values()) else ("PARTIAL" if held_ds else "MISSING"),
          "verified": ch[3] if len(ch) > 3 else "MISSING", "built": ch[4] if len(ch) > 4 else "MISSING",
          "pit": "OK" if inp.get("pit") in ("PIT_SAFE", "NOT_APPLICABLE") else "PARTIAL" if inp.get("pit") == "PIT_COARSE" else "FAILED",

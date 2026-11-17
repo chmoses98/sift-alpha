@@ -18,10 +18,10 @@ Per predictive input (exactly one category): **FULL / PARTIAL / PROXY** = replay
 | NBA | 31 | 648 | 40 | 198 | 31 | 15 | 211 | 119 | 25 | 9 | 267 | 20/99/10 | 138 | 0.288 |
 | CBB | 18 | 374 | 4 | 64 | 2 | 0 | 204 | 50 | 41 | 9 | 133 | 0/25/0 | 108 | 0.110 |
 | NHL | 15 | 336 | 41 | 135 | 5 | 3 | 66 | 82 | 3 | 1 | 128 | 16/58/3 | 51 | 0.365 |
-| MLB | 26 | 520 | 2 | 52 | 1 | 0 | 286 | 179 | 0 | 0 | 184 | 1/15/0 | 168 | 0.043 |
+| MLB | 26 | 520 | 2 | 52 | 1 | 0 | 281 | 184 | 0 | 0 | 184 | 1/15/0 | 168 | 0.043 |
 | SOCCER | 23 | 459 | 30 | 41 | 13 | 0 | 118 | 74 | 180 | 3 | 154 | 4/19/2 | 129 | 0.109 |
 | TENNIS | 13 | 261 | 36 | 101 | 8 | 13 | 48 | 40 | 5 | 10 | 74 | 3/29/0 | 42 | 0.218 |
-| **all** | 170 | 3670 | 211 | 814 | 102 | 31 | 1483 | 725 | 268 | 36 | 1276 | 56/308/26 | 886 | |
+| **all** | 170 | 3670 | 211 | 814 | 102 | 31 | 1478 | 730 | 268 | 36 | 1276 | 56/308/26 | 886 | |
 
 ## 2. Market semantics completeness (Kalshi rules text, `m.rules_text`)
 
@@ -84,10 +84,10 @@ Rights tiers come from `rights_registry.json` (weakest tier over a builder's raw
 | NBA | 119 | 57 |
 | CBB | 50 | 26 |
 | NHL | 82 | 34 |
-| MLB | 179 | 75 |
+| MLB | 184 | 80 |
 | SOCCER | 74 | 18 |
 | TENNIS | 40 | 18 |
-| **all** | 725 | 300 |
+| **all** | 730 | 305 |
 
 ## 5. What remains for full independent input coverage
 
@@ -99,11 +99,11 @@ An archetype is *independently complete* only when EVERY predictive slot is FULL
 | already FULL (definition complete, replay + blind verified) | 211 | 5.7% | 56 |
 | PARTIAL: finish the definition (missing clauses, history, or model-side steps; each needs a new build, replay and blind verification) | 814 | 22.2% | 308 |
 | PROXY: replace by a builder of the actual quantity | 102 | 2.8% | 26 |
-| DATA_IN_HAND: build, replay, blind-verify + FREE_ACCESSIBLE: permitted free source exists, nothing built (collect, build, replay, blind-verify) | 1514 | 41.3% | 496 |
-| PROSPECTIVE: capture vintages from now on, then build | 725 | 19.8% | 300 |
+| DATA_IN_HAND: build, replay, blind-verify + FREE_ACCESSIBLE: permitted free source exists, nothing built (collect, build, replay, blind-verify) | 1509 | 41.1% | 491 |
+| PROSPECTIVE: capture vintages from now on, then build | 730 | 19.9% | 305 |
 | NO_FREE_SOURCE or CONTESTED: needs a paid/restricted source or an owner policy decision | 304 | 8.3% | 90 |
 
-Distinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): FULL 62, PARTIAL 209, PROXY 19, DATA_IN_HAND 18, FREE_ACCESSIBLE 722, PROSPECTIVE 351, NO_FREE_SOURCE 113, CONTESTED 22.
+Distinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): FULL 62, PARTIAL 209, PROXY 19, DATA_IN_HAND 18, FREE_ACCESSIBLE 721, PROSPECTIVE 352, NO_FREE_SOURCE 113, CONTESTED 22.
 
 Of the 1127 built slots, only 156 sit on rights-cleared sources; 232 rest on a wrapper licence with upstream caveat and 739 on unresolved upstream terms, so rights decisions gate a large share of what is already built. Separately, 144 rules-text slots (134 primary) need timestamped capture.
 
@@ -183,7 +183,7 @@ Of the 1127 built slots, only 156 sit on rights-cleared sources; 232 rest on a w
 | 69 | NBA | quarter_and_half_markets | 21 | 1 | 7 | 1 | 0 | 10 | 2 | 0 | 0 | 6 | 0.167 | 0.226 | primary | 0 | 0.000 |
 | 70 | SOCCER | first_to_score_event | 14 | 1 | 2 | 0 | 0 | 3 | 1 | 7 | 0 | 2 | 0.167 | 0.143 | primary | 1 | 0.167 |
 | 71 | CBB | race_to_n_points | 18 | 0 | 5 | 0 | 0 | 9 | 2 | 2 | 0 | 4 | 0.167 | 0.139 | context | 0 | 0.000 |
-| 72 | MLB | pitcher_strikeouts | 29 | 0 | 8 | 0 | 0 | 16 | 5 | 0 | 0 | 6 | 0.167 | 0.138 | primary | 0 | 0.000 |
+| 72 | MLB | pitcher_strikeouts | 29 | 0 | 8 | 0 | 0 | 15 | 6 | 0 | 0 | 6 | 0.167 | 0.138 | primary | 0 | 0.000 |
 | 73 | CBB | first_half | 21 | 0 | 5 | 0 | 0 | 10 | 3 | 3 | 0 | 4 | 0.167 | 0.119 | primary | 0 | 0.000 |
 | 74 | MLB | pitch_velocity_extremes | 13 | 0 | 2 | 0 | 0 | 6 | 5 | 0 | 0 | 2 | 0.167 | 0.077 | primary | 0 | 0.000 |
 | 75 | SOCCER | player_shots_saves_props | 15 | 1 | 0 | 0 | 0 | 0 | 2 | 12 | 0 | 5 | 0.167 | 0.067 |  | 0 | 0.000 |
@@ -217,7 +217,7 @@ Of the 1127 built slots, only 156 sit on rights-cleared sources; 232 rest on a w
 | 103 | NBA | all_star_exhibition_games | 16 | 0 | 2 | 0 | 0 | 6 | 8 | 0 | 0 | 7 | 0.062 | 0.062 | primary | 0 | 0.000 |
 | 104 | CBB | player_points | 17 | 0 | 2 | 0 | 0 | 10 | 2 | 2 | 1 | 7 | 0.062 | 0.059 | primary | 0 | 0.000 |
 | 105 | NBA | all_star_weekend_events | 18 | 0 | 2 | 0 | 0 | 7 | 8 | 0 | 1 | 7 | 0.062 | 0.056 | primary | 0 | 0.000 |
-| 106 | MLB | game_total_and_team_total | 23 | 0 | 2 | 0 | 0 | 14 | 7 | 0 | 0 | 7 | 0.062 | 0.043 | primary | 0 | 0.000 |
+| 106 | MLB | game_total_and_team_total | 23 | 0 | 2 | 0 | 0 | 13 | 8 | 0 | 0 | 7 | 0.062 | 0.043 | primary | 0 | 0.000 |
 | 107 | NFL | season_win_totals_and_futures | 21 | 2 | 3 | 0 | 0 | 13 | 3 | 0 | 0 | 8 | 0.056 | 0.167 | primary | 0 | 0.000 |
 | 108 | MLB | all_star_week_events | 26 | 0 | 3 | 0 | 0 | 14 | 9 | 0 | 0 | 8 | 0.056 | 0.058 | primary | 0 | 0.000 |
 | 109 | CBB | player_props | 20 | 0 | 2 | 0 | 0 | 12 | 5 | 0 | 1 | 8 | 0.056 | 0.050 | primary | 0 | 0.000 |
@@ -238,11 +238,11 @@ Of the 1127 built slots, only 156 sit on rights-cleared sources; 232 rest on a w
 | 124 | NFL | score_path_functionals | 23 | 2 | 8 | 0 | 0 | 12 | 1 | 0 | 0 | 4 | 0.000 | 0.261 | primary | 0 | 0.000 |
 | 125 | NFL | team_window_event_hazards | 19 | 1 | 4 | 0 | 0 | 13 | 1 | 0 | 0 | 4 | 0.000 | 0.158 | primary | 0 | 0.000 |
 | 126 | TENNIS | nationality_and_team_futures | 16 | 0 | 4 | 1 | 0 | 3 | 8 | 0 | 0 | 5 | 0.000 | 0.141 | primary | 5 | 0.000 |
-| 127 | MLB | game_moneyline | 28 | 1 | 5 | 0 | 0 | 14 | 8 | 0 | 0 | 8 | 0.000 | 0.125 | primary | 0 | 0.000 |
+| 127 | MLB | game_moneyline | 28 | 1 | 5 | 0 | 0 | 13 | 9 | 0 | 0 | 8 | 0.000 | 0.125 | primary | 0 | 0.000 |
 | 128 | NFL | super_bowl_mvp | 26 | 0 | 5 | 2 | 0 | 14 | 5 | 0 | 0 | 8 | 0.000 | 0.115 | primary | 0 | 0.000 |
 | 129 | NBA | summer_league_games | 14 | 0 | 3 | 0 | 0 | 6 | 5 | 0 | 0 | 5 | 0.000 | 0.107 | primary | 0 | 0.000 |
 | 130 | NFL | receiving_yards_and_receptions | 30 | 0 | 5 | 1 | 0 | 20 | 4 | 0 | 0 | 7 | 0.000 | 0.092 | primary | 0 | 0.000 |
-| 131 | MLB | pitcher_outs | 23 | 0 | 4 | 0 | 0 | 12 | 7 | 0 | 0 | 7 | 0.000 | 0.087 | primary | 0 | 0.000 |
+| 131 | MLB | pitcher_outs | 23 | 0 | 4 | 0 | 0 | 11 | 8 | 0 | 0 | 7 | 0.000 | 0.087 | primary | 0 | 0.000 |
 | 132 | SOCCER | player_award | 15 | 1 | 0 | 1 | 0 | 4 | 2 | 7 | 0 | 6 | 0.000 | 0.083 | primary | 0 | 0.000 |
 | 133 | SOCCER | player_squad_selection_and_lineup | 19 | 1 | 1 | 0 | 0 | 3 | 9 | 5 | 0 | 6 | 0.000 | 0.079 | primary | 0 | 0.000 |
 | 134 | MLB | first5_markets | 21 | 0 | 3 | 0 | 0 | 13 | 5 | 0 | 0 | 7 | 0.000 | 0.071 | primary | 0 | 0.000 |
@@ -256,7 +256,7 @@ Of the 1127 built slots, only 156 sit on rights-cleared sources; 232 rest on a w
 | 142 | CBB | futures_seed_other | 24 | 0 | 2 | 1 | 0 | 19 | 2 | 0 | 0 | 9 | 0.000 | 0.052 | primary | 0 | 0.000 |
 | 143 | CBB | player_rebounds_assists | 20 | 0 | 2 | 0 | 0 | 8 | 2 | 6 | 2 | 8 | 0.000 | 0.050 | primary | 0 | 0.000 |
 | 144 | SOCCER | player_appearance_selection | 21 | 1 | 0 | 0 | 0 | 4 | 7 | 9 | 0 | 9 | 0.000 | 0.048 | primary | 0 | 0.000 |
-| 145 | MLB | pitcher_earned_runs_hits_walks | 24 | 0 | 2 | 0 | 0 | 18 | 4 | 0 | 0 | 8 | 0.000 | 0.042 | primary | 0 | 0.000 |
+| 145 | MLB | pitcher_earned_runs_hits_walks | 24 | 0 | 2 | 0 | 0 | 17 | 5 | 0 | 0 | 8 | 0.000 | 0.042 | primary | 0 | 0.000 |
 | 146 | SOCCER | player_goal_assist_props | 18 | 0 | 1 | 1 | 0 | 0 | 2 | 14 | 0 | 8 | 0.000 | 0.042 |  | 0 | 0.000 |
 | 147 | MLB | extras_and_delay | 15 | 0 | 1 | 0 | 0 | 11 | 3 | 0 | 0 | 7 | 0.000 | 0.033 | primary | 0 | 0.000 |
 | 148 | CBB | coaching_and_governance_events | 16 | 0 | 1 | 0 | 0 | 5 | 10 | 0 | 0 | 5 | 0.000 | 0.031 | primary | 0 | 0.000 |

@@ -268,6 +268,7 @@ def build(write: bool = True) -> dict:
     try:
         for s_, rv in rv_all.items():
             errors += register_proposed(s_, rv)
+        DS.apply_vault_evidence()            # vault ledger keys for reviewer-proposed datasets (Phase 12)
         reg = EV.resolve_all()
         for s_, rv in rv_all.items():
             errors += validate_review(s_, rv, ids_by_sport[s_], reg)

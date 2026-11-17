@@ -4,6 +4,38 @@ Written 2026-11-17. RESEARCH_ONLY. Agent-run, not human verified. Branch `claude
 `sift-alpha` (code, evidence) and `sift-data-vault` (one new archive). No sport repository was changed.
 Start state: `docs/PHASE12_HANDOFF.md` (main `21b2763`). Read this file first; nothing below needs re-investigation.
 
+## 00. Phase 12 session 3 (2026-11-17, Opus): resume here first
+
+Branches `claude/sift-phase-12-nba-six-sport-rnhjcz`: nba-edge-finder @ `22463be` (= main + PR #112 stack merged locally, clean),
+sift-alpha @ `ac29a4e` (= PR #89 + CFB h2h). Nothing merged to main; no production, workflow, schedule, pricing, settlement or
+trading change. Data used: projection-data `3c015ef` (study window) and `9f0de48`, nba-shadow-pure `69a2adc`, vault NBA
+snapshot-20261116.
+
+* **Lineage (NBA):** pf-1.3 players/team points read only ESPN boxes, official injury reports, rosters; rho from box scores;
+  participation calibration fitted on box outcomes. V1 `p_production` = HYBRID (market weight 0.70 player / 0.90 game), recorded
+  beside `p_data_only` and `p_market`; ~97% of its logit variance is the market. Guard: `tests/test_projection_lineage.py`.
+* **QM (PFC-1/A1) promotion gate** (`docs/research/QM_PROMOTION_GATE.md`, rules pushed `9460138` before the run): V0 reproduction
+  PASS (`c7bb2795` bit-exact); V1 frozen out-of-time PASS; **V2 FAIL** (minutes MAE +4.3% for pf minutes >= 28, +8.6% UNCERTAIN),
+  **V3 FAIL** (false exclusions 5.2% -> 8.8%), V4 PASS, **V5 FAIL** (2 invalid pmfs). Not deployed; research-only.
+* **QM2** registered (`PREREG_NBA_QM2.md`) before code; frozen `7eb7dc09...` for tips after 2026-11-17T20:00Z. Exploratory on the
+  consulted window (not evidence): passes V1/V3/V4/V5, fails V2 (UNCERTAIN minutes). Decide prospectively:
+  `python scripts/nba_phase12_research.py prospective --projdata P --shadow S --box B` once >= 100 post-freeze games settle; then
+  `python scripts/nba_qm_validation.py`-equivalent rules on post-freeze games.
+* **Projection-only switch** `research/projection_foundation/nba/live/qm_config.json` (`mode: off` committed; `shadow` / `primary`);
+  tests `tests/test_pf_qm.py`; activation = change `mode` (owner decision), rollback = `off`.
+* **G2 game model** (`PREREG_NBA_G2.md`, frozen `53678104...`): not distinguishable from G1; beats production on total MAE only
+  in the consulted 2026-27 window (-0.61 [-1.25, -0.03]); fails calibration H4. Production totals +3.8 = +2.7 trend-learned
+  stage-2 intercept, +1.35 efficiency carry-over, +1.1 pace, -1.4 OT. Next: preregistered intercept/level fix (G3).
+* **Market disagreement** (`NBA_MARKET_DISAGREEMENT.md`): gap only in >5-pt disagreements; no strike/side/unit bug; correctable:
+  totals level (closes 75% of total gap), team-points level (60%), teammate availability at tip (prop gap), winner scale (15%).
+* **CFB h2h** (`docs/CFB_PRODUCTION_H2H.md`, prereg `5412b01`): production pf-cfb beats the study model on 241 games (margin MAE
+  13.06 vs 14.76); study model ran on stale 2026 features (2026 CFBD advanced/drives not archived). Production home bias +2.6,
+  win slope 0.82.
+* **PR integration:** all six green and cleanly mergeable; order vault #1 (into its default branch
+  `claude/sift-alpha-phase-10-data-t0n29i`) -> alpha #88 -> #89 -> NBA #104 -> #105 -> #112. Left as drafts for owner merge.
+* **715 / 565 slots:** unchanged this session (no new certification). NBA pf test `test_nba_d3_d5_automation[CONFIRMED_OUT]` fails on
+  main too (pre-existing).
+
 ## 0. Phase 12 continued (2026-11-17, second session): resume here first
 
 Branches `claude/nba-projections-phase-12-6ud22v`: `sift-alpha` PR #89 @ `19e1876` (stacked on #88) and `nba-edge-finder` PR #112 @ `1eeac7f` (stacked on

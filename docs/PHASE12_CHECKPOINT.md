@@ -4,6 +4,46 @@ Written 2026-11-17. RESEARCH_ONLY. Agent-run, not human verified. Branch `claude
 `sift-alpha` (code, evidence) and `sift-data-vault` (one new archive). No sport repository was changed.
 Start state: `docs/PHASE12_HANDOFF.md` (main `21b2763`). Read this file first; nothing below needs re-investigation.
 
+## 0. Phase 12 continued (2026-11-17, second session): resume here first
+
+Branches `claude/nba-projections-phase-12-6ud22v`: `sift-alpha` PR #89 @ `19e1876` (stacked on #88) and `nba-edge-finder` PR #112 @ `1eeac7f` (stacked on
+#105 -> #104). No production, workflow, schedule, settlement or baseline change. Details: `docs/PHASE12_VERIFICATION.md`,
+`nba-edge-finder/docs/research/NBA_PRODUCTION_POSTMORTEM.md`.
+
+**Done**
+* NBA production postmortem against what SIFT runs (pf-1.3 players, pf-nba-team_points games, V1 sim, 612k archived Kalshi
+  quotes). Totals biased +3.8; win probability under-confident (slope 1.7); bench minutes +1.9; 775 phantom participants
+  (562 COACH'S DECISION). pf-1.3 beats V1 on every player metric. The market beats production on every family.
+* NBA player challenger QM (rotation-depth participation + team-coherent minutes): participation Brier 0.0825 -> 0.0751,
+  minutes MAE 4.616 -> 4.543, unconditional points MAE 3.304 -> 3.184 (all CIs exclude 0; holds at tip - 4 h). No market edge.
+  Frozen `frozen_pfc1.json` `c7bb2795` for games after 2026-11-17T12:00Z.
+* NBA game challenger G1: equal to production on margins, fixes the totals bias and the slope; not significant on 197 games.
+  Frozen `frozen_g1.json` `8fff6b5a`.
+* Verification: NBA/CBB "2026-27" holdouts are 2025-26 + 2026-27-to-date (label error, no leakage); prereg ancestry and
+  hashes verified for all six studies.
+* Readiness: dataset certifications now feed `verified_coverage` (new status VERIFIED_DATASET_CERTIFIED, headline PARTIAL;
+  never overrides a failure). 565 / 715 confirmed, not reduced: 11 of 12 certified inputs were already verified there; the
+  12th (`mlb.wins_to_date_and_games_remaining`) has a verifier downgrade kept as a conflict for owner review.
+* New certified dataset NBA player box `4a8449177781` (795,653 rows, blind 0 mismatches): +4 training-ready NBA inputs.
+  Six core sports 37 -> **41** training-ready (NBA 6 -> 10); all eight sports 54 -> 58.
+* CBB head-to-head vs production (`production_h2h_cbb.json`): the Alpha CBB model is much worse early-season (margin MAE
+  12.69 vs 10.17, n = 638). Do not promote; it lacks a preseason prior.
+
+**Next, in order**
+1. `python scripts/nba_phase12_research.py prospective ...` (nba-edge-finder) once >= 100 post-freeze games settle; if QM holds,
+   propose the `shadow_challenger` stream (owner approval).
+2. Owner review: V1 (active pricing) is worse than pf-1.3 on identical player-games.
+3. pf-nba-team_points stage-2 calibration (totals level, margin scale) as a preregistered challenger on history.
+4. CFB head-to-head: production pf-cfb forecasts exist on `cfb-edge-finder` `projection-data` (from 2026-10-20); the CFB
+   dataset must be extended through 2026-11-15 first. Re-run the CBB head-to-head after January, or add a prior.
+5. NHL shift features; MLB probable-starter capture proposal (unchanged).
+
+Reproduce (Alpha): `python -m alpha_engine.features.nba_player_box --root $B --out X --evidence E` (about 8 min with the leakage
+suite); `python alpha_engine/certify/nba_player_box_independent.py --root $B --out Y`; `python -m alpha_engine.certify.compare
+--a X --b Y --key key`; CBB: `training_sets_multi cbb`, then `discovery.run --prereg research/discovery/cbb_game_lines_v1/prereg.json
+--dataset D --holdout --pred-out P`, then `discovery.production_h2h` with the projections-archive table (last projection
+generated before start, from `cbb-edge-finder` branch `projections-archive`).
+
 ## 1. What changed, in one table
 
 | Measure (six core sports, 1,241 predictive inputs) | End of Phase 11 | Now |

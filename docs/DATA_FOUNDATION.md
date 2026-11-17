@@ -27,17 +27,17 @@ Total 1649 inputs. At the draft, **442** inputs were called potentially computab
 
 ### Verified status by sport
 
-| Sport | verified full | verified partial | verified proxy | data in hand confirmed | replayed pit caveat | claimed not replayed | data in hand schema only | replay failed | downgraded by verifier | pit quarantined | requires collection | blocked confirmed | blocked by policy | blocked contested | excluded benchmark only |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| NFL | 14 | 38 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 224 | 0 | 0 | 0 | 13 |
-| CFB | 1 | 15 | 2 | 0 | 0 | 46 | 0 | 0 | 4 | 2 | 74 | 5 | 1 | 2 | 11 |
-| NBA | 8 | 43 | 5 | 7 | 0 | 8 | 14 | 0 | 29 | 0 | 139 | 1 | 9 | 5 | 11 |
-| CBB | 1 | 11 | 1 | 0 | 0 | 28 | 0 | 0 | 1 | 0 | 120 | 4 | 3 | 4 | 11 |
-| NHL | 12 | 41 | 2 | 2 | 0 | 7 | 6 | 0 | 8 | 4 | 65 | 0 | 0 | 1 | 7 |
-| MLB | 2 | 18 | 1 | 0 | 0 | 25 | 0 | 0 | 2 | 7 | 187 | 0 | 0 | 1 | 8 |
-| SOCCER | 6 | 9 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 128 | 6 | 17 | 1 | 11 |
-| TENNIS | 18 | 34 | 2 | 9 | 0 | 0 | 0 | 0 | 5 | 0 | 54 | 3 | 0 | 9 | 9 |
-| **all** | **62** | **209** | **20** | **18** | **0** | **114** | **20** | **0** | **49** | **13** | **991** | **19** | **30** | **23** | **81** |
+| Sport | verified dataset certified | verified full | verified partial | verified proxy | data in hand confirmed | replayed pit caveat | claimed not replayed | data in hand schema only | replay failed | downgraded by verifier | pit quarantined | requires collection | blocked confirmed | blocked by policy | blocked contested | excluded benchmark only |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| NFL | 0 | 14 | 38 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 224 | 0 | 0 | 0 | 13 |
+| CFB | 0 | 1 | 15 | 2 | 0 | 0 | 46 | 0 | 0 | 4 | 2 | 74 | 5 | 1 | 2 | 11 |
+| NBA | 0 | 8 | 43 | 5 | 7 | 0 | 8 | 14 | 0 | 29 | 0 | 139 | 1 | 9 | 5 | 11 |
+| CBB | 0 | 1 | 11 | 1 | 0 | 0 | 28 | 0 | 0 | 1 | 0 | 120 | 4 | 3 | 4 | 11 |
+| NHL | 0 | 12 | 41 | 2 | 2 | 0 | 7 | 6 | 0 | 8 | 4 | 65 | 0 | 0 | 1 | 7 |
+| MLB | 0 | 2 | 18 | 1 | 0 | 0 | 25 | 0 | 0 | 2 | 7 | 187 | 0 | 0 | 1 | 8 |
+| SOCCER | 0 | 6 | 9 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 128 | 6 | 17 | 1 | 11 |
+| TENNIS | 0 | 18 | 34 | 2 | 9 | 0 | 0 | 0 | 0 | 5 | 0 | 54 | 3 | 0 | 9 | 9 |
+| **all** | **0** | **62** | **209** | **20** | **18** | **0** | **114** | **20** | **0** | **49** | **13** | **991** | **19** | **30** | **23** | **81** |
 
 ### Point-in-time policy and quarantine
 

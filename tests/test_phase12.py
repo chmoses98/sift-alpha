@@ -192,7 +192,7 @@ def test_certification_promotes_only_listed_inputs_of_live_versions():
     for k in ("MLB:mlb.sp_quality", "NBA:nba.pace", "NBA:nba.rest_travel", "MLB:mlb.opp_strength"):
         assert k not in cert                       # held back: definition not fully implemented or not point-in-time
     inputs = json.loads((ROOT / "research/data_foundation_ops/acquisition_inputs.json").read_text())["inputs"]
-    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 54
+    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 58   # Phase 12 continued: +4 NBA player-box inputs (blind-certified v1.1)
 
 
 def test_market_coverage_is_exhaustive_and_reconciles():

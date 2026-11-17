@@ -449,6 +449,7 @@ def load_certification() -> dict:
             for i in ids:
                 if i not in held_back:
                     out[f"{sport}:{i}"] = {"dataset_sha256": c["dataset_sha256"], "spec": c.get("spec"), "seasons": len(seasons), "rows": c["rows"],
+                                           "builder_columns": ((cert.get("builder_columns") or {}).get(sport) or {}).get(i),
                                            "evidence": f"research/certification/{cert.get('file', 'certification.json')}"}
     return out
 
@@ -471,6 +472,8 @@ def readiness(inp, needs_i, held, datasets, cert=None):
     if cert:
         c["data"] = c["verified"] = c["pit"] = "OK"
         c["history"] = "OK" if cert["seasons"] >= 3 else c["history"]
+        if cert.get("builder_columns"):      # the certification names the certified dataset columns that implement this input: the blind-matched builder IS the built feature
+            c["built"] = "OK"
     core = ["data", "verified", "built", "pit", "history"]
     if all(c[k] == "OK" for k in core):
         state = "TRAINING_READY"

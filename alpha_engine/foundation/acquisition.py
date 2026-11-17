@@ -440,7 +440,7 @@ def load_certification() -> dict:
             if not ok:
                 continue
             # A later builder version over the SAME games (e.g. CFB v2) points at the index rows of the version it shares rows with.
-            idx = CERT / "game_index" / f"{sport}.csv.gz"; key = (c.get("game_index_dataset_sha256") or c["dataset_sha256"])[:12]
+            idx = CERT / "game_index" / (c.get("game_index_file") or f"{sport}.csv.gz"); key = (c.get("game_index_dataset_sha256") or c["dataset_sha256"])[:12]
             seasons = set()
             if idx.exists():
                 import gzip

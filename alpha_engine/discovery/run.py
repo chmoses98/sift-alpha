@@ -20,12 +20,12 @@ from ..input_research import stats as S
 from .adapters import ADAPTERS, MARKET_NOTE
 
 
-def official_eval(sport: str, d: pd.DataFrame, pred: pd.DataFrame, mkt: pd.DataFrame | None, official_dir: Path, prereg: dict, seasons: list[int]) -> dict:
+def official_eval(sport: str, d: pd.DataFrame, pred: pd.DataFrame, mkt: pd.DataFrame | None, official_dir: Path, prereg: dict, seasons: list[int], aux=None) -> dict:
     A = ADAPTERS[sport]
     off = K.read_official(official_dir, A["series"])
     if off.empty:
         return {"markets": 0, "note": "no official records for the mapped series"}
-    o = K.join_games(off, A["schedule"](d), A["alias"])
+    o = K.join_games(off, A["schedule"](d, aux), A["alias"])
     act = d[["game_id", "season"] + [t["column"] for t in prereg["targets"].values()]].rename(columns={t["column"]: f"{tn}_actual" for tn, t in prereg["targets"].items()})
     o = K.yes_probability(o, pred.drop(columns=["season"]).merge(act, on="game_id"), A["family_target"])
     out = {"markets_read": int(len(o)), "events_read": int(o.event.nunique()), "events_joined_to_dataset_games": int(o[o.game_id.notna()].event.nunique()),
@@ -95,7 +95,7 @@ def main(argv=None) -> int:
         if not a.holdout:
             for t in prereg["targets"].values():
                 dd.loc[dd.season.isin(prereg["splits"]["holdout"]), t["column"]] = np.nan
-        res["official_labels"] = official_eval(sport, dd, pred, mkt, Path(a.official), prereg, seasons)
+        res["official_labels"] = official_eval(sport, dd, pred, mkt, Path(a.official), prereg, seasons, aux=a.market)
     out = hold if a.holdout else pp.parent / "results.json"
     out.write_text(json.dumps(res, indent=1) + "\n")
     if a.pred_out:

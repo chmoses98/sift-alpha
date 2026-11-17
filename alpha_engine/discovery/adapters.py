@@ -33,7 +33,7 @@ def nfl_market(games_csv) -> pd.DataFrame:
     return m.set_index("game_id")
 
 
-def nfl_schedule(d: pd.DataFrame) -> pd.DataFrame:
+def nfl_schedule(d: pd.DataFrame, aux=None) -> pd.DataFrame:
     return pd.DataFrame({"game_id": d.game_id, "date": d.gameday.astype(str), "home": d.home_team, "away": d.away_team})
 
 
@@ -50,10 +50,23 @@ def cfb_market(lines_dir) -> pd.DataFrame:
     return pd.DataFrame(rows).drop_duplicates("game_id").set_index("game_id")
 
 
+def nba_schedule(d: pd.DataFrame, aux=None) -> pd.DataFrame:
+    """Team abbreviations come from the archived team boxes (aux = archive root); the dataset itself carries ESPN team ids only."""
+    import glob
+    ab = pd.concat([pd.read_parquet(f, columns=["team_id", "team_abbreviation", "season"]) for f in sorted(glob.glob(str(aux) + "/**/team_box_*.parquet", recursive=True))]).drop_duplicates(["season", "team_id"])
+    m = {(int(r.season), int(r.team_id)): r.team_abbreviation for r in ab.itertuples()}
+    return pd.DataFrame({"game_id": d.game_id, "date": d.date.astype(str), "home": [m.get((int(s), int(t))) for s, t in zip(d.season, d.home_team_id)],
+                         "away": [m.get((int(s), int(t))) for s, t in zip(d.season, d.away_team_id)]})
+
+
 ADAPTERS = {
     "NFL": {"market": nfl_market, "schedule": nfl_schedule,
             "series": {"KXNFLGAME": "winner", "KXNFLSPREAD": "spread", "KXNFLTOTAL": "total"},
             "family_target": {"winner": ("winner", "margin"), "spread": ("spread", "margin"), "total": ("total", "total")},
             "alias": {"JAX": ["JAC"], "LA": ["LAR"], "WAS": ["WSH"], "LV": ["LVR"], "NE": ["NEP"], "NO": ["NOS"], "SF": ["SFO"], "TB": ["TBB"], "GB": ["GNB"], "KC": ["KAN"]}},
+    "NBA": {"market": lambda path: None, "schedule": nba_schedule,
+            "series": {"KXNBAGAME": "winner", "KXNBASPREAD": "spread", "KXNBATOTAL": "total"},
+            "family_target": {"winner": ("winner", "margin"), "spread": ("spread", "margin"), "total": ("total", "total")},
+            "alias": {"GS": ["GSW"], "NO": ["NOP"], "NY": ["NYK"], "SA": ["SAS"], "UTAH": ["UTA"], "WSH": ["WAS"], "PHX": ["PHO"], "BKN": ["BRK"], "CHA": ["CHO"]}},
     "CFB": {"market": cfb_market, "schedule": None, "series": {}, "family_target": {}, "alias": {}},
 }

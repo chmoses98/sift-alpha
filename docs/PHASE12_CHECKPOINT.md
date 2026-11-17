@@ -6,7 +6,7 @@ Start state: `docs/PHASE12_HANDOFF.md` (main `21b2763`). Read this file first; n
 
 ## 0. Phase 12 continued (2026-11-17, second session): resume here first
 
-Branches `claude/nba-projections-phase-12-6ud22v` in `sift-alpha` (stacked on #88) and `nba-edge-finder` (PR #112, stacked on
+Branches `claude/nba-projections-phase-12-6ud22v`: `sift-alpha` PR #89 @ `19e1876` (stacked on #88) and `nba-edge-finder` PR #112 @ `1eeac7f` (stacked on
 #105 -> #104). No production, workflow, schedule, settlement or baseline change. Details: `docs/PHASE12_VERIFICATION.md`,
 `nba-edge-finder/docs/research/NBA_PRODUCTION_POSTMORTEM.md`.
 

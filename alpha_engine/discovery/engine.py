@@ -49,6 +49,8 @@ def load_dataset(path: Path, prereg: dict, versions_path: Path = VERSIONS) -> pd
     """Fail-closed: the bytes must be the preregistered, registered, non-superseded dataset version."""
     d = pd.read_parquet(path)
     h = canonical_hash(d)
+    if h != prereg["dataset_sha256"] and "cutoff_utc" in d.columns:      # training_sets_multi registers the hash without the cutoff column
+        h = canonical_hash(d.drop(columns=["cutoff_utc"]))
     if h != prereg["dataset_sha256"]:
         raise ValueError(f"dataset hash {h[:12]} is not the preregistered {prereg['dataset_sha256'][:12]}")
     live = {(e["sport"], e["canonical_sha256"]) for e in json.loads(Path(versions_path).read_text())["versions"] if not e.get("superseded_by")}
@@ -61,6 +63,10 @@ def group_columns(prereg: dict, names: list[str], cols: set[str]) -> list[str]:
     out = []
     for g in names:
         for c in prereg["groups"][g]:
+            if c.startswith("@"):                       # a game-level pregame column (e.g. neutral site), not a team column
+                if c[1:] in cols and c[1:] not in out:
+                    out.append(c[1:])
+                continue
             for side in ("home_", "away_"):
                 if side + c in cols and side + c not in out:
                     out.append(side + c)
@@ -115,7 +121,7 @@ def prob_metrics(p, y) -> dict:
     p = np.clip(np.asarray(p, float), 1e-6, 1 - 1e-6); y = np.asarray(y, float)
     return {"n": int(len(y)), "brier": round(float(np.mean((p - y) ** 2)), 5), "log_loss": round(float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p))), 5),
             "base_rate": round(float(y.mean()), 4), "mean_p": round(float(p.mean()), 4), "accuracy": round(float(((p > 0.5) == (y > 0.5)).mean()), 4),
-            "calibration_slope": round(float(S.calibration_slope(p, y)), 4) if len(y) > 50 else None,
+            "calibration_slope": round(S.calibration_slope(p, y)["slope"], 4) if len(y) > 50 else None,
             "calibration": [{k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()} for r in S.calibration_table(p, y, 5)]}
 
 
@@ -230,7 +236,8 @@ def run(prereg: dict, d: pd.DataFrame, mkt: pd.DataFrame | None, holdout: bool =
     cols = set(d.columns)
     d = d[d["season"] >= prereg.get("first_season", 0)]
     d = d.sort_values(["season", prereg["order_column"], "game_id"], kind="mergesort").reset_index(drop=True)
-    d["cluster"] = d[prereg["cluster_column"]]
+    cc = prereg["cluster_column"]
+    d["cluster"] = pd.to_datetime(d[prereg["order_column"]]).dt.strftime("%G-%V") if cc == "@isoweek" else d[cc]
     sp = prereg["splits"]; wf = sorted(set(prereg["walk_forward_seasons"]))
     if set(sp["holdout"]) & (set(sp["dev"]) | set(sp["test"])):
         raise ValueError("holdout seasons overlap dev/test")

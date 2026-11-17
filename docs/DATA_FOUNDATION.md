@@ -299,7 +299,7 @@ Hosts denied by the egress policy (candidates to allow if the owner wants them v
 | `nhl.international_tournaments` | FREE_UNPROBED | 2002–2026 (documented) | STATIC | free | low |  |
 | `nhl.lineup_goalie_pregame` | PROSPECTIVE_CAPTURE_ONLY | ?–? (documented) | LIVE_SNAPSHOT | free | high |  |
 | `nhl.officials` | NO_FREE_SOURCE | ?–? (documented) | STATIC | free | low |  |
-| `nhl.pbp_events_nonshot` | COLLECTED_ARCHIVE | 20252025–20262026 (measured) | EVENT_TIME | free | medium | 1359130 |
+| `nhl.pbp_events_nonshot` | COLLECTED_ARCHIVE | 2025–2026 (measured) | EVENT_TIME | free | medium | 1359130 |
 | `nhl.player_bio` | FREE_UNPROBED | 2008–2026 (documented) | STATIC | free | medium |  |
 | `nhl.player_games` | COLLECTED_ARCHIVE | 2021-10-12–2026-09-29 (measured) | EVENT_TIME | free | low | 251797 |
 | `nhl.playoff_results_1987` | FREE_UNPROBED | 1987–2026 (documented) | EVENT_TIME | free | high |  |

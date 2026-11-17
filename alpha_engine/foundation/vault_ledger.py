@@ -114,7 +114,7 @@ def nhl(root):
             g = d.drop_duplicates("game_id"); games.update(g.game_id.astype(str))
             for s, k in g.season.value_counts().items():
                 per[str(int(s))] += int(k)
-        out["nhl_sdv_pbp"] = {"rows": rows, "games": len(games), "games_by_season": dict(sorted(per.items())), "files": len(f), "date_min": str(int(min(per)) - 1), "date_max": str(int(max(per)) - 1),
+        out["nhl_sdv_pbp"] = {"rows": rows, "games": len(games), "games_by_season": dict(sorted(per.items())), "files": len(f), "date_min": min(per)[:4], "date_max": max(per)[:4],      # season labels are 8 digits (20252026): the held range is its first year
                               "scope_note": f"full play-by-play held for {len(per)} season file(s) only ({', '.join(sorted(per))}); earlier seasons are NOT in the vault"}
     return out
 

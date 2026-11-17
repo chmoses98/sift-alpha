@@ -128,6 +128,30 @@ Labels: final score incl. overtime/shootout from the certified dataset. The data
 
 Not claimed: no market comparison: the vault holds no contemporaneous NHL line or Kalshi quote history; no betting value is claimed
 
+## CBB: CBB full-game lines: winner, point spread, total points (Division I games with an ESPN team box)
+
+Study `cbb_game_lines_v1` · dataset `17c5da58603e` · preregistration `2c26cbe6b8c9` · dev 2010-2020 · test 2021-2025 · holdout 2026-2027 (scored once)
+
+* Test seasons, margin: full model RMSE 13.6065 vs reference 14.6859 vs climatology 17.2899 (n=28,994); winner picked 72.0% of the time, win-probability Brier 0.18217.
+* Test seasons, total: full model RMSE 16.9812 vs reference 18.2715 (n=28,994).
+* Inputs that improve on the reference after Holm correction: conference_strength (margin), four_factors_defence (margin), four_factors_defence (total), four_factors_offence (margin), tempo (margin), tempo (total).
+* Holdout (2026-2027, scored once, n=7,159): margin RMSE 14.5565 vs reference 16.2472.
+
+Labels: final score from the certified dataset. Kalshi official CBB results are not joined (1,047 exchange events lack a team-identity join; ladder strike semantics changed between 2025 and 2026): contract-level scoring is deferred
+
+| Hypothesis (added to the reference) | Target | Squared-error gain | 95% CI | Holm p | Seasons better | Verdict |
+|---|---|---|---|---|---|---|
+| conference_strength | margin | 6.08033 | [4.74603, 7.51251] | 0.00267 | 5/5 | demonstrated incremental |
+| conference_strength | total | 0.17837 | [-0.02651, 0.38895] | 0.084 | 3/5 | not demonstrated |
+| four_factors_defence | margin | 19.52673 | [13.90202, 25.94461] | 0.00267 | 5/5 | demonstrated incremental |
+| four_factors_defence | total | 1.88527 | [1.00076, 2.77542] | 0.00267 | 4/5 | demonstrated incremental |
+| four_factors_offence | margin | 21.71966 | [14.67787, 29.45736] | 0.00267 | 5/5 | demonstrated incremental |
+| four_factors_offence | total | 0.66923 | [0.05871, 1.28709] | 0.06933 | 3/5 | suggestive unconfirmed |
+| tempo | margin | 2.45726 | [1.43412, 3.59343] | 0.00267 | 4/5 | demonstrated incremental |
+| tempo | total | 42.1761 | [39.75412, 44.73053] | 0.00267 | 5/5 | demonstrated incremental |
+
+Not claimed: no market comparison (no historical CBB line or Kalshi quote history in the vault); no betting value
+
 ## MLB: MLB full-game lines: winner, run difference, total runs; regular season 2022-2026
 
 Study `mlb_game_lines_v1` · dataset `2e4c89b37f3c` · preregistration `47d76899f603` · dev 2023-2024 · test 2025 · holdout 2026 (scored once)

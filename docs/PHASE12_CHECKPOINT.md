@@ -26,6 +26,10 @@ Branches `claude/nba-projections-phase-12-6ud22v`: `sift-alpha` PR #89 @ `19e187
   12th (`mlb.wins_to_date_and_games_remaining`) has a verifier downgrade kept as a conflict for owner review.
 * New certified dataset NBA player box `4a8449177781` (795,653 rows, blind 0 mismatches): +4 training-ready NBA inputs.
   Six core sports 37 -> **41** training-ready (NBA 6 -> 10); all eight sports 54 -> 58.
+* CFB head-to-head vs production pf-cfb (`docs/CFB_PRODUCTION_H2H.md`, prereg `8797be28a695`): dataset extended to 2026-11-15
+  (751 final 2026 games; 2014-25 rows reproduce `0b9226c089fa`), but CFBD 2026 advanced box / drives / lines are NOT archived, so the
+  study model runs on stale 2026 in-season features. On 241 identical games production wins everywhere (all_certified margin MAE 14.76
+  vs 13.06, total 15.31 vs 13.54, Brier 0.2325 vs 0.2098; all CIs exclude 0). Production over-credits home field by +2.6 (CI 0.7-4.6).
 * CBB head-to-head vs production (`production_h2h_cbb.json`): the Alpha CBB model is much worse early-season (margin MAE
   12.69 vs 10.17, n = 638). Do not promote; it lacks a preseason prior.
 

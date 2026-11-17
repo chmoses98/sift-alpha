@@ -283,13 +283,14 @@ def h2h(prereg: dict, study: dict, d: pd.DataFrame, prods: dict) -> dict:
     chal = {n: (f"{n}__margin_mu", f"{n}__margin_sigma", f"{n}__total_mu") for n in prereg["challengers"]}
     res = {}
     for lab, prod in prods.items():
-        x = base.merge(pred, on="game_id").merge(prod, on="game_id").dropna(subset=["margin", "total", "p_home"])
+        prod = prod.assign(game_id=prod.game_id.astype(str))
+        x = base.assign(game_id=base.game_id.astype(str)).merge(pred.assign(game_id=pred.game_id.astype(str)), on="game_id").merge(prod, on="game_id").dropna(subset=["margin", "total", "p_home"])
         x = x.sort_values(["date", "game_id"], kind="mergesort").reset_index(drop=True)
         cl = {"game": np.arange(len(x)), "isoweek": pd.to_datetime(x.date).dt.strftime("%G-%V").to_numpy()}
         r = compare(x, chal, cl)
         # Holm on the preregistered primary family (primary challenger x three squared/Brier contrasts, game-clustered, two-sided)
         pc = prereg["primary"]["challenger"]
-        fam = [(k, r[pc]["paired"][k]["p_game"]) for k in prereg["primary"]["contrasts"]]
+        fam = [(k, r[pc]["paired"][k + "_challenger_minus_production"]["p_game"]) for k in prereg["primary"]["contrasts"]]
         order = sorted(range(len(fam)), key=lambda i: fam[i][1]); m = len(fam); adj, run = {}, 0.0
         for rank, i in enumerate(order):
             run = max(run, min(1.0, (m - rank) * fam[i][1])); adj[fam[i][0]] = round(run, 4)

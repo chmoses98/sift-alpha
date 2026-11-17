@@ -87,7 +87,7 @@ class VerifiedMeansReplayed(unittest.TestCase):
                 self.assertEqual(r["verified_bucket"], "FAILED", r["key"])
             if v2 == "DOWNGRADED":
                 self.assertEqual(r["verified_bucket"], "FAILED", r["key"])
-        self.assertEqual(len([r for r in ROWS if r["draft_status"] == "DATA_IN_HAND"]), 132)
+        self.assertEqual(len([r for r in ROWS if r["draft_status"] == "DATA_IN_HAND"]), 263)   # 132 before Phase 12; +131 whose every dataset is now measured in the vault ledger (none is verified by that)
 
     def test_every_drafted_blocked_input_has_two_blind_rechecks_and_confirmed_needs_both_to_agree(self):
         r1 = VC.load_blocked(); r2 = VC.load_dir_answers("blocked_recheck_policy", "answers_*.json")

@@ -67,7 +67,8 @@ def test_promoted_inputs_in_matrix_are_partial_or_proxy_never_full():
         r = rows[s.catalog_id]
         want = "VERIFIED_PROXY" if s.catalog_id in PROXY_IDS else "VERIFIED_PARTIAL"
         assert r["verified_status"] == want and not r["evidence"].get("full_certified"), s.catalog_id
-        assert r["evidence"]["promoted_from"] in ("REQUIRES_COLLECTION", "DATA_IN_HAND_CONFIRMED", "DATA_IN_HAND_SCHEMA_ONLY")
+        assert r["evidence"]["promoted_from"] in ("REQUIRES_COLLECTION", "DATA_IN_HAND_CONFIRMED", "DATA_IN_HAND_SCHEMA_ONLY",
+                                                 "CLAIMED_NOT_REPLAYED")   # Phase 12: raw data newly vault-held, no builder claim existed, extension replay still decides
         assert set(r["evidence"]["independent"].values()) == {"MATCH"}
 
 

@@ -138,15 +138,17 @@ def test_catalog_promotes_only_certified_inputs():
     from alpha_engine.foundation import acquisition as A
     from alpha_engine.foundation.contract import OPS
     certs = A.load_certification()
-    assert set(certs) == {"CBB:cbb.adj_off", "CBB:cbb.adj_def", "CBB:cbb.tempo", "CBB:cbb.conf_strength", "CFB:cfb.off_ppa", "CFB:cfb.def_ppa", "CFB:cfb.drives"}
+    assert set(certs) == {"CBB:cbb.adj_off", "CBB:cbb.adj_def", "CBB:cbb.tempo", "CBB:cbb.conf_strength", "CFB:cfb.off_ppa", "CFB:cfb.def_ppa", "CFB:cfb.drives",
+                          # Phase 12: MLB v1.1 and the NBA long-history team-box dataset (blind-certified)
+                          "MLB:mlb.pythag_luck", "MLB:mlb.wins_to_date_and_games_remaining", "NBA:nba.four_factors_matchup", "NBA:nba.pythag_residual", "NBA:nba.rebound_pool"}
     inputs = json.loads((OPS / "acquisition_inputs.json").read_text())["inputs"]
     for k, c in certs.items():
         tr = inputs[k]["tr"]
         assert tr["state"] == "TRAINING_READY" and tr["cert"]["dataset"] == c["dataset_sha256"][:12] and c["seasons"] >= 3
     # cfb.drives is certified ONLY on the corrected v2 dataset (v1 keeps it held back for the drive-points defect)
     assert inputs["CFB:cfb.drives"]["tr"]["cert"]["dataset"] == "0b9226c089fa" and inputs["CFB:cfb.off_ppa"]["tr"]["cert"]["dataset"] == "a73a3e141af4"
-    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 48
-    assert sum(1 for v in inputs.values() if "cert" in v["tr"]) == 7
+    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 54   # 48 at the end of Phase 11; Phase 12: +2 MLB, +3 NBA (certified), +1 CFB (raw data now archived)
+    assert sum(1 for v in inputs.values() if "cert" in v["tr"]) == 12   # 7 before Phase 12
 
 
 def test_certification_overlay_fails_closed(monkeypatch, tmp_path):

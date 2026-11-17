@@ -133,7 +133,7 @@ def _ncdf(z):
 def evaluate_split(d: pd.DataFrame, P: dict, mkt: pd.DataFrame | None, seasons: list[int], prereg: dict) -> dict:
     """All metrics for one split. P[model][target] = (mu, sigma) arrays aligned with d."""
     se = d["season"].to_numpy(int); out = {"seasons": seasons, "targets": {}}
-    m = mkt.reindex(d["game_id"]).reset_index(drop=True) if mkt is not None else None
+    m = mkt.set_axis(mkt.index.astype(str)).reindex(d["game_id"].astype(str)).reset_index(drop=True) if mkt is not None else None   # ids compared as strings
     for tname, t in prereg["targets"].items():
         y = d[t["column"]].to_numpy(float)
         base = np.isin(se, seasons) & ~np.isnan(y)

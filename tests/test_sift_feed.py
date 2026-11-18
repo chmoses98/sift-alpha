@@ -308,3 +308,12 @@ def test_say_warns_stale_and_started_against_now(built, tmp_path, capsys, monkey
     assert "already started" in out and "the feed itself was generated 13.0h ago" in out
     nba = next(g for g in index["games"] if g["sport"] == "NBA")
     assert nba["age_hours_at_build"] == 0.8 and nba["stale"] is False and nba["source_updated_at"]
+
+
+def test_say_never_calls_the_model_spread_a_book_line():
+    """The spread string is the model's own margin in sportsbook sign notation, not a sportsbook's line."""
+    import inspect
+    from sift_feed import say
+    src = inspect.getsource(say)
+    assert "book line" not in src
+    assert "not a market line" in src

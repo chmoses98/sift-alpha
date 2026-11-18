@@ -92,7 +92,7 @@ def sentence(idx, g, side, other, now=None):
         lead += ", win probability not published."
     tt = g.get("team_totals") or {}
     if tt.get(side) is not None and tt.get(other) is not None:
-        lead += f" Projected score {_name(me)} {tt[side]}, {_name(opp)} {tt[other]} (book line: {g.get('spread')})."
+        lead += f" Projected score {_name(me)} {tt[side]}, {_name(opp)} {tt[other]} (model spread in sportsbook notation: {g.get('spread')}; not a market line)."
     age, warn = freshness(idx, g, now)
     tail = (f" Forecast {g['model_version']} made {g['projected_at']} ({'?' if age is None else f'{age:.1f}'}h ago); "
             f"game starts {g['start_time']}; feed generated {idx['generated_at']}; source_class {cls}.")

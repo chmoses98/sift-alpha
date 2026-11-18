@@ -36,8 +36,7 @@ committed in b8be4cc). Reproduce: `python -m research.phase14_mlb.run_phase14 --
 | Batter TB CRPS | 0.9249 | 0.8678 | -0.057 [-0.060, -0.054] |
 | Batter HR 1+ Brier | 0.1024 | 0.1000 | -0.0023 [-0.0027, -0.0020] |
 
-Calibration slopes: win 1.15 after calibration (0.86 raw). Totals 0.72-0.77. K 1.10-1.13. Batter markets 0.81-0.88.
-The typical-lineup variant gives nearly the same results (`results.json`).
+Calibration slopes: win 1.15 after calibration (0.86 raw). Totals 0.72-0.77. K 1.10-1.13. Batter markets 0.81-0.88. The typical-lineup variant gives nearly the same results (`results.json`).
 
 Validation 2025 (posted, vs ridge):
 - Win: Brier +0.0005 [-0.0015, +0.0024], not significant. Stacked: -0.0002 [-0.0012, +0.0007].

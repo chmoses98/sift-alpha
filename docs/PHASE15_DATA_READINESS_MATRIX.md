@@ -51,7 +51,164 @@ Kalshi game/period series with settled markets: 36 (138,562 settled contracts).
 
 Kalshi game/period series with settled markets: 28 (189,305 settled contracts).
 
-_No readiness rows submitted._
+| family | status | history | pregame | settlement | acquired this phase | top missing input (source / blocker) |
+|---|---|---|---|---|---|---|
+| game winner | **READY** | 2014-2026 games; production replay 2014-2025 + 2026 | yes: #307 forecasts from schedule + prior games | yes: ESPN linescores reproduce Kalshi results {"KXNCAAFGAME": [2709, 1.0]} | - | QB/injury availability (none structured historically / no as-of snapshots) |
+| full-game spread | **READY** | 2014-2026 games; production replay 2014-2025 + 2026 | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAFSPREAD": [28670, 1.0]} | - | QB/injury availability (none structured historically / no as-of snapshots) |
+| full-game total | **PARTIAL** | 2014-2026 games; production replay 2014-2025 + 2026 | yes, but total probabilities miscalibrated (bias +0.06) | yes: ESPN linescores reproduce Kalshi results {"KXNCAAFTOTAL": [20967, 1.0]} | - | QB/injury availability (none structured historically / no as-of snapshots) |
+| full-game team total | **PARTIAL** | 2014-2026 games; production replay 2014-2025 + 2026 | yes, bias +0.02-0.05 | yes: ESPN linescores reproduce Kalshi results {"KXNCAAFTEAMTOTAL": [16490, 1.0]} | - | QB/injury availability (none structured historically / no as-of snapshots) |
+| 1H winner (3-way) | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1H": [1845, 1.0]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| 1H spread | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1HSPREAD": [14334, 1.0]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| 1H total | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1HTOTAL": [9481, 1.0]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| 1H team total | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1HTEAMTOTAL": [2397, 1.0]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| 2H winner/spread/total | **PARTIAL** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes for regulation; settlement includes OT in practice | partial: Kalshi settled 2H incl. overtime (10/10 OT games) though rules say excluding OT {"KXNCAAF2H": [996, 0.992], "KXNCAAF2HSPREAD": [7090, 0.997], "KXNCAAF2HTOTAL": [4695, 0.9904]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| quarter winner (3-way) | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1Q": [1092, 1.0], "KXNCAAF2Q": [1092, 1.0], "KXNCAAF3Q": [1092, 1.0], "KXNCAAF4Q": [1092, 0.9982]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| quarter spread | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1QSPREAD": [3968, 1.0], "KXNCAAF2QSPREAD": [4091, 1.0], "KXNCAAF3QSPREAD": [3903, 0.9997], "KXNCAAF4QSPREAD": [4004, 0.9993]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| quarter total | **READY** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | yes | yes: ESPN linescores reproduce Kalshi results {"KXNCAAF1QTOTAL": [4004, 1.0], "KXNCAAF2QTOTAL": [4004, 1.0], "KXNCAAF3QTOTAL": [4004, 0.999], "KXNCAAF4QTOTAL": [4004, 0.9993]} | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+| 1H/FG double result | **BLOCKED** | FBS-vs-FBS 2014-2026 (~770/season); outcomes 11,121 valid linescores | no model for the joint 1H x FG outcome yet | yes (derivable from linescores + finals) | derived cfb_period_scores_2014_2026.parquet (11,124 games; 11,121 valid) | QB/injury availability (none structured historically / no as-of snapshots) |
+
+<details><summary>game winner: inputs</summary>
+
+- Kalshi series: KXNCAAFGAME
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: CFBD games/advanced stats lines 2022-2025 (GameProjectionCache); 247 talent composite (preseason)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>full-game spread: inputs</summary>
+
+- Kalshi series: KXNCAAFSPREAD
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: CFBD games/advanced stats lines 2022-2025 (GameProjectionCache); 247 talent composite (preseason)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>full-game total: inputs</summary>
+
+- Kalshi series: KXNCAAFTOTAL
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: CFBD games/advanced stats lines 2022-2025 (GameProjectionCache); 247 talent composite (preseason)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>full-game team total: inputs</summary>
+
+- Kalshi series: KXNCAAFTEAMTOTAL
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: CFBD games/advanced stats lines 2022-2025 (GameProjectionCache); 247 talent composite (preseason)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>1H winner (3-way): inputs</summary>
+
+- Kalshi series: KXNCAAF1H, KXNCAAF1HWINNER
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>1H spread: inputs</summary>
+
+- Kalshi series: KXNCAAF1HSPREAD
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>1H total: inputs</summary>
+
+- Kalshi series: KXNCAAF1HTOTAL
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>1H team total: inputs</summary>
+
+- Kalshi series: KXNCAAF1HTEAMTOTAL
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>2H winner/spread/total: inputs</summary>
+
+- Kalshi series: KXNCAAF2H, KXNCAAF2HSPREAD, KXNCAAF2HTOTAL
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>quarter winner (3-way): inputs</summary>
+
+- Kalshi series: KXNCAAF1Q, KXNCAAF2Q, KXNCAAF3Q, KXNCAAF4Q
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>quarter spread: inputs</summary>
+
+- Kalshi series: KXNCAAF1QSPREAD, KXNCAAF2QSPREAD, KXNCAAF3QSPREAD, KXNCAAF4QSPREAD
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>quarter total: inputs</summary>
+
+- Kalshi series: KXNCAAF1QTOTAL, KXNCAAF2QTOTAL, KXNCAAF3QTOTAL, KXNCAAF4QTOTAL
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
+
+<details><summary>1H/FG double result: inputs</summary>
+
+- Kalshi series: KXNCAAF1HFT
+- Available: ESPN postgame summaries 2014-2026 (vault espn_summary_postgame, 10,374 + 751 games); CFBD cache 2014-2026 (games, talent, returning production); repo ESPN game log data/football/2026
+- Used in production: none (production has no period model)
+- Collected but unused: ESPN play-by-play drives / success rate (used by #307 research, not production); CFBD returning production; ESPN linescores (period scores; derived this phase)
+- Missing: **QB/injury availability** - source: none structured historically; blocker: no as-of snapshots
+- Missing: **pregame weather forecast** - source: NWS/Open-Meteo forecast archive; blocker: only realised conditions retrievable for history
+
+</details>
 
 ## CBB
 
@@ -571,6 +728,6 @@ Kalshi game/period series with settled markets: 12 (153,109 settled contracts).
 
 ## Automated checks
 
-- Vault archives checked: 30; provenance failures: 0
+- Vault archives checked: 32; provenance failures: 0
 - In-season datasets older than 7 days (refresh due): none
 - In-season Kalshi series with no settlement in the last 14 days (possibly delisted): KXNBA1HWINNER (last 2026-06-14), KXNBA1QWINNER (last 2026-06-14), KXNBA2HWINNER (last 2026-06-14), KXNBA2QWINNER (last 2026-06-14), KXNBA3QWINNER (last 2026-06-14), KXNBA4QWINNER (last 2026-06-14), KXNBAALLSTARGAME (last 2026-02-16), KXNBACELEBRITYGAME (last 2026-02-14), KXNBASERIESPTSSPREAD (last 2026-06-21), KXNBASERIESSPREAD (last 2026-06-19), KXNCAAMB1HWINNER (last 2026-04-07), KXNCAAF1HWINNER (last 2026-01-20), KXNCAAFCSGAME (last 2025-12-21), KXNHL2OT (last 2026-06-15), KXNHLSERIESSPREAD (last 2026-06-18), KXNFL1HWINNER (last 2026-02-09), KXNFL1QWINNER (last 2026-02-09), KXNFL2HWINNER (last 2026-02-09), KXNFL2QWINNER (last 2026-02-09), KXNFL3QWINNER (last 2026-02-09), KXNFL4QWINNER (last 2026-02-09), KXNFLCELEBRITYGAME (last 2026-02-08)

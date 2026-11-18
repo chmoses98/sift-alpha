@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from sift_feed import adapters, build, say
-from sift_feed.schema import (APPROVED, PRODUCTION, RESEARCH, SCHEMA_VERSION, SPORT_STATUSES, make_game, parse_ts,
-                              spread_fields, validate_game)
+from sift_feed.schema import (OPERATING, PRODUCTION, RESEARCH, SCHEMA_VERSION, SOURCE_CLASSES, SPORT_STATUSES, classify,
+                              make_game, parse_ts, spread_fields, validate_game)
 from sift_feed.sources import DirSource
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,7 +55,7 @@ def test_spread_missing_margin_is_null():
 def test_validate_catches_wrong_spread_sign():
     g = make_game(sport="NBA", game_id="x", start_time="2026-11-19T00:00:00Z", home={"name": None, "abbr": "A"},
                   away={"name": None, "abbr": "B"}, model_version="m", projected_at="2026-11-18T18:00:00Z", source="s",
-                  p_home=0.7, margin_home=5.0)
+                  declaration={"authority": "RESEARCH"}, p_home=0.7, margin_home=5.0)
     assert validate_game(g) == []
     g["home_spread"] = 5.0
     assert "home_spread sign does not oppose margin" in validate_game(g)
@@ -83,7 +83,7 @@ def test_nhl_adapter_uses_primary_model_not_shadow():
     summary, gs, _ = run("NHL", NHL_NOW)
     assert summary["status"] == "ok" and len(gs) == 2
     for g in gs:
-        assert g["model_version"] == "DATA_ONLY_V1" and g["status"] == PRODUCTION
+        assert g["model_version"] == "DATA_ONLY_V1" and g["source_class"] == OPERATING
         assert "projected_margin_home: exp_home_goals - exp_away_goals" in g["derived"]
         assert g["period_projections"] is None
     vgk = game(gs, "2026020342")
@@ -130,7 +130,7 @@ def test_cfb_is_unavailable_and_research_is_labelled():
     summary, gs, rs = run("CFB")
     assert summary["status"] == "unavailable" and gs == [] and rs
     for r in rs:
-        assert r["status"] == "research" and r["approval_status"] == RESEARCH
+        assert r["source_class"] == RESEARCH and r["source_declaration"]["model.authority"] == "research_only"
         assert "spread" not in r and "win_probability" not in r
         assert parse_ts(r["start_time"]) > NOW
 
@@ -153,7 +153,7 @@ def test_staleness_flags_and_status():
     # NFL packet built 2026-11-17T06:22Z, limit 48h; its games are 2026-11-20 .. 2026-11-24
     summary, gs, _ = run("NFL", parse_ts("2026-11-19T12:00:00Z"))
     assert summary["status"] == "stale" and gs and all(g["stale"] for g in gs)
-    assert all(g["data_age_seconds"] > 48 * 3600 for g in gs)
+    assert all(g["age_hours_at_build"] > 48 for g in gs) and summary["stale_after_hours"] == 48
     summary, gs, _ = run("NFL", NOW)
     assert summary["status"] == "ok" and gs and not any(g["stale"] for g in gs)
     summary, gs, _ = run("NBA", NOW + timedelta(hours=20))  # every NBA game has started
@@ -179,8 +179,9 @@ def test_index_schema(built):
     for s in index["sports"].values():
         assert s["status"] in SPORT_STATUSES
     for g in index["games"]:
-        assert g["status"] == PRODUCTION and g["approval_status"] == APPROVED
-        assert "contracts" not in g and "detail" not in g
+        assert g["source_class"] in (PRODUCTION, OPERATING) and "source_declaration" in g
+        assert "contracts" not in g and "detail" not in g and "source" not in g
+        assert {"projected_at", "age_hours_at_build", "stale", "source_updated_at"} <= set(g)
     for doc in per_sport.values():
         for g in doc["games"]:
             assert validate_game(g) == []
@@ -189,7 +190,7 @@ def test_index_schema(built):
 def test_research_never_in_production_games(built):
     index, _ = built
     assert all(g["sport"] != "CFB" for g in index["games"])
-    assert index["research"] and all(r["approval_status"] == RESEARCH for r in index["research"])
+    assert index["research"] and all(r["source_class"] == RESEARCH for r in index["research"])
 
 
 def test_size_budget(built, monkeypatch):
@@ -216,7 +217,9 @@ def test_committed_feed_is_valid_and_under_budget():
     assert p.stat().st_size < build.INDEX_BUDGET
     index = json.loads(p.read_text())
     assert index["schema_version"] == SCHEMA_VERSION
-    assert all(g["approval_status"] == APPROVED for g in index["games"])
+    assert all(g["source_class"] in (PRODUCTION, OPERATING) for g in index["games"])
+    assert all(g["source_class"] == classify(g["source_declaration"]) for g in index["games"])
+    assert index["max_age_note"] and index["stale_after_hours"]
 
 
 # ---- consumer ----------------------------------------------------------------------------
@@ -227,10 +230,81 @@ def test_say_sentence_and_research_refusal(built, tmp_path, capsys, monkeypatch)
     monkeypatch.setattr(say, "datetime", type("D", (), {"now": staticmethod(lambda tz=None: NOW)}))
     assert say.main(["Cavaliers", "--index", str(p)]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("SIFT projects Cleveland Cavaliers -13.4 vs Memphis Grizzlies, total 235.9, with an 80% win probability.")
-    assert "2026-11-18T18:14:13Z" in out and "nba-sim-0.1.0" in out
+    assert out.startswith("SIFT's operating (not production-approved) NBA model projects Cleveland Cavaliers -13.4 vs "
+                          "Memphis Grizzlies, total 235.9, with an 80% win probability.")
+    assert "2026-11-18T18:14:13Z" in out and "nba-sim-0.1.0" in out and "All families are RESEARCH" in out
+    assert "STALE" not in out and "already started" not in out
     assert say.main(["Grizzlies", "--index", str(p)]) == 0
     assert "Memphis Grizzlies +13.4 at Cleveland Cavaliers" in capsys.readouterr().out
     cfb_team = index["research"][0]["home"]["name"]
     assert say.main([cfb_team, "--index", str(p), "--sport", "CFB"]) == 2
-    assert "NOT a SIFT production forecast" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "NOT a SIFT forecast" in out and "pf-" not in out.split("(")[0]
+    assert say.main([cfb_team, "--index", str(p), "--sport", "CFB", "--research"]) == 3
+    out = capsys.readouterr().out
+    assert out.startswith("RESEARCH ONLY - not a SIFT production or operating forecast") and "SIFT projects" not in out
+
+
+
+# ---- strict source labelling -----------------------------------------------------------------
+@pytest.mark.parametrize("decl,cls", [
+    (None, OPERATING), ({}, OPERATING), ({"authority": None}, OPERATING),
+    ({"authority": "PRODUCTION"}, PRODUCTION), ({"status": "approved_production"}, PRODUCTION),
+    ({"authority": "PRODUCTION", "model": "shadow-1"}, OPERATING),
+    ({"authority": "NOT PRODUCTION"}, OPERATING), ({"authority": "RESEARCH_ONLY"}, OPERATING),
+    ({"real_money_status": "NOT VALIDATED -- this packet recommends nothing and authorises nothing"}, OPERATING),
+    ({"authority": "incumbent"}, OPERATING),
+])
+def test_classify_defaults_to_weaker_class(decl, cls):
+    assert classify(decl) == cls
+
+
+def test_every_sport_labelled_from_its_own_declaration():
+    expect = {"NBA": "authority_note", "NHL": "authority", "CBB": "model.research_state", "NFL": "real_money_status"}
+    for sport, key in expect.items():
+        summary, gs, _ = run(sport, NHL_NOW if sport == "NHL" else NOW)
+        assert summary["source_class"] == OPERATING and key in summary["source_declaration"]
+        for g in gs:
+            assert g["source_class"] == OPERATING and g["source_declaration"][key] is not None
+    _, gs, _ = run("NFL")
+    assert gs[0]["source_declaration"]["model_view.model_version"] == "shadow-0.4.0"
+    assert "behind it on game outcomes" in gs[0]["source_declaration"]["model_view.caveat"]
+    summary, gs, rs = run("CFB")
+    assert summary["source_class"] == RESEARCH and summary["source_declaration"] == {"contains_model_projections": False}
+    assert gs == [] and all(r["source_class"] == RESEARCH for r in rs)
+
+
+def test_production_declaration_is_phrased_as_sift_projects(built, tmp_path, capsys, monkeypatch):
+    index, _ = built
+    index = json.loads(json.dumps(index))
+    g = next(g for g in index["games"] if g["sport"] == "NBA")
+    g["source_declaration"], g["source_class"] = {"authority": "PRODUCTION"}, PRODUCTION
+    p = tmp_path / "index.json"
+    p.write_text(json.dumps(index))
+    monkeypatch.setattr(say, "datetime", type("D", (), {"now": staticmethod(lambda tz=None: NOW)}))
+    assert say.main([g["home"]["abbr"], "--index", str(p), "--sport", "NBA"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("SIFT projects ") and "The source declares" not in out
+
+
+def test_validate_rejects_optimistic_label():
+    _, gs, _ = run("NFL")
+    g = dict(gs[0], source_class=PRODUCTION)
+    assert "source_class does not follow from source_declaration" in validate_game(g)
+    assert "not allowed" in validate_game(dict(gs[0], source_class=RESEARCH))[0]
+    assert set(SOURCE_CLASSES) == {PRODUCTION, OPERATING, RESEARCH}
+
+
+# ---- freshness against the current time -----------------------------------------------------
+def test_say_warns_stale_and_started_against_now(built, tmp_path, capsys, monkeypatch):
+    index, _ = built
+    p = tmp_path / "index.json"
+    p.write_text(json.dumps(index))
+    later = NOW + timedelta(hours=13)  # NBA limit 12h; built 19:00Z, forecast 18:14Z
+    monkeypatch.setattr(say, "datetime", type("D", (), {"now": staticmethod(lambda tz=None: later)}))
+    assert say.main(["Cavaliers", "--index", str(p)]) == 0
+    out = capsys.readouterr().out
+    assert "STALE: forecast is 13.8h old now (limit 12h)" in out
+    assert "already started" in out and "the feed itself was generated 13.0h ago" in out
+    nba = next(g for g in index["games"] if g["sport"] == "NBA")
+    assert nba["age_hours_at_build"] == 0.8 and nba["stale"] is False and nba["source_updated_at"]

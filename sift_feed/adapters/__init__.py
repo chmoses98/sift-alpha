@@ -5,8 +5,10 @@
         status/reason   only when the adapter itself decides (offseason / unavailable)
         artifact        {"repo","ref","commit","committed_at","path"} of the production artifact
         model_version, projected_at, bet_authority, authority_note
-        games           production game records (schema.make_game); the builder keeps upcoming ones
-        research        optional list of research-only records (never status "production")
+        declaration     the artifact's own authority/status fields, verbatim (source_class derives from it)
+        source_class    only when the adapter itself decides (CFB: research only)
+        games           operating-forecast game records (schema.make_game); the builder keeps upcoming ones
+        research        optional list of research records (source_class "research", never in games[])
 """
 from importlib import import_module
 

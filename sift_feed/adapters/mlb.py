@@ -19,7 +19,8 @@ def build(src, now):
                 if i.get("status") == "SCHEDULED" and (parse_ts(i.get("start_time_utc")) or now) > now]
     last = max((i.get("start_time_utc") or "" for i in board.get("items", [])), default=None) or None
     out = {"artifact": art, "model_version": None, "projected_at": None,
-           "bet_authority": board.get("bet_authority"), "authority_note": None, "games": []}
+           "bet_authority": board.get("bet_authority"), "authority_note": None, "games": [],
+           "declaration": {"bet_authority": board.get("bet_authority")}}
     if not upcoming:
         out.update(status="offseason", reason=f"no scheduled MLB game in the production app board (last game {last})")
     else:

@@ -8,21 +8,49 @@ model itself published; each is named in the game's `derived` list:
   * projected_winner = side with the higher published win probability
 Nothing else is computed: a field the artifact does not carry is null.
 """
+import re
 from datetime import datetime, timezone
 
 SCHEMA_VERSION = "sift.projection_feed.v1"
+# source_class, strongest first. Derived ONLY from what the source artifact declares about itself:
+#   production            the artifact itself declares production / approved / operating authority
+#   operating_unapproved  the forecast the sport actually operates on, whose artifact does NOT declare
+#                         production authority (its declaration is carried verbatim in source_declaration)
+#   research              challengers / shadows; only ever in research[]
 PRODUCTION = "production"
-APPROVED = "activated_production_forecast"
-RESEARCH = "research_only_not_activated"
+OPERATING = "operating_unapproved"
+RESEARCH = "research"
+SOURCE_CLASSES = (PRODUCTION, OPERATING, RESEARCH)
 SPORT_STATUSES = ("ok", "stale", "offseason", "unavailable")
-# Index entries drop these heavy keys; they stay in feed/v1/<sport>.json (the index carries the
-# sport-level union of `derived` as sports.<SPORT>.derivations).
-DETAIL_KEYS = ("contracts", "detail", "derived")
+# Index entries drop these keys; they stay in feed/v1/<sport>.json (the index carries the
+# sport-level union of `derived` as sports.<SPORT>.derivations and the artifact as sports.<SPORT>.source).
+DETAIL_KEYS = ("contracts", "detail", "derived", "source", "contract_count")
 
-GAME_KEYS = ("sport", "game_id", "start_time", "status", "approval_status", "home", "away", "projected_winner",
-             "win_probability", "projected_margin_home", "home_spread", "spread", "projected_total", "team_totals",
-             "period_projections", "contract_count", "model_version", "projected_at", "data_age_seconds", "stale",
-             "flags", "derived", "source")
+GAME_KEYS = ("sport", "game_id", "start_time", "source_class", "source_declaration", "home", "away",
+             "projected_winner", "win_probability", "projected_margin_home", "home_spread", "spread", "projected_total",
+             "team_totals", "period_projections", "contract_count", "model_version", "projected_at",
+             "age_hours_at_build", "stale", "source_updated_at", "flags", "derived", "source")
+
+# A declaration counts as production only if some declared value affirmatively says so AND no declared
+# value negates or qualifies it. Anything else - missing, empty, ambiguous, research, shadow, "not
+# validated" - falls to the weaker class.
+_AFFIRM = re.compile(r"\b(PRODUCTION|APPROVED|ACTIVATED|OPERATING AUTHORITY)\b")
+_QUALIFY = re.compile(r"\b(RESEARCH|SHADOW|CHALLENGER|NOT|NO|NONE|UNVALIDATED|UNAPPROVED|WATCH|DISABLED|"
+                      r"FALSE|EXPERIMENTAL|CANDIDATE|BEHIND|REDUNDANT)\b")
+
+
+def classify(declaration):
+    """source_class for an operating forecast from its artifact's own declaration {field: value}."""
+    vals = [str(v).upper().replace("_", " ").replace("-", " ") for v in (declaration or {}).values()
+            if v is not None and str(v).strip()]
+    if vals and any(_AFFIRM.search(v) for v in vals) and not any(_QUALIFY.search(v) for v in vals):
+        return PRODUCTION
+    return OPERATING
+
+
+def weakest(classes):
+    classes = [c for c in classes if c in SOURCE_CLASSES]
+    return max(classes, key=SOURCE_CLASSES.index) if classes else None
 
 
 def parse_ts(ts):
@@ -75,10 +103,11 @@ def label(t):
     return t.get("abbr") or t.get("name")
 
 
-def make_game(*, sport, game_id, start_time, home, away, model_version, projected_at, source,
-              p_home=None, p_away=None, margin_home=None, total=None, home_pts=None, away_pts=None,
+def make_game(*, sport, game_id, start_time, home, away, model_version, projected_at, source, declaration,
+              source_updated_at=None, p_home=None, p_away=None, margin_home=None, total=None, home_pts=None, away_pts=None,
               period_projections=None, contracts=None, flags=None, derived=None, detail=None, digits=1):
-    """Build one production game record (schema v1). `derived` lists any extra adapter-side
+    """Build one operating-forecast game record (schema v1); `declaration` is the artifact's own
+    authority/status fields, verbatim, from which source_class is derived. `derived` lists any extra adapter-side
     derivations; the standard ones above are appended automatically."""
     derived = list(derived or [])
     wp, wp_derived = win_probs(p_home, p_away)
@@ -95,14 +124,15 @@ def make_game(*, sport, game_id, start_time, home, away, model_version, projecte
         team_totals = {"home": rnd(home_pts, digits), "away": rnd(away_pts, digits)}
     return {
         "sport": sport, "game_id": str(game_id), "start_time": iso(parse_ts(start_time)),
-        "status": PRODUCTION, "approval_status": APPROVED,
+        "source_class": classify(declaration), "source_declaration": declaration,
         "home": home, "away": away, "projected_winner": winner, "win_probability": wp,
         "projected_margin_home": rnd(margin_home, max(digits, 1)), "home_spread": home_spread, "spread": spread,
         "projected_total": rnd(total, digits), "team_totals": team_totals,
         "period_projections": period_projections or None,
         "contract_count": len(contracts) if contracts else 0,
         "model_version": model_version, "projected_at": iso(parse_ts(projected_at)),
-        "data_age_seconds": None, "stale": None, "flags": flags or [], "derived": derived, "source": source,
+        "age_hours_at_build": None, "stale": None, "source_updated_at": iso(parse_ts(source_updated_at)),
+        "flags": flags or [], "derived": derived, "source": source,
         "contracts": contracts or [], "detail": detail or {},
     }
 
@@ -117,8 +147,10 @@ def validate_game(g):
     errs = [f"missing {k}" for k in GAME_KEYS if k not in g]
     if errs:
         return errs
-    if g["status"] == PRODUCTION and g["approval_status"] != APPROVED:
-        errs.append("production game without activated approval")
+    if g["source_class"] not in (PRODUCTION, OPERATING):
+        errs.append(f"source_class {g['source_class']!r} not allowed in games[]")
+    elif g["source_class"] != classify(g["source_declaration"]):
+        errs.append("source_class does not follow from source_declaration")
     m, hs = g["projected_margin_home"], g["home_spread"]
     if m is not None and hs is not None and round(m, 1) != 0 and (hs > 0) == (m > 0):
         errs.append("home_spread sign does not oppose margin")
@@ -127,7 +159,7 @@ def validate_game(g):
         for v in wp.values():
             if not 0 <= v <= 1:
                 errs.append("win probability out of [0,1]")
-    for k in ("start_time", "projected_at"):
+    for k in ("start_time", "projected_at", "source_updated_at"):
         if g[k] is not None and not g[k].endswith("Z"):
             errs.append(f"{k} not UTC ISO")
     return errs

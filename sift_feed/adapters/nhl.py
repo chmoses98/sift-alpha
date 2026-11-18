@@ -1,4 +1,5 @@
-"""NHL production forecast: the primary model (`model_version`, DATA_ONLY_V1 at the time of writing)
+"""NHL operating forecast (source_class follows the artifact's own declaration).
+Source: the primary model (`model_version`, DATA_ONLY_V1 at the time of writing)
 of the main-branch `simulate` job, written to `data-archive:slates/latest/slate.json`
 (NHL-edge-finder capture_worker.yml / conductor.yml). The slate simulates each game only inside its
 pregame window (roughly 4h before puck drop), so between slates there may be no upcoming game.
@@ -27,6 +28,7 @@ def build(src, now):
     s = src["prod"]
     slate = s.read_json(PATH)
     art = artifact(s, PATH)
+    decl = {"authority": slate.get("authority"), "authority_note": slate.get("authority_note")}
     by_game = {}
     for c in slate.get("contracts", []):
         if c.get("family") in FAMILIES and c.get("p_data_only") is not None:
@@ -43,11 +45,11 @@ def build(src, now):
             sport=SPORT, game_id=g["game_id"], start_time=g["start_time_utc"],
             home=teams.team(SPORT, g["home"]), away=teams.team(SPORT, g["away"]),
             model_version=slate.get("model_version"), projected_at=slate["generated_at_utc"], source=ref_string(art),
-            p_home=g.get("p_home_win"), p_away=g.get("p_away_win"), margin_home=margin, total=g.get("exp_total"),
+            declaration=decl, p_home=g.get("p_home_win"), p_away=g.get("p_away_win"), margin_home=margin, total=g.get("exp_total"),
             home_pts=eh, away_pts=ea, contracts=by_game.get(g["game_id"], []), flags=flags, digits=2,
             derived=["projected_margin_home: exp_home_goals - exp_away_goals"] if margin is not None else [],
             detail={"p_reg_tie": g.get("p_reg_tie"), "p_overtime": g.get("p_overtime"), "p_shootout": g.get("p_shootout"),
                     "margin_sd": g.get("margin_sd"), "total_sd": g.get("total_sd"), "goalies": goalies,
                     "horizon": g.get("horizon"), "sim_version": slate.get("sim_version")}))
     return {"artifact": art, "model_version": slate.get("model_version"), "projected_at": slate["generated_at_utc"],
-            "bet_authority": slate.get("authority"), "authority_note": slate.get("authority_note"), "games": games}
+            "bet_authority": slate.get("authority"), "authority_note": slate.get("authority_note"), "declaration": decl, "games": games}

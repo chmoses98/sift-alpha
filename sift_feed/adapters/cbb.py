@@ -1,4 +1,5 @@
-"""CBB production forecast: the ACTIVE INCUMBENT of the PURE_BASKETBALL model, named by
+"""CBB operating forecast (source_class follows the artifact's own declaration).
+Source: the ACTIVE INCUMBENT of the PURE_BASKETBALL model, named by
 `main:models/pure/active.json` ("incumbent"), archived per (game, run) on `projections-archive`
 by cbb-edge-finder .github/workflows/prospective-projections.yml. The incumbent pure-0.2.0 uses the
 legacy layout projections/<season>/<date>/<game>/<run>.json; any other version lives under
@@ -65,11 +66,13 @@ def build(src, now):
             sport=SPORT, game_id=gm.get("game_id"), start_time=gm["start_time_utc"],
             home={"name": r["home"]["name"], "abbr": None}, away={"name": r["away"]["name"], "abbr": None},
             model_version=version, projected_at=projected_at, source=ref_string(art, p),
+            declaration={"model.research_state": (r.get("model") or {}).get("research_state"), "prospective.role": role},
+            source_updated_at=r.get("generated_at"),
             p_home=pr.get("home_win_prob"), margin_home=pr.get("margin"), total=pr.get("total"),
             home_pts=pr.get("home_score"), away_pts=pr.get("away_score"), flags=flags,
             detail={"site": gm.get("site"), "margin_sd": pr.get("margin_sd"), "total_sd": pr.get("total_sd"),
                     "possessions": pr.get("possessions")}))
     return {"artifact": art, "model_version": incumbent, "projected_at": newest,
             "bet_authority": "RESEARCH_ONLY (cbb app health.bet_authority)",
-            "authority_note": active.get("note"), "games": games, "skipped_records": skipped,
+            "authority_note": active.get("note"), "declaration": games[0]["source_declaration"] if games else None, "games": games, "skipped_records": skipped,
             "config_source": artifact(src["config"], ACTIVE)}

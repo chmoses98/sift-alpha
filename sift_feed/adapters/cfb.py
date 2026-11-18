@@ -22,7 +22,8 @@ def build(src, now):
     idx = src["prod"].read_json(INDEX)
     art = artifact(src["prod"], INDEX)
     out = {"artifact": art, "model_version": None, "projected_at": None, "bet_authority": None,
-           "authority_note": None, "games": []}
+           "authority_note": None, "games": [], "source_class": RESEARCH,
+           "declaration": {"contains_model_projections": idx.get("contains_model_projections")}}
     if idx.get("contains_model_projections") is False:
         out.update(status="unavailable", reason="CFB production pipeline publishes no model projections "
                    "(cfb_execution_index.contains_model_projections=false); see research block")
@@ -44,7 +45,8 @@ def research(s, now):
             continue
         pts = {t.get("team"): t.get("mean") for t in g.get("teams", []) if t.get("family") == "team_points"}
         rows.append({"sport": SPORT, "game_id": str(g["game_id"]), "start_time": iso(st),
-                     "status": "research", "approval_status": RESEARCH,
+                     "source_class": RESEARCH,
+                     "source_declaration": {"model.authority": model.get("authority"), "model.role": model.get("role")},
                      "home": {"name": g.get("home"), "abbr": None}, "away": {"name": g.get("away"), "abbr": None},
                      "team_points_mean": {"home": pts.get(g.get("home")), "away": pts.get(g.get("away"))},
                      "model_version": model.get("version"),

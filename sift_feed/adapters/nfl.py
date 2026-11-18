@@ -1,8 +1,9 @@
-"""NFL production forecast: the RUN NFL handicap packet's incumbent model view, branch
+"""NFL operating forecast: the RUN NFL handicap packet's incumbent model view, branch
 `handicap-reports:latest/packet.json` (nfl-edge-finder .github/workflows/run-nfl.yml, written by
 scripts/handicap/build_report.py; the packet labels this view bucket A, "validated/production model
-view"). model_version is the packet's own `sources.model_version` (e.g. "shadow-0.4.0": that is the
-incumbent's historical name, not a shadow arm).
+view"). model_version is the packet's own `sources.model_version` (e.g. "shadow-0.4.0"). The packet
+declares `real_money_status` "NOT VALIDATED ..." and the view's caveat says it trails the market on game
+outcomes, so it classifies as operating_unapproved; the declaration is carried verbatim.
 
 NOT used: the packet's `shadow_v2`, `game_script_v2`, coherent-simulation and `market_implied*` blocks
 (research or market-derived), and the `projection-data` branch.
@@ -30,6 +31,7 @@ def build(src, now):
     pk = s.read_json(PATH)
     art = artifact(s, PATH)
     mv_top = (pk.get("sources") or {}).get("model_version")
+    decl = {"real_money_status": pk.get("real_money_status"), "sources.model_version": mv_top}
     games = []
     for g in pk.get("games", []):
         h, a = g["home_team"], g["away_team"]
@@ -53,9 +55,10 @@ def build(src, now):
             sport=SPORT, game_id=g["game_id"], start_time=g["kickoff_utc"],
             home=teams.team(SPORT, h), away=teams.team(SPORT, a),
             model_version=mv.get("model_version") or mv_top, projected_at=pk["built_at"], source=ref_string(art),
+            declaration={**decl, "model_view.model_version": mv.get("model_version"), "model_view.caveat": mv.get("caveat")},
             p_home=wp.get(h), p_away=wp.get(a), margin_home=margin, total=mv.get("model_total"),
             home_pts=score.get(h), away_pts=score.get(a), contracts=cs, flags=flags,
             derived=["projected_margin_home: -model_spread (the packet's home spread)"] if margin is not None else [],
             detail={"feature_cutoff": mv.get("feature_cutoff"), "caveat": mv.get("caveat"), "week": g.get("week")}))
     return {"artifact": art, "model_version": mv_top, "projected_at": pk["built_at"],
-            "bet_authority": pk.get("real_money_status"), "authority_note": pk.get("real_money_status"), "games": games}
+            "bet_authority": pk.get("real_money_status"), "authority_note": pk.get("real_money_status"), "declaration": decl, "games": games}

@@ -1,36 +1,26 @@
 name: SIFT projection feed (read-only JSON)
 
-# Rebuilds feed/v1/*.json (sift_feed/, schema v1) from each sport's PUBLIC production artifact and
+# Rebuilds feed/v1/*.json (sift_feed/, schema v1) from each sport's PUBLIC operating artifact and
 # force-pushes it, as a single commit, to the orphan branch `projection-feed`: the only thing it writes.
 # No secrets beyond the workflow token, no orders, no paid services, no sport repository is modified.
 #
-# It has NO schedule of its own. It runs
-#   (a) on manual dispatch, or
-#   (b) after each run of the existing 6-hourly "Publish SIFT Alpha research dashboard" workflow,
-#       ONLY when the owner sets the repository variable SIFT_FEED_AUTOPUBLISH=true (otherwise the job
-#       is skipped).
-# workflow_dispatch and workflow_run only fire for workflow files on the default branch, so nothing
-# here can run before this file is merged.
+# MANUAL ONLY: workflow_dispatch is the sole trigger (it only exists once this file is on the default
+# branch). Automatic publishing is deliberately absent and would be a later, separately approved change.
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Publish SIFT Alpha research dashboard"]
-    types: [completed]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: projection-feed
   cancel-in-progress: false
 
 jobs:
-  publish:
-    if: github.event_name == 'workflow_dispatch' || vars.SIFT_FEED_AUTOPUBLISH == 'true'
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,17 +30,60 @@ jobs:
           python-version: '3.12'
       - name: Feed tests (offline, recorded fixtures)
         run: pip install -q pytest && python -m pytest -q tests/test_sift_feed.py
-      - name: Build the feed from the public production branches (blobless, depth 1)
-        run: python -m sift_feed.build --mode remote --cache "$RUNNER_TEMP/feedcache" --out "$RUNNER_TEMP/out/feed/v1"
+      - name: Build the feed from the public source branches (blobless, depth 1)
+        run: python -m sift_feed.build --mode remote --cache "$RUNNER_TEMP/feedcache" --out out/feed/v1
+      - name: Validate the built feed (schema, labelling, size) - must pass before anything is pushed
+        run: |
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          from sift_feed import build
+          from sift_feed.schema import OPERATING, PRODUCTION, RESEARCH, SCHEMA_VERSION, classify, validate_game
+          d = Path("out/feed/v1")
+          idx = json.loads((d / "index.json").read_text())
+          errs = []
+          size = (d / "index.json").stat().st_size
+          if size >= build.INDEX_BUDGET:
+              errs.append(f"index.json {size} bytes >= {build.INDEX_BUDGET}")
+          if idx.get("schema_version") != SCHEMA_VERSION or not idx.get("generated_at") or not idx.get("max_age_note"):
+              errs.append("index header incomplete")
+          for g in idx["games"]:
+              if g["source_class"] not in (PRODUCTION, OPERATING) or g["source_class"] != classify(g["source_declaration"]):
+                  errs.append(f"{g['sport']} {g['game_id']}: label does not follow the source declaration")
+          errs += [f"research row {r['game_id']} not labelled research" for r in idx.get("research", [])
+                   if r.get("source_class") != RESEARCH]
+          for f in d.glob("*.json"):
+              if f.name != "index.json":
+                  errs += [f"{f.name} {g['game_id']}: {p}" for g in json.loads(f.read_text())["games"] for p in validate_game(g)]
+          print(f"index.json {size} bytes, {len(idx['games'])} games, {len(errs)} problems")
+          sys.exit("\n".join(errs) if errs else 0)
+          PY
       - name: Consumer check (reads only the built index.json)
         run: |
-          for t in Celtics Bruins Texans Duke; do python -m sift_feed.say "$t" --index "$RUNNER_TEMP/out/feed/v1/index.json" || true; done
+          for t in Celtics Bruins Texans Duke; do python -m sift_feed.say "$t" --index out/feed/v1/index.json || true; done
+      - run: cp feed/README.md out/feed/README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: projection-feed
+          path: out/feed
+          retention-days: 3
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: projection-feed
+          path: out/feed
       - name: Publish to projection-feed (orphan branch, one commit, force-push)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp feed/README.md "$RUNNER_TEMP/out/feed/README.md"
-          cd "$RUNNER_TEMP/out"
+          cd out
           git init -q && git checkout -q --orphan projection-feed
           git add feed
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \

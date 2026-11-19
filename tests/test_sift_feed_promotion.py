@@ -87,10 +87,12 @@ def pag_archive(tmp_path, decl, version=PAG_VERSION, games=("espn:401910007",), 
 
 
 # ------------------------------------------------------------------------------------------------ manifest
-def test_committed_manifest_promotes_nothing():
+def test_committed_manifest_promotes_exactly_the_approved_versions():
+    """ACTIVATION change (NBA): the consumer key names the approved NBA model; the producer key must ALSO be set for any game
+    to be served from them (tests below)."""
     doc = promotion.load()
-    assert {s: e["promoted"] for s, e in doc["sports"].items()} == {"NBA": None, "CFB": None}
-    assert adapters.load("NBA").sources() == adapters.load("NBA").SOURCES  # projection-data is not even read
+    promoted = {s: (e["promoted"] or {}).get("model_version") for s, e in doc["sports"].items()}
+    assert promoted == {"NBA": PAG_VERSION, "CFB": None}     # NBA only: CFB is promoted (or rolled back) by its own change
 
 
 def test_a_promotion_without_its_approval_record_is_rejected(tmp_path, monkeypatch):

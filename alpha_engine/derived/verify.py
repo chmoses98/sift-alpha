@@ -93,7 +93,7 @@ def independent_check(root, sport, f0, n_sample=40, seed=3, return_rows=False):
         if not r.field_goals_attempted > 0:
             continue
         tov = r.total_turnovers if r.total_turnovers == r.total_turnovers else r.turnovers
-        games[int(r.game_id)][int(r.team_id)] = dict(season=int(r.season), date=pd.Timestamp(r.game_date), home=str(r.team_home_away) == "home", fta=float(r.free_throws_attempted),
+        games[int(r.game_id)][int(r.team_id)] = dict(season=int(r.season), date=pd.Timestamp(r.game_date), home=str(r.team_home_away) == "home", fta=float(r.free_throws_attempted), pts=float(r.team_score),
                                                      own=r.field_goals_attempted - r.offensive_rebounds + tov + 0.44 * r.free_throws_attempted)
     rows = []                                                                    # one record per game x team with the game's realised metrics
     for gid, g in games.items():
@@ -102,7 +102,8 @@ def independent_check(root, sport, f0, n_sample=40, seed=3, return_rows=False):
         (ta, a), (tb, b) = g.items(); poss = (a["own"] + b["own"]) / 2.0; neu, ot = meta.get(gid, (0, 0))
         pace = poss * reg / (reg + 5.0 * ot)
         for tm, me, op, opp in ((ta, a, b, tb), (tb, b, a, ta)):
-            rows.append(dict(gid=gid, team=tm, opp=opp, season=me["season"], date=me["date"], site=0 if neu else (1 if me["home"] else -1), pace=pace, ftr=100 * me["fta"] / poss, d_ftr=100 * op["fta"] / poss))
+            rows.append(dict(gid=gid, team=tm, opp=opp, season=me["season"], date=me["date"], site=0 if neu else (1 if me["home"] else -1), pace=pace, ftr=100 * me["fta"] / poss, d_ftr=100 * op["fta"] / poss,
+                             ortg=100 * me["pts"] / poss, d_ortg=100 * op["pts"] / poss))
     rows.sort(key=lambda r: (r["date"], r["gid"]))
     by_ts, by_season, at = defaultdict(list), defaultdict(list), {}
     for r in rows:
@@ -140,32 +141,20 @@ def independent_check(root, sport, f0, n_sample=40, seed=3, return_rows=False):
             memo[key] = shrink([x[src] for x in prior], team, r["season"], r["date"], m, src)
         return memo[key]
 
-    def stage2(team, gid, which):
+    def adj(x, which, m):                                                        # one earlier game's opponent- and venue-adjusted value (stage 2 input)
+        lg_ = league(x["season"], x["date"], m)
+        if which == "pace":
+            o = stage1(x["opp"], x["gid"], "pace", "pace"); return x["pace"] - ((o - lg_) if o == o and lg_ == lg_ else 0.0)
+        if which == "off":
+            o = stage1(x["opp"], x["gid"], "d_" + m, m); return x[m] - x["site"] * edge(x["season"], m) - ((o - lg_) if o == o and lg_ == lg_ else 0.0)
+        o = stage1(x["opp"], x["gid"], m, m); return x["d_" + m] + x["site"] * edge(x["season"], m) - ((o - lg_) if o == o and lg_ == lg_ else 0.0)
+
+    def stage2(team, gid, which, m):
         r = at[(gid, team)]; prior = [x for x in by_ts[(team, r["season"])] if (x["date"], x["gid"]) < (r["date"], r["gid"])]
-        vals = []
-        for x in prior:
-            lg_ = league(x["season"], x["date"], "pace" if which == "pace" else "ftr")
-            if which == "pace":
-                o = stage1(x["opp"], x["gid"], "pace", "pace"); vals.append(x["pace"] - ((o - lg_) if o == o and lg_ == lg_ else 0.0))
-            elif which == "off":
-                o = stage1(x["opp"], x["gid"], "d_ftr", "ftr"); vals.append(x["ftr"] - x["site"] * edge(x["season"], "ftr") - ((o - lg_) if o == o and lg_ == lg_ else 0.0))
-            else:
-                o = stage1(x["opp"], x["gid"], "ftr", "ftr"); vals.append(x["d_ftr"] + x["site"] * edge(x["season"], "ftr") - ((o - lg_) if o == o and lg_ == lg_ else 0.0))
+        vals = [adj(x, which, m) for x in prior]
         # the previous-season target of an adjusted series is the previous season's mean of that ADJUSTED series, so recompute it the same way
-        prev_rows = by_ts.get((team, r["season"] - 1), []); m = "pace" if which == "pace" else "ftr"
-        if len(prev_rows) >= 10:
-            pv = []
-            for x in prev_rows:
-                lg_ = league(x["season"], x["date"], m)
-                if which == "pace":
-                    o = stage1(x["opp"], x["gid"], "pace", "pace"); pv.append(x["pace"] - ((o - lg_) if o == o and lg_ == lg_ else 0.0))
-                elif which == "off":
-                    o = stage1(x["opp"], x["gid"], "d_ftr", "ftr"); pv.append(x["ftr"] - x["site"] * edge(x["season"], "ftr") - ((o - lg_) if o == o and lg_ == lg_ else 0.0))
-                else:
-                    o = stage1(x["opp"], x["gid"], "ftr", "ftr"); pv.append(x["d_ftr"] + x["site"] * edge(x["season"], "ftr") - ((o - lg_) if o == o and lg_ == lg_ else 0.0))
-            target = mean(pv)
-        else:
-            target = league(r["season"], r["date"], m)
+        prev_rows = by_ts.get((team, r["season"] - 1), [])
+        target = mean([adj(x, which, m) for x in prev_rows]) if len(prev_rows) >= 10 else league(r["season"], r["date"], m)
         n = len(vals)
         if n == 0:
             return target
@@ -174,8 +163,9 @@ def independent_check(root, sport, f0, n_sample=40, seed=3, return_rows=False):
     rng = np.random.default_rng(seed); last = sorted(f0.season.unique())[-2:]
     pool = f0[f0.season.isin(last)]; samp = pool.iloc[rng.choice(len(pool), size=min(n_sample, len(pool)), replace=False)]
     out = {"n_rows": int(len(samp)), "seasons": [int(s) for s in last], "method": "plain-Python loops over raw parquet rows; separate possession, overtime, league, venue, shrink and two-stage code", "columns": {}}
-    for col, which in (("pace_pre", "pace"), ("off_ftr100_pre", "off"), ("def_ftr100_pre", "def")):
-        d = [abs(stage2(int(r.team), int(r.game_id), which) - getattr(r, col)) for r in samp.itertuples(index=False) if (int(r.game_id), int(r.team)) in at]
+    # pace, free-throw rate and points per 100 possessions (the core of adj_off / adj_def and every expected-points column); all three use the default half-life and shrink weight
+    for col, which, m in (("pace_pre", "pace", "pace"), ("off_ftr100_pre", "off", "ftr"), ("def_ftr100_pre", "def", "ftr"), ("off_ortg_pre", "off", "ortg"), ("def_ortg_pre", "def", "ortg")):
+        d = [abs(stage2(int(r.team), int(r.game_id), which, m) - getattr(r, col)) for r in samp.itertuples(index=False) if (int(r.game_id), int(r.team)) in at]
         out["columns"][col] = {"n": len(d), "max_abs_diff": float(max(d)), "ok": bool(max(d) < 1e-6)}
     out["ok"] = all(v["ok"] for v in out["columns"].values())
     return out
@@ -308,13 +298,56 @@ def run(paths: dict, repos=None) -> dict:
                                                                   if ci["inputs"][f"{i['sport']}:{i['id']}"].get("blockers")),
                          "note": "calculation_only = the keyword-mapped raw classes are graded present and no builder is verified yet (an estimate, not a promise that each is computable); acquisition_gap = at least one required raw data class is graded absent. "
                                  "pending_promotion counts the builder-verified catalog inputs of this artifact as computed; the certified ledger changes only through the foundation replay."}
+    attach_governance(doc)
     OUT.write_text(json.dumps(doc, indent=1, default=str))
     return doc
 
 
+VC = ROOT / "research/input_research/data_foundation/verified_coverage.json"
+OPERATING = ROOT / "sift_feed/operating_models.json"
+FOUNDATION_FAMILY_FILES = ("NBA_derived.json", "CBB_derived.json")      # foundation replay of THIS builder (data_foundation/verification/replay_ext)
+
+
+def attach_governance(doc: dict) -> dict:
+    """Three separate questions per input, read from the committed ledgers (never written here):
+    calculated  = this engine built it and its own checks passed (status COMPUTED_*);
+    certified   = the data foundation's verified_coverage ledger holds VERIFIED_FULL / VERIFIED_PARTIAL / VERIFIED_PROXY for the catalog key, and whether that rests on THIS builder's replay;
+    consumed    = an operating (promoted) model in sift_feed/operating_models.json reads it. No operating model imports alpha_engine.derived, so this is false for every input."""
+    vc = {r["key"]: r for r in json.loads(VC.read_text())["rows"]} if VC.exists() else {}
+    ops = json.loads(OPERATING.read_text())["sports"] if OPERATING.exists() else {}
+    ext_dir = VC.parent / "verification/replay_ext"
+    mine = set()
+    for fn in FOUNDATION_FAMILY_FILES:
+        if (ext_dir / fn).exists():
+            mine |= {f"{json.loads((ext_dir / fn).read_text())['sport']}:{k}" for k in json.loads((ext_dir / fn).read_text())["inputs"]}
+    for i in doc["inputs"]:
+        key = f"{i['sport']}:{i['id']}"; row = vc.get(key)
+        if i["kind"] != "catalog":
+            cert = {"status": "NOT_IN_CATALOG", "certified": False, "basis": "proposed input outside the approved catalog: no certification path until the catalog adds it"}
+        else:
+            vs = row["verified_status"] if row else "NO_LEDGER_ROW"; ev = (row or {}).get("evidence") or {}
+            cert = {"status": vs, "certified": vs in ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY"), "by_this_builder": key in mine and bool(ev.get("promoted_from")),
+                    "promoted_from": ev.get("promoted_from"), "full_candidate": bool(ev.get("full_candidate")), "limits": ev.get("limits", [])}
+        i["certification"] = cert
+        if i["kind"] == "catalog":
+            i["ledger_promotion"] = ("CERTIFIED_BY_THIS_BUILDER" if cert.get("by_this_builder") else "CERTIFIED_BY_EARLIER_BUILDER") if cert["certified"] else \
+                ("NOT_PROMOTABLE_UNDER_LEDGER_RULES_" + cert["status"] if cert["status"] in ("BLOCKED_CONTESTED", "BLOCKED_CONFIRMED", "BLOCKED_BY_POLICY", "DOWNGRADED_BY_VERIFIER", "PIT_QUARANTINED") else "PENDING_FOUNDATION_REPLAY")
+        op = (ops.get(i["sport"]) or {}).get("promoted") or {}
+        i["operating_model"] = {"consumed": False, "operating_model": op.get("model_version"), "basis": "no operating model imports alpha_engine.derived; adoption needs a separate approved model change"}
+    cat = [i for i in doc["inputs"] if i["kind"] == "catalog"]
+    doc["governance"] = {"calculated": sum(1 for i in doc["inputs"] if i["status"].startswith("COMPUTED")), "catalog_inputs": len(cat),
+                         "certified_in_foundation": sum(1 for i in cat if i["certification"]["certified"]), "certified_by_this_builder": sum(1 for i in cat if i["certification"].get("by_this_builder")),
+                         "certification_status": dict(Counter(i["certification"]["status"] for i in cat)), "consumed_by_operating_model": 0,
+                         "ledger": "research/input_research/data_foundation/verified_coverage.json (foundation replay + blind exact match + promotion rules); read only"}
+    return doc
+
+
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("--nba"); ap.add_argument("--cbb"); ap.add_argument("--repos")
-    a = ap.parse_args(); d = run({k: v for k, v in (("NBA", a.nba), ("CBB", a.cbb)) if v}, a.repos)
+    ap = argparse.ArgumentParser(); ap.add_argument("--nba"); ap.add_argument("--cbb"); ap.add_argument("--repos"); ap.add_argument("--governance-only", action="store_true")
+    a = ap.parse_args()
+    if a.governance_only:          # refresh certification / consumption from the committed ledgers without rebuilding features
+        d = attach_governance(json.loads(OUT.read_text())); OUT.write_text(json.dumps(d, indent=1, default=str)); print(json.dumps(d["governance"], indent=1)); raise SystemExit(0)
+    d = run({k: v for k, v in (("NBA", a.nba), ("CBB", a.cbb)) if v}, a.repos)
     print(json.dumps({"summary": d["summary"], "accounting": d["accounting"]}, indent=1))
     for i in d["inputs"]:
         print(i["sport"], i["id"], i["status"], "| was", i["previous_status"], "|", i["predictive"]["label"], [(e["pred"], e["improvement_pct"]) for e in i["predictive"]["tests"]], "|", i["lineage"]["model_adoption"]["status"])

@@ -11,8 +11,22 @@ Nothing here is consumed by a projection model, deployed, scheduled or traded.
 | `registry.py` | One record per input: catalog id (or a proposed new input), level against the catalog definition, what is done, what is missing, raw datasets, Kalshi families, out-of-sample evidence triples. |
 | `verify.py` | Leak replay, independent recomputation, coverage, out-of-sample evidence, adoption probe; writes `research/audit/derived_inputs.json` only. |
 
-## Relationship to the certified ledger
-`research/input_research/computable_inputs.json` and the data-foundation matrix built on it are **not** written by this engine. That ledger has its own promotion process (foundation replay, two blind rechecks, rights tiering, promotion audit), and eleven governance tests fail if statuses are injected into it directly. Each catalog input here is therefore `PENDING_FOUNDATION_REPLAY`; the artifact reports the certified counts and the counts after promotion side by side. Promotion is the next step and needs the foundation replay to be pointed at this builder.
+## Calculated, certified, consumed: three separate answers
+* **Calculated** (28: NBA 13, CBB 15): this engine built the input and its own checks passed (leak replay, plain-Python recomputation of pace, FT rate and points per 100 possessions, coverage). Not certification.
+* **Certified** (15 of the 18 catalog inputs): the data-foundation ledger `research/input_research/data_foundation/verified_coverage.json` holds VERIFIED_PARTIAL. It is written only by `verified_coverage.build` (via `regenerate --apply`); this engine reads it.
+  * 9 promoted on this builder's evidence (REQUIRES_COLLECTION -> VERIFIED_PARTIAL): nba.ot_prob_ratings_margin, nba.team_points_variance_by_style, cbb.four_factors, cbb.pace_elasticity_to_opponent, cbb.opp_foul_propensity_ft_points,
+    cbb.opp_three_defense_persistence_split, cbb.total_variance_by_style, cbb.margin_total_covariance, cbb.team_points_margin_coupling.
+  * 6 were already VERIFIED_PARTIAL from earlier builders (features/nba_ext, features/cbb_ext): nba.four_factors_matchup, nba.team_three_attempt_matchup, nba.three_point_variance_load, cbb.tempo, cbb.adj_off, cbb.adj_def. This builder is not declared for them (the ledger rejects duplicate replay ids).
+  * 3 are not promotable under the ledger's rules and were left alone: nba.joint_pace_interaction and nba.game_pace_composition (BLOCKED_CONTESTED) and nba.margin_heteroscedasticity (DOWNGRADED_BY_VERIFIER; the reason, "3 seasons vs 5", predates the 25-season vault archive). All three pass the replay and the blind match below; changing their status is an owner decision.
+  * cbb.four_factors implements every clause of its catalog text but stays PARTIAL: the promotion audit stops it at S2 (the audit grades it PIT_COARSE), S4 (no measured catalog history) and there is no FULL certification record.
+* **Consumed by an operating model**: 0. No promoted model in `sift_feed/operating_models.json` imports `alpha_engine.derived`. The adoption column is a keyword probe of projection code only.
+* `research/input_research/computable_inputs.json` (the Milestone-2 catalog computability ledger) is not written by this engine; the panel shows it separately.
+
+## Certification evidence (foundation process)
+1. **Replay** (`replay_ext_run` families `nba_derived`, `cbb_derived` -> `verification/replay_ext/{NBA,CBB}_derived.json`; adapter `derived/foundation_ext.py`): determinism, truncation at 3 cuts, future perturbation with 3 seeds, own-game scramble, non-vacuity. 12 of 12 pass. The non-vacuity test uses `perturb_nv` (Phase 15 precedent): a within-season permutation cannot move a pooled seasonal overtime rate, so 30% of the block's games are also marked double-overtime.
+2. **Blind exact match** (`compare_independent` -> `verification/independent/{NBA,CBB}_derived.json`): one fresh headless Claude Code session in an empty directory with only `blind_briefs/briefs_derived_bball.md` and a copy of the raw parquet; 38 of 38 columns MATCH (rtol = atol = 1e-9, all 308,514 keys, identical NaN patterns) on the first comparison. Isolation audit and the blind implementation: `blind_briefs/derived_bball_blind_runs/`.
+3. **Promotion audit** (`full_promotion_audit`): every promoted input stays PARTIAL; first failed stage recorded per input.
+Defect fixed while writing the brief: the early-season z-score switch counted rows in file order (order dependent at the 200-row boundary); it now counts rows dated strictly before the game.
 
 ## Run
 ```

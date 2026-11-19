@@ -113,7 +113,8 @@ class Artifact(unittest.TestCase):
         for i in self.d["inputs"]:
             key = f"{i['sport']}:{i['id']}"
             if i["kind"] == "catalog":
-                self.assertIn((i["sport"], i["id"]), ids); self.assertEqual(i["ledger_promotion"], "PENDING_FOUNDATION_REPLAY")
+                self.assertIn((i["sport"], i["id"]), ids)
+                self.assertEqual(i["ledger_promotion"].startswith("CERTIFIED"), i["certification"]["certified"], key)
                 self.assertEqual(self.ci[key]["status"], i["previous_status"], f"{key}: the certified ledger must still hold the earlier status")
                 self.assertNotEqual(self.ci[key].get("builder"), "alpha_engine.derived.basketball")
             else:
@@ -130,6 +131,40 @@ class Artifact(unittest.TestCase):
             self.assertEqual(a["not_computed"], a["calculation_only_no_raw_blocker"] + a["acquisition_gap_raw_class_absent"])
         self.assertEqual(acc["pending_promotion"]["verified_computed"] - acc["certified"]["verified_computed"], n_new)
         self.assertEqual(acc["certified"]["verified_computed"], sum(1 for v in self.ci.values() if v["status"].startswith("COMPUTED")))
+
+    def test_calculated_certified_and_consumed_are_separate(self):
+        vc = {r["key"]: r["verified_status"] for r in json.loads(V.VC.read_text())["rows"]}
+        for i in self.d["inputs"]:
+            key = f"{i['sport']}:{i['id']}"; c = i["certification"]
+            self.assertFalse(i["operating_model"]["consumed"], key)
+            if i["kind"] == "catalog":
+                self.assertEqual(c["status"], vc[key], f"{key}: certification is read from the foundation ledger, never asserted")
+                self.assertEqual(c["certified"], vc[key] in ("VERIFIED_FULL", "VERIFIED_PARTIAL", "VERIFIED_PROXY"))
+            else:
+                self.assertFalse(c["certified"], key)
+        g = self.d["governance"]
+        self.assertEqual(g["consumed_by_operating_model"], 0); self.assertEqual(g["certified_in_foundation"], sum(1 for i in self.d["inputs"] if i["certification"]["certified"]))
+
+
+class FoundationAdapter(unittest.TestCase):
+    def test_declares_only_catalog_inputs_no_earlier_replay_covers(self):
+        from alpha_engine.derived import ext_cbb, ext_nba
+        ext = ROOT / "research/input_research/data_foundation/verification/replay_ext"
+        for m in (ext_nba, ext_cbb):
+            mine = {s.catalog_id for s in m.specs()}
+            self.assertTrue(mine)
+            for f in ext.glob(f"{m.SPORT}_*.json"):
+                if f.name != f"{m.SPORT}_derived.json":
+                    self.assertFalse(mine & set(json.loads(f.read_text())["inputs"]), f"{f.name}: duplicate ids would make the ledger build fail")
+            for s in m.specs():
+                self.assertNotIn("rest_min_pre", s.columns); self.assertEqual(s.missing == [], s.level == "FULL", s.catalog_id)
+
+    def test_adapter_output_is_the_engine_output(self):
+        from alpha_engine.derived import foundation_ext as F
+        raw = synth(seasons=4); out = F.compute(raw, "CBB")["team"]; f = B.features(B.team_games(raw, "CBB"), "CBB").reset_index(drop=True)
+        for c in out.columns:
+            if c not in ("game_id", "team", "date", "season"):
+                np.testing.assert_allclose(out[c].to_numpy(float), f[c].to_numpy(float), rtol=0, atol=0, equal_nan=True)
 
 
 if __name__ == "__main__":

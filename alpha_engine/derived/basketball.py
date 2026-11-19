@@ -262,7 +262,9 @@ def features(t: pd.DataFrame, sport: str) -> pd.DataFrame:
         g["_v"] = f[col]; g["_v2"] = f[col] ** 2
         mu = prior_date_mean(g, "date", "_v", by="season")
         sd = np.sqrt((prior_date_mean(g, "date", "_v2", by="season") - mu ** 2).clip(lower=0))
-        seen = g.groupby("season", sort=False).cumcount()                                 # rows earlier in the season (chronological order; not outcome dependent)
+        per_day = g.groupby(["season", "date"]).size().rename("n").reset_index()            # rows on STRICTLY EARLIER dates of the season (row-order free; not outcome dependent)
+        per_day["seen"] = per_day.groupby("season").n.cumsum() - per_day.n
+        seen = g[["season", "date"]].merge(per_day, on=["season", "date"], how="left")["seen"].set_axis(g.index)
         ss = g.groupby("season")["_v"].agg(["mean", "std"])
         early = seen < 200                                                                 # too few earlier rows this season: use the previous season's distribution
         mu = mu.where(~early, g.season.map({k: ss["mean"].get(k - 1, np.nan) for k in ss.index}))

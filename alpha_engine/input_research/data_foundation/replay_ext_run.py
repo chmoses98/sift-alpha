@@ -102,6 +102,11 @@ def main(a=None) -> int:
         X = X3 if fam == "nfl_pbp3" else R3
         raw = X.load_raw(a[1], a[2], a[3]); out = a[4]
         r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam in ("nba_derived", "cbb_derived"):  # shared NBA/CBB derived-input engine (alpha_engine.derived); args RESTORED_VAULT_DIR OUT.json
+        from ...derived import ext_cbb, ext_nba
+        X = ext_nba if fam == "nba_derived" else ext_cbb
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, X.SPORT, X.TABLES, games_table="box", games_date_col="game_date", quick=quick)
     else:
         raise SystemExit("unknown family " + fam)
     Path(out).write_text(json.dumps(r, default=str, indent=0)); print("replayed", len(r["inputs"]), r["seconds"], "s"); return 0

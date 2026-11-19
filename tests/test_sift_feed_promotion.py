@@ -148,8 +148,8 @@ def test_nba_newest_run_without_a_block_is_not_replaced_by_an_older_block(tmp_pa
 
 
 def test_nba_producer_key_alone_changes_nothing_and_rollback_is_byte_identical(tmp_path, monkeypatch):
-    baseline = run("NBA")
     manifest(tmp_path, monkeypatch, NBA=None)  # consumer key off; the producer may be activated, it is never read
+    baseline = run("NBA")
     assert run("NBA", {"promoted": pag_archive(tmp_path, PAG_OPERATING)}) == baseline
     assert baseline[0]["promotion"] is None
 
@@ -197,8 +197,8 @@ def test_cfb_one_key_alone_stays_unavailable(tmp_path, monkeypatch, decl, versio
 
 
 def test_cfb_rollback_is_identical_to_the_incumbent(tmp_path, monkeypatch):
-    baseline = run("CFB")
     manifest(tmp_path, monkeypatch, CFB=None)
+    baseline = run("CFB")
     root, _ = oae_projection(tmp_path, OAE_OPERATING)
     summary, gs, rs = run("CFB", {"research": root})
     assert (summary, gs) == (baseline[0], baseline[1])

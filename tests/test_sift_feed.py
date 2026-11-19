@@ -284,7 +284,7 @@ def test_production_declaration_is_phrased_as_sift_projects(built, tmp_path, cap
     monkeypatch.setattr(say, "datetime", type("D", (), {"now": staticmethod(lambda tz=None: NOW)}))
     assert say.main([g["home"]["abbr"], "--index", str(p), "--sport", "NBA"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("SIFT projects ") and "The source declares" not in out
+    assert out.startswith("SIFT's current operating NBA model projects ") and "The source declares" not in out
 
 
 def test_validate_rejects_optimistic_label():

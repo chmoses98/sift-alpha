@@ -81,7 +81,8 @@ def sentence(idx, g, side, other, now=None):
     total = g.get("projected_total")
     where = "vs" if side == "home" else "at"
     cls = g.get("source_class")
-    who = "SIFT" if cls == PRODUCTION else f"SIFT's operating (not production-approved) {g['sport']} model"
+    who = (f"SIFT's current operating {g['sport']} model" if cls == PRODUCTION
+           else f"SIFT's operating (not production-approved) {g['sport']} model")
     parts = [f"{who} projects {_name(me)} {line_s} {where} {_name(opp)}"]
     parts.append(f"total {total}" if total is not None else "total not published")
     lead = ", ".join(parts)

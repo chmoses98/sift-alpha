@@ -44,7 +44,7 @@ itself (`generated_at`) is old, and never present a game whose `start_time` has 
 
 ## How ChatGPT should use it
 1. Fetch `index.json`; find the team in `games[]` (match `abbr` or `name`).
-2. `production`: "SIFT projects Celtics -3.4 at Nuggets ...". `operating_unapproved`: "SIFT's operating
+2. `production`: "SIFT's current operating NBA model projects Celtics -3.4 at Nuggets ...". `operating_unapproved`: "SIFT's operating
    (not production-approved) NBA model projects ...", plus the declaration. Always give `projected_at`.
 3. Never quote a `research[]` row unless explicitly asked, and then label it research.
 Local check: `python -m sift_feed.say Celtics [--research]` (reads only `feed/v1/index.json`, ages vs now).
@@ -54,3 +54,13 @@ Local check: `python -m sift_feed.say Celtics [--research]` (reads only `feed/v1
   labelling) -> push the orphan `projection-feed` branch (the only job with `contents: write`).
 - Automatic publishing is not included; it would be a later, separately approved change.
 - Confirm the source definitions and classes above.
+
+## Model promotion (two keys)
+`sift_feed/operating_models.json` is the consumer key: `promoted: null` (today, every sport) means each sport is served from its
+incumbent. A promotion names an exact `model_version` with `approved_by`, `approved_at` and `approval_ref`. A game is then served
+from the promoted model only when its newest pregame block from the producer also declares itself activated as the operating
+forecast (producer key: NBA `NBA_PAG_OPERATING=1`, CFB `CFB_OAE_OPERATING=1`); its `source_class` still derives from that block's
+own declaration. Every other game is served from the incumbent with a `fallback_incumbent: <reason>` flag (CFB has no incumbent,
+so it stays `unavailable` with the reason). `sports.<SPORT>.promotion` reports `state` (`active` / `partial` /
+`awaiting_producer_activation`), the approval and the counts. Rollback: revert the manifest entry, or unset the producer key.
+Tests: `tests/test_sift_feed_promotion.py`.

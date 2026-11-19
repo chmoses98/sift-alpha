@@ -19,11 +19,13 @@ INDEX_BUDGET = 150_000
 TRIM_HOURS = 36
 RETRIEVAL = "https://raw.githubusercontent.com/chmoses98/sift-alpha/projection-feed/feed/v1/index.json"
 USAGE = [
-    "source_class=production: say 'SIFT projects ...'. source_class=operating_unapproved: say 'SIFT's operating "
+    "source_class=production: say 'SIFT's current operating <SPORT> model projects ...'. source_class=operating_unapproved: say 'SIFT's operating "
     "(not production-approved) <SPORT> model projects ...' and never call it a production forecast.",
     "research[] rows (source_class=research) are not SIFT forecasts; quote them only if explicitly asked, labelled research.",
     "Always give projected_at (UTC) and model_version. Recompute age against the current time (see max_age_note).",
     "Null means the model did not publish that number; do not fill it in or compute it.",
+    "sports.<SPORT>.promotion (when present) names the owner-approved promoted model; games flagged fallback_incumbent come "
+    "from the incumbent model, each with its own model_version.",
     "Forecasts only: no betting recommendation or authority is implied.",
 ]
 MAX_AGE_NOTE = ("age_hours_at_build and stale are as of generated_at only. Recompute age = now - projected_at against "
@@ -70,14 +72,16 @@ def finalize(sport, mod, res, now):
                "stale_after_hours": mod.MAX_AGE_HOURS, "source_updated_at": art.get("committed_at"),
                "bet_authority": res.get("bet_authority"), "authority_note": res.get("authority_note"),
                "source": res.get("artifact"), "game_count": len(games), "detail_file": f"{sport.lower()}.json",
-               "derivations": sorted({d for g in games for d in g["derived"]})}
+               "derivations": sorted({d for g in games for d in g["derived"]}),
+               "promotion": res.get("promotion")}
     return summary, games, res.get("research") or []
 
 
 def build_sport(sport, make_source, now):
     mod = adapters.load(sport)
     try:
-        srcs = {k: make_source(repo, branch) for k, (repo, branch) in mod.SOURCES.items()}
+        spec = mod.sources() if hasattr(mod, "sources") else mod.SOURCES
+        srcs = {k: make_source(repo, branch) for k, (repo, branch) in spec.items()}
         res = mod.build(srcs, now)
     except Exception as e:  # one sport failing never blocks the others
         res = {"status": "unavailable", "reason": f"adapter error: {type(e).__name__}: {e}"[:300], "games": []}

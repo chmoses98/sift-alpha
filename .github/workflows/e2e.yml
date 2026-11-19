@@ -1,7 +1,7 @@
 name: Dashboard e2e (Playwright desktop Chrome + iPhone WebKit)
 
 # Runs the existing tests/*.spec.mjs suite (it previously ran nowhere in CI) against the Vite dev server in real Chromium (desktop) and WebKit (iPhone 13, 390px).
-# Read-only: no deploy, no secrets, no network calls beyond installing browsers.
+# Read-only: no deploy, no secrets, no network calls beyond pulling the pinned Playwright image and npm packages.
 on:
   pull_request:
     paths:
@@ -24,8 +24,19 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # *** WHY A CONTAINER ***
+    # `npx playwright install --with-deps chromium webkit` on a bare runner apt-installs ~126 MB of WebKit system
+    # libraries. On 2026-11-18 (PR #91, run 44412441208) the runner's Ubuntu mirror served them at 91 kB/s: the install
+    # took 23 min 4 s of the job's 25, and the suite was cancelled 49 s after it started. The previous run failed
+    # outright because ubuntu-latest had moved to 26.04, for which Playwright 1.56 publishes no browser build.
+    # The official Playwright image carries the exact browser builds AND their OS libraries for the pinned
+    # @playwright/test, so nothing is downloaded from apt or the Playwright CDN and the runner OS no longer matters.
+    # The tag MUST equal package.json's @playwright/test version; the first step fails fast if it does not.
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.0-noble
+      options: --ipc=host
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,9 +44,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: npm ci --no-audit --no-fund
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run e2e
+      - name: Install npm dependencies
+        timeout-minutes: 8
+        run: npm ci --no-audit --no-fund
+      - name: Check the image's browsers match the pinned @playwright/test
+        timeout-minutes: 2
+        run: |
+          pinned=$(node -p "require('@playwright/test/package.json').version")
+          image=1.56.0
+          if [ "$pinned" != "$image" ]; then
+            echo "::error::package.json pins @playwright/test ${pinned} but the job runs mcr.microsoft.com/playwright:v${image}-noble; update the image tag"
+            exit 1
+          fi
+          npx playwright --version
+      - name: Run the e2e suite (desktop Chrome + iPhone WebKit)
+        timeout-minutes: 20
+        run: npm run e2e -- --trace off
+        env:
+          CI: 'true'
+      - name: Re-run failures with traces
+        if: failure()
+        timeout-minutes: 10
+        run: npm run e2e -- --last-failed --trace on
         env:
           CI: 'true'
       - uses: actions/upload-artifact@v4

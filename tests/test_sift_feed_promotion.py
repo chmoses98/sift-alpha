@@ -59,7 +59,7 @@ def run(sport, extra=None, now=NOW):
     return build.finalize(sport, mod, mod.build(srcs(sport, extra), now), now)
 
 
-def pag_archive(tmp_path, decl, version=PAG_VERSION, games=("espn:401910007",), newest_without_block=False):
+def pag_archive(tmp_path, decl, version=PAG_VERSION, games=("espn:401910007",), newest_without_block=False, mutate=None):
     """projection-data game_forecasts/nba/<day>/*.jsonl.gz with a pf record (+ pag_v1) for the given games."""
     root = tmp_path / "projection-data"
     rows = []
@@ -74,6 +74,8 @@ def pag_archive(tmp_path, decl, version=PAG_VERSION, games=("espn:401910007",), 
                                      "settlement_basis": "regulation_only: Q1+Q2"},
                               "Q4": {"total_mean": 55.0, "home_mean": 28.0, "away_mean": 27.0, "published": ["total"],
                                      "settlement_basis": "regulation_only: Q4"}}}}}
+        if mutate is not None:
+            mutate(rec["pag_v1"])
         rows.append(rec)
         if newest_without_block:
             later = {k: v for k, v in rec.items() if k != "pag_v1"}
@@ -213,3 +215,98 @@ def test_promotion_never_changes_the_research_rule(tmp_path, monkeypatch):
     spec = adapters.load("NBA").sources()
     assert spec["prod"] == ("nba-edge-finder", "data-archive") and spec["promoted"][1] == "projection-data"
     assert copy.deepcopy(adapters.load("NBA").SOURCES) == {"prod": ("nba-edge-finder", "data-archive")}
+
+
+# ------------------------------------------------------------------------------------------------ invalid / unavailable forecasts
+def _set(path, value):
+    def f(b):
+        d = b
+        for k in path[:-1]:
+            d = d[k]
+        d[path[-1]] = value
+    return f
+
+
+INVALID_PAG = {
+    "p_nan": (("full_game", "p_home_win"), float("nan")), "p_inf": (("full_game", "p_home_win"), float("inf")),
+    "p_above_1": (("full_game", "p_home_win"), 1.3), "p_zero": (("full_game", "p_home_win"), 0.0),
+    "p_missing": (("full_game", "p_home_win"), None), "p_string": (("full_game", "p_home_win"), "0.7"),
+    "margin_nan": (("full_game", "margin_mean"), float("nan")), "margin_neg_inf": (("full_game", "margin_mean"), float("-inf")),
+    "margin_absurd": (("full_game", "margin_mean"), 400.0), "sd_zero": (("full_game", "margin_sd"), 0.0),
+    "sign_incoherent": (("full_game", "margin_mean"), -8.4),          # p_home 0.71 but the home side is the underdog
+    "period_nan": (("periods", "segments", "H1", "total_mean"), float("nan")),
+    "period_negative": (("periods", "segments", "Q4", "home_mean"), -3.0),
+}
+
+
+@pytest.mark.parametrize("case", sorted(INVALID_PAG))
+def test_nba_invalid_promoted_block_falls_back_to_the_incumbent(tmp_path, monkeypatch, case):
+    manifest(tmp_path, monkeypatch, NBA=PAG_VERSION)
+    path, value = INVALID_PAG[case]
+    summary, gs, _ = run("NBA", {"promoted": pag_archive(tmp_path, PAG_OPERATING, mutate=_set(path, value))})
+    cle = next(g for g in gs if g["game_id"] == "espn:401910007")
+    assert cle["model_version"] == "nba-sim-0.1.0" and cle["source_class"] == OPERATING
+    assert any(f.startswith("fallback_incumbent: promoted block failed validation") for f in cle["flags"]), cle["flags"]
+    assert summary["promotion"]["games_served"] == 0 and summary["promotion"]["state"] == "awaiting_producer_activation"
+    assert summary["model_version"] == "nba-sim-0.1.0" and all(validate_game(g) == [] for g in gs)
+    index, per = build.assemble({"NBA": (summary, gs, [])}, NOW)
+    build.dumps(index), build.dumps(per["NBA"])                     # strict JSON: would raise on NaN / Infinity
+
+
+def test_nba_producer_withheld_stub_falls_back_to_the_incumbent(tmp_path, monkeypatch):
+    """The producer guard's `unavailable` stub (nba-edge-finder pag.unavailable_block) is never served, even with both keys."""
+    manifest(tmp_path, monkeypatch, NBA=PAG_VERSION)
+    stub = {"activation": "unavailable", "authority": "none", "betting_authority": "NONE", "role": "unavailable",
+            "operating_forecast": False}
+
+    def to_stub(b):
+        for k in ("full_game", "periods"):
+            b.pop(k)
+        b.update(stub, available=False, unavailable_reason=["non-finite values at ['$.full_game.p_home_win']"])
+    summary, gs, _ = run("NBA", {"promoted": pag_archive(tmp_path, PAG_OPERATING, mutate=to_stub)})
+    cle = next(g for g in gs if g["game_id"] == "espn:401910007")
+    assert cle["model_version"] == "nba-sim-0.1.0"
+    assert any(f.startswith("fallback_incumbent: producer withheld the forecast: non-finite") for f in cle["flags"])
+    assert summary["promotion"]["games_served"] == 0
+
+
+def test_nba_valid_promoted_block_is_still_served_beside_an_invalid_one(tmp_path, monkeypatch):
+    manifest(tmp_path, monkeypatch, NBA=PAG_VERSION)
+    root = pag_archive(tmp_path, PAG_OPERATING, games=("espn:401910007", "espn:401910008"))
+    f = next(root.rglob("*.jsonl.gz"))
+    rows = [json.loads(x) for x in gzip.decompress(f.read_bytes()).decode().splitlines()]
+    rows[1]["pag_v1"]["full_game"]["p_home_win"] = float("nan")
+    f.write_bytes(gzip.compress("\n".join(json.dumps(r) for r in rows).encode()))
+    summary, gs, _ = run("NBA", {"promoted": root})
+    by = {g["game_id"]: g for g in gs}
+    assert by["espn:401910007"]["model_version"] == PAG_VERSION
+    assert by["espn:401910008"]["model_version"] == "nba-sim-0.1.0"
+    assert summary["promotion"]["state"] == "partial" and summary["promotion"]["games_served"] == 1
+
+
+@pytest.mark.parametrize("field,value", [("p_home_win", float("nan")), ("expected_margin", float("inf")), ("p_home_win", 1.4),
+                                         ("p_away_win", 0.9), ("spread_home", -6.5), ("sigma_margin", -1.0)])
+def test_cfb_invalid_promoted_game_is_withheld_not_served(tmp_path, monkeypatch, field, value):
+    manifest(tmp_path, monkeypatch, CFB=OAE_VERSION)
+    root, _ = oae_projection(tmp_path, OAE_OPERATING)
+    path = root / "projections" / "cfb" / "latest.json"
+    doc = json.loads(path.read_text())
+    doc["oae_challenger"]["games"][0]["fg"][field] = value
+    path.write_text(json.dumps(doc))
+    summary, gs, _ = run("CFB", {"research": root})
+    assert gs == [] and summary["status"] == "unavailable" and "failed validation" in summary["reason"]
+    assert summary["withheld_games"] and summary["promotion"]["games_served"] == 0
+
+
+def test_finalize_withholds_an_invalid_game_instead_of_failing_the_feed():
+    mod = adapters.load("NBA")
+    res = mod.build(srcs("NBA"), NOW)
+    bad = copy.deepcopy(res["games"][0])
+    bad["game_id"] = "espn:bad"
+    bad["projected_margin_home"], bad["home_spread"], bad["spread"] = float("nan"), float("nan"), "X -nan"
+    res["games"].append(bad)
+    summary, gs, _ = build.finalize("NBA", mod, res, NOW)
+    assert "espn:bad" not in {g["game_id"] for g in gs} and len(gs) == len(res["games"]) - 1
+    assert any("espn:bad" in w and "not a finite number" in w for w in summary["withheld_games"])
+    with pytest.raises(ValueError):
+        build.dumps({"x": float("nan")})

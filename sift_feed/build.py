@@ -38,7 +38,7 @@ def finalize(sport, mod, res, now):
     """Keep upcoming games, stamp age/staleness/source_class, decide the sport status."""
     max_age = mod.MAX_AGE_HOURS * 3600
     art = res.get("artifact") or {}
-    games = []
+    games, withheld = [], list(res.get("withheld") or [])
     for g in res.get("games", []):
         st = parse_ts(g["start_time"])
         if st is None or st <= now:
@@ -48,8 +48,9 @@ def finalize(sport, mod, res, now):
         g["stale"] = age is None or age > max_age
         g["source_updated_at"] = g["source_updated_at"] or art.get("committed_at")
         problems = validate_game(g)
-        if problems:
-            raise ValueError(f"{sport} {g['game_id']}: {problems}")
+        if problems:   # an invalid game is withheld (and named in the summary); it never blocks the sport or the feed
+            withheld.append(f"game {g.get('game_id')}: withheld, failed validation: {'; '.join(problems[:3])}"[:300])
+            continue
         games.append(g)
     games.sort(key=lambda g: (g["start_time"], g["game_id"]))
     proj = res.get("projected_at")
@@ -74,6 +75,8 @@ def finalize(sport, mod, res, now):
                "source": res.get("artifact"), "game_count": len(games), "detail_file": f"{sport.lower()}.json",
                "derivations": sorted({d for g in games for d in g["derived"]}),
                "promotion": res.get("promotion")}
+    if withheld:
+        summary["withheld_games"] = withheld[:20]
     return summary, games, res.get("research") or []
 
 
@@ -120,7 +123,7 @@ def assemble(results, now):
 
 
 def dumps(obj):
-    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)   # strict JSON: NaN/Infinity raise
 
 
 def size(obj):

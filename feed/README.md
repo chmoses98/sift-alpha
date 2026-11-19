@@ -28,7 +28,10 @@ As built 2026-11-18 no sport's artifact declares production authority:
 - Top level: `schema_version`, `generated_at` (UTC), `max_age_note`, `stale_after_hours{SPORT}`, `usage`,
   `sports{SPORT: summary}`, `games[]`, `research[]`.
 - Sport summary: `status` ok | stale | offseason | unavailable, `reason`, `source_class`, `source_declaration`,
-  `model_version`, `projected_at`, `age_hours_at_build`, `stale_after_hours`, `source_updated_at`, `source`.
+  `model_version`, `projected_at`, `age_hours_at_build`, `stale_after_hours`, `source_updated_at`, `source`;
+  `withheld_games` (only when present): games withheld because their numbers failed validation (non-finite,
+  probability outside [0, 1], probabilities that do not sum to 1, spread sign or winner inconsistent with the margin).
+  A withheld game is never published; the feed is strict JSON (no NaN / Infinity).
 - Game: `sport, game_id, start_time, source_class, source_declaration, home/away{name,abbr}, projected_winner,
   win_probability{home,away}, projected_margin_home, home_spread, spread ("BOS -8.4", favourite negative; "PK"),
   projected_total, team_totals{home,away}, period_projections, model_version, projected_at,
@@ -60,7 +63,9 @@ Local check: `python -m sift_feed.say Celtics [--research]` (reads only `feed/v1
 incumbent. A promotion names an exact `model_version` with `approved_by`, `approved_at` and `approval_ref`. A game is then served
 from the promoted model only when its newest pregame block from the producer also declares itself activated as the operating
 forecast (producer key: NBA `NBA_PAG_OPERATING=1`, CFB `CFB_OAE_OPERATING=1`); its `source_class` still derives from that block's
-own declaration. Every other game is served from the incumbent with a `fallback_incumbent: <reason>` flag (CFB has no incumbent,
+own declaration and its numbers pass validation (finite, probability in (0, 1), win probability and margin favouring the
+same side, finite non-negative period totals); a producer `available: false` stub is never served. Every other game is served
+from the incumbent with a `fallback_incumbent: <reason>` flag (CFB has no incumbent,
 so it stays `unavailable` with the reason). `sports.<SPORT>.promotion` reports `state` (`active` / `partial` /
 `awaiting_producer_activation`), the approval and the counts. Rollback: revert the manifest entry, or unset the producer key.
 Tests: `tests/test_sift_feed_promotion.py`.

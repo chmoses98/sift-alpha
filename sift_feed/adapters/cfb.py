@@ -55,14 +55,22 @@ def apply_promotion(out, s, promo, now):
            f"block unavailable: {b.get('unavailable_reason')}" if not b.get("available") else
            promotion.check_block(decl, b.get("model_version"), promo))
     names = {str(g["game_id"]): g for g in pf.get("games", [])}
-    games = []
+    games, invalid = [], []
     if why is None:
         for g in b.get("games", []):
             meta = names.get(str(g["game_id"]), {})
-            fg = g["fg"]
+            fg = g.get("fg") if isinstance(g.get("fg"), dict) else {}
             periods = {seg: {k: v for k, v in d.items() if k in ("expected_margin", "expected_total", "p_home_win",
                                                                  "p_away_win")}
-                       for seg, d in (g.get("periods") or {}).items()}
+                       for seg, d in (g.get("periods") or {}).items() if isinstance(d, dict)}
+            bad = promotion.forecast_problems(fg.get("p_home_win"), fg.get("expected_margin"), fg.get("sigma_margin"),
+                                              fg.get("p_away_win"), periods)
+            if fg.get("spread_home") is not None and not (promotion.finite(fg["spread_home"]) and promotion.finite(
+                    fg.get("expected_margin")) and abs(fg["spread_home"] + fg["expected_margin"]) <= 1e-3):
+                bad.append("spread_home is not -expected_margin")
+            if bad:
+                invalid.append(f"game {g.get('game_id')}: promoted forecast failed validation: {'; '.join(bad[:3])}")
+                continue
             games.append(make_game(
                 sport=SPORT, game_id=g["game_id"], start_time=g["start_utc"],
                 home={"name": meta.get("home"), "abbr": None}, away={"name": meta.get("away"), "abbr": None},
@@ -71,13 +79,15 @@ def apply_promotion(out, s, promo, now):
                 margin_home=fg.get("expected_margin"), period_projections=periods or None,
                 flags=["promoted_model: CFB production publishes no model projection; this is the approved OAE forecast"],
                 detail={"sigma_margin": fg.get("sigma_margin"), "not_published": list((b.get("excluded") or {}))}))
-    out["promotion"] = promotion.summary(promo, len(games), [] if games or why is None else [why])
+    out["promotion"] = promotion.summary(promo, len(games), invalid + ([] if games or why is None else [why]))
+    if invalid:
+        out["withheld"] = invalid
     if games:
         out.update(status=None, reason=None, source_class=None, games=games, artifact=art, declaration=decl,
                    model_version=b["model_version"], projected_at=b.get("forecast_utc"),
                    bet_authority="NONE (forecast only)", authority_note=b.get("note"))
-    elif why is not None:
-        out["reason"] = f"{out['reason']}; promoted {promo['model_version']} not served: {why}"
+    elif why is not None or invalid:
+        out["reason"] = f"{out['reason']}; promoted {promo['model_version']} not served: {why or invalid[0]}"
 
 
 def research(s, now):

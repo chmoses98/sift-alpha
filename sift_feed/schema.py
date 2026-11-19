@@ -8,6 +8,7 @@ model itself published; each is named in the game's `derived` list:
   * projected_winner = side with the higher published win probability
 Nothing else is computed: a field the artifact does not carry is null.
 """
+import math
 import re
 from datetime import datetime, timezone
 
@@ -142,6 +143,18 @@ def contract(ticker, family, period, p, title=None, side=None, line=None):
             "p_model": round(float(p), 4), "title": title}
 
 
+def _finite(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def _non_finite(x, path="$"):
+    if isinstance(x, dict):
+        return [q for k, v in x.items() for q in _non_finite(v, f"{path}.{k}")]
+    if isinstance(x, (list, tuple)):
+        return [q for i, v in enumerate(x) for q in _non_finite(v, f"{path}[{i}]")]
+    return [path] if isinstance(x, float) and not math.isfinite(x) else []
+
+
 def validate_game(g):
     """Schema + sign invariants; returns a list of problems (empty == valid)."""
     errs = [f"missing {k}" for k in GAME_KEYS if k not in g]
@@ -154,11 +167,27 @@ def validate_game(g):
     m, hs = g["projected_margin_home"], g["home_spread"]
     if m is not None and hs is not None and round(m, 1) != 0 and (hs > 0) == (m > 0):
         errs.append("home_spread sign does not oppose margin")
+    for k in ("projected_margin_home", "home_spread", "projected_total"):
+        if g[k] is not None and not _finite(g[k]):
+            errs.append(f"{k} is not a finite number")
+    if g["spread"] is not None and not isinstance(g["spread"], str):
+        errs.append("spread is not a string")
+    elif g["spread"] is not None and ("nan" in g["spread"].lower() or "inf" in g["spread"].lower()):
+        errs.append("spread string carries a non-finite number")
     wp = g["win_probability"]
     if wp:
         for v in wp.values():
-            if not 0 <= v <= 1:
+            if not (_finite(v) and 0 <= v <= 1):
                 errs.append("win probability out of [0,1]")
+        if all(_finite(v) for v in wp.values()) and abs(sum(wp.values()) - 1) > 0.0021:
+            errs.append("win probabilities do not sum to 1")
+        if g["projected_winner"] is not None and _finite(wp.get("home")) and _finite(wp.get("away")):
+            want = label(g["home"]) if wp["home"] > wp["away"] else label(g["away"]) if wp["away"] > wp["home"] else None
+            if g["projected_winner"] != want:
+                errs.append("projected_winner is not the side with the higher win probability")
+    bad = _non_finite(g.get("team_totals")) + _non_finite(g.get("period_projections"))
+    if bad:
+        errs.append(f"non-finite projection values at {bad[:3]}")
     for k in ("start_time", "projected_at", "source_updated_at"):
         if g[k] is not None and not g[k].endswith("Z"):
             errs.append(f"{k} not UTC ISO")

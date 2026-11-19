@@ -129,7 +129,9 @@ def apply_promotion(res, s, promo, now):
         b = (rec[0].get(PAG_KEY) if rec else None) or None
         why = ("no promoted-model record for this game" if rec is None else
                "newest projection run published no pag_v1 block" if b is None else
-               promotion.check_block({k: b.get(k) for k in PAG_DECL_KEYS}, b.get("model_version"), promo))
+               f"producer withheld the forecast: {_reason(b)}" if b.get("available") is False else
+               promotion.check_block({k: b.get(k) for k in PAG_DECL_KEYS}, b.get("model_version"), promo)
+               or _block_invalid(b))
         if why is None:
             by_game[gid] = pag_game(rec[0], b, ref_string(art, rec[1]))
             served += 1
@@ -147,8 +149,26 @@ def apply_promotion(res, s, promo, now):
         res["projected_at"] = max(res["projected_at"], newest_at) if res.get("projected_at") else newest_at
 
 
+def _reason(b):
+    r = b.get("unavailable_reason")
+    return ("; ".join(map(str, r[:2])) if isinstance(r, list) else str(r))[:200]
+
+
+def _block_invalid(b):
+    """None when the activated block's numbers are servable, else why not (the game then stays on the incumbent)."""
+    fg = b.get("full_game") if isinstance(b.get("full_game"), dict) else {}
+    segs = (b.get("periods") or {}).get("segments") if isinstance(b.get("periods"), dict) else None
+    periods = {s: {k: v.get(k) for k in ("total_mean", "home_mean", "away_mean", "total_sd", "home_sd", "away_sd")}
+               for s, v in (segs or {}).items() if isinstance(v, dict)}
+    why = promotion.forecast_problems(fg.get("p_home_win"), fg.get("margin_mean"), fg.get("margin_sd"), periods=periods)
+    if parse_ts(b.get("generated_utc")) is None:
+        why.append("no generated_utc")
+    return f"promoted block failed validation: {'; '.join(why[:3])}" if why else None
+
+
 def _any_served_block(records):
     for r, _ in records.values():
-        if (r.get(PAG_KEY) or {}).get("activation") == "activated":
-            return r[PAG_KEY]
+        b = r.get(PAG_KEY) or {}
+        if b.get("activation") == "activated" and b.get("available") is not False and _block_invalid(b) is None:
+            return b
     return None

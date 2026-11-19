@@ -30,6 +30,10 @@ test("new question, checklist and note survive reload", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Do late scratches predict a price correction?" })).toBeVisible();
   await page.getByRole("checkbox", { name: /Define a falsifiable hypothesis/ }).check();
   await page.getByLabel("YOUR WORKING NOTES").fill("Require a timestamped pregame baseline.");
+  // The desk persists in a post-render effect; reloading before that effect commits races it (seen on iPhone WebKit).
+  // Wait until the stored snapshot holds the last edit (it is written whole, so the earlier checkbox is in it too).
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("sift-alpha-research-desk-v1") || ""))
+    .toContain("Require a timestamped pregame baseline.");
   await page.reload();
   await page.getByRole("button", { name: /Do late scratches predict a price correction/ }).click();
   await expect(page.getByRole("checkbox", { name: /Define a falsifiable hypothesis/ })).toBeChecked();

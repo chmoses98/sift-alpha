@@ -307,7 +307,7 @@ def build(write: bool = True) -> dict:
     prov = {sp: provenance_check(sp, rp) for sp, rp in replays.items()}
     out = []
     for r in rows:
-        sp = r["sport"]; ev = {}
+        sp = r["sport"]; ev = {}; no_verdict = False
         if r["status"] == "EXCLUDED_BENCHMARK_ONLY":
             vs = "EXCLUDED_BENCHMARK_ONLY"
         elif r["computed_prior"] and r["status"].startswith("COMPUTED"):
@@ -316,6 +316,7 @@ def build(write: bool = True) -> dict:
             a = dih.get(r["key"]); a2 = dih2.get(r["key"])
             if a is None and a2 is None:
                 vs, ev = "CLAIMED_NOT_REPLAYED", {"why": "no verifier verdict recorded"}
+                no_verdict = True    # data newly in hand (e.g. a vault archive) and no builder claim to verify: a measured extension replay may still promote it
             else:
                 v1 = a["verdict"] if a else None; v2 = a2["verdict"] if a2 else None
                 # round 1 for NBA/NHL was SCHEMA-ONLY; round 2 used REAL re-read columns. For the others both rounds saw real columns: a downgrade in either round wins, and CONFIRMED needs both.
@@ -333,7 +334,7 @@ def build(write: bool = True) -> dict:
             vs, ev = combine_blocked(blk.get(r["key"]), blkp.get(r["key"]))
         else:
             vs = "REQUIRES_COLLECTION"
-        if vs in PROMOTABLE and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
+        if (vs in PROMOTABLE or no_verdict) and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
             was = vs
             vs, ev = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})
             if vs.startswith("VERIFIED"):

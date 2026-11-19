@@ -49,7 +49,9 @@ def build() -> dict:
         "notice": "Agent-run, not human verified. Every number is read from committed evidence files. No model trained, promoted or activated; no trading change.",
         "stage_order": ["COLLECTED", "ARCHIVED_VERIFIED", "CERTIFIED_DATASET", "TRAINING_READY", "MODEL_ACTIVE"],
         "training_ready": {"baseline": BASELINE, "after": after, "by_sport": {s: len(v) for s, v in ready.items()}, "inputs": ready,
-                           "promoted_by_certification": certified, "model_active": 0},
+                           "promoted_by_certification": certified,
+                           "promoted_by_archived_data": sorted(k for k, v in inputs.items() if v["s"] in SPORTS and v["tr"]["state"] == "TRAINING_READY" and "cert" not in v["tr"]
+                                                               and k in PHASE12_DATA_PROMOTIONS), "model_active": 0},
         "dataset_versions": [{"sport": e["sport"], "hash": e["canonical_sha256"][:12], "builder": e["builder"], "rows": e["rows"], "registered": e["registered"],
                               "training_ready": bool((e.get("tiers") or {}).get("training_ready")), "superseded_by": e.get("superseded_by"),
                               "verified": (e.get("tiers") or {}).get("independently_verified"), "complete": (e.get("tiers") or {}).get("historically_complete")} for e in versions],
@@ -92,6 +94,10 @@ def md(o: dict) -> str:
         L += ["", f"## {title}", ""] + [f(x) for x in o[key]]
     L += ["", "## Next steps", ""] + [f"{i + 1}. {t}" for i, t in enumerate(o["next"])]
     return "\n".join(L) + "\n"
+
+
+# Inputs already built and verified FULL before Phase 12 whose only failing check was "raw data held"; the vault ledger closed it.
+PHASE12_DATA_PROMOTIONS = {"CFB:cfb.pythag_luck"}
 
 
 def main() -> int:

@@ -4,6 +4,8 @@ Updated 2026-11-16 ~22:30Z (Phase 11 finalization; section 00 is the newest). RE
 This file supersedes `docs/SIX_SPORT_CHECKPOINT.md` (workstream B) and the "Next steps" of
 `docs/PHASE10_DATA_PRESERVATION.md` (workstream A) as the place to resume. Both remain as historical records.
 
+> **Phase 12 (2026-11-17): resume from `docs/PHASE12_CHECKPOINT.md`.** Training-ready inputs 48 -> 54; six preregistered studies in `docs/DISCOVERY_REPORT.md`. The sections below are the Phase 11 record.
+
 ## 00. Phase 11 finalization (2026-11-16 night) - read this first
 
 Phase 12 starts from `docs/PHASE12_HANDOFF.md`. This section closes Phase 11.

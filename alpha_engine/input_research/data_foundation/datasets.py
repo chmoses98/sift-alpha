@@ -182,3 +182,45 @@ D("xx.awards_results", _ALL, "Awards, honours, All-Star/Pro Bowl/Derby/contest r
 D("xx.draft_boards_vintaged", _ALL, "Draft boards, mocks, prospect rankings and lottery/order, with publication dates", ["draft_boards", "own_capture"], pit="LIVE_SNAPSHOT", kind="own_capture", miss="final picks are public; dated boards must be captured or taken from Wayback")
 D("xx.contracts_finance", _ALL, "Contracts, cap/payroll tables, valuations, finance filings", ["overthecap", "eada_open_records"], pit="STATIC", fresh="event-driven", miss="free scrape pages show current values; as-of-date vintages are not preserved")
 D("xx.projection_vintages", _ALL, "Projection systems (ZiPS/Steamer/PECOTA/ATC, preseason ratings) as published at each date", ["fangraphs", "own_capture"], pit="LIVE_SNAPSHOT", kind="own_capture", miss="only the current vintage is public; PECOTA archives are paid")
+
+
+# ---------------------------------------------------------------------------------------------------------------- vault evidence (Phase 12)
+# Datasets whose raw bytes are held in the private vault (sift-data-vault). Each id points at a MEASURED entry of
+# research/input_research/data_collection/vault_ledger.json (alpha_engine.foundation.vault_ledger: rows / games / dates counted from the restored
+# archive). evidence.py resolves a dataset with a ledger entry to COLLECTED_ARCHIVE; an id whose entry is absent from the ledger keeps its previous
+# status (fail-closed). Linking says the RAW DATA is archived, nothing about feature code, verification or point-in-time safety. Scope limits of
+# each archive against the dataset title are in the ledger entry's `scope_note`.
+VAULT_EVIDENCE = {
+    "mlb.pitch_pa_events": ["mlb_feed_pitch_pa"],
+    "mlb.boxscore_player": ["mlb_feed_player_box"],
+    "mlb.schedule_games": ["mlb_feed_games"],
+    "nhl.shifts_lines": ["nhl_sdv_shifts"],
+    "nhl.pbp_events_nonshot": ["nhl_sdv_pbp"],
+    "nba.box_history_long": ["nba_sdv_team_box", "nba_sdv_player_box"],
+    "nba.schedule_arena": ["nba_sdv_schedule"],
+    "cbb.box_player": ["cbb_sdv_player_box"],
+    "cfb.pbp_cfbd": ["cfb_cfbd_drives_games", "cfb_espn_drives_plays"],
+    "cfb.box_player": ["cfb_espn_player_box"],
+    "cfb.rankings_polls": ["cfb_cfbd_rankings"],
+    "cfb.recruiting_portal": ["cfb_cfbd_recruiting_portal"],
+    "cfb.coach_history": ["cfb_cfbd_coaches"],
+    "nfl.officials": ["nfl_officials"],
+    "nfl.rosters": ["nfl_rosters_weekly"],
+    "nfl.contracts_cap": ["nfl_contracts"],
+}
+def apply_vault_evidence() -> list[str]:
+    """Attach the vault ledger keys to every registered dataset (idempotent). Returns the ids not registered yet (reviewer-proposed datasets are
+    registered later by audit.register_proposed, which calls this again)."""
+    missing = []
+    for did, keys in VAULT_EVIDENCE.items():
+        if did not in DATASETS:
+            missing.append(did); continue
+        DATASETS[did]["evidence"] = ev = dict(DATASETS[did]["evidence"])     # copy: audit.build restores a shallow snapshot of DATASETS
+        have = {v[1] for k, v in ev.items() if k in ("ledger", "ledger2") and v[0] == "vault_ledger.json"}
+        slots = [s for s in ("ledger", "ledger2") if s not in ev]
+        for slot, key in zip(slots, [k for k in keys if k not in have]):
+            ev[slot] = ("vault_ledger.json", key)
+    return missing
+
+
+apply_vault_evidence()

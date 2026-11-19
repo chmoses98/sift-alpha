@@ -112,6 +112,7 @@ class HonestStatuses(unittest.TestCase):
 
     def test_computable_without_an_earlier_computation_needs_every_dataset_collected(self):
         reg = EV.resolve_all()
+        reg = {**json.load(open(ROOT / "research/input_research/data_foundation/datasets.json"))["datasets"], **reg}   # reviewer-proposed datasets (registered by the audit) can be vault-held since Phase 12
         for r in ROWS:
             if r["status"] == "DATA_IN_HAND" and not any("status set by reviewer" in f for f in r["flags"]):
                 for x in r["requirements"]:

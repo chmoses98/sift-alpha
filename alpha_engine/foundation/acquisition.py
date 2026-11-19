@@ -440,7 +440,7 @@ def load_certification() -> dict:
             if not ok:
                 continue
             # A later builder version over the SAME games (e.g. CFB v2) points at the index rows of the version it shares rows with.
-            idx = CERT / "game_index" / f"{sport}.csv.gz"; key = (c.get("game_index_dataset_sha256") or c["dataset_sha256"])[:12]
+            idx = CERT / "game_index" / (c.get("game_index_file") or f"{sport}.csv.gz"); key = (c.get("game_index_dataset_sha256") or c["dataset_sha256"])[:12]
             seasons = set()
             if idx.exists():
                 import gzip
@@ -449,6 +449,7 @@ def load_certification() -> dict:
             for i in ids:
                 if i not in held_back:
                     out[f"{sport}:{i}"] = {"dataset_sha256": c["dataset_sha256"], "spec": c.get("spec"), "seasons": len(seasons), "rows": c["rows"],
+                                           "builder_columns": ((cert.get("builder_columns") or {}).get(sport) or {}).get(i),
                                            "evidence": f"research/certification/{cert.get('file', 'certification.json')}"}
     return out
 
@@ -461,7 +462,9 @@ def readiness(inp, needs_i, held, datasets, cert=None):
     per-need labels are superseded by that direct evidence). `built` and `history` are still required independently."""
     ch = inp["chain"]
     held_ds = [d for opts in needs_i.values() for d in opts if d in held]
-    years = max([_years(datasets[d].get("history") or {}) or 0 for d in held_ds] or [0])
+    # history must hold for EVERY data need: per need the longest held option, then the shortest need (a 2-season archive cannot pass on another need's depth)
+    per_need = [max([_years(datasets[d].get("history") or {}) or 0 for d in opts if d in held] or [0]) for opts in needs_i.values()]
+    years = min(per_need) if per_need and all(o & held for o in needs_i.values()) else max(per_need or [0])
     c = {"data": "OK" if needs_i and all(o & held for o in needs_i.values()) else ("PARTIAL" if held_ds else "MISSING"),
          "verified": ch[3] if len(ch) > 3 else "MISSING", "built": ch[4] if len(ch) > 4 else "MISSING",
          "pit": "OK" if inp.get("pit") in ("PIT_SAFE", "NOT_APPLICABLE") else "PARTIAL" if inp.get("pit") == "PIT_COARSE" else "FAILED",
@@ -469,6 +472,8 @@ def readiness(inp, needs_i, held, datasets, cert=None):
     if cert:
         c["data"] = c["verified"] = c["pit"] = "OK"
         c["history"] = "OK" if cert["seasons"] >= 3 else c["history"]
+        if cert.get("builder_columns"):      # the certification names the certified dataset columns that implement this input: the blind-matched builder IS the built feature
+            c["built"] = "OK"
     core = ["data", "verified", "built", "pit", "history"]
     if all(c[k] == "OK" for k in core):
         state = "TRAINING_READY"

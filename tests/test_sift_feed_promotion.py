@@ -308,3 +308,24 @@ def test_finalize_withholds_an_invalid_game_instead_of_failing_the_feed():
     assert any("espn:bad" in w and "not a finite number" in w for w in summary["withheld_games"])
     with pytest.raises(ValueError):
         build.dumps({"x": float("nan")})
+
+
+def test_nba_and_cfb_promotions_are_independent(tmp_path, monkeypatch):
+    """Either sport can be promoted or rolled back without changing a byte of the other sport's feed output."""
+    nba_src = {"promoted": pag_archive(tmp_path, PAG_OPERATING)}
+    cfb_root, _ = oae_projection(tmp_path, OAE_OPERATING)
+    cfb_src = {"research": cfb_root}
+
+    def both():
+        return build.dumps(run("NBA", nba_src)), build.dumps(run("CFB", cfb_src))
+    manifest(tmp_path, monkeypatch, NBA=None, CFB=None)
+    nba0, cfb0 = both()
+    manifest(tmp_path, monkeypatch, NBA=PAG_VERSION, CFB=None)
+    nba1, cfb1 = both()
+    assert cfb1 == cfb0 and nba1 != nba0                       # NBA promoted: CFB untouched
+    manifest(tmp_path, monkeypatch, NBA=None, CFB=OAE_VERSION)
+    nba2, cfb2 = both()
+    assert nba2 == nba0 and cfb2 != cfb0                       # CFB promoted: NBA untouched
+    manifest(tmp_path, monkeypatch, NBA=PAG_VERSION, CFB=OAE_VERSION)
+    nba3, cfb3 = both()
+    assert nba3 == nba1 and cfb3 == cfb2                       # each sport depends only on its own entry

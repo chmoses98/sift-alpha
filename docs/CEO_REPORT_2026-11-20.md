@@ -10,7 +10,9 @@ were diffed against pre-session main `5813eaa8`; the only change is one additive
 | sift-alpha | [#94](https://github.com/chmoses98/sift-alpha/pull/94) (contains #95) | `4d46c27a` | Final-head CI 4/4 green. Main tree == PR head tree after merge. |
 | cfb-edge-finder | [#312](https://github.com/chmoses98/cfb-edge-finder/pull/312) | `95f9c4b2` | CI green. The study was reproduced from the research-data cache: `report.json` byte-identical, 8,652 records identical. `ENABLED = False`; no production import (test-enforced). |
 | sift-alpha | [#96](https://github.com/chmoses98/sift-alpha/pull/96) + MLB amendment 1 | `857df836` | Final head `bff96c7f`: CI 4/4 green incl. e2e (WebKit). Local 1,766 passed / 8 skipped. Main tree == head tree. |
-| sift-alpha | [#97](https://github.com/chmoses98/sift-alpha/pull/97), [#98](https://github.com/chmoses98/sift-alpha/pull/98), [#99](https://github.com/chmoses98/sift-alpha/pull/99) | see PR | Retargeted to main and branches updated (diffs = research files only). 26/26 count-checked CFB probability/contract tests pass locally. Merged in order when CI is green. |
+| sift-alpha | [#97](https://github.com/chmoses98/sift-alpha/pull/97) | `059ac65b` | Retargeted to main, branch updated; final-head CI green (research-desk, test). Main tree == head tree. |
+| sift-alpha | [#98](https://github.com/chmoses98/sift-alpha/pull/98) | `2ac2e8ca` | CI 3/3 green on `9838b018`. GitHub picked a stale criss-cross merge base after #97 and reported a false add/add conflict on `evaluate.py`. Resolved by merging main locally with the correct base. The final head `c9698210` has the **identical tree** (`9176c651`) to the tested head. Main tree == that tree. |
+| sift-alpha | [#99](https://github.com/chmoses98/sift-alpha/pull/99) | `e6af2f9b` | CI 3/3 green (research-desk, test, e2e). Main tree == head tree. 26/26 count-checked CFB tests pass. |
 | sift-alpha | overnight branch `claude/sift-overnight-execution-juf0pr` → PR | see PR | Local: Python 1,806 passed / 8 skipped / 0 failed; JS 91/91; e2e 110/110 (Chromium desktop + phone); `regenerate --check`, ladder and readiness `--check` clean. |
 
 ## 2. Input foundation

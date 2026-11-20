@@ -1,0 +1,240 @@
+import json, os, sys, time
+import numpy as np
+import pandas as pd
+
+T0 = time.time()
+BASE = "/tmp/claude-0/-home-user/15192055-9b55-53ba-8bb5-ba530026a7da/scratchpad/raw/mlb"
+DIRS = [os.path.join(BASE, s) for s in ("2022", "2023", "2024", "2025", "2026")]
+OUT = os.path.dirname(os.path.abspath(__file__))
+LAM, HL = 10.0, 30.0
+NAN = np.nan
+
+
+def runs_of(x, side):
+    s = x.get(side)
+    if not isinstance(s, dict):
+        return 0
+    v = s.get("runs")
+    return 0 if v is None else v
+
+
+def starter(j, side):
+    try:
+        pid = j["box"][side]["pitchers"][0]
+        pls = [p for p in j["box"][side]["players"] if p.get("id") == pid]
+        pit = pls[0]["pit"]
+        vals = (pit["outs"], pit["battersFaced"], pit["numberOfPitches"])
+        if any(v is None for v in vals):
+            return None
+        return tuple(float(v) for v in vals)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------- games
+games = []
+seen = set()
+for d in DIRS:
+    for f in sorted(os.listdir(d)):
+        if f.startswith("_") or not f.endswith(".json"):
+            continue
+        with open(os.path.join(d, f)) as fh:
+            j = json.load(fh)
+        try:
+            if j["game"]["type"] not in ("R", "F", "D", "L", "W"):
+                continue
+            if j["status"]["codedGameState"] != "F":
+                continue
+            inn = j["linescore"]["innings"]
+            if inn is None or len(inn) < 5:
+                continue
+        except Exception:
+            continue
+        gid = int(j["pk"])
+        if gid in seen:
+            continue
+        seen.add(gid)
+        dt = j["datetime"]
+        date = dt["officialDate"]
+        rd = dt.get("resumeDate")
+        avail = rd if rd else dt["officialDate"]
+        g = dict(game_id=gid, season=int(j["game"]["season"]), date=date, avail=avail,
+                 home=int(j["teams"]["home"]["id"]), away=int(j["teams"]["away"]["id"]), ne=1,
+                 n_inn=len(inn))
+        for side in ("home", "away"):
+            rs = [runs_of(x, side) for x in inn]
+            g[side + "_r1"] = float(rs[0])
+            g[side + "_r5"] = float(sum(rs[:5]))
+            g[side + "_r"] = float(sum(rs))
+            g[side + "_late"] = g[side + "_r"] - g[side + "_r5"]
+        hl = runs_of(inn[-1], "home")
+        g["walkoff"] = 1.0 if (g["home_r"] > g["away_r"] and g["home_r"] - hl <= g["away_r"]) else 0.0
+        sh, sa = starter(j, "home"), starter(j, "away")
+        for side, st in (("home", sh), ("away", sa)):
+            ok = sh is not None and sa is not None
+            g[side + "_outs"] = st[0] if ok else NAN
+            g[side + "_bf"] = st[1] if ok else NAN
+            g[side + "_np"] = st[2] if ok else NAN
+        games.append(g)
+
+G = pd.DataFrame(games).sort_values(["date", "game_id"], kind="mergesort").reset_index(drop=True)
+print("games", len(G), "load %.1fs" % (time.time() - T0), flush=True)
+
+teams = sorted(set(G.home) | set(G.away))
+tix = {t: i for i, t in enumerate(teams)}
+NT = len(teams)
+P = 2 * NT + 2
+hi = G.home.map(tix).to_numpy()
+ai = G.away.map(tix).to_numpy()
+ne = G["ne"].to_numpy().astype(float)
+dates = G.date.to_numpy()
+avails = G.avail.to_numpy()
+seasons = G.season.to_numpy()
+N = len(G)
+
+TARGETS = {"run": "r", "r1": "r1", "r5": "r5", "late": "late", "outs": "outs", "bf": "bf", "np": "np"}
+YH = {k: G["home_" + v].to_numpy(float) for k, v in TARGETS.items()}
+YA = {k: G["away_" + v].to_numpy(float) for k, v in TARGETS.items()}
+EPH = {k: np.full(N, NAN) for k in TARGETS}
+EPA = {k: np.full(N, NAN) for k in TARGETS}
+
+pen = np.zeros(P)
+pen[1:1 + 2 * NT] = LAM
+
+udates = np.unique(dates)
+for d in udates:
+    on = np.where(dates == d)[0]
+    S = seasons[on].max()
+    pool = np.where((dates < d) & (avails < d) & (seasons >= S - 1))[0]  # already in (date, game_id) order
+    n = len(pool)
+    if n < 16:
+        continue
+    ph, pa = hi[pool], ai[pool]
+    M = np.zeros((n, NT))
+    M[np.arange(n), ph] = 1.0
+    M[np.arange(n), pa] = 1.0
+    rev = np.cumsum(M[::-1], axis=0)[::-1]  # count of games at positions >= i
+    rank_h = rev[np.arange(n), ph] - 1.0
+    rank_a = rev[np.arange(n), pa] - 1.0
+    rk = np.minimum(rank_h, rank_a)
+    w_all = 0.5 ** (rk / HL)
+    pne = ne[pool]
+    for k in TARGETS:
+        yh, ya = YH[k][pool], YA[k][pool]
+        keep = ~np.isnan(yh) & ~np.isnan(ya)
+        m = int(keep.sum())
+        if m < 16:
+            continue
+        w = w_all[keep]
+        kh, ka, kne = ph[keep], pa[keep], pne[keep]
+        # observations: home offence and away offence
+        off = np.concatenate([kh, ka])
+        dfn = np.concatenate([ka, kh])
+        I = np.concatenate([kne, np.zeros(m)])
+        y = np.concatenate([yh[keep], ya[keep]])
+        ww = np.concatenate([w, w])
+        cols = np.stack([np.zeros(2 * m, int), 1 + off, 1 + NT + dfn, np.full(2 * m, P - 1)], axis=1)
+        vals = np.stack([np.ones(2 * m), np.ones(2 * m), np.ones(2 * m), I], axis=1)
+        idx = (cols[:, :, None] * P + cols[:, None, :]).ravel()
+        wv = (ww[:, None, None] * vals[:, :, None] * vals[:, None, :]).ravel()
+        A = np.bincount(idx, weights=wv, minlength=P * P).reshape(P, P)
+        b = np.bincount(cols.ravel(), weights=(ww[:, None] * vals * y[:, None]).ravel(), minlength=P)
+        A[np.diag_indices(P)] += pen
+        beta = np.linalg.solve(A, b)
+        b0, a, dd, h = beta[0], beta[1:1 + NT], beta[1 + NT:1 + 2 * NT], beta[P - 1]
+        H, V = hi[on], ai[on]
+        EPH[k][on] = b0 + a[H] + dd[V] + ne[on] * h
+        EPA[k][on] = b0 + a[V] + dd[H]
+print("ridge done %.1fs" % (time.time() - T0), flush=True)
+
+# ---------------------------------------------------------------- team rows
+x_hmar = EPH["run"] - EPA["run"]
+x_tot = EPH["run"] + EPA["run"]
+
+
+def rows(own_home, own_away):
+    return np.concatenate([own_home, own_away])
+
+
+R = pd.DataFrame({
+    "game_id": rows(G.game_id.to_numpy(), G.game_id.to_numpy()),
+    "team": rows(G.home.to_numpy(), G.away.to_numpy()),
+    "season": rows(seasons, seasons),
+    "order": rows(np.arange(N) * 2, np.arange(N) * 2 + 1),
+})
+own = lambda k: rows(EPH[k], EPA[k])
+opp = lambda k: rows(EPA[k], EPH[k])
+ownv = lambda c: rows(G["home_" + c].to_numpy(float), G["away_" + c].to_numpy(float))
+oppv = lambda c: rows(G["away_" + c].to_numpy(float), G["home_" + c].to_numpy(float))
+
+R["fi_exp_pre"] = own("r1")
+R["f5_exp_pre"] = own("r5")
+R["f5_late_exp_pre"] = own("late")
+R["spw_outs_pre"] = own("outs")
+R["spw_bf_pre"] = own("bf")
+R["spw_np_pre"] = own("np")
+
+rs = R.season.to_numpy()
+
+
+def kernel(X, bws, v, min_ref=500):
+    X = np.asarray(X, float)
+    if X.ndim == 1:
+        X = X[:, None]
+    bws = np.asarray(bws, float)
+    out = np.full(len(v), NAN)
+    xok = ~np.isnan(X).any(axis=1)
+    for s in np.unique(rs):
+        ref = (rs < s) & xok & ~np.isnan(v)
+        if ref.sum() < min_ref:
+            continue
+        Xr, vr = X[ref], v[ref]
+        q = np.where((rs == s) & xok)[0]
+        for st in range(0, len(q), 400):
+            qq = q[st:st + 400]
+            z = np.zeros((len(qq), len(vr)))
+            for dim in range(X.shape[1]):
+                z += ((Xr[None, :, dim] - X[qq, dim][:, None]) / bws[dim]) ** 2
+            k = np.exp(-0.5 * z)
+            sk = k.sum(axis=1)
+            num = k @ vr
+            val = np.where(sk > 0, num / np.where(sk > 0, sk, 1.0), NAN)
+            out[qq] = val
+    return out
+
+
+def ev(cond, *missing_src):
+    v = cond.astype(float)
+    for m in missing_src:
+        v[np.isnan(m)] = NAN
+    return v
+
+
+r1o, r1p = ownv("r1"), oppv("r1")
+r5o, r5p = ownv("r5"), oppv("r5")
+R["fi_score_pre"] = kernel(R.fi_exp_pre.to_numpy(), [0.04], ev(r1o > 0))
+R["fi_nrfi_pre"] = kernel(own("r1") + opp("r1"), [0.06], ev(r1o + r1p == 0))
+x5 = own("r5") - opp("r5")
+R["f5_lead_pre"] = kernel(x5, [0.25], ev(r5o > r5p))
+R["f5_tie_pre"] = kernel(x5, [0.25], ev(r5o == r5p))
+X2 = np.stack([rows(x_hmar, x_hmar), rows(x_tot, x_tot)], axis=1)
+wo = rows(G.walkoff.to_numpy(float), G.walkoff.to_numpy(float))
+ninn = rows(G.n_inn.to_numpy(float), G.n_inn.to_numpy(float))
+R["wo_walkoff_pre"] = kernel(X2, [0.4, 0.5], ev(wo == 1))
+R["wo_extras_pre"] = kernel(X2, [0.4, 0.5], ev(ninn > 9))
+bfo, outso = ownv("bf"), ownv("outs")
+for kk in (18, 21, 24, 27):
+    R[f"hook_ge{kk}_pre"] = kernel(R.spw_bf_pre.to_numpy(), [0.5], ev(bfo >= kk, bfo))
+for kk in (15, 16, 18, 19):
+    R[f"exb_ge{kk}_pre"] = kernel(R.spw_outs_pre.to_numpy(), [0.4], ev(outso >= kk, outso))
+print("kernels done %.1fs" % (time.time() - T0), flush=True)
+
+COLS = ["fi_exp_pre", "f5_exp_pre", "f5_late_exp_pre", "spw_outs_pre", "spw_bf_pre", "spw_np_pre",
+        "fi_score_pre", "fi_nrfi_pre", "f5_lead_pre", "f5_tie_pre", "wo_walkoff_pre", "wo_extras_pre",
+        "hook_ge18_pre", "hook_ge21_pre", "hook_ge24_pre", "hook_ge27_pre",
+        "exb_ge15_pre", "exb_ge16_pre", "exb_ge18_pre", "exb_ge19_pre"]
+R = R.sort_values("order")[["game_id", "team"] + COLS]
+R.to_csv(os.path.join(OUT, "out.csv"), index=False, float_format="%.17g", na_rep="")
+print("rows", len(R))
+print(R[COLS].notna().sum().to_string())
+print("total %.1fs" % (time.time() - T0))

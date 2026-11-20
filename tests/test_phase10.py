@@ -19,7 +19,7 @@ def test_phase10_statuses_and_counts():
     assert vc["TENNIS:ten.tiebreak_base_rate_by_event"]["verified_status"] == "VERIFIED_FULL"
     assert vc["SOCCER:soc.points_gap_state"]["verified_status"] == "VERIFIED_PARTIAL" and vc["SOCCER:soc.current_win_run_state"]["verified_status"] == "VERIFIED_PARTIAL"
     c = pd.Series([r["verified_status"] for r in vc.values()]).value_counts()
-    assert (c["VERIFIED_FULL"], c["VERIFIED_PARTIAL"], c["VERIFIED_PROXY"]) == (62, 221, 22)  # NFL batch 4: +3 PARTIAL, +2 PROXY    # Phase 7 (data acquisition) adds 2 FULL (nfl.pass_run_split_epa_both_sides, nfl.rush_yardage_tail; phase7_round1). Phase 6 (data acquisition) adds 2 FULL (nhl.long_change_effect, nhl.pk_structure_opp; phase6_round1). Phase 15 adds 29 NBA/NHL PARTIAL and 1 PROXY (nba.lineup_adj_rating); Phase 11 adds ten.games_per_set_distribution and ten.hold_gap_expected_margin (PARTIAL); Phase 12 adds ten.tiebreak_sweep_joint_table  # derived NBA/CBB engine (PR #94): +9 PARTIAL (209 -> 218)
+    assert (c["VERIFIED_FULL"], c["VERIFIED_PARTIAL"], c["VERIFIED_PROXY"]) == (62, 226, 37)  # six-sport expansion: +5 PARTIAL, +15 PROXY;  # NFL batch 4: +3 PARTIAL, +2 PROXY    # Phase 7 (data acquisition) adds 2 FULL (nfl.pass_run_split_epa_both_sides, nfl.rush_yardage_tail; phase7_round1). Phase 6 (data acquisition) adds 2 FULL (nhl.long_change_effect, nhl.pk_structure_opp; phase6_round1). Phase 15 adds 29 NBA/NHL PARTIAL and 1 PROXY (nba.lineup_adj_rating); Phase 11 adds ten.games_per_set_distribution and ten.hold_gap_expected_margin (PARTIAL); Phase 12 adds ten.tiebreak_sweep_joint_table  # derived NBA/CBB engine (PR #94): +9 PARTIAL (209 -> 218)
 
 
 def test_tennis_tiebreak_has_round_best_of_split_and_no_declared_gap():

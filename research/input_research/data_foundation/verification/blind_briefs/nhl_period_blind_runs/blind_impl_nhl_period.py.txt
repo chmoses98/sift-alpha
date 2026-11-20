@@ -1,0 +1,147 @@
+import json, os, glob
+import numpy as np, pandas as pd
+LAM=8.0; HL=20.0
+files=sorted(f for f in os.listdir('/tmp/raw/NHL') if f.endswith('.json') and not f.startswith('_'))
+seen=set(); G=[]
+for f in files:
+    d=json.load(open('/tmp/raw/NHL/'+f))
+    for x in d.get('games',[]):
+        if x.get('gameType') not in (2,3): continue
+        if x.get('gameState') not in ('OFF','FINAL'): continue
+        if not isinstance(x.get('goals'),list): continue
+        gid=int(x['id'])
+        if gid in seen: continue
+        seen.add(gid)
+        H=x['home']['abbrev']; A=x['away']['abbrev']
+        ph=[0,0,0]; pa=[0,0,0]
+        for g in x['goals']:
+            pd_=g.get('periodDescriptor') or {}
+            if pd_.get('periodType')!='REG': continue
+            p=g.get('period')
+            if p not in (1,2,3): continue
+            if g.get('teamAbbrev')==H: ph[p-1]+=1
+            else: pa[p-1]+=1
+        G.append(dict(gid=gid,season=int(str(x['season'])[:4]),date=x['gameDate'],H=H,A=A,
+                      ne=0 if x.get('neutralSite') is True else 1,ph=ph,pa=pa))
+G.sort(key=lambda r:(r['date'],r['gid']))
+n=len(G)
+teams=sorted({r['H'] for r in G}|{r['A'] for r in G}); T=len(teams); ti={t:i for i,t in enumerate(teams)}
+NP=2+2*T  # b0, h, a[T], d[T]
+Hh=np.array([ti[r['H']] for r in G]); Aa=np.array([ti[r['A']] for r in G])
+NE=np.array([r['ne'] for r in G],float); SEAS=np.array([r['season'] for r in G])
+yh=np.array([sum(r['ph']) for r in G],float); ya=np.array([sum(r['pa']) for r in G],float)
+dates=np.array([r['date'] for r in G])
+epH=np.full(n,np.nan); epA=np.full(n,np.nan); se=np.full(n,np.nan)
+pen=np.zeros(NP); pen[2:]=LAM
+def row(off,de,I):
+    z=np.zeros(NP); z[0]=1; z[2+off]=1; z[2+T+de]=1; z[1]=I; return z
+i=0
+while i<n:
+    j=i
+    while j<n and dates[j]==dates[i]: j+=1
+    S=SEAS[i:j].max()
+    pool=np.array([k for k in range(i) if SEAS[k]>=S-1],int)
+    if len(pool)>=16:
+        cnt=np.zeros(T,int); rk=np.zeros(len(pool),int)
+        for q in range(len(pool)-1,-1,-1):
+            k=pool[q]; h=Hh[k]; a=Aa[k]
+            rk[q]=min(cnt[h],cnt[a]); cnt[h]+=1; cnt[a]+=1
+        w=0.5**(rk/HL)
+        m=len(pool)
+        Z=np.zeros((2*m,NP)); r_=np.arange(m)
+        Z[r_,0]=1; Z[r_,1]=NE[pool]; Z[r_,2+Hh[pool]]=1; Z[r_,2+T+Aa[pool]]=1
+        Z[m+r_,0]=1; Z[m+r_,2+Aa[pool]]=1; Z[m+r_,2+T+Hh[pool]]=1
+        y=np.concatenate([yh[pool],ya[pool]]); W=np.concatenate([w,w])
+        ZW=Z*W[:,None]
+        M=Z.T@ZW+np.diag(pen)
+        b=np.linalg.solve(M,ZW.T@y) if False else np.linalg.solve(M,Z.T@(W*y))
+        res=y-Z@b; s2=(W*res**2).sum()/W.sum()
+        Minv=np.linalg.inv(M)
+        for k in range(i,j):
+            h=Hh[k];a=Aa[k]
+            epH[k]=b[0]+b[2+h]+b[2+T+a]+NE[k]*b[1]
+            epA[k]=b[0]+b[2+a]+b[2+T+h]
+            c=np.zeros(NP); c[0]=2; c[2+h]+=1; c[2+T+a]+=1; c[2+a]+=1; c[2+T+h]+=1; c[1]=NE[k]
+            se[k]=np.sqrt(s2*(c@Minv@c))
+    i=j
+# team rows
+rows=[]
+for k,r in enumerate(G):
+    for side in (0,1):
+        if side==0: team=r['H']; p=r['ph']; o=r['pa']; ep=epH[k]; eo=epA[k]
+        else: team=r['A']; p=r['pa']; o=r['ph']; ep=epA[k]; eo=epH[k]
+        rows.append((r['gid'],team,r['season'],p,o,ep,eo,se[k]))
+N=len(rows)
+gid=np.array([r[0] for r in rows]); team=[r[1] for r in rows]; season=np.array([r[2] for r in rows])
+P=np.array([r[3] for r in rows],float); O=np.array([r[4] for r in rows],float)
+xg=np.array([r[5] for r in rows]); xo=np.array([r[6] for r in rows]); sev=np.array([r[7] for r in rows])
+xmar=xg-xo; xtot=xg+xo
+C=P+O
+out=pd.DataFrame({'game_id':gid,'team':team})
+out['spu_total_pre']=xtot; out['spu_se_pre']=sev
+def kernel(xs,bws,v,cond,minref):
+    res=np.full(N,np.nan)
+    ok=np.ones(N,bool)
+    for x in xs: ok&=~np.isnan(x)
+    ok&=~np.isnan(v)
+    if cond is not None: ok&=cond
+    for s in np.unique(season):
+        tgt=np.where((season==s)&np.all([~np.isnan(x) for x in xs],axis=0))[0]
+        ref=np.where((season<s)&ok)[0]
+        if len(ref)<minref or len(tgt)==0: continue
+        for c0 in range(0,len(tgt),2000):
+            t=tgt[c0:c0+2000]
+            d2=np.zeros((len(t),len(ref)))
+            for x,bw in zip(xs,bws):
+                d2+=((x[ref][None,:]-x[t][:,None])/bw)**2
+            K=np.exp(-0.5*d2); sk=K.sum(1)
+            val=(K*v[ref][None,:]).sum(1)/np.where(sk==0,np.nan,sk)
+            res[t]=val
+    return res
+def kernel2(xs,bws,v1,v2,v12,minref):
+    # returns cov via weights
+    res=np.full(N,np.nan)
+    ok=np.ones(N,bool)
+    for x in xs: ok&=~np.isnan(x)
+    for s in np.unique(season):
+        tgt=np.where((season==s)&~np.isnan(xs[0]))[0]
+        ref=np.where((season<s)&ok)[0]
+        if len(ref)<minref or len(tgt)==0: continue
+        for c0 in range(0,len(tgt),2000):
+            t=tgt[c0:c0+2000]
+            d2=((xs[0][ref][None,:]-xs[0][t][:,None])/bws[0])**2
+            K=np.exp(-0.5*d2); sk=K.sum(1); sk=np.where(sk==0,np.nan,sk)
+            e12=(K*v12[ref][None,:]).sum(1)/sk
+            e1=(K*v1[ref][None,:]).sum(1)/sk
+            e2=(K*v2[ref][None,:]).sum(1)/sk
+            res[t]=e12-e1*e2
+    return res
+p1,p2,p3=P[:,0],P[:,1],P[:,2]; o1,o2,o3=O[:,0],O[:,1],O[:,2]
+L2=(p1>o1).astype(float); T2=(p1==o1).astype(float)
+s12=p1+p2; t12=o1+o2
+out['pes_lead_p2_pre']=kernel([xmar],[0.35],L2,None,500)
+out['pes_tie_p2_pre']=kernel([xmar],[0.35],T2,None,500)
+out['pes_lead_p3_pre']=kernel([xmar],[0.35],(s12>t12).astype(float),None,500)
+out['pes_tie_p3_pre']=kernel([xmar],[0.35],(s12==t12).astype(float),None,500)
+out['pes_p3_gf_lead_pre']=kernel([xg],[0.25],p3,s12>t12,150)
+out['pes_p3_gf_tie_pre']=kernel([xg],[0.25],p3,s12==t12,150)
+out['pes_p3_gf_trail_pre']=kernel([xg],[0.25],p3,s12<t12,150)
+for k,pk in ((1,p1),(2,p2),(3,p3)):
+    out[f'ppc_mu_p{k}_pre']=kernel([xg],[0.25],pk,None,500)
+for k in (1,2,3):
+    out[f'ppc_tot_ge2_p{k}_pre']=kernel([xtot],[0.35],(C[:,k-1]>=2).astype(float),None,500)
+out['ppc_cov_p12_pre']=kernel2([xtot],[0.35],C[:,0],C[:,1],C[:,0]*C[:,1],500)
+out['game_id']=out['game_id'].astype('int64')
+out.to_csv('/tmp/blind/nhl/out.csv',index=False,float_format='%.17g')
+amb=["Ridge target is single fit with y_home=home regulation goals, y_away=away regulation goals (target present for all pool games).",
+"Pool/ridge games use all kept games (type 2 and 3); date grouping uses x.gameDate, not file name.",
+"Team penalty diagonal covers all teams in all kept games (global team list); absent teams get LAM-only diagonal.",
+"Kernel team rows with missing x (ridge missing) are excluded as references and produce missing output.",
+"MIN_REF counted after applying present-x and condition filters; missing season means no earlier season rows => missing.",
+"Goals whose teamAbbrev is not home are credited to away; goals with missing periodDescriptor are skipped.",
+"neutralSite missing treated as non-neutral (ne=1).",
+"ppc_cov uses same kernel weights for all three expectations with x_tot present refs only.",
+"Game season uses first four digits of x.season; 'season >= S-1' on that integer.",
+"Row order: games sorted by (date, game_id), home row then away row; floats written with 17 significant digits."]
+json.dump({"ambiguities":amb},open('/tmp/blind/nhl/notes.json','w'),indent=1)
+print(out.shape, out.notna().mean().round(3).to_dict())

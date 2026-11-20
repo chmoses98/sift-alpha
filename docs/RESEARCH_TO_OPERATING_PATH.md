@@ -30,3 +30,25 @@ Rules:
 - Next sports: NBA and CBB derived inputs (#94) and NFL batch 4 (#95) are certified but untested at stage 4. They
   need the same freeze → forward-quote → official-settlement pipeline. Use committed Kalshi catalog history where a
   producer archives it, and never synthesise absent prices.
+
+## Machinery (2026-11-20)
+- **Ladder, per input:** `python -m alpha_engine.pipeline.ladder` writes `research/pipeline/input_ladder.json` and `ladder_summary.json`.
+  The levels are EXISTS → CALCULATED → CERTIFIED → EXPERIMENTAL_ADOPTION → PREDICTION_VERIFIED → PRICE_AWARE_VERIFIED → PRODUCTION_CONSUMED.
+  - CERTIFIED is read from the ledger.
+  - Every higher level needs a claim in `research/pipeline/adoption_registry.json` whose evidence check passes:
+    - EXPERIMENTAL_ADOPTION: the input's columns are named in a frozen spec.
+    - PREDICTION_VERIFIED: a paired CI excludes zero on unseen games.
+    - PRICE_AWARE_VERIFIED: the forward ROI CI lower bound is > 0.
+    - PRODUCTION_CONSUMED: a producer path plus owner approval.
+  - Keyword matches never count. `--check` runs in CI through `tests/test_pipeline.py`.
+- **Shared price-aware evaluation:** `alpha_engine/pipeline/selection.py`.
+  - Uses frozen, hashed rules. It reports win rate against fee-adjusted break-even, calibration inside the selection, an exact p-value at break-even, rounded and unrounded fees, size-capped P&L, game-clustered ROI CIs, price buckets and splits.
+  - CLV follows `sift-clv-canonical/1`: market movement only. Spread and fee are reported separately and are never counted as CLV loss.
+  - Market-wide Brier is a diagnostic. A selective strategy is judged on its own frozen selections.
+- **What to do about each missing slot:** `python -m alpha_engine.input_research.data_foundation.readiness_ledger` writes
+  `research/input_research/readiness/`.
+  - Each of the 841 missing PRIMARY slots gets one action class: A missing data, B data in hand with no builder, C calculated but not certified, E prospective capture, or G policy-blocked.
+  - Each slot also carries a priority tier (P1/P2/F) and a rights flag. The classes reconcile exactly.
+  - The dashboard panel "Operating readiness" renders it next to catalog completeness.
+- **Auxiliary columns:** columns an experiment uses that are not catalog inputs (e.g. CFB `cfbx_mar_pre`) get a point-in-time replay through `replay_aux.py`.
+  - Evidence goes to `verification/auxiliary/`. That replay is leakage evidence only, not certification.

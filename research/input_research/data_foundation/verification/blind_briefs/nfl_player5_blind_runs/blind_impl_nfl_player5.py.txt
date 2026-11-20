@@ -1,0 +1,250 @@
+import glob, json, os, time
+import numpy as np
+import pandas as pd
+import pyarrow.parquet as pq
+
+T0 = time.time()
+BASE = "/tmp/claude-0/-home-user/15192055-9b55-53ba-8bb5-ba530026a7da/scratchpad/nfl_study/nflcache"
+OUTDIR = os.path.dirname(os.path.abspath(__file__))
+REPL = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
+
+# ---------------- 1. Schedule ----------------
+g = pd.read_csv(os.path.join(BASE, "games.csv"), low_memory=False)
+g = g[g["season"] >= 2010].copy()
+g = g.drop_duplicates("game_id", keep="first")
+g["date"] = pd.to_datetime(g["gameday"])
+g["home_team"] = g["home_team"].replace(REPL)
+g["away_team"] = g["away_team"].replace(REPL)
+g["played"] = g["home_score"].notna()
+g = g.reset_index(drop=True)
+date_of = dict(zip(g["game_id"], g["date"]))
+played_ids = set(g.loc[g["played"], "game_id"])
+
+# team slots
+slots = pd.concat([
+    pd.DataFrame({"game_id": g["game_id"], "T": g["home_team"], "date": g["date"],
+                  "season": g["season"], "played": g["played"]}),
+    pd.DataFrame({"game_id": g["game_id"], "T": g["away_team"], "date": g["date"],
+                  "season": g["season"], "played": g["played"]}),
+], ignore_index=True)
+
+# ---------------- 2. Plays ----------------
+cols = ['game_id', 'play_id', 'posteam', 'two_point_attempt', 'play_type', 'receiver_player_id',
+        'rusher_player_id', 'qb_scramble', 'yardline_100', 'down', 'air_yards', 'receiving_yards',
+        'rushing_yards', 'pass_touchdown', 'rush_touchdown', 'touchdown']
+parts = []
+for f in sorted(glob.glob(os.path.join(BASE, "pbp", "pbp_*.parquet"))):
+    parts.append(pq.read_table(f, columns=cols).to_pandas())
+pbp = pd.concat(parts, ignore_index=True)
+pbp = pbp[pbp["game_id"].isin(played_ids)].copy()
+for c in ['play_id', 'two_point_attempt', 'qb_scramble', 'yardline_100', 'down', 'air_yards',
+          'receiving_yards', 'rushing_yards', 'pass_touchdown', 'rush_touchdown', 'touchdown']:
+    pbp[c] = pd.to_numeric(pbp[c], errors="coerce").astype("float64")
+
+# first TD play id per game (all rows, no filter)
+td_rows = pbp[pbp["touchdown"] == 1]
+first_td = td_rows.groupby("game_id")["play_id"].min()
+pbp["first_td_pid"] = pbp["game_id"].map(first_td)
+
+q = pbp[pbp["posteam"].notna() & (pbp["two_point_attempt"].fillna(0) != 1)].copy()
+q["T"] = q["posteam"].replace(REPL)
+
+tg = q[(q["play_type"] == "pass") & q["receiver_player_id"].notna()].copy()
+ru = q[(q["play_type"] == "run") & q["rusher_player_id"].notna()].copy()
+
+tg_rec = pd.DataFrame({
+    "game_id": tg["game_id"].values, "T": tg["T"].values, "player": tg["receiver_player_id"].values,
+    "tgt": 1.0, "car": 0.0, "gl": 0.0, "pd": 0.0,
+    "rzt": (tg["yardline_100"] <= 20).astype(float).values, "rzc": 0.0,
+    "air": tg["air_yards"].fillna(0.0).values,
+    "n_air": tg["air_yards"].notna().astype(float).values,
+    "recy": tg["receiving_yards"].fillna(0.0).values, "rushy": 0.0,
+})
+tdp = (tg["pass_touchdown"] == 1)
+tg_rec["td"] = tdp.astype(float).values
+tg_rec["ftd"] = (tdp & (tg["play_id"] == tg["first_td_pid"])).astype(float).values
+
+carry = (ru["qb_scramble"].fillna(0) != 1)
+ru_rec = pd.DataFrame({
+    "game_id": ru["game_id"].values, "T": ru["T"].values, "player": ru["rusher_player_id"].values,
+    "tgt": 0.0, "car": carry.astype(float).values,
+    "gl": (carry & (ru["yardline_100"] <= 5)).astype(float).values,
+    "pd": (carry & ((ru["down"] == 3) | (ru["down"] == 4))).astype(float).values,
+    "rzt": 0.0,
+    "rzc": (carry & (ru["yardline_100"] <= 20)).astype(float).values,
+    "air": 0.0, "n_air": 0.0, "recy": 0.0,
+    "rushy": ru["rushing_yards"].fillna(0.0).values,
+})
+tdr = (ru["rush_touchdown"] == 1)
+ru_rec["td"] = tdr.astype(float).values
+ru_rec["ftd"] = (tdr & (ru["play_id"] == ru["first_td_pid"])).astype(float).values
+
+ev = pd.concat([tg_rec, ru_rec], ignore_index=True)
+for c in ev.columns[3:]:
+    ev[c] = ev[c].astype("float64")
+
+team = ev.groupby(["game_id", "T"], sort=False).agg(
+    n_tgt=("tgt", "sum"), n_car=("car", "sum"), n_gl=("gl", "sum"), n_pd=("pd", "sum"),
+    n_rzt=("rzt", "sum"), n_rzc=("rzc", "sum"), air_tot=("air", "sum")).reset_index()
+
+pg = ev.groupby(["game_id", "T", "player"], sort=False).agg(
+    tgt=("tgt", "sum"), car=("car", "sum"), gl=("gl", "sum"), pd=("pd", "sum"),
+    rzt=("rzt", "sum"), rzc=("rzc", "sum"), air=("air", "sum"), n_air=("n_air", "sum"),
+    recy=("recy", "sum"), rushy=("rushy", "sum"), td=("td", "max"), ftd=("ftd", "max")).reset_index()
+pg = pg[(pg["tgt"] + pg["car"]) >= 1].copy()
+pg = pg.merge(team, on=["game_id", "T"], how="left")
+pg["date"] = pg["game_id"].map(date_of)
+
+
+def share(a, b):
+    a = pg[a].to_numpy(float); b = pg[b].to_numpy(float)
+    out = np.full(len(a), np.nan)
+    m = b > 0
+    out[m] = a[m] / b[m]
+    return out
+
+
+pg["s_car"] = share("car", "n_car")
+pg["s_gl"] = share("gl", "n_gl")
+pg["s_pd"] = share("pd", "n_pd")
+pg["s_tgt"] = share("tgt", "n_tgt")
+pg["s_air"] = share("air", "air_tot")  # air_tot <= 0 -> undefined
+pg["s_rzt"] = share("rzt", "n_rzt")
+pg["s_rzc"] = share("rzc", "n_rzc")
+
+pg = pg.sort_values(["player", "date", "game_id", "T"], kind="mergesort").reset_index(drop=True)
+
+# ---------------- 3. Row universe ----------------
+played_slots = slots[slots["played"]].sort_values(["T", "date", "game_id"], kind="mergesort")
+team_hist = {t: (d["date"].to_numpy(), d["game_id"].to_numpy()) for t, d in played_slots.groupby("T")}
+
+inv_by_tg = {}
+for (gid, t), d in pg.groupby(["game_id", "T"], sort=False):
+    inv_by_tg[(gid, t)] = list(zip(d["player"], d["date"]))
+
+out_slots = slots[slots["season"] >= 2011]
+cand = []  # (game_id, date, T, player, q)
+for gid, d, t in zip(out_slots["game_id"], out_slots["date"], out_slots["T"]):
+    if t not in team_hist:
+        continue
+    dates, gids = team_hist[t]
+    n = np.searchsorted(dates, np.datetime64(d), side="left")
+    prev = gids[max(0, n - 4):n]
+    best = {}
+    for pgid in prev:
+        for p, pdte in inv_by_tg.get((pgid, t), []):
+            if p not in best or pdte > best[p]:
+                best[p] = pdte
+    for p, qq in best.items():
+        cand.append((gid, d, t, p, qq))
+cand = pd.DataFrame(cand, columns=["game_id", "date", "pteam", "team", "q"])
+# resolve players that are candidates for both teams of g
+cand = cand.sort_values(["game_id", "team", "q", "pteam"], ascending=[True, True, False, True],
+                        kind="mergesort")
+rows = cand.drop_duplicates(["game_id", "team"], keep="first").reset_index(drop=True)
+
+# ---------------- 4/5. Values ----------------
+_pl = pg["player"].to_numpy()
+_starts = np.r_[0, np.flatnonzero(_pl[1:] != _pl[:-1]) + 1]
+_ends = np.r_[_starts[1:], len(_pl)]
+pl_groups = {_pl[s]: (s, e) for s, e in zip(_starts, _ends)}
+assert len(pl_groups) == len(_starts)
+P_date = pg["date"].to_numpy()
+arr = {c: pg[c].to_numpy(float) for c in
+       ["s_car", "s_gl", "s_pd", "s_tgt", "s_air", "s_rzt", "s_rzc", "td", "ftd", "air", "n_air",
+        "recy", "rushy"]}
+
+
+def ewm(x, w):
+    m = ~np.isnan(x)
+    if not m.any():
+        return np.nan
+    return np.sum(w[m] * x[m]) / np.sum(w[m])
+
+
+VAL = ["pcr_carry_share_pre", "pcr_gl_carry_share_pre", "pcr_pd_carry_share_pre", "ptg_target_share_pre",
+       "ptg_air_share_pre", "ptg_adot_pre", "prz_rz_target_share_pre", "prz_rz_carry_share_pre",
+       "ptd_anytime_rate_pre", "ptd_first_td_rate_pre", "ptc_teammate_share_sum_pre", "ptc_share_rank_pre",
+       "ptc_team_hhi_pre", "psv_rec_yds_mean_pre", "psv_rec_yds_sd_pre", "psv_rec_yds_cv_pre",
+       "psv_rush_yds_mean_pre", "psv_rush_yds_sd_pre", "psv_rush_yds_cv_pre"]
+res = {c: np.full(len(rows), np.nan) for c in VAL}
+
+wcache = {}
+
+
+def weights(n, h):
+    key = (n, h)
+    if key not in wcache:
+        k = np.arange(n - 1, -1, -1, dtype=float)
+        wcache[key] = 0.5 ** (k / h)
+    return wcache[key]
+
+
+for i, (p, d) in enumerate(zip(rows["team"].to_numpy(), rows["date"].to_numpy())):
+    s, e = pl_groups[p]
+    n = np.searchsorted(P_date[s:e], d, side="left")
+    assert n > 0
+    sl = slice(s, s + n)
+    w4 = weights(n, 4.0)
+    w8 = weights(n, 8.0)
+    res["pcr_carry_share_pre"][i] = ewm(arr["s_car"][sl], w4)
+    res["pcr_gl_carry_share_pre"][i] = ewm(arr["s_gl"][sl], w4)
+    res["pcr_pd_carry_share_pre"][i] = ewm(arr["s_pd"][sl], w4)
+    res["ptg_target_share_pre"][i] = ewm(arr["s_tgt"][sl], w4)
+    res["ptg_air_share_pre"][i] = ewm(arr["s_air"][sl], w4)
+    den = np.sum(w4 * arr["n_air"][sl])
+    res["ptg_adot_pre"][i] = np.sum(w4 * arr["air"][sl]) / den if den != 0 else np.nan
+    res["prz_rz_target_share_pre"][i] = ewm(arr["s_rzt"][sl], w4)
+    res["prz_rz_carry_share_pre"][i] = ewm(arr["s_rzc"][sl], w4)
+    res["ptd_anytime_rate_pre"][i] = ewm(arr["td"][sl], w8)
+    res["ptd_first_td_rate_pre"][i] = ewm(arr["ftd"][sl], w8)
+    nw = min(16, n)
+    if nw >= 4:
+        ws = slice(s + n - nw, s + n)
+        for y, pre in (("recy", "psv_rec_yds"), ("rushy", "psv_rush_yds")):
+            v = arr[y][ws]
+            mu = np.mean(v)
+            sd = np.std(v, ddof=1)
+            res[pre + "_mean_pre"][i] = mu
+            res[pre + "_sd_pre"][i] = sd
+            res[pre + "_cv_pre"][i] = sd / mu if mu > 0 else np.nan
+
+for c in VAL:
+    rows[c] = res[c]
+
+# target competition
+sv = rows["ptg_target_share_pre"].fillna(0.0).to_numpy(float)
+rows["_s"] = sv
+grp = rows.groupby(["game_id", "pteam"], sort=False)
+S = grp["_s"].transform("sum").to_numpy(float)
+S2 = grp["_s"].transform(lambda x: np.sum(x.to_numpy(float) ** 2)).to_numpy(float)
+rows["ptc_teammate_share_sum_pre"] = S - sv
+rows["ptc_share_rank_pre"] = grp["_s"].rank(method="min", ascending=False).astype(float)
+hhi = np.full(len(rows), np.nan)
+m = S != 0
+hhi[m] = S2[m] / S[m] ** 2
+rows["ptc_team_hhi_pre"] = hhi
+
+rows = rows.sort_values(["date", "game_id", "team"], kind="mergesort")
+rows[["game_id", "team"] + VAL].to_csv(os.path.join(OUTDIR, "out.csv"), index=False, float_format="%.17g")
+
+amb = [
+    "Team code replacement applied to posteam only (not to other pbp team columns), per brief.",
+    "date parsed from gameday as calendar date; prev(T,d) uses strict date < d, so same-date games are excluded.",
+    "Player-game key is (game_id, T=posteam, player); a player targeted and rushing in the same game for the same team is one player-game.",
+    "ftd/td defined as max over the player's plays in the game (0/1 indicator).",
+    "First-TD play_id computed from all pbp rows of played schedule games (pbp rows whose game_id is not a played schedule game are dropped first; this does not affect per-game minima).",
+    "ptc_share_rank_pre computed with 'min' ranking (1 + count strictly greater) on s with missing -> 0; rank stored as float.",
+    "ptc_team_hhi_pre: S2/S^2 computed with sums in group order; missing only if S == 0 exactly.",
+    "Sample sd uses numpy std ddof=1; mean uses numpy mean (pairwise summation).",
+    "EWM computed as explicit weighted sums (numpy pairwise sum) rather than pandas recursive ewm; tiny float differences vs pandas possible.",
+    "Candidate resolution across both teams of g: larger q wins, tie -> alphabetically smaller team code (string comparison).",
+    "Unplayed output games with no team history (team absent from played slots) produce no rows.",
+    "Players with None/NaN ids excluded; ids compared as strings exactly as stored.",
+]
+with open(os.path.join(OUTDIR, "notes.json"), "w") as f:
+    json.dump({"ambiguities": amb}, f, indent=1)
+
+print("rows", len(rows))
+print(rows[VAL].notna().sum().to_string())
+print("runtime %.1fs" % (time.time() - T0))

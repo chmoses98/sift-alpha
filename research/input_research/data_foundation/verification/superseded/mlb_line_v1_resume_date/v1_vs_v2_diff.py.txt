@@ -1,0 +1,22 @@
+import sys, json, pickle, numpy as np, pandas as pd
+sys.path.insert(0, "/home/user/sift-alpha")
+from alpha_engine.features import mlb_line_ext as ML
+S = sys.argv[1]; dirs = ",".join(f"{S}/raw/mlb/{y}" for y in range(2022, 2027))
+raw = ML.load_raw(dirs); pickle.dump(raw, open(f"{S}/mlbfix/raw.pkl", "wb"))
+g = raw["games"]; sus = g[g.avail_date != g.game_date]
+print("games", len(g), "suspended/straddling", len(sus)); print(sus[["game_id", "season", "game_date", "avail_date"]].to_string())
+new = ML.compute(raw)["team"]
+v1 = {"games": g.assign(game_date=g.avail_date).drop(columns="avail_date")}
+old = ML.compute(v1)["team"]
+cols = [c for s in ML.specs() for c in s.columns]
+a = new.set_index(["game_id", "team"]).sort_index(); b = old.set_index(["game_id", "team"]).reindex(a.index)
+ch = {}
+for c in cols:
+    x, y = a[c].to_numpy(float), b[c].to_numpy(float); d = ~np.isclose(x, y, rtol=1e-9, atol=1e-9, equal_nan=True); ch[c] = int(d.sum())
+rows = (~np.isclose(a[cols].to_numpy(float), b[cols].to_numpy(float), rtol=1e-9, atol=1e-9, equal_nan=True)).any(axis=1)
+chg = a.index[rows]; gids = sorted(set(chg.get_level_values(0)))
+out = {"n_rows": int(len(a)), "rows_changed": int(rows.sum()), "games_changed": len(gids), "suspended_game_ids": sorted(map(int, sus.game_id)),
+       "changed_cells_by_column": ch, "suspended_rows_changed": int(sum(1 for i in chg if i[0] in set(sus.game_id))),
+       "max_abs_change_by_column": {c: float(np.nanmax(np.abs(a[c].to_numpy(float) - b[c].to_numpy(float)))) if ch[c] else 0.0 for c in cols}}
+json.dump(out, open(f"{S}/mlbfix/v1_vs_v2_diff.json", "w"), indent=1); print(json.dumps({k: v for k, v in out.items() if k != "max_abs_change_by_column"}, indent=0))
+new.to_pickle(f"{S}/mlbfix/new_team.pkl")

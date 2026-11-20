@@ -44,8 +44,13 @@ def _perm(df, mask, cols, rng):
     return d
 
 
-def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", games_date_col: str = "gameday", quick: bool = False) -> dict:
-    """tables: {table: (game_id_col, [content columns])}; every table here is truncated and permuted by game id."""
+def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", games_date_col: str = "gameday", quick: bool = False, avail_col: str | None = None) -> dict:
+    """tables: {table: (game_id_col, [content columns])}; every table here is truncated and permuted by game id.
+    avail_col (optional): column of the games table holding the date a game's RESULT became known (>= games_date_col, the first-pitch date). When given, the
+    check `pit_check_first_pitch_availability` runs: at each cut c, the content of every game whose result became known on/after c is permuted, and every row
+    whose game's FIRST PITCH (taken from the raw table, never from the builder's own date column) is before c must be unchanged. Cuts are the three standard
+    quantile cuts plus first-pitch + 1 day of the (up to 4 longest) games that started before and finished after a date boundary, so a builder that dates such a
+    game by its completion, or lets its result leak into the games played in between, fails."""
     t0 = time.time(); specs = mod.specs(); base = mod.compute(raw)["team"]
     res = {s.catalog_id: {"sport": sport, "id": s.catalog_id, "table": "team", "level_claimed": s.level, "pit_claimed": s.pit, "missing_claimed": list(s.missing), "raw_claimed": list(s.raw), "columns": list(s.columns), "tests": {"vintage_dependence": {}}} for s in specs}
     again = mod.compute(raw)["team"]; allsel = np.ones(len(base), bool)
@@ -76,6 +81,20 @@ def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", ga
             T = res[s.catalog_id]["tests"]
             T.setdefault("truncation", []).append({"q": q, "cut": str(cut.date()), "n_pre_rows": int(sel.sum()), "bad_columns": (b := _cmp(base, tr, s.columns, sel)), "ok": not b})
             T.setdefault("perturbation", []).append({"q": q, "seed": seed, "cut": str(cut.date()), "n_late_games": len(late), "bad_columns": (b2 := _cmp(base, pert, s.columns, sel)), "ok": not b2})
+    if avail_col is not None:
+        gt = raw[games_table]; fp = pd.to_datetime(gt[games_date_col]); av = pd.to_datetime(gt[avail_col]); gidc = tables[games_table][0]
+        fp_by = pd.Series(fp.to_numpy(), index=gt[gidc].to_numpy()); av_by = pd.Series(av.to_numpy(), index=gt[gidc].to_numpy())
+        row_fp = base.game_id.map(fp_by); strad = gt[(av - fp).dt.days >= 1].assign(_gap=(av - fp).dt.days).sort_values(["_gap", gidc], ascending=[False, True]).head(4)
+        cuts = [(f"q{q}", pd.Timestamp(dates.quantile(q)).normalize()) for q, _ in (CUTS[:1] if quick else CUTS)]
+        cuts += [(f"straddle:{int(r[gidc])}", pd.Timestamp(r[games_date_col]).normalize() + pd.Timedelta(days=1)) for _, r in strad.iterrows()]
+        runs = []
+        for i, (lab, c) in enumerate(cuts):
+            late_av = set(av_by.index[(av_by >= c).to_numpy()]); sel_fp = (row_fp < c).to_numpy()
+            pa = mod.compute(scramble(raw, late_av, 900 + i))["team"]
+            runs.append({"cut": str(c.date()), "label": lab, "n_rows_first_pitch_before_cut": int(sel_fp.sum()), "n_games_permuted": len(late_av), "bad_columns_by_input": {s.catalog_id: _cmp(base, pa, s.columns, sel_fp) for s in specs}})
+        for s in specs:
+            rr = [{"cut": x["cut"], "label": x["label"], "n_rows": x["n_rows_first_pitch_before_cut"], "n_games_permuted": x["n_games_permuted"], "bad_columns": x["bad_columns_by_input"][s.catalog_id]} for x in runs]
+            res[s.catalog_id]["tests"]["pit_check_first_pitch_availability"] = {"n_straddling_games": int(((av - fp).dt.days >= 1).sum()), "cuts": rr, "ok": bool(rr) and all(not x["bad_columns"] for x in rr)}
     dmid = dates[dates >= dates.quantile(0.5)].min().normalize(); gids = set(base.loc[base.date.dt.normalize() == dmid, "game_id"])
     own = mod.compute(scramble(raw, gids, 404))["team"]; sel = (base.date <= dmid).to_numpy()
     for s in specs:

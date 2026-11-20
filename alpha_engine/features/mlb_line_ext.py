@@ -1,7 +1,10 @@
 """MLB pre-game inputs from archived post-game feeds: inning linescores and starting-pitcher box lines (RESEARCH_ONLY).
 
 Raw data: sift-data-vault `archives/MLB/postgame_feed_compact/2022..2026` (MLB Stats API game feed, compacted; one JSON per game). No market price enters. Nothing is deployed or consumed.
-Output `team` keyed (game_id, team). Every value for a game dated d uses only games dated strictly before d; conditional frequencies use earlier SEASONS only.
+Output `team` keyed (game_id, team). Every value for a game dated d uses only games dated strictly before d AND completed strictly before d; conditional frequencies use earlier SEASONS only.
+Chronology (amendment 1, 2026-11-20): a game is dated by its FIRST PITCH (`datetime.officialDate`, which equals `resumedFromDate` for a suspended game), and its result
+becomes available on `avail_date` = `datetime.resumeDate` when the game was suspended and completed later, else officialDate. Version 1 dated a suspended game by its
+resumption date, so that game's pre-game row used games played after its first pitch (look-ahead; 16 games in 2022-2026, one resumed two months later).
 Starter quantities are TEAM-level (the team's starters in earlier games, opponent-adjusted): the game's own starter identity is an as-played field and is never read for that game's row.
 Method: `score_core.fit` (lam 10, half-life 30 games) then `score_core.kernel`. Full definition: `research/input_research/data_foundation/verification/blind_briefs/briefs_mlb_line.md`.
 """
@@ -35,7 +38,7 @@ def _parse(j: dict) -> dict | None:
         if len(inn) < 5:
             return None
         hr = [float((x.get("home") or {}).get("runs") or 0) for x in inn]; ar = [float((x.get("away") or {}).get("runs") or 0) for x in inn]
-        dt = j["datetime"]; r = {"game_id": int(j["pk"]), "season": int(j["game"]["season"]), "game_date": dt.get("resumeDate") or dt["officialDate"], "home": int(j["teams"]["home"]["id"]), "away": int(j["teams"]["away"]["id"]), "ne": 1.0,
+        dt = j["datetime"]; r = {"game_id": int(j["pk"]), "season": int(j["game"]["season"]), "game_date": dt["officialDate"], "avail_date": dt.get("resumeDate") or dt["officialDate"], "home": int(j["teams"]["home"]["id"]), "away": int(j["teams"]["away"]["id"]), "ne": 1.0,
                                  "h_r1": hr[0], "a_r1": ar[0], "h_r5": sum(hr[:5]), "a_r5": sum(ar[:5]), "h_r": sum(hr), "a_r": sum(ar), "n_inn": float(len(inn))}
         r["walkoff"] = float(r["h_r"] > r["a_r"] and r["h_r"] - hr[-1] <= r["a_r"])
     except (KeyError, ValueError, TypeError, IndexError):
@@ -65,6 +68,9 @@ def load_raw(dirs) -> dict:
 
 def compute(raw: dict) -> dict:
     g = raw["games"].copy(); g["date"] = pd.to_datetime(g.game_date)
+    g["avail"] = pd.to_datetime(g.avail_date) if "avail_date" in g else g["date"]
+    if (g.avail.dt.year != g.season).any():                                   # season-walk-forward kernel assumes every result is known by the end of its season
+        raise ValueError("a game completes outside its season; the kernel's earlier-season reference set would not be point-in-time")
     g = g.sort_values(["date", "game_id"], kind="mergesort").reset_index(drop=True)
     f = lambda c: g[c].to_numpy(float)
     F = C.fit(g, {"run": (f("h_r"), f("a_r")), "r1": (f("h_r1"), f("a_r1")), "r5": (f("h_r5"), f("a_r5")), "late": (f("h_r") - f("h_r5"), f("a_r") - f("a_r5")),

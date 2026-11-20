@@ -20,7 +20,7 @@ class Reproducible(unittest.TestCase):
 
     def test_pinned_universe(self):
         self.assertEqual(RES["rights_group_datasets"], 85)
-        self.assertEqual(RES["distinct_missing_primary_slots"], 749)  # Phase 7: 796 -> 794 (two NFL slots closed)  # derived NBA/CBB engine (PR #94): 794 -> 792
+        self.assertEqual(RES["distinct_missing_primary_slots"], 736)  # NFL player-prop batch 5: 749 -> 736;  # Phase 7: 796 -> 794 (two NFL slots closed)  # derived NBA/CBB engine (PR #94): 794 -> 792
         self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 828)  # NFL batch 4: 884 -> 873  # NFL player-prop batch 5, nfl_player_ext5: 841 -> 828
 
 

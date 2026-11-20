@@ -166,7 +166,9 @@ def main(a=None) -> int:
         from ...features import nba_dist_ext13, nba_pmf_ext13
         X = nba_dist_ext13 if fam == "nba_dist13" else nba_pmf_ext13
         raw = X.load_raw(a[1]); out = a[2]
-        r = G.run(X, raw, "NBA", {"box": ("game_id", X.BOX_CONTENT), "sched": ("game_id", X.SCHED_CONTENT)}, games_table="box", games_date_col="game_date", quick=quick)
+        # pmf rows start in 2025 (five earlier linescore seasons): truncation must keep every earlier game, not only games with output rows
+        r = G.run(X, raw, "NBA", {"box": ("game_id", X.BOX_CONTENT), "sched": ("game_id", X.SCHED_CONTENT)}, games_table="box", games_date_col="game_date", quick=quick,
+                  truncate_by_date=(fam == "nba_pmf13"))
     elif fam == "cfb_drive12":  # batch 12 CFB drive-clock and scoring-timeline inputs; args RAW_DIR (restored espn_summary_postgame dirs, or a cfb_drive_ext12.cache dir) OUT.json
         from ...features import cfb_drive_ext12 as X
         raw = X.load_raw(a[1]); out = a[2]

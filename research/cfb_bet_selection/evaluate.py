@@ -69,7 +69,10 @@ def quotes(V, d):
 
 def bets(q, col, sig):
     tm = np.where(q.side_home.astype(bool), q[col], -q[col]); am = np.where(q.side_home.astype(bool), q.mar, -q.mar)
-    p = 1 - cdf((q.thr - tm) / sig); won_yes = am > q.thr; out = []
+    # FIX (audit of PR #97): a WIN contract settles on margin > 0. Using the settlement threshold -0.5 for BOTH teams in a continuous normal gave
+    # P(home)+P(away) = 1 + P(|margin| < 0.5) ~ 1.024, inflating every WIN edge by ~1.2 points. Probability now uses 0; settlement is unchanged.
+    pt = np.where(q.fam == "WIN", 0.0, q.thr)
+    p = 1 - cdf((pt - tm) / sig); won_yes = am > q.thr; out = []
     for side, ask, prob, won in (("YES", q.yes_ask, p, won_yes), ("NO", q.no_ask, 1 - p, ~won_yes)):
         a = ask.to_numpy(float); fee = FEE * a * (1 - a); e = prob - a - fee
         out.append(pd.DataFrame({"fam": q.fam.values, "game_id": q.game_id.values, "week": q.week.values, "pg": q.pg.values, "side": side, "thr": q.thr.values, "ask": a, "fee": fee, "prob": prob, "edge": e, "won": np.asarray(won), "absmar": np.abs(q[col].values)}))

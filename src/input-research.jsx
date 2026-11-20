@@ -5,6 +5,7 @@ import {ComputableInputsPanel, ScaledSearchPanel} from "./research-milestone2.js
 import {DerivedInputsPanel} from "./derived-inputs.jsx";
 import {MarketUniverse, KalshiExperiment, GameWinnerExperiment, FoundationAudit, SearchResult, SoccerSearch, UnregisteredArchetypes, DataReadinessPanel} from "./research-experiments.jsx";
 import {CatalogCompleteness} from "./catalog-completeness.jsx";
+import {OperatingReadiness} from "./readiness.jsx";
 import {MarketInputMap} from "./market-input-map.jsx";
 import {DataFoundation} from "./data-foundation.jsx";
 import "./input-research.css";
@@ -59,6 +60,7 @@ export function InputResearch() {
   return <>
   <DataFoundation/>
   <CatalogCompleteness/>
+  <OperatingReadiness/>
   <MarketInputMap/>
   <section className="ir" aria-label="Input research: what predicts each market">
     <div className="eyebrow">INPUT RESEARCH / WHAT PREDICTS EACH MARKET</div>

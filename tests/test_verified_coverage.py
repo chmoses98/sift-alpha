@@ -85,7 +85,7 @@ class VerifiedMeansReplayed(unittest.TestCase):
                     self.assertFalse(VC.UNMEASURED_TABLES.search(json.dumps(d2[r["key"]].get("columns_used")) + str(d2[r["key"]].get("reason")) + str(d2[r["key"]].get("history"))), r["key"])
             if "DOWNGRADED" in (v1, v2) and r["sport"] not in ("NBA", "NHL"):
                 self.assertEqual(r["verified_bucket"], "FAILED", r["key"])
-            if v2 == "DOWNGRADED":
+            if v2 == "DOWNGRADED" and "reopened_from" not in r["evidence"]:   # owner_reopen.json: a reopened input that passed every gate (original downgrade kept under reopened_from)
                 self.assertEqual(r["verified_bucket"], "FAILED", r["key"])
         self.assertEqual(len([r for r in ROWS if r["draft_status"] == "DATA_IN_HAND"]), 132)
 

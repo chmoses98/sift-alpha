@@ -1,8 +1,11 @@
 """Shared market-free building blocks for score-derived pre-game inputs (RESEARCH_ONLY): a walk-forward off/def ridge on any per-side game quantity, and a
 season-walk-forward Gaussian kernel for conditional frequencies. Used by cfb_espn_ext, nhl_period_ext and mlb_line_ext. No market price enters.
 
-fit(g, targets, lam, hl): g = games sorted by (date, game_id) with columns season, date, home, away, ne (1.0 unless neutral site).
+fit(g, targets, lam, hl): g = games sorted by (date, game_id) with columns season, date, home, away, ne (1.0 unless neutral site), optional avail.
   For each date d: S = largest season among the games on d; pool = games dated strictly before d with season >= S-1, chronological.
+  Optional column `avail` (result-availability date, >= date): a pool game must ALSO have avail strictly before d. A game that started on one date and was
+  completed later (MLB suspended game) is dated by its first pitch (its own row uses only information before first pitch) and its result enters pools
+  only once it is complete. Without the column (or with avail == date) the behaviour is unchanged byte for byte.
   rank(team, pool game) = number of LATER pool games in which the team plays; rk = min(rank_home, rank_away); weight w = 0.5 ** (rk / hl).
   Each pool game with both target values present gives two observations (offence = home, defence = away, y = y_home, I = ne) and (offence = away, defence = home, y = y_away, I = 0).
   Weighted ridge y ~ b0 + a[offence] + d[defence] + h * I, penalty lam on every a and d, none on b0 and h. Fewer than MIN_POOL usable pool games -> missing.
@@ -22,12 +25,18 @@ MIN_POOL = 16
 def fit(g: pd.DataFrame, targets: dict, lam: float, hl: float, se: str | None = None) -> pd.DataFrame:
     teams = sorted(set(g.home) | set(g.away)); ti = {t: i for i, t in enumerate(teams)}
     h = g.home.map(ti).to_numpy(); a = g.away.map(ti).to_numpy(); ne = g["ne"].to_numpy(float); season = g.season.to_numpy(); date = g.date.to_numpy(); n = len(g)
+    avail = g["avail"].to_numpy() if "avail" in g else None
+    if avail is not None and (avail < date).any():
+        raise ValueError("avail (result availability) earlier than the game date")
     names = list(targets); Y = {k: (np.asarray(v[0], float), np.asarray(v[1], float)) for k, v in targets.items()}
     out = {f"{k}_{s}": np.full(n, np.nan) for k in names for s in ("ep_h", "ep_a", "off_h", "def_h", "off_a", "def_a")}
     if se: out[se + "_se"] = np.full(n, np.nan)
     starts = np.flatnonzero(np.r_[True, date[1:] != date[:-1]]); ends = np.r_[starts[1:], n]
     for s0, e0 in zip(starts, ends):
-        pool = np.flatnonzero(season[:s0] >= season[s0:e0].max() - 1); m = len(pool)
+        keep = season[:s0] >= season[s0:e0].max() - 1
+        if avail is not None:
+            keep &= avail[:s0] < date[s0]                                    # result not yet known on d (suspended game resumed on/after d)
+        pool = np.flatnonzero(keep); m = len(pool)
         if m < MIN_POOL:
             continue
         ph, pa, pne = h[pool], a[pool], ne[pool]

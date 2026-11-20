@@ -1,4 +1,4 @@
-"""Walk-forward check of the six-sport expansion inputs against naive baselines (RESEARCH_ONLY). Usage: python research/audit/six_sport_walkforward.py CFB_DIRS NHL_DIR MLB_DIRS
+"""Walk-forward check of the six-sport expansion inputs against naive baselines (RESEARCH_ONLY). Usage: python research/audit/six_sport_walkforward.py CFB_DIRS NHL_DIR MLB_DIRS   (or: --only-mlb MLB_DIRS to recompute only the MLB section)
 Each input value is already out of sample (ridge: earlier dates only; kernel: earlier seasons only). Baseline = the league mean of the same outcome over EARLIER seasons (same rows, same condition).
 skill = 1 - MSE(input) / MSE(baseline) (Brier for probabilities). This is evidence about inputs vs naive baselines only, not about any projection model."""
 import json
@@ -31,6 +31,18 @@ def score(t, col, y, cond=None):
 
 def main(a):
     out = {"status": "RESEARCH_ONLY", "note": __doc__.split("\n", 1)[1].strip(), "sports": {}}
+    if a[0] == "--only-mlb":                     # MLB amendment 1 (first-pitch chronology) changes MLB only; CFB/NHL sections are kept as computed
+        out = json.loads((Path(__file__).parent / "six_sport_walkforward.json").read_text()); a = [None, None, a[1]]
+    if a[0] is not None:
+        cfb_nhl(out, a)
+    mlb(out, a)
+    (Path(__file__).parent / "six_sport_walkforward.json").write_text(json.dumps(out, indent=1) + "\n")
+    for sp, v in out["sports"].items():
+        for k, r in v["results"].items():
+            print(sp, k, None if r is None else (r["skill_pct"], f"{r['seasons_better']}/{r['seasons_total']}", r["n"]))
+
+
+def cfb_nhl(out, a):
     # CFB
     g = CF.load_raw(a[0])["games"]; t = CF.compute({"games": g})["team"]
     for s in "ha":
@@ -63,7 +75,10 @@ def main(a):
     for k in (1, 2, 3):
         R[f"ppc_mu_p{k}_pre"] = score(t, f"ppc_mu_p{k}_pre", t[f"p{k}"]); R[f"ppc_tot_ge2_p{k}_pre"] = score(t, f"ppc_tot_ge2_p{k}_pre", (t[f"p{k}"] + t[f"p{k}_o"] >= 2).astype(float))
     out["sports"]["NHL"] = {"games": int(len(g)), "results": R, "not_assessed": ["ppc_cov_p12_pre", "spu_se_pre"]}
-    # MLB
+
+
+def mlb(out, a):
+    # MLB (amendment 1: games dated by first pitch; a suspended game's result is used only once complete)
     g = ML.load_raw(a[2])["games"]; t = ML.compute({"games": g})["team"]; g["h_late"] = g.h_r - g.h_r5; g["a_late"] = g.a_r - g.a_r5
     c = {k: (f"h_{k}", f"a_{k}") for k in ("r1", "r5", "r", "late", "sp_outs", "sp_bf", "sp_np")}; o = rows(g, c); x = rows(g, {k: (b, a_) for k, (a_, b) in c.items() if k in ("r1", "r5", "r")})
     t = t.merge(o, on=["game_id", "team"]).merge(x, on=["game_id", "team"], suffixes=("", "_o")); gi = g.set_index("game_id"); t["walkoff"] = t.game_id.map(gi.walkoff); t["n_inn"] = t.game_id.map(gi.n_inn)
@@ -74,11 +89,7 @@ def main(a):
          "spw_bf_pre": score(t, "spw_bf_pre", t.sp_bf), "spw_np_pre": score(t, "spw_np_pre", t.sp_np)}
     for k in (18, 21, 24, 27): R[f"hook_ge{k}_pre"] = score(t, f"hook_ge{k}_pre", (t.sp_bf >= k).astype(float).where(t.sp_bf.notna()))
     for k in (15, 16, 18, 19): R[f"exb_ge{k}_pre"] = score(t, f"exb_ge{k}_pre", (t.sp_outs >= k).astype(float).where(t.sp_outs.notna()))
-    out["sports"]["MLB"] = {"games": int(len(g)), "results": R, "not_assessed": []}
-    (Path(__file__).parent / "six_sport_walkforward.json").write_text(json.dumps(out, indent=1) + "\n")
-    for sp, v in out["sports"].items():
-        for k, r in v["results"].items():
-            print(sp, k, None if r is None else (r["skill_pct"], f"{r['seasons_better']}/{r['seasons_total']}", r["n"]))
+    out["sports"]["MLB"] = {"games": int(len(g)), "results": R, "not_assessed": [], "chronology": "amendment 1 (2026-11-20): first-pitch dating, suspended-game results withheld until completion"}
 
 
 if __name__ == "__main__":

@@ -11,7 +11,8 @@ Projection sources (all pre-game, no market price):
   he          cfb-edge-finder experimental venue-only home effect (FROZEN_CANDIDATE, chosen on 2015-2023)
   he_blend    he + PR #96 cfbx inputs, OLS on 2024-2025
 
-Distribution per (source, period P, quantity q): q_P ~ Normal(alpha + beta * proj_q, sigma), fitted by OLS on 2024-2025,
+Distribution per (source, period P, quantity q): q_P ~ Normal(alpha + beta * proj_q, sigma), fitted by OLS on 2024-2025
+(and, for incumbent/he/he_blend, an EMPIRICAL variant: alpha + beta * proj_q + a 2024-2025 residual quantile),
 P in {FG, 1H, 2H, 1Q}, q in {margin, total, home_pts, away_pts}. For the full game the existing approach is kept for the
 margin of incumbent/blend97/frozenA98 (alpha = 0, beta = 1 for incumbent and blend97, i.e. the projection itself) so the
 "existing recommendation process" is scored as it was specified.
@@ -41,6 +42,7 @@ PERIODS = ("FG", "1H", "2H", "1Q")
 QUANTS = ("margin", "total", "home_pts", "away_pts")
 FIT_SEASONS = (2024, 2025)
 LAST_SEEN_WEEK_2026 = 5
+EMPIRICAL_SOURCES = ("incumbent", "he", "he_blend")
 
 
 def jl(p):
@@ -115,8 +117,10 @@ def fit_distributions(r: pd.DataFrame, per: pd.DataFrame) -> dict:
                     a, b = 0.0, 1.0  # the source's own margin, as specified by its PR / fit
                 else:
                     b, a = np.polyfit(x, y, 1)
-                sig = float(np.std(y - (a + b * x), ddof=2))
-                spec[f"{s}|{p}|{q}"] = {"alpha": round(float(a), 5), "beta": round(float(b), 5), "sigma": round(sig, 5), "n": int(len(x))}
+                res = y - (a + b * x); sig = float(np.std(res, ddof=2))
+                spec[f"{s}|{p}|{q}"] = {"alpha": round(float(a), 5), "beta": round(float(b), 5), "sigma": round(sig, 5), "n": int(len(x)),
+                                        # empirical residual distribution (201 quantiles): keeps the discreteness of football scores (key numbers, 0/7/14)
+                                        "resid_q": np.round(np.quantile(res, np.linspace(0, 1, 201)), 3).tolist() if s in EMPIRICAL_SOURCES else None}
     return spec
 
 

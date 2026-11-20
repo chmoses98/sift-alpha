@@ -1,0 +1,213 @@
+import sys, os, json, time
+import numpy as np
+import pandas as pd
+import pyarrow.parquet as pq
+
+t0 = time.time()
+data_dir = sys.argv[1]
+out_dir = sys.argv[2]
+CODE = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
+
+# ---------------- APPENDIX 1: games ----------------
+g = pd.read_csv(os.path.join(data_dir, "games.csv"), dtype={"game_id": str}, low_memory=False)
+g = g[(g["season"] >= 2010) & g["home_score"].notna()]
+g = g.drop_duplicates("game_id", keep="first").reset_index(drop=True)
+g["home_team"] = g["home_team"].replace(CODE)
+g["away_team"] = g["away_team"].replace(CODE)
+g["date"] = g["gameday"]
+kept = set(g["game_id"])
+
+# ---------------- pbp ----------------
+cols = ["game_id", "play_id", "qtr", "posteam", "play_type", "score_differential",
+        "total_home_score", "total_away_score", "fixed_drive", "fixed_drive_result"]
+parts = []
+pbp_dir = os.path.join(data_dir, "pbp")
+for fn in sorted(os.listdir(pbp_dir)):
+    if not fn.endswith(".parquet"):
+        continue
+    d = pq.read_table(os.path.join(pbp_dir, fn), columns=cols).to_pandas()
+    d = d[d["game_id"].isin(kept)]
+    parts.append(d)
+p = pd.concat(parts, ignore_index=True)
+del parts
+p["fileord"] = np.arange(len(p))
+p["posteam"] = p["posteam"].replace(CODE)
+p["play_id"] = pd.to_numeric(p["play_id"], errors="coerce")
+
+# ---------------- APPENDIX 2: per team-game quantities ----------------
+pt = p[p["posteam"].notna()]
+dr = pt[pt["fixed_drive"].notna()]
+drives = dr.groupby(["game_id", "posteam"])["fixed_drive"].nunique().rename("drives")
+# drive results (first non-missing in file order) - td/fg are not needed for margin/total but computed for completeness
+plays = pt[pt["play_type"].isin(["pass", "run"])].groupby(["game_id", "posteam"]).size().rename("plays")
+tq = pd.concat([drives, plays], axis=1).fillna(0)
+
+# ---------------- team-games ----------------
+home = pd.DataFrame({"game_id": g["game_id"], "season": g["season"], "date": g["date"],
+                     "team": g["home_team"], "opp": g["away_team"], "pts": g["home_score"].astype(float),
+                     "pts_a": g["away_score"].astype(float), "is_home": 1, "s": 1.0})
+away = pd.DataFrame({"game_id": g["game_id"], "season": g["season"], "date": g["date"],
+                     "team": g["away_team"], "opp": g["home_team"], "pts": g["away_score"].astype(float),
+                     "pts_a": g["home_score"].astype(float), "is_home": 0, "s": -1.0})
+neutral = (g["location"] == "Neutral").values
+home.loc[neutral, "s"] = 0.0
+away.loc[neutral, "s"] = 0.0
+tg = pd.concat([home, away], ignore_index=True)
+tg = tg.merge(tq, left_on=["game_id", "team"], right_index=True, how="left")
+tg[["drives", "plays"]] = tg[["drives", "plays"]].fillna(0.0)
+opp_vals = tg[["game_id", "team", "drives", "plays"]].rename(
+    columns={"team": "opp", "drives": "o_drives", "plays": "o_plays"})
+tg = tg.merge(opp_vals, on=["game_id", "opp"], how="left")
+tg[["o_drives", "o_plays"]] = tg[["o_drives", "o_plays"]].fillna(0.0)
+
+# ---------------- APPENDIX 3: team state ----------------
+r = 0.5 ** (1 / 8)
+WQ = ["one", "drives", "o_drives", "pts", "pts_a"]
+tg["one"] = 1.0
+tg = tg.sort_values(["team", "date", "game_id"], kind="mergesort").reset_index(drop=True)
+Wcols = {q: np.zeros(len(tg)) for q in WQ}
+for team, idx in tg.groupby("team", sort=False).indices.items():
+    idx = np.sort(idx)  # already in (date, game_id) order within team after sort
+    sub = tg.iloc[idx]
+    dates = sub["date"].values
+    acc = {q: 0.0 for q in WQ}
+    Wrun = {q: np.zeros(len(idx)) for q in WQ}
+    for k in range(len(idx)):
+        for q in WQ:
+            acc[q] = r * acc[q] + sub[q].values[k]
+            Wrun[q][k] = acc[q]
+    # pre-game state: last team-game dated strictly before d
+    pos = np.searchsorted(dates, dates, side="left") - 1  # dates are ISO strings, sorted
+    for q in WQ:
+        vals = np.where(pos >= 0, Wrun[q][np.maximum(pos, 0)], 0.0)
+        Wcols[q][idx] = vals
+for q in WQ:
+    tg["W_" + q] = Wcols[q]
+
+# league constants
+lg = {}
+for S in sorted(tg["season"].unique()):
+    prev = tg[tg["season"] == S - 1]
+    if len(prev) == 0:
+        continue
+    hh = prev[(prev["is_home"] == 1) & (prev["s"] != 0)]
+    lg[S + 0] = dict(dpg=prev["drives"].mean(), ppd=prev["pts"].sum() / prev["drives"].sum(),
+                     h=(hh["pts"] - hh["pts_a"]).mean())
+
+
+def shr(n, a, b, lgv):
+    R = np.where(b > 0, a / np.where(b > 0, b, 1.0), 0.0)
+    return n / (n + 8) * R + 8 / (n + 8) * lgv
+
+
+# ---------------- APPENDIX 4 ----------------
+A = tg[tg["season"] >= 2011].copy()
+ostate = tg[["game_id", "team"] + ["W_" + q for q in WQ]].rename(
+    columns={"team": "opp", **{"W_" + q: "oW_" + q for q in WQ}})
+A = A.merge(ostate, on=["game_id", "opp"], how="left")
+A["dpg"] = A["season"].map(lambda S: lg[S]["dpg"])
+A["ppd"] = A["season"].map(lambda S: lg[S]["ppd"])
+A["h"] = A["season"].map(lambda S: lg[S]["h"])
+nT = A["W_one"].values
+nO = A["oW_one"].values
+E_dr = 0.5 * (shr(nT, A["W_drives"].values, A["W_one"].values, A["dpg"].values)
+              + shr(nO, A["oW_o_drives"].values, A["oW_one"].values, A["dpg"].values))
+off_ppd = shr(nT, A["W_pts"].values, A["W_drives"].values, A["ppd"].values)
+def_ppd = shr(nO, A["oW_pts_a"].values, A["oW_o_drives"].values, A["ppd"].values)
+A["mean"] = E_dr * off_ppd * def_ppd / A["ppd"].values + 0.5 * A["h"].values * A["s"].values
+om = A[["game_id", "team", "mean"]].rename(columns={"team": "opp", "mean": "o_mean"})
+A = A.merge(om, on=["game_id", "opp"], how="left")
+A["mtp_margin_pre"] = A["mean"] - A["o_mean"]
+A["mtp_total_pre"] = A["mean"] + A["o_mean"]
+print("A rows", len(A), "NaN margin", A["mtp_margin_pre"].isna().sum(), "NaN total", A["mtp_total_pre"].isna().sum())
+
+# ---------------- B: per-game outcomes ----------------
+ps = p.sort_values(["game_id", "play_id", "fileord"], kind="mergesort")
+gout = {}
+for gid, d in ps.groupby("game_id", sort=False):
+    m = (d["total_home_score"].fillna(0).values - d["total_away_score"].fillna(0).values).astype(float)
+    path = np.concatenate([[0.0], m])
+    q = d["qtr"].values
+    sel = np.where(q <= 3)[0]
+    m3 = m[sel[-1]] if len(sel) else 0.0
+    q4 = 1.0 if abs(m3) >= 14 else 0.0
+    mx = np.max(np.abs(path))
+    nz = path[path != 0]
+    lc = float(np.sum(np.sign(nz[1:]) != np.sign(nz[:-1]))) if len(nz) >= 2 else 0.0
+    w = np.sign(path[-1])
+    tr = 1.0 if (w != 0 and np.min(w * path) <= -24) else 0.0
+    gout[gid] = dict(q4_abs14=q4, any_abs21=1.0 if mx >= 21 else 0.0, max_abs=mx, lead_chg=lc,
+                     lc_ge2=1.0 if lc >= 2 else 0.0, trailed24=tr,
+                     home_maxlead=np.max(path), away_maxlead=np.max(-path))
+go = pd.DataFrame.from_dict(gout, orient="index")
+go.index.name = "game_id"
+A = A.merge(go, left_on="game_id", right_index=True, how="left")
+A["team_lead14"] = np.where(A["home_maxlead"].isna(), np.nan,
+                            np.where(A["is_home"] == 1, A["home_maxlead"], A["away_maxlead"]) >= 14).astype(float)
+A.loc[A["home_maxlead"].isna(), "team_lead14"] = np.nan
+
+# second-half shares
+BINS = ["m17", "m9", "m1", "z", "p1", "p9", "p17"]
+h2 = pt[pt["play_type"].isin(["pass", "run"]) & (pt["qtr"] >= 3) & pt["score_differential"].notna()].copy()
+sd = h2["score_differential"].values
+h2["bin"] = np.select([sd <= -17, sd <= -9, sd <= -1, sd == 0, sd <= 8, sd <= 16, sd >= 17], BINS, default="none")
+ct = h2.groupby(["game_id", "posteam", "bin"]).size().unstack("bin", fill_value=0)
+for b in BINS:
+    if b not in ct.columns:
+        ct[b] = 0
+tot = ct[BINS].sum(axis=1)
+sh = ct[BINS].div(tot, axis=0)
+sh.columns = ["h2_" + b for b in BINS]
+sh = sh.reset_index().rename(columns={"posteam": "team"})
+A = A.merge(sh, on=["game_id", "team"], how="left")
+
+# ---------------- C: kernel frequencies ----------------
+OUT_MAP = [("ssb_q4_abs14_pre", "q4_abs14"), ("ssb_any_abs21_pre", "any_abs21")] + \
+          [("ssb_h2_share_%s_pre" % b, "h2_" + b) for b in BINS] + \
+          [("sps_exp_max_abs_margin_pre", "max_abs"), ("sps_exp_lead_changes_pre", "lead_chg"),
+           ("sps_p_lead_changes_ge2_pre", "lc_ge2"), ("sps_p_winner_trailed24_pre", "trailed24"),
+           ("sps_p_team_max_lead_ge14_pre", "team_lead14")]
+outs = []
+for S in sorted(A["season"].unique()):
+    if S < 2013:
+        continue
+    rows = A[A["season"] == S]
+    ref = A[(A["season"] >= S - 3) & (A["season"] <= S - 1)]
+    xm = rows["mtp_margin_pre"].values[:, None]
+    xt = rows["mtp_total_pre"].values[:, None]
+    W = np.exp(-0.5 * (((xm - ref["mtp_margin_pre"].values[None, :]) / 4) ** 2
+                       + ((xt - ref["mtp_total_pre"].values[None, :]) / 5) ** 2))
+    res = pd.DataFrame({"game_id": rows["game_id"].values, "team": rows["team"].values})
+    for oc, src in OUT_MAP:
+        o = ref[src].values.astype(float)
+        pres = ~np.isnan(o)
+        Wp = W[:, pres]
+        num = Wp @ o[pres]
+        den = Wp.sum(axis=1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            res[oc] = num / den
+    outs.append(res)
+out = pd.concat(outs, ignore_index=True)
+dup = out.duplicated(["game_id", "team"]).sum()
+print("rows", len(out), "duplicates", dup)
+print(out.isna().sum().to_string())
+out.to_csv(os.path.join(out_dir, "out.csv"), index=False, float_format="%.17g")
+
+notes = {"ambiguities": [
+    "REF for season S uses only section-A rows (seasons >= 2011); so for S=2013 the window S-3..S-1 effectively contains only 2011 and 2012 (2010 has no section-A rows).",
+    "Output rows are all section-A team-games with season >= 2013 (games.csv season >= 2013 with home_score present, first occurrence of duplicated game_id); includes all game types (REG and POST).",
+    "Path ordering: pbp rows sorted by numeric play_id; ties (if any) broken by file order (stable sort). Missing play_id (none expected) would sort last.",
+    "m_k uses total_home_score and total_away_score each with missing treated as 0, independently.",
+    "q4_abs14: rows with missing qtr are not counted as qtr <= 3.",
+    "trailed24: w = sign of last m in the path (last pbp row); min over k includes m_0 = 0.",
+    "lead_chg: zeros (including m_0) removed, then count of sign changes between consecutive remaining values.",
+    "home_maxlead/away_maxlead include m_0 = 0; team_lead14 is missing when the game has no pbp rows.",
+    "h2 shares: qtr >= 3 includes overtime (qtr 5+); bins on score_differential exactly as given (non-integer values would fall into the next bin by <= thresholds; none expected). Share missing if the team has no qualifying plays in that game, then excluded from that outcome's kernel average only.",
+    "pbp rows used are only those whose game_id is a kept game (games.csv season >= 2010 with home_score present).",
+    "W state: 'last team-game dated strictly before d' compares gameday strings (ISO dates); team-games on the same date as the row (including the row itself) are excluded.",
+    "League constant h uses mean(pts - pts_a) over home-slot team-games of S-1 with s != 0; dpg is the mean of drives over all team-games of S-1 including those with no pbp (drives = 0).",
+    "If a kernel denominator were 0 (no present REF rows or all weights underflow to 0) the value is left missing; weights are not normalised otherwise.",
+]}
+with open(os.path.join(out_dir, "notes.json"), "w") as f:
+    json.dump(notes, f, indent=2)
+print("runtime %.1fs" % (time.time() - t0))

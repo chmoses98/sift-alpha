@@ -91,10 +91,13 @@ def independent_gate(row: dict, cols: list[str], ind: dict) -> tuple[str | None,
 
 
 # PIT tests that MUST be present and ok for an extension replay (fail closed: a missing test is a failure, not a pass).
-REQUIRED_PIT_CHECKS = {"*": ("pit_check_perturbation_not_vacuous",), "nfl.injuries_pit": ("pit_check_perturbation_not_vacuous", "pit_check_post_kickoff_injuries")}
+REQUIRED_PIT_CHECKS = {"*": ("pit_check_perturbation_not_vacuous",), "nfl.injuries_pit": ("pit_check_perturbation_not_vacuous", "pit_check_post_kickoff_injuries"),
+                       "nfl.skill_avail": ("pit_check_perturbation_not_vacuous", "pit_check_post_kickoff_injuries", "pit_check_future_injury_reports")}
 # MLB linescore inputs (amendment 1, 2026-11-20): suspended games must be dated by first pitch and their result withheld until completion
 REQUIRED_PIT_CHECKS.update({k: ("pit_check_perturbation_not_vacuous", "pit_check_first_pitch_availability") for k in (
-    "mlb.first_inning_splits", "mlb.f5_split", "mlb.playoff_walkoff_event_rate", "mlb.sp_workload", "mlb.sp_hook_hazard_curve", "mlb.exit_boundary_mass")})
+    "mlb.first_inning_splits", "mlb.f5_split", "mlb.playoff_walkoff_event_rate", "mlb.sp_workload", "mlb.sp_hook_hazard_curve", "mlb.exit_boundary_mass",
+    # batch 7 (2026-11-20): plate-appearance inputs use the same first-pitch chronology
+    "mlb.lineup_k_platoon", "mlb.team_wrc_vs_hand", "mlb.run_dist", "mlb.tto", "mlb.k_rates", "mlb.first_inning_markov_run_prob")})
 
 
 def pit_check_failures(iid: str, t: dict) -> list[str]:

@@ -1,0 +1,183 @@
+import json, os, sys, time
+import numpy as np
+import pandas as pd
+
+t0 = time.time()
+root, out_csv, notes_path = sys.argv[1], sys.argv[2], sys.argv[3]
+SKIP = ('caught_stealing', 'pickoff', 'stolen_base', 'wild_pitch', 'passed_ball', 'balk', 'other_advance',
+        'other_out', 'runner', 'defensive_indiff', 'game_advisory', 'ejection')
+CLASSES = ['W', 'S1', 'XB', 'HR', 'K', 'O']
+CMAP = {}
+for e in ('walk', 'intent_walk', 'hit_by_pitch', 'catcher_interf'): CMAP[e] = 0
+for e in ('single', 'field_error'): CMAP[e] = 1
+for e in ('double', 'triple'): CMAP[e] = 2
+CMAP['home_run'] = 3
+for e in ('strikeout', 'strikeout_double_play'): CMAP[e] = 4
+NC = 6
+
+games = []  # (gid, season, date, avail, home, away)
+seen = set()
+pa = {k: [] for k in ('g', 'season', 'avail', 'inn', 'bat_team', 'fld_team', 'is_start', 'pit', 'ab', 'cls')}
+
+def get(d, *ks):
+    for k in ks:
+        d = d[k]
+    return d
+
+for s in sorted(os.listdir(root), key=lambda x: int(x)):
+    sdir = os.path.join(root, s)
+    for fn in sorted(os.listdir(sdir)):
+        if fn.startswith('_'):
+            continue
+        with open(os.path.join(sdir, fn)) as f:
+            d = json.load(f)
+        try:
+            gtype = get(d, 'game', 'type'); coded = get(d, 'status', 'codedGameState')
+            if gtype not in ('R', 'F', 'D', 'L', 'W') or coded != 'F':
+                continue
+            gid = d['pk']
+            season = int(get(d, 'game', 'season'))
+            date = get(d, 'datetime', 'officialDate')
+            home = get(d, 'teams', 'home', 'id'); away = get(d, 'teams', 'away', 'id')
+            plays = d['plays']
+        except (KeyError, TypeError, ValueError):
+            continue
+        if gid in seen:
+            continue
+        seen.add(gid)
+        rd = d['datetime'].get('resumeDate')
+        avail = rd if (rd is not None and rd != '') else date
+        def sp(side):
+            try:
+                pl = d['box'][side]['pitchers']
+                return pl[0] if len(pl) > 0 else None
+            except (KeyError, TypeError, IndexError):
+                return None
+        home_sp, away_sp = sp('home'), sp('away')
+        gi = len(games)
+        games.append((gid, season, date, avail, home, away))
+        for p in plays:
+            ev = p.get('event')
+            if not isinstance(ev, str) or ev.startswith(SKIP):
+                continue
+            if p.get('bat') is None or p.get('pit') is None:
+                continue
+            top = p.get('half') == 'top'
+            bt, ft = (away, home) if top else (home, away)
+            starter = home_sp if top else away_sp
+            inn = p.get('inn')
+            inn = 0 if inn is None else int(inn)
+            pa['g'].append(gi); pa['season'].append(season); pa['avail'].append(avail)
+            pa['inn'].append(inn); pa['bat_team'].append(bt); pa['fld_team'].append(ft)
+            pa['is_start'].append(starter is not None and p['pit'] == starter)
+            pa['pit'].append(p['pit']); pa['ab'].append(int(p['ab'])); pa['cls'].append(CMAP.get(ev, 5))
+
+print('parsed', len(games), 'games', len(pa['g']), 'PAs', round(time.time() - t0, 1), 's', flush=True)
+P = pd.DataFrame(pa)
+del pa
+P['seq'] = np.arange(len(P))
+# bf_i: position within (game, pitcher) ordered by ab (stable on play order)
+P = P.sort_values(['g', 'pit', 'ab', 'seq'], kind='mergesort')
+P['bf_i'] = P.groupby(['g', 'pit']).cumcount() + 1
+P = P.sort_values('seq', kind='mergesort').reset_index(drop=True)
+P['avail_n'] = pd.to_datetime(P['avail']).values.astype('datetime64[D]').astype(np.int64)
+
+G = pd.DataFrame(games, columns=['game_id', 'season', 'date', 'avail', 'home', 'away'])
+G['date_n'] = pd.to_datetime(G['date']).values.astype('datetime64[D]').astype(np.int64)
+
+bat_mask = (P['inn'] == 1).values
+pit_mask = (P['is_start'] & (P['bf_i'] <= 9)).values
+cls = P['cls'].values
+
+# league shares by season
+def shares(mask):
+    out = {}
+    sub = P.loc[mask]
+    for s, grp in sub.groupby('season'):
+        cnt = np.bincount(grp['cls'].values, minlength=NC).astype(np.float64)
+        out[s] = cnt / cnt.sum()
+    return out
+LB = shares(bat_mask)
+LP = shares(pit_mask)
+
+# index: (team, season) -> sorted avail_n array, cumulative class counts
+def build(mask, teamcol):
+    sub = P.loc[mask, [teamcol, 'season', 'avail_n', 'cls']].sort_values('avail_n', kind='mergesort')
+    idx = {}
+    for (t, s), grp in sub.groupby([teamcol, 'season']):
+        av = grp['avail_n'].values
+        oh = np.zeros((len(grp) + 1, NC), dtype=np.int64)
+        oh[np.arange(1, len(grp) + 1), grp['cls'].values] = 1
+        idx[(t, s)] = (av, np.cumsum(oh, axis=0))
+    return idx
+BI = build(bat_mask, 'bat_team')
+PI = build(pit_mask, 'fld_team')
+all_seasons = sorted(P['season'].unique())
+
+def counts(index, team, S, dn):
+    c = np.zeros(NC, dtype=np.int64)
+    for s in all_seasons:
+        if s < S - 1:
+            continue
+        e = index.get((team, s))
+        if e is None:
+            continue
+        av, cum = e
+        k = np.searchsorted(av, dn, side='left')  # avail < d
+        c += cum[k]
+    return c
+
+def p_no_run(q):
+    qW, qS, qX, qH, qK, qO = q
+    memo = {}
+    def f(outs, b1, b2, b3):
+        if outs == 3:
+            return 1.0
+        key = (outs, b1, b2, b3)
+        if key in memo:
+            return memo[key]
+        v = (qK + qO) * f(outs + 1, b1, b2, b3)
+        # W
+        if not (b1 and b2 and b3):
+            if not b1:
+                nb = (1, b2, b3)
+            elif not b2:
+                nb = (1, 1, b3)
+            else:
+                nb = (1, 1, 1)
+            v += qW * f(outs, *nb)
+        # S1
+        if not b3:
+            v += qS * f(outs, 1, b1, b2)
+        # XB
+        if not (b1 or b2 or b3):
+            v += qX * f(outs, 0, 1, 0)
+        # HR: always scores
+        memo[key] = v
+        return v
+    return f(0, 0, 0, 0)
+
+rows = []
+pnr = {}
+for r in G.itertuples(index=False):
+    S = r.season
+    if S < 2023:
+        continue
+    for team, opp in ((r.home, r.away), (r.away, r.home)):
+        lb = LB[S - 1]; lp = LP[S - 1]
+        nb = counts(BI, team, S, r.date_n).astype(np.float64)
+        npc = counts(PI, opp, S, r.date_n).astype(np.float64)
+        b = (nb + 250.0 * lb) / (nb.sum() + 250.0)
+        p = (npc + 300.0 * lp) / (npc.sum() + 300.0)
+        q = b * p / lb
+        q = q / q.sum()
+        pn = p_no_run([float(x) for x in q])
+        pnr[(r.game_id, team)] = pn
+        rows.append((r.game_id, team, opp, pn))
+
+out = pd.DataFrame([(g, t, 1.0 - pn, pn * pnr[(g, o)]) for g, t, o, pn in rows],
+                   columns=['game_id', 'team', 'fim_p_score_pre', 'fim_p_nrfi_pre'])
+assert not out.duplicated(['game_id', 'team']).any()
+out.to_csv(out_csv, index=False, float_format='%.17g')
+print('rows', len(out), 'runtime', round(time.time() - t0, 1), 's')
+print(out.describe())

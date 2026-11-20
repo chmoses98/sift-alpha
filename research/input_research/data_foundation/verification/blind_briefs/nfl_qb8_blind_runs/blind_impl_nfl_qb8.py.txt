@@ -1,0 +1,232 @@
+import sys, os, glob, json, time
+import numpy as np
+import pandas as pd
+
+t0 = time.time()
+datadir, outdir = sys.argv[1], sys.argv[2]
+REPL = {'OAK': 'LV', 'SD': 'LAC', 'STL': 'LA'}
+
+# ---------- 1. Games
+g = pd.read_csv(os.path.join(datadir, 'games.csv'), low_memory=False)
+g = g[(g['season'] >= 2010) & g['home_score'].notna()]
+g = g.drop_duplicates('game_id', keep='first').copy()
+for c in ['home_team', 'away_team']:
+    g[c] = g[c].replace(REPL)
+g['date'] = g['gameday'].astype(str)
+games = g[['game_id', 'season', 'date', 'home_team', 'away_team']].reset_index(drop=True)
+slots = pd.concat([
+    pd.DataFrame({'game_id': games.game_id, 'season': games.season, 'date': games.date,
+                  'team': games.home_team, 'opp': games.away_team}),
+    pd.DataFrame({'game_id': games.game_id, 'season': games.season, 'date': games.date,
+                  'team': games.away_team, 'opp': games.home_team})], ignore_index=True)
+slots = slots.sort_values(['team', 'date', 'game_id']).reset_index(drop=True)
+team_games = {t: (df['date'].to_numpy(), df['game_id'].to_numpy()) for t, df in slots.groupby('team', sort=False)}
+
+def prev_games(team, d, k):
+    dates, gids = team_games[team]
+    i = np.searchsorted(dates, d, side='left')  # games dated strictly before d
+    return list(gids[max(0, i - k):i])
+
+# ---------- 2. Attempts
+cols = ['game_id', 'play_id', 'posteam', 'defteam', 'complete_pass', 'incomplete_pass', 'interception',
+        'two_point_attempt', 'passer_player_id', 'pass_touchdown', 'cp', 'yardline_100', 'air_yards']
+kept = set(games.game_id)
+parts = []
+for f in sorted(glob.glob(os.path.join(datadir, 'pbp', 'play_by_play_*.parquet'))):
+    p = pd.read_parquet(f, columns=cols)
+    p = p[p['game_id'].isin(kept)]
+    isatt = (p['complete_pass'] == 1) | (p['incomplete_pass'] == 1) | (p['interception'] == 1)
+    two = p['two_point_attempt'].fillna(0) == 1
+    p = p[isatt & ~two & p['passer_player_id'].notna() & p['posteam'].notna()]
+    parts.append(p)
+a = pd.concat(parts, ignore_index=True)
+del parts
+a['posteam'] = a['posteam'].replace(REPL)
+a['defteam'] = a['defteam'].replace(REPL)
+a['td'] = (a['pass_touchdown'] == 1).astype(float)
+a['int'] = (a['interception'] == 1).astype(float)
+a['comp'] = (a['complete_pass'] == 1).astype(float)
+a = a.merge(games[['game_id', 'season', 'date']], on='game_id', how='left')
+a = a.rename(columns={'passer_player_id': 'passer'})
+
+# xTD model
+y = a['yardline_100']
+yb = np.select([y <= 5, y <= 10, y <= 20, y <= 40], [0, 1, 2, 3], 4)
+ay = a['air_yards']
+ab = np.select([ay.isna(), ay < 0, ay < 10, ay < 20], [0, 1, 2, 3], 4)
+a['cell'] = 5 * yb + ab
+a['p_td'] = np.nan
+for S in sorted(a['season'].unique()):
+    lo, hi = max(2010, S - 3), max(2010, S - 1)
+    ref = a[(a['season'] >= lo) & (a['season'] <= hi)]
+    p_all = ref['td'].mean()
+    grp = ref.groupby('cell')['td'].agg(['sum', 'count'])
+    pc = (grp['sum'] + 10 * p_all) / (grp['count'] + 10)
+    m = a['season'] == S
+    a.loc[m, 'p_td'] = a.loc[m, 'cell'].map(pc).fillna(p_all).to_numpy()
+
+# ---------- 4. Attempt-window sums per passer
+a = a.sort_values(['passer', 'date', 'game_id', 'play_id']).reset_index(drop=True)
+r = 0.5 ** (1 / 350)
+r700 = r ** 700
+passer_arr = a['passer'].to_numpy()
+X = {'w1': np.ones(len(a)), 'td': a['td'].to_numpy(), 'p': a['p_td'].to_numpy(), 'int': a['int'].to_numpy()}
+Sres = {k: np.empty(len(a)) for k in X}
+bounds = np.flatnonzero(np.r_[True, passer_arr[1:] != passer_arr[:-1], True])
+for k, x in X.items():
+    out = Sres[k]
+    for s0, s1 in zip(bounds[:-1], bounds[1:]):
+        W = np.empty(s1 - s0)
+        acc = 0.0
+        for ii in range(s1 - s0):
+            acc = r * acc + x[s0 + ii]
+            W[ii] = acc
+        Sv = W.copy()
+        if s1 - s0 > 700:
+            Sv[700:] = W[700:] - r700 * W[:-700]
+        out[s0:s1] = Sv
+passer_idx = {}
+adates = a['date'].to_numpy()
+for s0, s1 in zip(bounds[:-1], bounds[1:]):
+    passer_idx[passer_arr[s0]] = (s0, s1)
+
+def last_att_before(pid, d):
+    s0, s1 = passer_idx[pid]
+    i = np.searchsorted(adates[s0:s1], d, side='left') - 1
+    return s0 + i if i >= 0 else None
+
+# ---------- 5. aggregates
+lg_int = a.groupby('season')['int'].mean()
+club = a.groupby(['game_id', 'posteam'])['p_td'].agg(['sum', 'count'])
+club_d = {k: (v['sum'], v['count']) for k, v in club.iterrows()}
+a['cp_present'] = a['cp'].notna().astype(float)
+a['e'] = np.where(a['cp'].notna(), a['comp'] - a['cp'], 0.0)
+a['cp0'] = a['cp'].fillna(0.0)
+defa = a[a['defteam'].notna()].groupby(['game_id', 'defteam']).agg(I=('int', 'sum'), A=('int', 'size'),
+                                                                  E=('e', 'sum'), N=('cp_present', 'sum'))
+def_d = {k: tuple(v) for k, v in zip(defa.index, defa[['I', 'A', 'E', 'N']].to_numpy())}
+pg = a.groupby(['passer', 'game_id'], sort=False).agg(date=('date', 'first'), att=('int', 'size'),
+                                                     C=('cp0', 'sum'), N=('cp_present', 'sum'),
+                                                     E=('e', 'sum'), comp=('comp', 'sum')).reset_index()
+pg = pg.sort_values(['passer', 'date', 'game_id']).reset_index(drop=True)
+pg_d = {}
+for pid, df in pg.groupby('passer', sort=False):
+    pg_d[pid] = (df['date'].to_numpy(), df['att'].to_numpy(float), df['C'].to_numpy(), df['N'].to_numpy(),
+                 df['E'].to_numpy())
+pg_game = {(p_, g_): (n_, c_) for p_, g_, n_, c_ in zip(pg['passer'], pg['game_id'], pg['att'], pg['comp'])}
+ps = a.assign(dd=a['td'] - a['p_td']).groupby(['passer', 'season'])['dd'].agg(['sum', 'count'])
+ps_d = {k: (v1, v2) for k, v1, v2 in zip(ps.index, ps['sum'], ps['count'])}
+# passer attempts per (game, posteam)
+gtp = a.groupby(['game_id', 'posteam'])['passer'].unique()
+gtp_d = {k: list(v) for k, v in gtp.items()}
+
+# ---------- 3. Rows
+rows = []
+rs = slots[slots['season'] >= 2013].sort_values(['date', 'game_id', 'team'])
+for gid, df in rs.groupby('game_id', sort=False):
+    d = df['date'].iloc[0]; season = int(df['season'].iloc[0])
+    cand = {}
+    for T, O in zip(df['team'], df['opp']):
+        prev = prev_games(T, d, 4)
+        dates_, gids_ = team_games[T]
+        gdate = dict(zip(gids_, dates_))
+        for pg_id in prev:
+            for pid in gtp_d.get((pg_id, T), []):
+                q = gdate[pg_id]
+                key = (pid, T)
+                if key not in cand or q > cand[key][0]:
+                    cand[key] = (q, O)
+    best = {}
+    for (pid, T), (q, O) in cand.items():
+        if pid not in best:
+            best[pid] = (q, T, O)
+        else:
+            q0, T0, O0 = best[pid]
+            if q > q0 or (q == q0 and T < T0):
+                best[pid] = (q, T, O)
+    for pid, (q, T, O) in best.items():
+        rows.append((gid, season, d, pid, T, O))
+R = pd.DataFrame(rows, columns=['game_id', 'season', 'date', 'passer', 'pteam', 'opp'])
+
+out = {k: [] for k in ['qbx_xtd_rate_pre', 'qbx_ratio_reg_pre', 'qbx_adj_td_rate_pre', 'tdl_luck_raw_pre',
+                       'tdl_luck_regressed_pre', 'tdl_persistent_pre', 'int_qb_rate_pre', 'int_opp_rel_pre',
+                       'int_exp_rate_pre', 'int_exp_ints_pre', 'qcc_xcomp_pre', 'qcc_cpoe_shr_pre',
+                       'qcc_opp_factor_pre', 'qcc_p_pre']}
+nan = float('nan')
+for gid, season, d, pid, T, O in rows:
+    i = last_att_before(pid, d)
+    Sw1, Std, Sp, Sint = Sres['w1'][i], Sres['td'][i], Sres['p'][i], Sres['int'][i]
+    # club rate
+    sp_ = 0.0; cn_ = 0
+    for gg in prev_games(T, d, 8):
+        if (gg, T) in club_d:
+            s_, c_ = club_d[(gg, T)]; sp_ += s_; cn_ += c_
+    t = sp_ / cn_ if cn_ > 0 else Sp / Sw1
+    q = Sp / Sw1
+    xtd = (Sw1 * q + 300 * t) / (Sw1 + 300)
+    ratio = 1 + 0.3 * ((Std + 2) / (Sp + 2) - 1)
+    out['qbx_xtd_rate_pre'].append(xtd); out['qbx_ratio_reg_pre'].append(ratio)
+    out['qbx_adj_td_rate_pre'].append(xtd * ratio)
+    raw = (Std - Sp) / Sw1
+    out['tdl_luck_raw_pre'].append(raw); out['tdl_luck_regressed_pre'].append(0.2 * raw)
+    if (pid, season - 1) in ps_d:
+        s_, c_ = ps_d[(pid, season - 1)]; pers = s_ / (c_ + 300)
+    else:
+        pers = 0.0
+    out['tdl_persistent_pre'].append(pers)
+    li = lg_int.get(season - 1, nan)
+    iqr = (Sint + 200 * li) / (Sw1 + 200)
+    I = A = 0.0
+    for gg in prev_games(O, d, 16):
+        v = def_d.get((gg, O))
+        if v is not None: I += v[0]; A += v[1]
+    E12 = N12 = 0.0
+    for gg in prev_games(O, d, 12):
+        v = def_d.get((gg, O))
+        if v is not None: E12 += v[2]; N12 += v[3]
+    orel = ((I + 200 * li) / (A + 200)) / li
+    er = iqr * orel
+    pdates, patt, pC, pN, pE = pg_d[pid]
+    k = np.searchsorted(pdates, d, side='left') - 1  # state game
+    lo8 = max(0, k - 7)
+    att8 = patt[lo8:k + 1].sum(); g8 = k + 1 - lo8
+    lo16 = max(0, k - 15)
+    j = k - np.arange(lo16, k + 1)
+    w = 0.5 ** (j / 8)
+    wC = (w * pC[lo16:k + 1]).sum(); wN = (w * pN[lo16:k + 1]).sum()
+    E16 = pE[lo16:k + 1].sum(); N16 = pN[lo16:k + 1].sum()
+    out['int_qb_rate_pre'].append(iqr); out['int_opp_rel_pre'].append(orel)
+    out['int_exp_rate_pre'].append(er); out['int_exp_ints_pre'].append(er * att8 / g8)
+    xc = wC / wN if wN != 0 else nan
+    cs = E16 / (N16 + 300); of = E12 / (N12 + 250)
+    pp = min(max(xc + cs + of, 0.35), 0.85) if not np.isnan(xc) else nan
+    out['qcc_xcomp_pre'].append(xc); out['qcc_cpoe_shr_pre'].append(cs)
+    out['qcc_opp_factor_pre'].append(of); out['qcc_p_pre'].append(pp)
+for k_, v_ in out.items():
+    R[k_] = np.array(v_, dtype=float)
+
+# qcc_rho
+nc = [pg_game.get((p_, g_), (0, 0.0)) for p_, g_ in zip(R['passer'], R['game_id'])]
+R['n_own'] = [x[0] for x in nc]; R['c_own'] = [x[1] for x in nc]
+ok = (R['n_own'] >= 10) & R['qcc_p_pre'].notna()
+rr = R[ok]
+n = rr['n_own'].astype(float); c = rr['c_own']; p = rr['qcc_p_pre']
+term = ((c - n * p) ** 2 - n * p * (1 - p)) / (n * (n - 1) * p * (1 - p))
+termS = pd.DataFrame({'season': rr['season'], 'term': term})
+rho = {}
+for S in R['season'].unique():
+    sel = termS[(termS['season'] >= max(2013, S - 3)) & (termS['season'] <= S - 1)]['term']
+    rho[S] = min(max(sel.mean(), 0.0), 0.2) if len(sel) else nan
+R['qcc_rho_pre'] = R['season'].map(rho).astype(float)
+
+O_ = R[R['season'] >= 2014].copy()
+O_ = O_.rename(columns={'passer': 'team_out'})
+final = pd.DataFrame({'game_id': O_['game_id'], 'team': O_['team_out']})
+for k_ in list(out.keys()) + ['qcc_rho_pre']:
+    final[k_] = O_[k_].astype('float64')
+assert not final.duplicated(['game_id', 'team']).any()
+final = final.sort_values(['game_id', 'team']).reset_index(drop=True)
+final.to_csv(os.path.join(outdir, 'out.csv'), index=False, float_format='%.17g')
+print('rows', len(final), 'rows2013', int((R.season == 2013).sum()), 'time', round(time.time() - t0, 1))
+print(final.isna().sum().to_string())
+print(final.describe().T.to_string())

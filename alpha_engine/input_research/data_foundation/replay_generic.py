@@ -44,13 +44,17 @@ def _perm(df, mask, cols, rng):
     return d
 
 
-def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", games_date_col: str = "gameday", quick: bool = False, avail_col: str | None = None) -> dict:
+def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", games_date_col: str = "gameday", quick: bool = False, avail_col: str | None = None,
+        truncate_by_date: bool = False) -> dict:
     """tables: {table: (game_id_col, [content columns])}; every table here is truncated and permuted by game id.
     avail_col (optional): column of the games table holding the date a game's RESULT became known (>= games_date_col, the first-pitch date). When given, the
     check `pit_check_first_pitch_availability` runs: at each cut c, the content of every game whose result became known on/after c is permuted, and every row
     whose game's FIRST PITCH (taken from the raw table, never from the builder's own date column) is before c must be unchanged. Cuts are the three standard
     quantile cuts plus first-pitch + 1 day of the (up to 4 longest) games that started before and finished after a date boundary, so a builder that dates such a
-    game by its completion, or lets its result leak into the games played in between, fails."""
+    game by its completion, or lets its result leak into the games played in between, fails.
+    truncate_by_date (opt-in, default off so earlier evidence is reproduced unchanged): the truncated raw keeps EVERY game of the games table dated before the cut, not only the
+    games that have output rows. This is the documented semantics ("data on/after the cut removed"); the default proxy drops a raw game that has no output row (e.g. a game
+    between two teams with no earlier games), which changes later league constants and makes a correct builder fail."""
     t0 = time.time(); specs = mod.specs(); base = mod.compute(raw)["team"]
     res = {s.catalog_id: {"sport": sport, "id": s.catalog_id, "table": "team", "level_claimed": s.level, "pit_claimed": s.pit, "missing_claimed": list(s.missing), "raw_claimed": list(s.raw), "columns": list(s.columns), "tests": {"vintage_dependence": {}}} for s in specs}
     again = mod.compute(raw)["team"]; allsel = np.ones(len(base), bool)
@@ -75,6 +79,8 @@ def run(mod, raw: dict, sport: str, tables: dict, games_table: str = "games", ga
 
     for q, seed in (CUTS[:1] if quick else CUTS):
         cut = pd.Timestamp(dates.quantile(q)).normalize(); sel = (base.date < cut).to_numpy(); early = set(base.loc[base.date < cut, "game_id"]); late = set(base.game_id) - early
+        if truncate_by_date:
+            gt_ = raw[games_table]; early = early | set(gt_.loc[pd.to_datetime(gt_[games_date_col]) < cut, tables[games_table][0]])
         tr = mod.compute(cut_tables({**raw, games_table: raw[games_table][pd.to_datetime(raw[games_table][games_date_col]) < cut]}, early))["team"]
         pert = mod.compute(scramble(raw, late, seed))["team"]
         for s in specs:

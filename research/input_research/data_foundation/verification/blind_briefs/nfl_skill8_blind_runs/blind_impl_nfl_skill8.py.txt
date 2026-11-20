@@ -1,0 +1,131 @@
+import sys, os, glob, json, time
+import numpy as np
+import pandas as pd
+
+t0 = time.time()
+root = sys.argv[1]  # workspace dir containing data/
+outdir = sys.argv[2]
+
+REPL = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
+
+
+def rep(s):
+    return s.replace(REPL)
+
+
+# ---------- 1. Games ----------
+g = pd.read_csv(os.path.join(root, "data", "games.csv"), dtype={"gametime": str, "gameday": str})
+g = g[(g["season"] >= 2010) & g["home_score"].notna()]
+g = g.drop_duplicates("game_id", keep="first").copy()
+g["game_id"] = g["game_id"].astype(str)
+g["home_team"] = rep(g["home_team"])
+g["away_team"] = rep(g["away_team"])
+g["home_team"] = g["home_team"].astype(str); g["away_team"] = g["away_team"].astype(str)
+g["date"] = pd.to_datetime(g["gameday"])
+gt = g["gametime"].where(g["gametime"].notna(), "09:00").str[:5]
+local = pd.to_datetime(g["gameday"] + " " + gt, format="%Y-%m-%d %H:%M")
+g["kickoff"] = local.dt.tz_localize("America/New_York", ambiguous="raise", nonexistent="raise").dt.tz_convert("UTC")
+
+tg = pd.concat([
+    g[["game_id", "season", "week", "date", "kickoff"]].assign(team=g["home_team"]),
+    g[["game_id", "season", "week", "date", "kickoff"]].assign(team=g["away_team"]),
+], ignore_index=True)
+assert not tg.duplicated(["game_id", "team"]).any()
+
+# ---------- 2. Usage shares ----------
+cols = ["game_id", "posteam", "two_point_attempt", "play_type", "receiver_player_id",
+        "rusher_player_id", "qb_scramble", "yardline_100", "air_yards"]
+keep_ids = set(g["game_id"])
+parts = []
+for f in sorted(glob.glob(os.path.join(root, "data", "pbp", "play_by_play_*.parquet"))):
+    d = pd.read_parquet(f, columns=cols)
+    d = d[d["game_id"].isin(keep_ids) & d["posteam"].notna()]
+    d = d[d["two_point_attempt"].fillna(0) != 1]
+    tgt = (d["play_type"] == "pass") & d["receiver_player_id"].notna()
+    car = (d["play_type"] == "run") & d["rusher_player_id"].notna() & (d["qb_scramble"].fillna(0) != 1)
+    a = pd.DataFrame({
+        "game_id": d.loc[tgt, "game_id"], "T": d.loc[tgt, "posteam"], "player": d.loc[tgt, "receiver_player_id"],
+        "tgt": 1.0, "car": 0.0,
+        "rzt": (d.loc[tgt, "yardline_100"] <= 20).astype(float),
+        "air": d.loc[tgt, "air_yards"].fillna(0).astype(float),
+    })
+    b = pd.DataFrame({
+        "game_id": d.loc[car, "game_id"], "T": d.loc[car, "posteam"], "player": d.loc[car, "rusher_player_id"],
+        "tgt": 0.0, "car": 1.0, "rzt": 0.0, "air": 0.0,
+    })
+    parts.append(pd.concat([a, b], ignore_index=True))
+    del d
+plays = pd.concat(parts, ignore_index=True)
+plays["T"] = rep(plays["T"].astype(str))
+plays["game_id"] = plays["game_id"].astype(str)
+plays["player"] = plays["player"].astype(str)
+
+# team denominators: n_tgt/n_rzt/n_air computed from targets, n_car from carries
+den = plays.groupby(["game_id", "T"], sort=False)[["tgt", "car", "rzt", "air"]].sum()
+den.columns = ["n_tgt", "n_car", "n_rzt", "n_air"]
+pp = plays.groupby(["game_id", "T", "player"], sort=False)[["tgt", "car", "rzt", "air"]].sum().reset_index()
+pp = pp.merge(den.reset_index(), on=["game_id", "T"], how="left")
+for x, n, s in [("tgt", "n_tgt", "s_tgt"), ("air", "n_air", "s_air"), ("rzt", "n_rzt", "s_rzt"), ("car", "n_car", "s_car")]:
+    pp[s] = np.where(pp[n] > 0, pp[x] / pp[n].where(pp[n] > 0, 1.0), np.nan)
+pp = pp.merge(g[["game_id", "date"]], on="game_id", how="left")
+pp = pp.sort_values(["player", "date", "game_id", "T"], kind="mergesort").reset_index(drop=True)
+SH = ["s_tgt", "s_air", "s_rzt", "s_car"]
+ew = pp.groupby("player", sort=False)[SH].ewm(halflife=4, adjust=True, ignore_na=False).mean()
+ew = ew.reset_index(level=0, drop=True).sort_index()
+for s in SH:
+    pp["e_" + s] = ew[s].values
+hist = pp[["player", "date"] + ["e_" + s for s in SH]].copy()
+
+# ---------- 3. Injuries ----------
+inj_parts = []
+for f in sorted(glob.glob(os.path.join(root, "data", "injuries", "injuries_*.parquet"))):
+    d = pd.read_parquet(f)
+    if "date_modified" not in d.columns:
+        continue  # no parseable date_modified -> never used
+    d = d[["season", "week", "team", "gsis_id", "position", "report_status", "date_modified"]].copy()
+    d["date_modified"] = pd.to_datetime(d["date_modified"], utc=True, errors="coerce")
+    d = d[d["date_modified"].notna()]
+    inj_parts.append(d)
+inj = pd.concat(inj_parts, ignore_index=True)
+inj["team"] = rep(inj["team"].astype(str))
+inj = inj[inj["season"].notna() & inj["week"].notna()]
+inj["season"] = inj["season"].astype(np.int64)
+inj["week"] = inj["week"].astype(np.int64)
+
+out_tg = tg[tg["season"] >= 2013].copy()
+out_tg["season"] = out_tg["season"].astype(np.int64)
+out_tg["week"] = out_tg["week"].astype(np.int64)
+m = out_tg.merge(inj, on=["season", "week", "team"], how="inner")
+m = m[m["date_modified"] <= m["kickoff"]]
+usable_keys = m[["game_id", "team"]].drop_duplicates()
+lst = m[m["gsis_id"].notna() & m["report_status"].isin(["Out", "Doubtful"])
+        & m["position"].isin(["WR", "TE", "RB", "FB"])]
+lst = lst[["game_id", "team", "date", "gsis_id"]].drop_duplicates(["game_id", "team", "gsis_id"])
+
+# share values as of strictly before row date
+lst = lst.sort_values("date", kind="mergesort").reset_index(drop=True)
+lst["gsis_id"] = lst["gsis_id"].astype(str)
+# multiple history rows on same date for a player: merge_asof takes last in sorted order;
+# ensure the last is the last game in (date, game_id, T) order
+h = hist.rename(columns={"player": "gsis_id"}).copy()
+h["gsis_id"] = h["gsis_id"].astype(str)
+h["_o"] = np.arange(len(h))  # hist is already sorted by player,date,game_id,T
+h = h.sort_values(["date", "_o"], kind="mergesort").reset_index(drop=True)
+j = pd.merge_asof(lst, h.drop(columns="_o"), on="date", by="gsis_id", allow_exact_matches=False, direction="backward")
+for s in SH:
+    j["e_" + s] = j["e_" + s].fillna(0.0)
+j["n"] = 1.0
+agg = j.groupby(["game_id", "team"])[["e_" + s for s in SH] + ["n"]].sum().reset_index()
+
+res = usable_keys.merge(agg, on=["game_id", "team"], how="left")
+res = res.fillna(0.0)
+res.columns = ["game_id", "team", "ska_vac_target_share_pre", "ska_vac_air_share_pre",
+               "ska_vac_rz_target_share_pre", "ska_vac_carry_share_pre", "ska_n_listed_pre"]
+out = out_tg[["game_id", "team"]].merge(res, on=["game_id", "team"], how="left")
+for c in out.columns[2:]:
+    out[c] = out[c].astype("float64")
+out = out.sort_values(["game_id", "team"]).reset_index(drop=True)
+assert not out.duplicated(["game_id", "team"]).any()
+out.to_csv(os.path.join(outdir, "out.csv"), index=False, float_format="%.17g")
+print("rows", len(out), "usable", out["ska_n_listed_pre"].notna().sum(), "time", round(time.time() - t0, 1))
+print(out.describe().T)

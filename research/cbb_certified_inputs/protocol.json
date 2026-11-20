@@ -1,0 +1,62 @@
+{
+  "schema": "sift-cbb-pred-protocol-1",
+  "status": "FROZEN",
+  "frozen_utc": "2026-11-20",
+  "label": "RESEARCH_ONLY. Outcome prediction (margin, total). No betting, no market data, no ROI.",
+  "question": "Do SIFT Alpha certified CBB inputs improve the cbb-edge-finder incumbent (pure-0.2.0, arm B9) pregame projections of game margin and total on chronologically unseen seasons?",
+  "season_convention": "season = calendar year in which the season ENDS (2025 = 2024-25 season); identical to cbb-edge-finder `season` and to the SportsDataverse/ESPN `season` field.",
+  "incumbent": {
+    "model": "pure-0.2.0 = arm B9 (models/pure/active.json incumbent)",
+    "projection": "walk-forward expanding-window B9 exactly as produced by cbb-edge-finder scripts/research/run_wave2.py (season s predicted by ridge stack fit on seasons 2012..s-1; engine states built day by day from results available before tip-off).",
+    "sd": "cbb_edge.model.arms.residual_sd (the SD used by cbb_edge.model.pure.finalize): residual SD of prior seasons' walk-forward projections, bucketed by min(games seen) in [0,3),[3,6),[6,11),[11,99).",
+    "fidelity_check": "reproduced per-season B9 margin/total RMSE and N vs committed research/wave2/metrics.json (validation 2015-2024, historical 2025-2026) and the reproduced frozen artefact coefficients vs models/pure/pure-0.2.0.json. If materially different the experiment STOPS."
+  },
+  "incumbent_data": "ESPN schedules/team_box/player_box from the vault (espn_team_box_schedules + espn_player_box_pbp_early_seasons snapshot-20261116). The vault holds no stats.ncaa.org lineup/possession files, which B9 needs (RAPM player block, shot-zone block); ncaa_mbb_lineups / ncaa_mbb_possessions 2010-2026 were fetched from the public SportsDataverse GitHub release and accepted ONLY because every file's sha256 equals the cbb-edge-finder manifests/bronze/sportsdataverse_releases.jsonl pin (34/34). Vault ESPN files match the incumbent's pins for 2015-2026 (schedules, team_box, player_box); 2006-2014 differ (upstream republication) and affect only warm-up / early training seasons.",
+  "certified_inputs": {
+    "engine": "sift-alpha-ops alpha_engine.derived.basketball.build(root, 'CBB') on vault archives/CBB/espn_team_box_schedules/2006-2027/sportsdataverse/snapshot-20261116 (restored, unmodified)",
+    "allowed_columns": ["off_efg_pre", "off_tov_pct_pre", "off_orb_pct_pre", "off_ftr100_pre", "def_efg_pre", "def_tov_pct_pre", "def_orb_pct_pre", "def_ftr100_pre", "mx_efg_pre", "mx_tov_pct_pre", "mx_orb_pct_pre", "mx_ftr100_pre", "ff_edge_pre", "pace_pre", "exp_poss_add_pre", "exp_poss_pre", "off_ortg_pre", "exp_pts_pre", "def_ortg_pre", "opp_exp_pts_pre", "exp_poss_elastic_pre", "exp_fta_pre", "exp_ft_pts_pre"],
+    "join": "team rows keyed (ESPN game_id, ESPN team id); home row = incumbent games.home_espn_id, away row = games.away_espn_id (ESPN listed orientation, also for neutral sites). Only columns from each team's own row are used (no opp_* pairing from the engine). Join coverage and orientation (home.opp_exp_pts_pre == away.exp_pts_pre; certified `home` flag vs incumbent home id) are reported.",
+    "game_level": "exp_poss_pre_game = mean of the home-row and away-row exp_poss_pre."
+  },
+  "universe": "games in the incumbent's B9 walk-forward sample (D-I vs D-I, completed, B9 margin and total non-null) with a complete certified feature row for both teams; seasons 2016-2026. Incumbent and candidate are always scored on the identical game set.",
+  "splits": {"fit": [2016, 2017, 2018, 2019, 2020, 2021, 2022], "validation": [2023, 2024], "test": [2025, 2026]},
+  "neutral_site": "No extra venue term. Venue (home court / neutral) enters only through the incumbent projection, which carries the incumbent's own neutral-site handling (L indicator, team HCA). Certified expected points are venue-free by construction.",
+  "candidates": {
+    "C1": {
+      "margin": "y = a + b*inc_margin + c*(exp_pts_pre_home - exp_pts_pre_away)",
+      "total": "y = a + b*inc_total + c*(exp_pts_pre_home + exp_pts_pre_away) + d*exp_poss_pre_game",
+      "fit": "OLS on fit seasons"
+    },
+    "C2": {
+      "margin": "C1 margin + (mx_efg_pre, mx_tov_pct_pre, mx_orb_pct_pre, mx_ftr100_pre, exp_ft_pts_pre) each as home minus away",
+      "total": "C1 total + (mx_efg_pre, mx_tov_pct_pre, mx_orb_pct_pre, mx_ftr100_pre, exp_ft_pts_pre) each as home plus away (sums are the total-model analogue of the differentials)",
+      "fit": "OLS on fit seasons"
+    },
+    "C3": {
+      "spec": "C2 features, standardised on fit seasons, sklearn Ridge (intercept unpenalised)",
+      "alpha_grid": [0.1, 1, 10, 100, 1000, 10000, 100000],
+      "alpha_selection": "forward-chaining CV inside fit seasons only: for k in 2018..2022 train on 2016..k-1, score MSE on k; alpha = argmin of mean fold MSE; then refit on all fit seasons. Separate alpha for margin and total."
+    },
+    "selection": "for each target separately (margin, total), the candidate with the lowest validation (2023-2024) RMSE is chosen; coefficients stay those fit on fit seasons only (no refit on validation). The chosen spec is applied once to TEST.",
+    "max_candidates": 3
+  },
+  "test_metrics": {
+    "per_target": ["RMSE", "MAE", "bias"],
+    "paired": "per-game d = (y - cand)^2 - (y - inc)^2; report mean(d) with 95% percentile bootstrap CI clustered by game date (ET date): 2000 resamples of dates with replacement, numpy default_rng(seed=11). Negative = candidate better.",
+    "winner_accuracy": "share of games with sign(margin_hat) == sign(actual margin) for incumbent and candidate (margin target model)",
+    "by_season": "all metrics also per test season 2025 and 2026"
+  },
+  "situations": {
+    "label": "EXPLORATORY",
+    "scored_on": "TEST only; incumbent vs chosen candidate RMSE and paired delta CI (same bootstrap) for margin and total",
+    "definitions": {
+      "pace_tercile": "exp_poss_pre_game terciles, cut points = 1/3 and 2/3 quantiles over fit-season games",
+      "abs_inc_margin": "|incumbent margin| < 5, 5 to 15 (inclusive), > 15",
+      "early_season": "game ET date < first game date of that season (in the universe) + 30 days, vs rest",
+      "strong_off_vs_weak_def": "(home exp_pts_pre >= fit-season team-row 2/3 quantile AND away def_ortg_pre >= fit-season team-row 2/3 quantile) OR (same with home/away swapped); weak defence = highest points allowed per 100 = bottom tercile of defensive quality; vs all other games",
+      "neutral_site": "incumbent games.neutral_site True vs False"
+    }
+  },
+  "calibration": "TEST PIT coverage of central 50% and 80% Normal intervals: incumbent mean/SD = B9 projection and arms.residual_sd; candidate mean = candidate projection, SD = candidate residual SD on validation seasons (constant per target).",
+  "amendments": "recorded separately in protocol_amendments.json; this file is never edited after its sha256 is written."
+}

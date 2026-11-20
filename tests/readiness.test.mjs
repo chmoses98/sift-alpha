@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {LADDER_LABEL, ladderRows, readinessCheck} from "../src/readiness.mjs";
+import {CLASS_LABEL, LADDER_LABEL, ladderRows, readinessCheck} from "../src/readiness.mjs";
 
 const R = JSON.parse(readFileSync(new URL("../research/input_research/readiness/dashboard.json", import.meta.url)));
 const LAD = JSON.parse(readFileSync(new URL("../research/pipeline/ladder_summary.json", import.meta.url)));
@@ -12,6 +12,7 @@ test("readiness classes reconcile exactly with the completeness inventory and th
   assert.equal(c.classesOk, true);
   assert.equal(c.classTotal, MAP.missing_primary_predictive_slots);
   assert.equal(R.by_tier.P1 + R.by_tier.P2 + R.by_tier.F, c.classTotal);
+  for (const k of R.classes) assert.ok(CLASS_LABEL[k], k);
 });
 
 test("adoption ladder is cumulative, labelled, and its certified count matches the ledger summary", () => {

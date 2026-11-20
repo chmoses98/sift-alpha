@@ -1,0 +1,69 @@
+{
+ "schema": "sift.research.preregistration.v1",
+ "id": "NBA-PF-vs-KALSHI-PROPS-2025-26",
+ "authority": "RESEARCH_ONLY: no betting, no deployment",
+ "written_utc": "2026-11-20T05:20:00Z",
+ "written_before": "any outcome-dependent number (model-vs-price, model-vs-settlement, or P&L) was computed. Already known when writing: the published RESULTS_NBA.md holdout aggregates, market metadata counts (number of markets per family and result category yes/no/scalar), and candle coverage counts per month. No candle price was joined to any model probability or settlement before this file was hashed.",
+ "question": "Are frozen Projection Foundation conditional player-prop probabilities better than, or selectively better than, archived Kalshi prices on 2025-26 regular-season points/rebounds/assists/threes ladders, net of fees?",
+ "model": {
+  "source": "/home/user/nba-edge-finder/research/projection_foundation (copied read-only into WORK/repo; run there)",
+  "configuration": "the frozen holdout winners in results/frozen_params.json: points E_lightgbm + empirical; rebounds F_stack + minutes mixture; assists E_lightgbm + minutes mixture; threes F_stack + minutes mixture; minutes model E_lightgbm (no injury input). The frozen holdout configuration does NOT use the archived 2025-26 T-60 injury report (E_inj is a separate, non-frozen track), so the injury report is not used.",
+  "frame": "conditional on the player playing (minutes > 0 in the ESPN box), the frame Kalshi props settle in",
+  "walk_forward": "as in nba.pipeline.run_compute: lagged features use strictly earlier games; LightGBM trained on seasons 2021..2025 (hoopR labels) and applied to all 2025-26 games; all OLS/stack/distribution parameters fitted on development seasons and frozen",
+  "faithfulness_check": "recomputed best model, distribution, parameters and pooled 2024-25+2025-26 holdout CRPS/MAE must match frozen_params.json / backtest_raw.json (CRPS within 0.005, same best/dist). If not, stop and report instead of substituting a model.",
+  "box_data": "sportsdataverse hoopR mirror restored from sift-data-vault archives/NBA/espn_pbp_boxes_schedules/2002-2027/sportsdataverse/snapshot-20261116",
+  "rung_semantics": "Kalshi floor_strike s (e.g. 19.5) titled 'k+' with k = s + 0.5; YES iff stat >= k, i.e. stat > s. Model probability = P(X >= ceil(s)) from the pmf. Verified by agreement of box-score stat >= k with official yes/no results."
+ },
+ "markets": {
+  "series": ["KXNBAPTS", "KXNBAREB", "KXNBAAST", "KXNBA3PT"],
+  "metadata": "/home/user/nba-edge-finder/data/history/kalshi/markets_<series>.jsonl.gz",
+  "candles": "/home/user/nba-edge-finder/data/history/kalshi/candles_<series>.jsonl.gz (hourly yes_bid / yes_ask OHLC, no sizes)",
+  "universe": "markets that have candles, whose event maps (date, away, home) to an ESPN 2025-26 REGULAR-SEASON game (season_type 2) and whose player maps by normalised name to an ESPN box row of that game. Playoff / play-in / unmatched markets are excluded and counted.",
+  "player_matching": "normalise yes_sub_title name (text before ':'): NFKD accent strip, lowercase, drop punctuation and suffixes jr/sr/ii/iii/iv, collapse spaces; exact match within the two teams' box rows of the game; fallback unique (first initial + last name) match within the game; else unmatched (counted).",
+  "tip_off": "ESPN game_date_time (hoopR player box) in UTC. Kalshi metadata only carries occurrence_datetime for a minority of markets; expected_expiration_time - tip is reported as a sanity check.",
+  "game_date_for_splits": "ESPN tip-off converted to America/New_York calendar date"
+ },
+ "settlement_truth": {
+  "source": "sift-data-vault archives/NBA/kalshi_official_settlements/all-to-20261116/kalshi_public_api/snapshot-20261116, NBA/<series>.historical.jsonl and .live.jsonl (union by ticker; historical wins on conflict)",
+  "rule": "official result field: 'yes' -> 1, 'no' -> 0; 'scalar' (player active but did not take the court, settled at a fair price) and anything else -> void, excluded and counted. Box-score disagreement with the official result is reported separately; the official result is always the truth.",
+  "dnp": "contracts whose player did not play per the box but settled yes/no are counted and excluded from the model comparison (no conditional pmf row)"
+ },
+ "entry_quote": {
+  "candle": "the hourly candle with the largest end_period_ts such that tip - 24h <= end_period_ts <= tip - 60 min. If none exists, the contract is unquoted.",
+  "executable": "that candle's (yes_bid.close, yes_ask.close) must classify as TWO_SIDED under nba.live.kalshi_report.classify_quote (bid > 0.02 or ask < 0.98 is not a placeholder; bid > 0 and ask < 1; ask >= bid). Candles carry no sizes, so the size requirement of executable_quote cannot be applied (limitation). A non-executable last candle means the contract is skipped (no search for an earlier candle).",
+  "yes_price": "yes_ask.close",
+  "no_price": "1 - yes_bid.close",
+  "mid": "(yes_bid.close + yes_ask.close) / 2"
+ },
+ "fees": {
+  "rounded_C1": "ceil(100 * 0.07 * 1 * P * (1 - P)) / 100 dollars per contract (computed with a 1e-9 guard against float error)",
+  "unrounded": "0.07 * P * (1 - P) per contract",
+  "primary": "unrounded (it defines R1-R3 net edge); P&L, ROI and CIs are reported under both"
+ },
+ "diagnostics_all_quoted_contracts": {
+  "sample": "every quoted contract with a yes/no official result and a model row (all rungs, not one per player-game)",
+  "metrics": ["Brier and log loss (p clipped to [1e-4, 1-1e-4]) of model vs mid", "calibration slope: logistic y ~ a + b*logit(p), separately for model and mid", "logistic y ~ a + b1*logit(model) + b2*logit(mid), game-clustered SEs (statsmodels cov_type=cluster on ESPN game id)", "reliability table on fixed model-probability bins [0,0.1),...,[0.9,1.0]: n, mean model p, mean mid, hit rate"],
+  "split_by": ["all", "family"]
+ },
+ "selection_rules": {
+  "net_edge": "YES: p - yes_price - fee_u(yes_price); NO: (1 - p) - no_price - fee_u(no_price), fee_u = unrounded fee. Side = the side with the larger net edge (only a positive one can qualify).",
+  "R1": "net edge >= 0.05; then at most one contract per (player, game, family): the one with the largest net edge.",
+  "R2": "restrict to contracts whose entry price on the chosen side is in [0.25, 0.75]; then R1.",
+  "R3": "restrict to contracts with |p - mid| <= 0.15; then R1.",
+  "order": "filters (R2 price, R3 agreement) are applied to contract-sides BEFORE choosing the one contract per player-game-family",
+  "pnl": "per contract: win -> 1 - price - fee; loss -> -price - fee",
+  "report_per_rule": ["bets", "wins", "win rate", "average entry price", "average fee", "break-even win probability = avg price + avg fee", "net P&L (contracts)", "ROI = net P&L / sum(price + fee)", "game-clustered bootstrap 95% CI for ROI (2,000 resamples, numpy default_rng(7), resampling ESPN game ids with replacement)", "one-sided exact binomial p-value of wins vs break-even (informational)"],
+  "splits": ["family", "side YES/NO", "entry-price bucket [0.05,0.25),[0.25,0.5),[0.5,0.75),[0.75,0.95] (+ 'outside' for <0.05 or >0.95)", "season half: game date < 2026-02-01 (Oct-Jan) vs >= 2026-02-01 (Feb-Apr regular season)"],
+  "evaluated": "once"
+ },
+ "exploratory_then_confirmation": {
+  "explore_on": "games with date < 2026-02-01 only",
+  "confirm_on": "games with date >= 2026-02-01, scored once",
+  "candidate_grid": "subsets of the R1 bets defined by: family (4), side (2), entry-price bucket (4), family x side (8) = 18 subgroups",
+  "selection_strict": "first-half n >= 30 AND ROI (unrounded fee) > 0 AND bootstrap 95% CI lower bound > 0",
+  "selection_lenient": "first-half n >= 30 AND ROI (unrounded fee) >= 0.05 (reported separately; weaker evidence)",
+  "survival": "second-half ROI (unrounded fee) > 0 = 'survived one forward split (point estimate)'; additionally CI lower bound > 0 = 'survived one forward split with CI above 0'. Never called a validated edge. Every other subgroup number is EXPLORATORY."
+ },
+ "prediction_quality": "on quoted player-games (player-game-family with >= 1 quoted contract with yes/no result): model CRPS of the full pmf against the box stat, and mean Brier over the quoted rungs for model vs mid, by family; reported separately from betting results.",
+ "amendments_policy": "this file is never edited after hashing. Bugs are recorded in report.json -> amendments with reason, and the original result is kept alongside the amended one."
+}

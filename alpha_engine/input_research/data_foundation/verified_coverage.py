@@ -305,12 +305,20 @@ def certify_extension_full(row: dict, cols: list[str], rp_input: dict | None, vs
 
 # statuses a measured extension builder (replay gates + blind exact match) may promote from: no builder existed yet. DOWNGRADED_BY_VERIFIER is deliberately NOT promotable.
 PROMOTABLE = ("REQUIRES_COLLECTION", "DATA_IN_HAND_CONFIRMED", "DATA_IN_HAND_SCHEMA_ONLY")
+# OWNER-authorized reopenings (research/input_research/readiness/owner_reopen.json): a DOWNGRADED_BY_VERIFIER input listed there may be re-assessed by the SAME gates (extension replay,
+# blind exact match, full certification). Reopening is not promotion: failing any gate leaves it as before, and the original downgrade evidence is kept under `reopened_from`.
+REOPEN_FILE = DF.parents[0] / "readiness" / "owner_reopen.json"
+
+
+def load_owner_reopen() -> set:
+    return set(rd(REOPEN_FILE)["inputs"]) if REOPEN_FILE.exists() else set()
 
 
 def build(write: bool = True) -> dict:
     rows = rd(DF / "input_audit.json")["rows"]
     replays = load_replays(); exts = load_ext_replays(); ind = load_independent(); dih = load_dih(); blk = load_blocked(); dih2 = load_dir_answers('data_in_hand_round2'); certs = load_full_certifications(); blkp = load_dir_answers('blocked_recheck_policy', 'answers_*.json')
     prov = {sp: provenance_check(sp, rp) for sp, rp in replays.items()}
+    reopen = load_owner_reopen()
     out = []
     for r in rows:
         sp = r["sport"]; ev = {}
@@ -339,8 +347,9 @@ def build(write: bool = True) -> dict:
             vs, ev = combine_blocked(blk.get(r["key"]), blkp.get(r["key"]))
         else:
             vs = "REQUIRES_COLLECTION"
-        if vs in PROMOTABLE and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
-            was = vs
+        reopened = vs == "DOWNGRADED_BY_VERIFIER" and r["id"] in reopen and r["id"] in (exts.get(sp) or {}).get("inputs", {})
+        if (vs in PROMOTABLE or reopened) and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
+            was, prior_ev = vs, dict(ev)
             vs, ev = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})
             if vs.startswith("VERIFIED"):
                 gate, gev = independent_gate(r, exts[sp]["inputs"][r["id"]]["columns"], ind)
@@ -348,6 +357,10 @@ def build(write: bool = True) -> dict:
                 if gate: vs = gate
                 else: vs, ev = certify_extension_full(r, exts[sp]['inputs'][r['id']]['columns'], exts[sp]['inputs'][r['id']], vs, ev, certs.get(r['id']))
             ev["promoted_from"] = was
+            if reopened:
+                ev["reopened_from"] = {"status": was, "evidence": prior_ev, "authorization": "owner_reopen.json"}
+                if not vs.startswith("VERIFIED"):
+                    vs, ev = was, {**prior_ev, "reopen_attempt": ev}
         if vs == "VERIFIED_PARTIAL" and r["id"] in (exts.get(sp) or {}).get("inputs", {}):
             # an extension builder that completes the definition of an input the earlier milestone left PARTIAL: it must pass the same replay gates AND the blind exact-match gate; even then the status stays PARTIAL (extension-gate cap), with `full_candidate` evidence
             vs2, ev2 = assess_computed(r, exts[sp], {"ok": True, "basis": "extension replay on freshly collected public release data; no earlier ledger", "replay_rows": exts[sp].get("raw_rows")})

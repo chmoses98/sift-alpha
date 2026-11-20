@@ -1,0 +1,89 @@
+{
+ "name": "SIFT NFL certified-inputs vs operating-model market-free baseline",
+ "status": "RESEARCH_ONLY",
+ "frozen_utc": "2026-11-20",
+ "written_before_any_test_error": true,
+ "data": {
+  "games": "sift-data-vault archives/NFL/inseason_player_team/1999-2026/nflverse/snapshot-20261116 schedules/games.csv; whitelist columns only (game_id, season, game_type, week, gameday, gametime, home_team, away_team, home_score, away_score, result, total, home_rest, away_rest, div_game, roof, location); every market column (spread_line, total_line, moneylines, odds) is never loaded",
+  "pbp": "sift-data-vault archives/NFL/pbp/2010-2026/nflverse/snapshot-20261116",
+  "first_half_total": "per game, max over plays with qtr <= 2 of total_home_score + total_away_score (vault pbp); games with no qtr<=2 rows dropped",
+  "kalshi_quotes": "nfl-edge-finder market-data branch data/kalshi/backfill (2025 season only)",
+  "kalshi_settlement": "sift-data-vault archives/NFL/kalshi_official_settlements/all-to-20261116 result field (yes/no only; anything else dropped)"
+ },
+ "seasons": {"fit": [2012, 2021], "validation": [2022, 2023], "test": [2024, 2025], "regular_season_weeks": [1, 18], "playoffs": "reported separately, test seasons only, same frozen models"},
+ "targets": {
+  "team_points": "team-game rows (two per game): points scored",
+  "game_total": "home + away points",
+  "margin": "home - away points",
+  "first_half_total": "home + away points at halftime"
+ },
+ "baseline": {
+  "name": "DATA_ONLY / Milestone-E football-only game centre of nfl-edge-finder (nfl_edge/arms/data_only.py == scripts/research/game_model_study.py)",
+  "why": "the repository's own documented market-free game projection (docs/PROSPECTIVE_THREE_ARM_EXPERIMENT.md 'DATA_ONLY, exactly'); the simulation layer (scripts/sim/walkforward.py, baseline_5y.py) takes its game centre from the closing line and research/projection_foundation team_points is the closing implied total, so neither is market-free",
+  "regular_season_features": "committed nfl-edge-finder research/game_model/game_features.parquet (point-in-time opponent-adjusted ridge ratings per (season, week), 11 pbp metrics, half-life 10 weeks, season carry 0.4, ridge 4, built from silver 2006+)",
+  "playoff_features": "same ratings code (nfl_edge.research.team_ratings.snapshot_ratings) rerun on silver team_game rebuilt from vault pbp 2010+ with nfl_edge.data.silver.team_game_from_pbp; snapshot week = playoff week (REG rows of seasons S-3..S only)",
+  "models": "margin: ridge(lambda 30) on d_<11 metrics> + rest_diff + div_game + neutral; total: ridge(lambda 30) on m_h_/m_a_<11 metrics> + indoor + rest_diff; standardised, NaN->0; refit for every target season S on REG games of seasons max(2010,S-8)..S-1 (2012 and 2013 therefore train on 2 and 3 seasons)",
+  "fidelity_check": "reproduced model_margin/model_total must match committed research/game_model/walkforward_predictions.parquet (2014-2025) to < 1e-6",
+  "team_points": "home = (total + margin)/2, away = (total - margin)/2",
+  "first_half_total": "NOT produced by the operating model: baseline_1h = a + b * baseline_total, OLS fitted on fit seasons 2012-2021 (an added transparent mapping, labelled as such)",
+  "caveat": "the PROE metric inside the baseline derives from nflfastR xpass, which the repo's own audit calls indirectly market-informed; kept for fidelity"
+ },
+ "certified_inputs": {
+  "source": "sift-alpha-ops alpha_engine/features/nfl.py compute() on the vault pbp + games.csv (Paths(nfl=WORK/nflcache) with pbp/pbp_<yr>.parquet symlinks); only catalog ids with ledger VERIFIED_* in research/input_research/data_foundation/verified_coverage.json",
+  "C1_team_strength": {
+   "pairs_offence_vs_opponent_defence": [["nfl.off_epa", "epa_pre", "nfl.def_epa", "def_epa_pre"], ["nfl.off_epa", "pass_epa_pre", "nfl.def_epa", "def_pass_epa_pre"], ["nfl.off_epa", "rush_epa_pre", "nfl.def_epa", "def_rush_epa_pre"], ["nfl.success_rate", "success_pre", "nfl.success_rate", "def_success_pre"], ["nfl.explosive", "expl_pre", "nfl.explosive", "def_expl_pre"], ["nfl.redzone", "rz_epa_pre", "nfl.redzone", "def_rz_epa_pre"], ["nfl.turnovers", "to_rate_pre", "nfl.turnovers", "def_to_rate_pre"], ["nfl.q_scoring", "pts_pre", "nfl.q_scoring", "pts_a_pre"]],
+   "singles": [["nfl.redzone", "rz_td_pre"], ["nfl.points_vs_expected", "pts_vs_exp_pre"], ["nfl.ratings", "margin_pre"]]
+  },
+  "C2_adds_pace_schedule_rest": {
+   "singles": [["nfl.pace", "plays_pre"], ["nfl.pace", "nohud_pre"], ["nfl.drives", "drives_pre"]],
+   "schedule": [["nfl.rest_travel", "rest_gap"], ["nfl.rest_travel", "short_rest"], ["nfl.rest_travel", "bye"], ["nfl.venue", "outdoors"], ["nfl.venue", "home"], ["nfl.divisional_familiarity", "div_game"]]
+  },
+  "game_level_construction": {
+   "total_and_first_half": "pair -> (h.X + a.defX) + (a.X + h.defX); single -> h.X + a.X except margin_pre -> |h - a|; rest_gap -> |rest_gap|; short_rest, bye -> h + a counts; outdoors, div_game as is; home not used",
+   "margin": "pair -> (h.X + a.defX) - (a.X + h.defX); single -> h.X - a.X; rest_gap (home row); short_rest, bye -> h - a; outdoors, div_game as is; home not used",
+   "team_points": "pair -> own.X + opp.defX; single -> own.X and opp.X; rest_gap (own row); short_rest, bye -> own and opp; outdoors, div_game, home as is"
+  },
+  "missing_values": "filled with the training-set mean of the column"
+ },
+ "candidates": {
+  "all": "residual stacking: (y - baseline) ~ intercept + baseline + features; baseline projection always a feature",
+  "C1": "OLS with C1 features",
+  "C2": "OLS with C1 + C2 features",
+  "C3": "ridge on standardised C1 + C2 features (+ baseline), alpha from grid logspace(-2, 4, 25) by forward-chaining season CV on fit seasons only (validate s in 2016..2021, train 2012..s-1, pooled MSE)",
+  "selection": "per target, the candidate with lowest validation (2022-2023) RMSE when fitted on 2012-2021; it is the PRIMARY test model whether or not it beat the baseline on validation; all three are also reported on test as secondary",
+  "test_fit": "selected (and secondary) candidates refitted once on 2012-2023 (fit + validation; ridge alpha kept from fit-season CV) and applied to 2024 and 2025 unchanged",
+  "baseline_on_test": "walk-forward per its own design (season S trained on S-8..S-1)"
+ },
+ "metrics": {
+  "per_target": "RMSE, MAE of baseline and candidates on TEST REG weeks 1-18 pooled and per season",
+  "paired": "mean(sq_err_candidate - sq_err_baseline); 95% percentile bootstrap CI clustered by (season, week), 2000 resamples, numpy default_rng(13); team_points rows are team-games within the same week clusters",
+  "playoffs": "same metrics on 2024+2025 playoff games, bootstrap clustered by game, labelled small-sample"
+ },
+ "situations_EXPLORATORY": {
+  "projected_total_tercile": "baseline game total cut at 1/3 and 2/3 quantiles of fit-season (2012-2021) baseline totals",
+  "divisional": "div_game == 1 vs 0",
+  "rest_differential": "|home_rest - away_rest| >= 3 vs < 3",
+  "dome": "roof in {dome, closed} vs other",
+  "early_season": "weeks 1-4 vs 5-18",
+  "note": "selected candidate vs baseline per target; same clustered bootstrap; labels EXPLORATORY, no multiplicity correction"
+ },
+ "price_aware": {
+  "season": "2025 REG weeks 1-18 (primary) and 2025 playoffs (separate)",
+  "condition": "only if archived executable two-sided quotes exist",
+  "quotes": {
+   "moneyline_KXNFLGAME": "candle files data/kalshi/backfill/candles[_v2]/KXNFLGAME: last candle (h60 or 1-minute arrays) with end_period_ts <= kickoff - 3600 and non-null yes_bid.close and yes_ask.close; kickoff = horizons anchor_ts (anchor_kind kickoff) else schedule gameday+gametime America/New_York",
+   "spread_total_teamtotal_1htotal": "horizons/*.jsonl T-90m snapshot (the backfill's last candle at or before kickoff-90m, built from the same candlestick endpoint; the only archived bid/ask source covering every strike); require snap ts <= anchor_ts - 3600, book_empty false, age_min <= 180",
+   "validity": "0 < yes_bid < yes_ask < 1; trades and anything after kickoff never used"
+  },
+  "probability": "normal on the selected candidate's projection with sigma = that candidate's validation (2022-2023) residual SD for the target; ML P(home)=P(margin>0); spread YES 'team wins by over k' = P(team margin > k); total, team total, 1H total = P(X > floor_strike)",
+  "selection_module": "copies of sift-alpha-ops alpha_engine/pipeline/selection.py and sift_clv/canonical.py, evaluate(contracts, rules, boot=2000, seed=13)",
+  "rules": [
+   {"name": "R1", "min_net_edge": 0.05, "one_per": ["game_id", "family"]},
+   {"name": "R2", "min_net_edge": 0.05, "one_per": ["game_id", "family"], "price_lo": 0.30, "price_hi": 0.70},
+   {"name": "R3", "min_net_edge": 0.05, "one_per": ["game_id", "family"], "max_abs_disagreement": 0.10}
+  ],
+  "secondary": "same evaluation with the baseline's probabilities (diagnostic comparison only)",
+  "if_no_bid_ask": "report prediction vs market mid only; profitability UNTESTED"
+ },
+ "amendments": "recorded in protocol_amendments.json; this file is never edited after its sha256 is written"
+}

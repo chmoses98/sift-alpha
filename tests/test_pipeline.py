@@ -86,3 +86,22 @@ def test_readiness_ledger_reconciles_and_is_current():
     assert set(d["by_class"]) <= set(RL.CLASSES) and sum(d["by_tier"].values()) == t["slots"]
     assert all(s["datasets_held"] == s["datasets"] for s in d["slots"] if s["class"] == "B_DATA_IN_HAND_NO_BUILDER" and s["inventory_category"] != "DATA_IN_HAND")
     assert RL.main(["--check"]) == 0                                                                                    # committed files are current
+
+
+def test_nfl_legacy_builder_one_home_row_per_game_for_relocated_franchises():
+    """Amendment 1: schedule codes STL/SD/OAK must map to the pbp's LA/LAC/LV, else both rows of a relocated team's home game get home = 0."""
+    from alpha_engine.features import nfl as N, nfl_ext as E
+    assert N.TEAM_FIX == E.TEAM_FIX
+    pbp = pd.DataFrame({c: [] for c in N.PBP if c != "x"})
+    rows = []
+    for gid, home, away, hs, as_ in (("2010_01_ARI_STL", "STL", "ARI", 13, 17), ("2021_01_ARI_LA", "LA", "ARI", 20, 10)):
+        for team, opp in ((home if home not in N.TEAM_FIX else N.TEAM_FIX[home], away), (away, N.TEAM_FIX.get(home, home))):
+            rows.append({"game_id": gid, "posteam": team, "defteam": opp, "epa": 0.1, "season_type": "REG", "drive": 1, "qb_dropback": 0, "pass": 0, "rush": 1, "yards_gained": 3, "yardline_100": 50, "down": 1, "wp": 0.5})
+    pb = pd.DataFrame(rows).reindex(columns=[c for c in N.PBP if c != "x"]); pb[["success", "sack", "interception", "fumble_lost", "touchdown", "penalty", "qb_hit", "xpass", "pass_oe", "no_huddle", "shotgun", "air_yards", "cpoe"]] = 0.0
+    pb["epa"] = 0.1; pb["season_type"] = "REG"; pb["drive"] = 1.0; pb["qb_dropback"] = 0.0; pb["pass"] = 0.0; pb["rush"] = 1.0; pb["yards_gained"] = 3.0; pb["yardline_100"] = 50.0; pb["down"] = 1.0; pb["wp"] = 0.5
+    games = pd.DataFrame([{"game_id": "2010_01_ARI_STL", "season": 2010, "game_type": "REG", "week": 1, "gameday": "2010-09-12", "away_team": "ARI", "home_team": "STL", "away_rest": 7, "home_rest": 7, "div_game": 1, "roof": "dome", "surface": "", "temp": None, "wind": None, "referee": "x", "away_coach": "a", "home_coach": "h", "overtime": 0, "away_score": 17, "home_score": 13, "location": "Home"},
+                          {"game_id": "2021_01_ARI_LA", "season": 2021, "game_type": "REG", "week": 1, "gameday": "2021-09-12", "away_team": "ARI", "home_team": "LA", "away_rest": 7, "home_rest": 7, "div_game": 1, "roof": "dome", "surface": "", "temp": None, "wind": None, "referee": "x", "away_coach": "a", "home_coach": "h", "overtime": 0, "away_score": 10, "home_score": 20, "location": "Home"}])
+    t = N._team_stats({"pbp": pb, "games": games})
+    assert (t.groupby("game_id").home.sum() == 1).all()
+    la10 = t[(t.game_id == "2010_01_ARI_STL") & (t.team == "LA")].iloc[0]
+    assert la10.home == 1 and la10.pts == 13 and la10.pts_a == 17 and la10.coach == "h"

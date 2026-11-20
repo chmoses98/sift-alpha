@@ -70,7 +70,7 @@ Tests that do **not** reuse the earlier run's seeds, cut dates or protected-colu
 
 | Sport | Specs replayed (mode) | Determinism | Truncation | Perturbation | Own-game | Depend on as-played fields | Re-collected raw rows | Provenance vs ledger |
 |---|---|---|---|---|---|---|---|---|
-| NFL | 33 (full: 3 truncation cuts, 3 perturbations) | 33 | 33 | 33 | 32 | 1 | 801532 | ok (no ledger for this source: re-collected rows exist and the s) |
+| NFL | 33 (full: 3 truncation cuts, 3 perturbations) | 33 | 33 | 33 | 32 | 1 | 803956 | ok (no ledger for this source: re-collected rows exist and the s) |
 | CFB | 14 (full: 3 truncation cuts, 3 perturbations) | 14 | 14 | 14 | 14 | 2 | 5521 | ok (ledger espn_cfb_ledger.json: 5465 rows at the earlier collec) |
 | NBA | 32 (full: 3 truncation cuts, 3 perturbations) | 32 | 32 | 32 | 32 | 0 | 8636 | ok (ledger repo_archives_ledger.json: 8636 rows at the earlier c) |
 | CBB | 20 (full: 3 truncation cuts, 3 perturbations) | 20 | 20 | 20 | 20 | 2 | 31039 | ok (ledger espn_cbb_ledger.json: 31039 rows at the earlier colle) |

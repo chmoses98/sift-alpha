@@ -9,6 +9,8 @@ import pandas as pd
 
 from .core import FeatureSpec, Paths, pair_rows, prior_count, prior_date_mean, prior_ewm
 
+TEAM_FIX = {"OAK": "LV", "SD": "LAC", "STL": "LA"}   # historical -> current franchise code (pbp uses current codes)
+
 S = "NFL"
 PBP = ["game_id", "season", "week", "season_type", "posteam", "defteam", "home_team", "away_team", "epa", "success", "pass", "rush", "sack", "interception", "fumble_lost", "touchdown", "penalty", "qb_hit", "yards_gained", "air_yards",
        "xpass", "pass_oe", "no_huddle", "shotgun", "qb_dropback", "wp", "game_seconds_remaining", "yardline_100", "down", "cpoe", "play_type", "drive", "complete_pass", "yards_after_catch", "score_differential", "qtr", "field_goal_result", "kick_distance", "penalty_yards", "pass_touchdown", "rush_touchdown", "qb_scramble"]
@@ -43,6 +45,10 @@ def _team_stats(raw: dict) -> pd.DataFrame:
     ed = pb[pb.early_down == 1].groupby(["game_id", "posteam"]).agg(ed_pass=("pass", "mean")).reset_index().rename(columns={"posteam": "team"})
     t = off.merge(ps, on=["game_id", "team"], how="left").merge(rs, on=["game_id", "team"], how="left").merge(rz, on=["game_id", "team"], how="left").merge(ed, on=["game_id", "team"], how="left")
     gm = raw["games"].copy(); gm["date"] = pd.to_datetime(gm.gameday)
+    # Amendment 1 (2026-11-20): nflverse pbp uses current franchise codes (LA, LAC, LV) while the schedule keeps the historical code of a
+    # relocated team's HOME games (STL 2010-15, SD 2010-16, OAK 2010-19). Without this, 184 games had home = 0 on BOTH rows, so the home
+    # team's row took the away team's score, rest and coach. Same mapping as nfl_ext.TEAM_FIX.
+    gm["home_team"] = gm.home_team.replace(TEAM_FIX); gm["away_team"] = gm.away_team.replace(TEAM_FIX)
     gm = gm.set_index("game_id")
     t = t.merge(gm[["season", "week", "game_type", "date", "home_team", "away_team", "home_rest", "away_rest", "div_game", "roof", "surface", "temp", "wind", "referee", "overtime", "home_score", "away_score", "home_coach", "away_coach"]].reset_index(), on="game_id", how="left")
     t["home"] = (t.team == t.home_team).astype(float); t["opp_name"] = np.where(t.home == 1, t.away_team, t.home_team)

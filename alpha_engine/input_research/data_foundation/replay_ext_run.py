@@ -102,6 +102,10 @@ def main(a=None) -> int:
         X = X3 if fam == "nfl_pbp3" else R3
         raw = X.load_raw(a[1], a[2], a[3]); out = a[4]
         r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam == "nfl_pbp4":  # batch 4: market-free rating, points for/against, PROE, kernel score / margin distributions; args PBP_DIR GAMES.csv OUT.json
+        from ...features import nfl_pbp_ext4 as X
+        raw = X.load_raw(a[1], a[2]); out = a[3]
+        r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", X.GAMES_CONTENT)}, games_table="games", games_date_col="gameday", quick=quick)
     elif fam in ("nba_derived", "cbb_derived"):  # shared NBA/CBB derived-input engine (alpha_engine.derived); args RESTORED_VAULT_DIR OUT.json
         from ...derived import ext_cbb, ext_nba
         X = ext_nba if fam == "nba_derived" else ext_cbb

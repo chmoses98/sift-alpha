@@ -31,6 +31,12 @@ The foundations: CFB expected regulation points +29.8% and margin +40.5% (12/12 
 These compare inputs against naive constants only. No closing-line benchmark was run for these sports and nothing here shows that any projection model would improve.
 "Verified" means computed as specified without future information; several verified inputs carry no predictive gain (marked above) and should not be integrated.
 
+> **Amendment 1 (2026-11-20), MLB:** version 1 dated suspended games by their resumption date. That was look-ahead for 16 games, one resumed
+> two months later. The builder now uses first-pitch chronology and withholds a suspended game's result until it is complete. The six MLB inputs
+> were re-certified: brief v2, fresh blind match 20/20, replay plus a new required `pit_check_first_pitch_availability`. Levels and slot counts are
+> unchanged and walk-forward skill moved by at most 0.01 points. Details: `docs/certification/MLB_LINE_AMENDMENT_1.md`. The MLB rows above and
+> the blind-match sentence below describe the re-certified version; the v1 evidence is under `verification/superseded/mlb_line_v1_resume_date/`.
+
 ## Certification (same foundation process and unchanged ledger rules)
 1. Replay (`replay_ext_run cfb_espn | nhl_period | mlb_line` -> `verification/replay_ext/{CFB_cfb_espn,NHL_nhl_period,MLB_mlb_line}.json`): determinism, 3 truncation cuts, 3 future perturbations, own-game, non-vacuity. 20 of 20 inputs pass.
 2. Blind exact match (`compare_independent` -> `verification/independent/`, rtol = atol = 1e-9 over all team-game keys): one fresh agent per sport that saw only the brief and the raw files.

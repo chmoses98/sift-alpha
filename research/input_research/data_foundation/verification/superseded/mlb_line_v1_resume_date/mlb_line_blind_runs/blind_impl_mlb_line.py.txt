@@ -1,0 +1,134 @@
+import pickle,json
+import numpy as np,pandas as pd
+LAM=10.0;HL=30.0
+G=pickle.load(open('/tmp/blind/mlb/games_cache.bin','rb'))
+seen=set();L=[]
+for g in G:
+    if g['gid'] in seen: continue
+    seen.add(g['gid']);L.append(g)
+L.sort(key=lambda g:(g['date'],g['gid']))
+N=len(L)
+date=np.array([g['date'] for g in L]);season=np.array([g['season'] for g in L])
+H=np.array([g['h'] for g in L]);A=np.array([g['a'] for g in L])
+teams=sorted(set(H)|set(A));T=len(teams);tix={t:i for i,t in enumerate(teams)}
+Hi=np.array([tix[t] for t in H]);Ai=np.array([tix[t] for t in A])
+nan=np.nan
+def arr(f): return np.array([f(g) for g in L],float)
+tg={}
+tg['run']=(arr(lambda g:g['hr']),arr(lambda g:g['ar']))
+tg['r1']=(arr(lambda g:g['hr1']),arr(lambda g:g['ar1']))
+tg['r5']=(arr(lambda g:g['hr5']),arr(lambda g:g['ar5']))
+tg['late']=(tg['run'][0]-tg['r5'][0],tg['run'][1]-tg['r5'][1])
+for i,nm in enumerate(['outs','bf','np']):
+    tg[nm]=(arr(lambda g:g['st']['home'][i] if g['st'] else nan),arr(lambda g:g['st']['away'][i] if g['st'] else nan))
+# note: starter for 'home' offence is home team
+ne=np.ones(N)
+EP={k:(np.full(N,nan),np.full(N,nan)) for k in tg}
+ud=sorted(set(date))
+starts={}
+for i in range(N-1,-1,-1): starts[date[i]]=i
+for d in ud:
+    lo_d=starts[d]; idx=[i for i in range(lo_d,N) if date[i]==d] if False else None
+for d in ud:
+    s0=starts[d]; e0=s0
+    while e0<N and date[e0]==d: e0+=1
+    S=season[s0:e0].max()
+    hi=s0
+    pidx=np.nonzero(season[:hi]>=S-1)[0]
+    if len(pidx)<16: continue
+    P=pidx  # contiguous in order
+    n=len(P);ph=Hi[P];pa=Ai[P]
+    # ranks
+    ind=np.zeros((n,T));ind[np.arange(n),ph]=1;ind[np.arange(n),pa]=1
+    cs=np.cumsum(ind,axis=0);tot=cs[-1]
+    later=tot-cs  # later games in which team plays
+    rk=np.minimum(later[np.arange(n),ph],later[np.arange(n),pa])
+    w=0.5**(rk/HL)
+    for k,(yh,ya) in tg.items():
+        m=~(np.isnan(yh[P])|np.isnan(ya[P]))
+        if m.sum()<16: continue
+        ph2=ph[m];pa2=pa[m];w2=w[m];m2=len(ph2)
+        Z=np.zeros((2*m2,2+2*T))
+        r=np.arange(m2)
+        Z[:,0]=1
+        Z[r,1+ph2]=1;Z[m2+r,1+pa2]=1
+        Z[r,1+T+pa2]=1;Z[m2+r,1+T+ph2]=1
+        Z[r,1+2*T]=1  # ne=1
+        y=np.concatenate([yh[P][m],ya[P][m]]);ww=np.concatenate([w2,w2])
+        Zw=Z*ww[:,None]
+        M=Zw.T@Z;M[np.arange(1,1+2*T),np.arange(1,1+2*T)]+=LAM
+        b=np.linalg.solve(M,Zw.T@y)
+        b0=b[0];a=b[1:1+T];dd=b[1+T:1+2*T];h=b[1+2*T]
+        gi=np.arange(s0,e0)
+        EP[k][0][gi]=b0+a[Hi[gi]]+dd[Ai[gi]]+h*ne[gi]
+        EP[k][1][gi]=b0+a[Ai[gi]]+dd[Hi[gi]]
+# team rows: row 2i = home, 2i+1 = away
+def rows(hv,av):
+    o=np.empty(2*N);o[0::2]=hv;o[1::2]=av;return o
+rs=rows(season,season).astype(int)
+own={k:rows(*EP[k]) for k in EP}
+opp={k:rows(EP[k][1],EP[k][0]) for k in EP}
+ev={}
+r1h,r1a=tg['r1'];r5h,r5a=tg['r5']
+ninn=arr(lambda g:g['n']);wo=arr(lambda g:g['wo'])
+st_own={k:rows(*tg[k]) for k in ('outs','bf')}
+ownr1=rows(r1h,r1a);oppr1=rows(r1a,r1h);ownr5=rows(r5h,r5a);opr5=rows(r5a,r5h)
+def kern(xs,bws,v,minref=500):
+    # xs list of arrays, v array with nan for missing
+    out=np.full(2*N,nan)
+    ok=~np.isnan(v)
+    for x in xs: ok&=~np.isnan(x)
+    for s in sorted(set(rs)):
+        ref=np.nonzero((rs<s)&ok)[0]
+        q=np.nonzero(rs==s)[0]
+        if len(ref)<minref: continue
+        for c in range(0,len(q),400):
+            qq=q[c:c+400]
+            e=np.zeros((len(qq),len(ref)))
+            for x,bw in zip(xs,bws):
+                e+=((x[ref][None,:]-x[qq][:,None])/bw)**2
+            kk=np.exp(-0.5*e)
+            den=kk.sum(1);num=kk@v[ref]
+            with np.errstate(all='ignore'):
+                val=num/den
+            val[den==0]=nan
+            val[np.isnan(x[qq])]=nan
+            for x in xs: val[np.isnan(x[qq])]=nan
+            out[qq]=val
+    return out
+def ev_(cond,present=None):
+    v=cond.astype(float)
+    if present is not None: v[np.isnan(present)]=nan
+    return v
+col={}
+col['fi_exp_pre']=own['r1'];col['f5_exp_pre']=own['r5'];col['f5_late_exp_pre']=own['late']
+col['spw_outs_pre']=own['outs'];col['spw_bf_pre']=own['bf'];col['spw_np_pre']=own['np']
+col['fi_score_pre']=kern([own['r1']],[0.04],(ownr1>0).astype(float))
+col['fi_nrfi_pre']=kern([own['r1']+opp['r1']],[0.06],((ownr1+oppr1)==0).astype(float))
+d5=own['r5']-opp['r5']
+col['f5_lead_pre']=kern([d5],[0.25],(ownr5>opr5).astype(float))
+col['f5_tie_pre']=kern([d5],[0.25],(ownr5==opr5).astype(float))
+ehm=EP['run'][0]-EP['run'][1]
+xh=rows(ehm,ehm);xt=own['run']+opp['run']
+col['wo_walkoff_pre']=kern([xh,xt],[0.4,0.5],rows(wo,wo))
+col['wo_extras_pre']=kern([xh,xt],[0.4,0.5],rows(ninn>9,ninn>9).astype(float))
+for k in (18,21,24,27):
+    col['hook_ge%d_pre'%k]=kern([own['bf']],[0.5],ev_(st_own['bf']>=k,st_own['bf']))
+for k in (15,16,18,19):
+    col['exb_ge%d_pre'%k]=kern([own['outs']],[0.4],ev_(st_own['outs']>=k,st_own['outs']))
+df=pd.DataFrame(col)
+df.insert(0,'team',rows(H,A).astype(np.int64))
+df.insert(0,'game_id',rows(np.array([g['gid'] for g in L]),np.array([g['gid'] for g in L])).astype(np.int64))
+df.to_csv('/tmp/blind/mlb/out.csv',index=False,float_format='%.17g')
+print(df.shape);print(df.notna().sum())
+amb=["Spec says 'ne = 1 always' so neutral-site is never used; h identified with I=1 on home obs only.",
+"Games with ties in ordering sorted by (date string, game_id); date compared lexicographically as ISO strings.",
+"'First kept' for duplicate game ids taken in directory order MLB2022..MLB2026 then sorted filename; duplicates removed before filtering order.",
+"Starter unavailable: missing pitchers list/empty, pid not in players, pit null, or any of outs/bf/np null -> all starter values missing for both sides.",
+"Kernel x missing => own value missing; reference rows require all x and v present; MIN_REF=500 for every kernel (no conditions used).",
+"Kernel NaN when sum k_i is 0 (underflow) literally; no log-sum-exp stabilisation.",
+"Ridge uses all teams in Games as parameters even if absent from the pool (penalty makes them 0).",
+"Pool = all games with date strictly before d and season >= S-1 (S = max season among games on d); ridge for a target missing if <16 kept games.",
+"Starter-target 'offence' for home side is the home team; ep_outs/bf/np use that.",
+"walkoff defined from totals over all inning entries with last entry's home runs; n_inn counts entries including any with missing sides."]
+json.dump({"ambiguities":amb},open('/tmp/blind/mlb/notes.json','w'),indent=1)

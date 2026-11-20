@@ -18,3 +18,18 @@ test("operating readiness renders separately from catalog completeness and recon
   const o = await measureOverflow(page);
   expect(o.scroll, JSON.stringify(o.offenders)).toBeLessThanOrEqual(o.view);
 });
+
+test("P1 tracker shows the baseline, the ledger's missing P1 count, categories and per-input blockers", async ({ page }) => {
+  await page.goto("/");
+  const t = page.getByTestId("p1-tracker");
+  await t.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("p1-missing-now")).toHaveText(String(R.by_tier.P1));
+  await expect(page.getByTestId("p1-recon")).toContainText("Reconciles with the ledger and the baseline");
+  await expect(page.getByTestId("p1-categories")).toContainText("PROXY");
+  await t.getByText(/^Open P1 inputs/).click();
+  await expect(page.getByTestId("p1-open").locator("tbody tr")).toHaveCount(R.p1_tracker.inputs.filter(i => i.remaining_blocker).length);
+  await t.getByText(/^Closed P1 inputs/).click();
+  await expect(page.getByTestId("p1-closed").locator("tbody tr")).toHaveCount(R.p1_tracker.inputs.filter(i => !i.remaining_blocker).length);
+  const o = await measureOverflow(page);
+  expect(o.scroll, JSON.stringify(o.offenders)).toBeLessThanOrEqual(o.view);
+});

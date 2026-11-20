@@ -19,6 +19,12 @@ Certification used the unchanged foundation process:
 | `nfl_skill8` | `features/nfl_skill_ext8.py` | nfl.skill_avail (PARTIAL) | 7,422 team-games | 5 / 5 |
 | `nfl_path8` | `features/nfl_path_ext8.py` | nfl.market_free_score_state_blowout_mass, score_path_sequence_sim (PROXY) | 7,422 team-games | 14 / 14 |
 | `cbb_team9` | `features/cbb_team_ext9.py` | cbb.first_half_pace_ratio, margin_regime_mixture (PROXY) | 167,106 team-games 2013-2027 | 11 / 11 |
+| `nba_stint10` | `features/nba_stint_ext10.py` | nba.on_court_assist_share, creditable_rebound_pool (PARTIAL); pairing_adjusted_reb_share, lineup_conditional_component_rates, assisted_three_passer_map (PROXY) | 73,835 player-games 2024-25..2025-26 | 13 / 13 |
+| `mlb_fi11` | `features/mlb_fi_ext11.py` | mlb.first_inning_markov_run_prob (PROXY) | 19,778 team-games 2023-2026 | 2 / 2 |
+| `nfl_xtd11` | `features/nfl_xtd_ext11.py` | nfl.player_xtd (PARTIAL) | 102,106 player-games 2013-2026 | 3 / 3 |
+
+**Totals: 35 inputs, 157 value columns, 157 / 157 blind MATCH on the first comparison.** The NBA family reads the nba-edge-finder history archive (`data/history/espn_pbp`).
+The rest read sift-data-vault.
 
 Blind briefs: `verification/blind_briefs/briefs_<family>.md`. Blind implementations and notes: `verification/blind_briefs/<family>_blind_runs/`.
 

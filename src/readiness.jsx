@@ -35,6 +35,8 @@ export function OperatingReadiness() {
 
 // Priority (P1) progress against the frozen sprint-start baseline (research/input_research/readiness/p1_baseline_20261120.json). A slot counts as closed only when the
 // input it names is certified in the ledger (verified_coverage), never from code presence or a field-name match.
+const BUILT_LABEL = {REPLAYED: "replayed", CALCULATED_EARLIER: "earlier build", NOT_BUILT: "no"};
+
 function P1Tracker({t}) {
   const chk = p1TrackerCheck(t), s = t.summary, lv = s.H_closed_by_level;
   const open = t.inputs.filter(i => i.remaining_blocker).sort((a, b) => b.p1_slots - a.p1_slots || a.sport.localeCompare(b.sport));
@@ -47,12 +49,12 @@ function P1Tracker({t}) {
       <tr><td style={{whiteSpace: "normal"}}>Missing P1 slots that depend on a dataset with unresolved rights</td><td>{s.F_missing_slots_with_unresolved_rights}</td></tr></tbody></table></div>
     <details><summary>Open P1 inputs ({open.length}): what each measures and what blocks it</summary>
       <div className="ir-scroll"><table className="ir-table" data-testid="p1-open"><thead><tr><th>Sport</th><th>Input</th><th>Markets</th><th>P1 slots</th><th>Data held?</th><th>Built?</th><th>Certification</th><th>Remaining blocker</th></tr></thead>
-        <tbody>{open.map(i => <tr key={i.sport + i.input_id}><td>{i.sport}</td><td style={{whiteSpace: "normal", minWidth: "12em"}}><b>{i.label || i.input_id}</b><br /><span className="ir-fine">{i.input_id}</span></td>
+        <tbody>{open.map(i => <tr key={i.sport + i.input_id}><td style={{whiteSpace: "nowrap"}}>{i.sport}</td><td style={{whiteSpace: "normal", minWidth: "12em"}}><b>{i.label || i.input_id}</b><br /><span className="ir-fine">{i.input_id}</span></td>
           <td style={{whiteSpace: "normal"}}>{i.markets.map(m => m.replaceAll("_", " ")).join(", ")}</td><td>{i.p1_slots - i.p1_slots_closed}</td><td>{i.collection_status.replaceAll("_", " ").toLowerCase()}</td>
-          <td>{i.calculation_status.replaceAll("_", " ").toLowerCase()}</td><td>{(i.certification_status || "").replaceAll("_", " ").toLowerCase()}</td><td style={{whiteSpace: "normal", minWidth: "14em"}}>{i.remaining_blocker}</td></tr>)}</tbody></table></div></details>
+          <td style={{whiteSpace: "nowrap"}}>{BUILT_LABEL[i.calculation_status] || i.calculation_status}</td><td>{(i.certification_status || "").replaceAll("_", " ").toLowerCase()}</td><td style={{whiteSpace: "normal", minWidth: "14em"}}>{i.remaining_blocker}</td></tr>)}</tbody></table></div></details>
     <details><summary>Closed P1 inputs ({done.length})</summary>
       <div className="ir-scroll"><table className="ir-table" data-testid="p1-closed"><thead><tr><th>Sport</th><th>Input</th><th>P1 slots</th><th>Level</th><th>Adoption</th></tr></thead>
-        <tbody>{done.map(i => <tr key={i.sport + i.input_id}><td>{i.sport}</td><td style={{whiteSpace: "normal", minWidth: "12em"}}><b>{i.label || i.input_id}</b><br /><span className="ir-fine">{i.input_id}</span></td>
+        <tbody>{done.map(i => <tr key={i.sport + i.input_id}><td style={{whiteSpace: "nowrap"}}>{i.sport}</td><td style={{whiteSpace: "normal", minWidth: "12em"}}><b>{i.label || i.input_id}</b><br /><span className="ir-fine">{i.input_id}</span></td>
           <td>{i.p1_slots}</td><td>{i.certified_level}</td><td>{(LADDER_LABEL[i.adoption_level] || i.adoption_level || "").toLowerCase()}</td></tr>)}</tbody></table></div></details>
   </div>;
 }

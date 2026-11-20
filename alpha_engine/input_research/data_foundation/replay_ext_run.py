@@ -1,4 +1,4 @@
-"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2, Phase 6 nhl3, nhl_player3, Phase 7 nfl_pbp3, nfl_rush3, nfl_pbp4, nfl_player5 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
+"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2, Phase 6 nhl3, nhl_player3, Phase 7 nfl_pbp3, nfl_rush3, nfl_pbp4, nfl_player5, cbb_player6, mlb_team7, mlb_pitcher7, nfl_team8, nfl_qb8, nfl_skill8, nfl_path8, cbb_team9, nba_stint10, mlb_fi11, nfl_xtd11, cfb_drive12 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
 Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
 
     python -m alpha_engine.input_research.data_foundation.replay_ext_run tennis RAW_DIR OUT.json [--quick]
@@ -111,6 +111,76 @@ def main(a=None) -> int:
         from ...features import nfl_player_ext5 as X
         raw = X.load_raw(a[1], a[2]); out = a[3]
         r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam == "cbb_player6":  # batch 6 CBB player props (rows keyed game_id + athlete id in `team`); args RAW_CBB_DIR OUT.json (restored vault archive with
+        # espn_mens_college_basketball_player_boxscores/). Season 2012 is history only (priors for 2013); every table is the one box table.
+        from ...features import cbb_player_ext6 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "CBB", {"box": ("game_id", X.CONTENT)}, games_table="box", games_date_col="game_date", quick=quick, truncate_by_date=True)   # 2 box games (2014) have no output row
+    elif fam == "nfl_skill8":  # batch 8 NFL skill availability; args PBP_DIR GAMES.csv INJURY_DIR OUT.json. Adds the required post-kickoff injury check of nfl.injuries_pit:
+        # every injury row last modified after kickoff (or with no timestamp) is rewritten as an Out / WR listing of a high-usage player; no feature may move, and the check is not vacuous.
+        import numpy as _np
+        import pandas as pd
+        from ...features import nfl_skill_ext8 as X
+        raw = X.load_raw(a[1], a[2], a[3]); out = a[4]
+        # precedent replay_ext (nfl.injuries_pit): own-game scrambles the game's OUTCOME data (play-by-play, score); the pre-kickoff injury report of the game itself is pregame
+        # information and is checked separately: (a) reports of games dated on/after each of 3 cuts are permuted -> earlier rows unchanged; (b) post-kickoff rows -> nothing moves.
+        r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="gameday", quick=quick)
+        base = X.compute(raw)["team"]; gd = X._all(raw, "games").drop_duplicates("game_id").set_index("game_id").gameday
+        for q_, seed_ in G.CUTS:
+            cut = pd.Timestamp(base.date.sort_values().reset_index(drop=True).quantile(q_)).normalize(); sel = (base.date < cut).to_numpy()
+            late = (pd.to_datetime(raw["injuries"].game_id.map(gd)) >= cut).to_numpy()
+            alt_ = X.compute({**raw, "injuries": G._perm(raw["injuries"], late, X.INJ_CONTENT + ["position"], _np.random.default_rng(seed_ + 7))})["team"]
+            for s_ in X.specs():
+                b = G._cmp(base, alt_, s_.columns, sel)
+                r["inputs"][s_.catalog_id]["tests"].setdefault("pit_check_future_injury_reports", {"cuts": [], "ok": True})
+                t_ = r["inputs"][s_.catalog_id]["tests"]["pit_check_future_injury_reports"]; t_["cuts"].append({"cut": str(cut.date()), "n_rows_permuted": int(late.sum()), "bad_columns": b}); t_["ok"] = t_["ok"] and not b and int(late.sum()) > 0
+        post = X.post_kickoff_mask(raw); inj = raw["injuries"].copy()
+        inj.loc[post, "report_status"] = "Out"; inj.loc[post, "position"] = "WR"; inj.loc[post, "gsis_id"] = inj["gsis_id"].dropna().value_counts().index[0]
+        alt = X.compute({**raw, "injuries": inj})["team"]
+        for s_ in X.specs():
+            b = G._cmp(base, alt, s_.columns, _np.ones(len(base), bool))
+            r["inputs"][s_.catalog_id]["tests"]["pit_check_post_kickoff_injuries"] = {"n_rows": int(post.sum()), "bad_columns": b, "ok": (not b) and int(post.sum()) > 0,
+                                                                                        "note": "rows last modified after kickoff (or untimestamped) rewritten as Out WR listings; no feature may change"}
+    elif fam == "nfl_qb8":  # batch 8 NFL quarterback rows (team = passer id); args PBP_DIR GAMES.csv OUT.json (2010-2012 warm history)
+        from ...features import nfl_qb_ext8 as X
+        raw = X.load_raw(a[1], a[2]); out = a[3]
+        r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam == "nfl_path8":  # batch 8 NFL score-path kernel frequencies; args PBP_DIR GAMES.csv OUT.json (2010-2012 warm history)
+        from ...features import nfl_path_ext8 as X
+        raw = X.load_raw(a[1], a[2]); out = a[3]
+        r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", X.GAMES_CONTENT)}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam == "nfl_xtd11":  # batch 11 NFL player xTD (team = player id); args PBP_DIR GAMES.csv OUT.json (2010-2012 warm history)
+        from ...features import nfl_xtd_ext11 as X
+        raw = X.load_raw(a[1], a[2]); out = a[3]
+        r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", ["home_score"])}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam == "nfl_team8":  # batch 8 NFL team drive-model inputs; args PBP_DIR GAMES.csv OUT.json (seasons 2010-2012 are warm history in pbp_warm / games_warm)
+        from ...features import nfl_team_ext8 as X
+        raw = X.load_raw(a[1], a[2]); out = a[3]
+        r = G.run(X, raw, "NFL", {"pbp": ("game_id", X.CONTENT), "games": ("game_id", X.GAMES_CONTENT)}, games_table="games", games_date_col="gameday", quick=quick)
+    elif fam == "nba_stint10":  # batch 10 NBA on-court inputs from stints + events; args NBA_HISTORY_DIR (nba-edge-finder data/history) OUT.json
+        from ...features import nba_stint_ext10 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "NBA", {"games": ("game_id", X.G_CONTENT), "events": ("game_id", X.EV_CONTENT), "stints": ("game_id", X.ST_CONTENT)}, games_table="games",
+                  games_date_col="game_date", quick=quick, truncate_by_date=True)
+    elif fam == "cfb_drive12":  # batch 12 CFB drive-clock and scoring-timeline inputs; args RAW_DIR (restored espn_summary_postgame dirs, or a cfb_drive_ext12.cache dir) OUT.json
+        from ...features import cfb_drive_ext12 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "CFB", {"games": ("game_id", []), "drives": ("game_id", X.DR_CONTENT), "scores": ("game_id", X.SC_CONTENT)}, games_table="games",
+                  games_date_col="game_date", quick=quick, truncate_by_date=True)
+    elif fam == "cbb_team9":  # batch 9 CBB schedule-only team inputs; args RAW_CBB_DIR OUT.json (restored espn_team_box_schedules; 2006-2012 warm history)
+        from ...features import cbb_team_ext9 as X
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "CBB", {"sched": ("game_id", X.CONTENT)}, games_table="sched", games_date_col="game_date", quick=quick, truncate_by_date=True)
+    elif fam == "mlb_fi11":  # batch 11 MLB first-inning Markov chain (team level); args RAW_DIR OUT.json; first-pitch chronology check runs
+        from ...features import mlb_fi_ext11 as X, mlb_pa_core as C
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "MLB", {"games": ("game_id", C.GAME_CONTENT), "pa": ("game_id", C.PA_CONTENT)}, games_table="games", games_date_col="game_date", quick=quick, avail_col="avail_date")
+    elif fam in ("mlb_team7", "mlb_pitcher7"):  # batch 7 MLB plate-appearance inputs; args RAW_DIR[,RAW_DIR...] (restored postgame_feed_compact seasons, or a mlb_pa_core.cache dir) OUT.json.
+        # first-pitch chronology: the suspended-game availability check runs (avail_date = completion date).
+        from ...features import mlb_pa_core as C, mlb_pitcher_ext7, mlb_team_ext7
+        X = mlb_team_ext7 if fam == "mlb_team7" else mlb_pitcher_ext7
+        raw = X.load_raw(a[1]); out = a[2]
+        r = G.run(X, raw, "MLB", {"games": ("game_id", C.GAME_CONTENT), "pa": ("game_id", C.PA_CONTENT)}, games_table="games", games_date_col="game_date", quick=quick, avail_col="avail_date")
     elif fam in ("nba_derived", "cbb_derived"):  # shared NBA/CBB derived-input engine (alpha_engine.derived); args RESTORED_VAULT_DIR OUT.json
         from ...derived import ext_cbb, ext_nba
         X = ext_nba if fam == "nba_derived" else ext_cbb

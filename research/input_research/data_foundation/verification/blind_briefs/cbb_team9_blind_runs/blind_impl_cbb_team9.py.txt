@@ -1,0 +1,178 @@
+import sys, glob, os, re, json, time
+import numpy as np, pandas as pd, pyarrow.parquet as pq
+
+t0 = time.time()
+data_dir, out_dir = sys.argv[1], sys.argv[2]
+COLS = ['game_id', 'season', 'season_type', 'status_type_completed', 'home_score', 'away_score',
+        'game_date', 'home_id', 'away_id', 'neutral_site', 'status_period', 'home_linescores', 'away_linescores']
+
+frames = []
+for f in sorted(glob.glob(os.path.join(data_dir, 'mbb_schedule_*.parquet'))):
+    names = pq.read_schema(f).names
+    cols = [c for c in COLS if c in names]
+    d = pd.read_parquet(f, columns=cols)
+    for c in COLS:
+        if c not in d.columns:
+            d[c] = None
+    d = d[COLS]
+    for c in ['home_linescores', 'away_linescores']:
+        d[c] = d[c].astype(object)
+    frames.append(d)
+g = pd.concat(frames, ignore_index=True)
+del frames
+print('raw rows', len(g))
+
+comp = g['status_type_completed']
+m = ((g['season'] >= 2006) & g['season_type'].isin([2, 3]) & (comp == True)
+     & g['home_score'].notna() & g['away_score'].notna())
+g = g[m.fillna(False).astype(bool)]
+g = g.drop_duplicates('game_id', keep='first').reset_index(drop=True)
+print('games', len(g))
+
+g['date'] = pd.to_datetime(g['game_date']).dt.normalize()
+g['neutral'] = g['neutral_site'].fillna(False).astype(bool)
+g['hs'] = g['home_score'].astype('float64')
+g['as_'] = g['away_score'].astype('float64')
+g['ot'] = (g['status_period'].astype('float64') > 2).astype('float64')
+
+DICT_RE = re.compile(r'\{[^{}]*\}')
+VAL_RE = re.compile(r"'value'\s*:\s*([^,}\s]+)")
+PER_RE = re.compile(r"'period'\s*:\s*([^,}\s]+)")
+
+def num(s):
+    try:
+        v = float(s)
+    except Exception:
+        return None
+    return None if np.isnan(v) else v
+
+def parse_ls(x):
+    """return (h1, reg)"""
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return np.nan, np.nan
+    per = {}
+    for pos, dd in enumerate(DICT_RE.findall(str(x)), start=1):
+        mv = VAL_RE.search(dd)
+        v = num(mv.group(1)) if mv else None
+        mp = PER_RE.search(dd)
+        p = num(mp.group(1)) if mp else None
+        if p is None:
+            p = pos
+        p = int(p) if float(p).is_integer() else p
+        if p in per:
+            continue
+        per[p] = v
+    h1 = per.get(1)
+    h2 = per.get(2)
+    h1v = np.nan if h1 is None else h1
+    reg = np.nan if (h1 is None or h2 is None) else h1 + h2
+    return h1v, reg
+
+hh = [parse_ls(x) for x in g['home_linescores'].values]
+aa = [parse_ls(x) for x in g['away_linescores'].values]
+g['h1_h'] = [a for a, b in hh]; g['reg_h'] = [b for a, b in hh]
+g['h1_a'] = [a for a, b in aa]; g['reg_a'] = [b for a, b in aa]
+den = g['reg_h'] + g['reg_a']
+num_ = g['h1_h'] + g['h1_a']
+okr = num_.notna() & den.notna() & (den > 0)
+g['r'] = np.where(okr, num_ / den.where(okr, 1.0), np.nan)
+g = g.drop(columns=['home_linescores', 'away_linescores'])
+
+# season constants
+lg_r_by = g[g['r'].notna()].groupby('season')['r'].mean()
+H_by = g[~g['neutral']].assign(mg=lambda x: x['hs'] - x['as_']).groupby('season')['mg'].mean()
+
+# team-games
+base = ['game_id', 'season', 'date', 'ot', 'r']
+home = g[base].copy(); home['team'] = g['home_id'].values; home['opp'] = g['away_id'].values
+home['s'] = np.where(g['neutral'], 0.0, 1.0); home['is_home'] = True
+home['own'] = g['hs'].values; home['oppsc'] = g['as_'].values
+away = g[base].copy(); away['team'] = g['away_id'].values; away['opp'] = g['home_id'].values
+away['s'] = np.where(g['neutral'], 0.0, -1.0); away['is_home'] = False
+away['own'] = g['as_'].values; away['oppsc'] = g['hs'].values
+tg = pd.concat([home, away], ignore_index=True)
+tg['margin'] = tg['own'] - tg['oppsc']
+tg['total'] = tg['own'] + tg['oppsc']
+print('team-games', len(tg), 'dup (game,team):', tg.duplicated(['game_id', 'team']).sum())
+
+tg = tg.sort_values(['team', 'date', 'game_id'], kind='mergesort').reset_index(drop=True)
+rd = 0.5 ** (1 / 15)
+X = np.column_stack([np.ones(len(tg)), tg['margin'].values, tg['total'].values,
+                     np.where(tg['r'].notna(), tg['r'].values, 0.0),
+                     tg['r'].notna().astype('float64').values])
+W = np.empty_like(X)
+team = tg['team'].values
+prev = None
+acc = np.zeros(5)
+for i in range(len(tg)):
+    if team[i] != prev:
+        acc = X[i].copy(); prev = team[i]
+    else:
+        acc = rd * acc + X[i]
+    W[i] = acc
+# pre-state: last team-game strictly before date
+pos = np.arange(len(tg))
+cc = tg.groupby(['team', 'date'], sort=False).cumcount().values
+first_same = pos - cc
+pre = first_same - 1
+team_start = pos - tg.groupby('team', sort=False).cumcount().values
+valid = pre >= team_start
+names = ['W1', 'Wm', 'Wt', 'Wr', 'Wn']
+for k, nm in enumerate(names):
+    col = np.full(len(tg), np.nan)
+    col[valid] = W[pre[valid], k]
+    tg[nm] = col
+
+tg['lg_r'] = tg['season'].map(lambda s: lg_r_by.get(s - 1, np.nan)).astype('float64')
+tg['H'] = tg['season'].map(lambda s: H_by.get(s - 1, np.nan)).astype('float64')
+n = tg['Wn'].fillna(0.0)
+R = np.where(n > 0, tg['Wr'] / n.where(n > 0, 1.0), tg['lg_r'])
+tg['val'] = n / (n + 12) * R + 12 / (n + 12) * tg['lg_r']
+tg['avg_t'] = tg['Wt'] / tg['W1']
+tg['avg_m'] = tg['Wm'] / tg['W1']
+
+opp = tg[['game_id', 'team', 'val', 'avg_t', 'avg_m']].rename(
+    columns={'team': 'opp', 'val': 'val_o', 'avg_t': 'avg_t_o', 'avg_m': 'avg_m_o'})
+tg = tg.merge(opp, on=['game_id', 'opp'], how='left', validate='many_to_one')
+
+tg['fhp_team_ratio_pre'] = tg['val']
+tg['fhp_pair_ratio_pre'] = (tg['val'] + tg['val_o']) / 2
+tg['fhp_exp_h1_total_pre'] = tg['fhp_pair_ratio_pre'] * 0.5 * (tg['avg_t'] + tg['avg_t_o'])
+tg['mrm_m_hat_pre'] = 0.5 * (tg['avg_m'] - tg['avg_m_o']) + 0.5 * tg['H'] * tg['s']
+tg['bin'] = np.floor(np.clip(tg['mrm_m_hat_pre'], -29.999, 29.999) / 2)
+tg['blow'] = (tg['margin'].abs() >= 15)
+tg['win'] = (tg['margin'] > 0).astype('float64')
+
+MCOLS = ['mrm_p_blowout_pre', 'mrm_comp_mu_pre', 'mrm_comp_sd_pre', 'mrm_blow_mu_pre',
+         'mrm_blow_sd_pre', 'mrm_p_ot_pre', 'mrm_p_win_pre']
+ref_all = tg[tg['mrm_m_hat_pre'].notna() & (tg['season'] >= 2007)]
+out_seasons = sorted(s for s in tg['season'].unique() if s >= 2013)
+stat_rows = []
+for S in out_seasons:
+    ref = ref_all[(ref_all['season'] >= max(2007, S - 10)) & (ref_all['season'] <= S - 1)]
+    for b, grp in ref.groupby('bin'):
+        rec = {'season': S, 'bin': b}
+        if len(grp) < 20:
+            for c in MCOLS: rec[c] = np.nan
+        else:
+            mg = grp['margin'].values.astype('float64'); bl = grp['blow'].values
+            rec['mrm_p_blowout_pre'] = bl.astype('float64').mean()
+            for nm, sel in (('comp', ~bl), ('blow', bl)):
+                x = mg[sel]
+                rec[f'mrm_{nm}_mu_pre'] = x.mean() if len(x) >= 1 else np.nan
+                rec[f'mrm_{nm}_sd_pre'] = x.std(ddof=1) if len(x) >= 2 else np.nan
+            rec['mrm_p_ot_pre'] = grp['ot'].values.mean()
+            rec['mrm_p_win_pre'] = grp['win'].values.mean()
+        stat_rows.append(rec)
+stats = pd.DataFrame(stat_rows)
+out = tg[tg['season'] >= 2013].merge(stats, on=['season', 'bin'], how='left', validate='many_to_one')
+OUT = ['game_id', 'team', 'fhp_team_ratio_pre', 'fhp_pair_ratio_pre', 'fhp_exp_h1_total_pre', 'mrm_m_hat_pre'] + MCOLS
+out = out[OUT].sort_values(['game_id', 'team']).reset_index(drop=True)
+assert not out.duplicated(['game_id', 'team']).any()
+for c in OUT[2:]:
+    out[c] = out[c].astype('float64')
+out.to_csv(os.path.join(out_dir, 'out.csv'), index=False, float_format='%.17g')
+print('rows', len(out))
+print(out.describe().T.to_string())
+print('lg_r', lg_r_by.to_dict()); print('H', H_by.to_dict())
+print('runtime %.1fs' % (time.time() - t0))

@@ -1,0 +1,306 @@
+import sys, os, glob, json, time
+import numpy as np
+import pandas as pd
+
+t0 = time.time()
+games_path, pbp_dir, out_path, notes_path = sys.argv[1:5]
+REPL = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
+
+# ---------- 1. games ----------
+g = pd.read_csv(games_path)
+g = g[(g.season >= 2010) & g.home_score.notna()].copy()
+g = g.drop_duplicates("game_id", keep="first").reset_index(drop=True)
+g["home_team"] = g.home_team.replace(REPL)
+g["away_team"] = g.away_team.replace(REPL)
+g["date"] = g.gameday.astype(str)
+neutral = (g.location == "Neutral").to_numpy()
+
+home = pd.DataFrame({"game_id": g.game_id, "season": g.season, "date": g.date,
+                     "team": g.home_team, "opp": g.away_team,
+                     "pts": g.home_score.astype(float), "pts_a": g.away_score.astype(float),
+                     "is_home": 1, "s": np.where(neutral, 0.0, 1.0)})
+away = pd.DataFrame({"game_id": g.game_id, "season": g.season, "date": g.date,
+                     "team": g.away_team, "opp": g.home_team,
+                     "pts": g.away_score.astype(float), "pts_a": g.home_score.astype(float),
+                     "is_home": 0, "s": np.where(neutral, 0.0, -1.0)})
+tg = pd.concat([home, away], ignore_index=True)
+assert not tg.duplicated(["game_id", "team"]).any()
+kept = set(g.game_id)
+
+# ---------- 2. pbp ----------
+cols = ["game_id", "posteam", "fixed_drive", "fixed_drive_result", "play_type", "qtr",
+        "total_home_score", "total_away_score"]
+drive_parts, play_parts, q_parts = [], [], []
+for f in sorted(glob.glob(os.path.join(pbp_dir, "play_by_play_*.parquet"))):
+    p = pd.read_parquet(f, columns=cols)
+    p = p[p.game_id.isin(kept)].reset_index(drop=True)
+    if len(p) == 0:
+        continue
+    p["posteam"] = p.posteam.replace(REPL)
+    # quarter max scores (all rows)
+    sc = p.total_home_score.fillna(0).astype(float) + p.total_away_score.fillna(0).astype(float)
+    qq = pd.DataFrame({"game_id": p.game_id, "qtr": p.qtr, "sc": sc})
+    qq = qq[qq.qtr.isin([1, 2, 3, 4])]
+    q_parts.append(qq.groupby(["game_id", "qtr"]).sc.max().reset_index())
+    q_parts.append(pd.DataFrame({"game_id": p.game_id.unique(), "qtr": -1.0, "sc": 0.0}))  # presence marker
+    pt = p[p.posteam.notna()]
+    # plays
+    pl = pt[pt.play_type.isin(["pass", "run"])].groupby(["game_id", "posteam"]).size().rename("plays")
+    play_parts.append(pl.reset_index())
+    # drives
+    d = pt[pt.fixed_drive.notna()]
+    drv = d.groupby(["game_id", "posteam", "fixed_drive"], sort=False).fixed_drive_result.first()  # first non-null
+    drv = drv.reset_index()
+    agg = drv.groupby(["game_id", "posteam"]).agg(
+        drives=("fixed_drive", "size"),
+        td=("fixed_drive_result", lambda x: (x == "Touchdown").sum()),
+        fg=("fixed_drive_result", lambda x: (x == "Field goal").sum()))
+    drive_parts.append(agg.reset_index())
+    del p, pt, d
+
+drv = pd.concat(drive_parts).groupby(["game_id", "posteam"]).sum().reset_index().rename(columns={"posteam": "team"})
+pls = pd.concat(play_parts).groupby(["game_id", "posteam"]).sum().reset_index().rename(columns={"posteam": "team"})
+tg = tg.merge(drv, on=["game_id", "team"], how="left").merge(pls, on=["game_id", "team"], how="left")
+for c in ["drives", "td", "fg", "plays"]:
+    tg[c] = tg[c].fillna(0).astype(float)
+opp = tg[["game_id", "team", "drives", "td", "fg", "plays"]].rename(
+    columns={"team": "opp", "drives": "o_drives", "td": "o_td", "fg": "o_fg", "plays": "o_plays"})
+tg = tg.merge(opp, on=["game_id", "opp"], how="left")
+for c in ["o_drives", "o_td", "o_fg", "o_plays"]:
+    tg[c] = tg[c].fillna(0).astype(float)
+
+# quarter totals
+qall = pd.concat(q_parts)
+present = set(qall[qall.qtr == -1].game_id)
+qm = qall[qall.qtr > 0].groupby(["game_id", "qtr"]).sc.max().unstack()
+qrows = {}
+for gid in present:
+    M_prev = 0.0
+    C_prev = 0.0
+    Q = []
+    for q in (1, 2, 3, 4):
+        v = qm.at[gid, q] if (gid in qm.index and q in qm.columns) else np.nan
+        M = M_prev if pd.isna(v) else float(v)
+        C = max(C_prev, M)
+        Q.append(C - C_prev)
+        M_prev, C_prev = M, C
+    qrows[gid] = Q
+qdf = pd.DataFrame.from_dict(qrows, orient="index", columns=["Q1", "Q2", "Q3", "Q4"])
+qdf.index.name = "game_id"
+tg = tg.merge(qdf.reset_index(), on="game_id", how="left")
+
+# ---------- 3. team state ----------
+r = 0.5 ** (1 / 8)
+WX = ["one", "drives", "o_drives", "pts", "pts_a", "td", "o_td", "fg", "o_fg", "plays"]
+tg["one"] = 1.0
+tg = tg.sort_values(["team", "date", "game_id"]).reset_index(drop=True)
+Wcols = {k: np.zeros(len(tg)) for k in WX}  # state read by each row (pre-game)
+for team, idx in tg.groupby("team").indices.items():
+    idx = np.asarray(idx)
+    sub = tg.iloc[idx]
+    dates = sub.date.to_numpy()
+    X = sub[WX].to_numpy(float)
+    Wcum = np.zeros_like(X)
+    w = np.zeros(len(WX))
+    for i in range(len(X)):
+        w = r * w + X[i]
+        Wcum[i] = w
+    pos = np.searchsorted(dates, dates, side="left") - 1  # last team-game strictly before date
+    for k, name in enumerate(WX):
+        vals = np.where(pos >= 0, Wcum[np.maximum(pos, 0), k], 0.0)
+        Wcols[name][idx] = vals
+for name in WX:
+    tg["W_" + name] = Wcols[name]
+
+# league constants
+lg = {}
+for S in sorted(tg.season.unique()):
+    prev = tg[tg.season == S - 1]
+    if len(prev) == 0:
+        continue
+    hm = prev[(prev.is_home == 1) & (prev.s != 0)]
+    lg[S] = dict(dpg=prev.drives.mean(), ppd=prev.pts.sum() / prev.drives.sum(),
+                 tdpd=prev.td.sum() / prev.drives.sum(), fgpd=prev.fg.sum() / prev.drives.sum(),
+                 h=(hm.pts - hm.pts_a).mean())
+
+
+def shr(n, a, b, l):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        R = np.where(b > 0, a / np.where(b > 0, b, 1.0), 0.0)
+    return n / (n + 8) * R + 8 / (n + 8) * l
+
+
+# ---------- 4. row values ----------
+rows = tg[tg.season >= 2011].copy()
+ostate = tg[["game_id", "team"] + ["W_" + k for k in WX]].rename(
+    columns={"team": "opp", **{"W_" + k: "oW_" + k for k in WX}})
+rows = rows.merge(ostate, on=["game_id", "opp"], how="left")
+L = pd.DataFrame([lg[S] for S in rows.season], index=rows.index)
+for c in L.columns:
+    rows["L_" + c] = L[c].to_numpy()
+nT, nO = rows.W_one.to_numpy(), rows.oW_one.to_numpy()
+dpg, ppd, tdpd, fgpd, h = (rows["L_" + c].to_numpy() for c in ["dpg", "ppd", "tdpd", "fgpd", "h"])
+E_dr = 0.5 * (shr(nT, rows.W_drives.to_numpy(), nT, dpg) + shr(nO, rows.oW_o_drives.to_numpy(), nO, dpg))
+off_ppd = shr(nT, rows.W_pts.to_numpy(), rows.W_drives.to_numpy(), ppd)
+def_ppd = shr(nO, rows.oW_pts_a.to_numpy(), rows.oW_o_drives.to_numpy(), ppd)
+td_o = shr(nT, rows.W_td.to_numpy(), rows.W_drives.to_numpy(), tdpd)
+td_d = shr(nO, rows.oW_o_td.to_numpy(), rows.oW_o_drives.to_numpy(), tdpd)
+fg_o = shr(nT, rows.W_fg.to_numpy(), rows.W_drives.to_numpy(), fgpd)
+fg_d = shr(nO, rows.oW_o_fg.to_numpy(), rows.oW_o_drives.to_numpy(), fgpd)
+rows["mtp_mean_pre"] = E_dr * off_ppd * def_ppd / ppd + 0.5 * h * rows.s.to_numpy()
+rows["mtd_lambda_pre"] = E_dr * td_o * td_d / tdpd
+rows["drl_p_td_pre"] = td_o * td_d / tdpd
+rows["drl_p_fg_pre"] = fg_o * fg_d / fgpd
+rows["drl_p_none_pre"] = np.maximum(0.0, 1 - rows.drl_p_td_pre - rows.drl_p_fg_pre)
+rows["drl_exp_points_pre"] = E_dr * (7 * rows.drl_p_td_pre + 3 * rows.drl_p_fg_pre)
+with np.errstate(divide="ignore", invalid="ignore"):
+    xp = rows.W_plays.to_numpy() / nT + rows.oW_plays.to_numpy() / nO
+xp[(nT == 0) | (nO == 0)] = np.nan
+rows["x_plays"] = xp
+rows["tot_plays"] = rows.plays + rows.o_plays
+om = rows[["game_id", "team", "mtp_mean_pre"]].rename(columns={"team": "opp", "mtp_mean_pre": "o_mean"})
+rows = rows.merge(om, on=["game_id", "opp"], how="left")
+rows["mtp_margin_pre"] = rows.mtp_mean_pre - rows.o_mean
+rows["mtp_total_pre"] = rows.mtp_mean_pre + rows.o_mean
+rows = rows.reset_index(drop=True)
+
+
+# ---------- 5. reference windows ----------
+def cuts(v):
+    return np.quantile(v, 1 / 3), np.quantile(v, 2 / 3)
+
+
+def binof(x, c):
+    x = np.asarray(x, float)
+    return np.where(x <= c[0], 0, np.where(x <= c[1], 1, 2))
+
+
+def sd1(x):
+    return np.std(x, ddof=1) if len(x) > 1 else np.nan
+
+
+def var1(x):
+    return np.var(x, ddof=1) if len(x) > 1 else np.nan
+
+
+def pearson(u, v):
+    if len(u) < 2:
+        return np.nan
+    su, sv = np.std(u), np.std(v)
+    if su == 0 or sv == 0:
+        return np.nan
+    return float(np.mean((u - u.mean()) * (v - v.mean())) / (su * sv))
+
+
+OUTC = ["mtp_sd_pre", "mtd_var_pre", "mtd_p_ge1_pre", "hms_sd_pre", "hms_q05_mult_pre", "hms_q95_mult_pre",
+        "tps_exp_plays_pre", "tps_sd_pre", "qos_argmax_q1_pre", "qos_argmax_q2_pre", "qos_argmax_q3_pre",
+        "qos_argmax_q4_pre", "qos_min0_pre", "psc_rho_pre"]
+for c in OUTC:
+    rows[c] = np.nan
+
+for S in sorted(rows.season.unique()):
+    if S < 2013:
+        continue
+    ti = np.where(rows.season.to_numpy() == S)[0]
+    T = rows.iloc[ti]
+    REF = rows[(rows.season >= max(S - 3, 2011)) & (rows.season <= S - 1)]
+    # mtp_sd
+    v = REF.mtp_mean_pre.to_numpy(); c = cuts(v); rb = binof(v, c); res = REF.pts.to_numpy() - v
+    sds = np.array([sd1(res[rb == k]) for k in range(3)])
+    rows.loc[rows.index[ti], "mtp_sd_pre"] = sds[binof(T.mtp_mean_pre, c)]
+    # mtd
+    lam_r = REF.mtd_lambda_pre.to_numpy(); c = cuts(lam_r); rb = binof(lam_r, c)
+    res = REF.td.to_numpy() - lam_r
+    Ds = np.array([var1(res[rb == k]) / lam_r[rb == k].mean() if (rb == k).any() else np.nan for k in range(3)])
+    lam = T.mtd_lambda_pre.to_numpy(); D = Ds[binof(lam, c)]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        k_ = lam / (D - 1)
+        pnb = 1 - (k_ / (k_ + lam)) ** k_
+    p1 = np.where(D <= 1, 1 - np.exp(-lam), pnb)
+    p1[np.isnan(D)] = np.nan
+    rows.loc[rows.index[ti], "mtd_var_pre"] = lam * D
+    rows.loc[rows.index[ti], "mtd_p_ge1_pre"] = p1
+    # hms
+    e = (REF.pts - REF.pts_a - REF.mtp_margin_pre).to_numpy()
+    am = np.abs(REF.mtp_margin_pre.to_numpy()); tt = REF.mtp_total_pre.to_numpy()
+    ca, ct = cuts(am), cuts(tt)
+    cell = 3 * binof(am, ca) + binof(tt, ct)
+    pooled = sd1(e)
+    csd = np.zeros(9)
+    for k in range(9):
+        ek = e[cell == k]; n = len(ek)
+        SDk = sd1(ek) if n > 1 else 0.0
+        csd[k] = n / (n + 100) * SDk + 100 / (n + 100) * pooled
+    tcell = 3 * binof(np.abs(T.mtp_margin_pre.to_numpy()), ca) + binof(T.mtp_total_pre.to_numpy(), ct)
+    rows.loc[rows.index[ti], "hms_sd_pre"] = csd[tcell]
+    z = e / csd[cell]
+    rows.loc[rows.index[ti], "hms_q05_mult_pre"] = np.quantile(z, 0.05)
+    rows.loc[rows.index[ti], "hms_q95_mult_pre"] = np.quantile(z, 0.95)
+    # tps
+    R2 = REF[REF.x_plays.notna()]
+    X = np.column_stack([np.ones(len(R2)), R2.x_plays.to_numpy(), np.abs(R2.mtp_margin_pre.to_numpy())])
+    y = R2.tot_plays.to_numpy()
+    beta = np.linalg.lstsq(X, y, rcond=None)[0]
+    sse = float(np.sum((y - X @ beta) ** 2))
+    Xt = np.column_stack([np.ones(len(T)), T.x_plays.to_numpy(), np.abs(T.mtp_margin_pre.to_numpy())])
+    rows.loc[rows.index[ti], "tps_exp_plays_pre"] = Xt @ beta
+    rows.loc[rows.index[ti], "tps_sd_pre"] = np.sqrt(sse / (len(R2) - 3))
+    # qos
+    H = REF[(REF.is_home == 1) & REF.Q1.notna()]
+    Q = H[["Q1", "Q2", "Q3", "Q4"]].to_numpy()
+    mx = Q.max(axis=1, keepdims=True)
+    att = (Q == mx).astype(float)
+    a = att / att.sum(axis=1, keepdims=True)
+    m = (Q.min(axis=1) == 0).astype(float)
+    xH = H.mtp_total_pre.to_numpy(); x = T.mtp_total_pre.to_numpy()
+    W = np.exp(-0.5 * ((x[:, None] - xH[None, :]) / 3) ** 2)
+    sw = W.sum(axis=1)
+    A = (W @ a) / sw[:, None]
+    for q in range(4):
+        rows.loc[rows.index[ti], f"qos_argmax_q{q+1}_pre"] = A[:, q]
+    rows.loc[rows.index[ti], "qos_min0_pre"] = (W @ m) / sw
+    # psc
+    Hp = REF[REF.is_home == 1]
+    u = (Hp.pts - Hp.mtp_mean_pre).to_numpy()
+    vv = (Hp.pts_a - Hp.o_mean).to_numpy()
+    tH = Hp.mtp_total_pre.to_numpy(); cH = cuts(tH); bH = binof(tH, cH)
+    rp = pearson(u, vv)
+    rk = np.zeros(3)
+    for k in range(3):
+        sel = bH == k; n = int(sel.sum())
+        rk[k] = n / (n + 150) * pearson(u[sel], vv[sel]) + 150 / (n + 150) * rp
+    rows.loc[rows.index[ti], "psc_rho_pre"] = rk[binof(T.mtp_total_pre.to_numpy(), cH)]
+
+out = rows[rows.season >= 2013]
+OUT = ["game_id", "team", "mtp_mean_pre", "mtp_margin_pre", "mtp_total_pre", "mtp_sd_pre", "mtd_lambda_pre",
+       "mtd_var_pre", "mtd_p_ge1_pre", "hms_sd_pre", "hms_q05_mult_pre", "hms_q95_mult_pre", "tps_exp_plays_pre",
+       "tps_sd_pre", "qos_argmax_q1_pre", "qos_argmax_q2_pre", "qos_argmax_q3_pre", "qos_argmax_q4_pre",
+       "qos_min0_pre", "psc_rho_pre", "drl_p_td_pre", "drl_p_fg_pre", "drl_p_none_pre", "drl_exp_points_pre"]
+out = out[OUT].sort_values(["game_id", "team"]).reset_index(drop=True)
+assert not out.duplicated(["game_id", "team"]).any()
+out.to_csv(out_path, index=False, float_format="%.17g")
+print("rows:", len(out))
+print("NaN counts:", out.isna().sum()[out.isna().sum() > 0].to_dict())
+print("games without pbp:", len(kept - present))
+print("runtime %.1fs" % (time.time() - t0))
+
+amb = [
+    "Duplicate game_id: kept first occurrence in games.csv file order (none found in data).",
+    "'date' compared as gameday string YYYY-MM-DD; 'strictly before d' uses lexical/chronological order of these strings; multiple team-games on the same date are all excluded from a row's state.",
+    "Team-games include all game types (REG and postseason) with season >= 2010 and home_score present; W state spans seasons with no reset.",
+    "Drive result: first non-missing fixed_drive_result among T's rows having that fixed_drive value in that game (file order); a drive whose rows are all missing result counts toward drives but not td/fg.",
+    "Drives counted per (game, posteam, fixed_drive) using only rows with posteam non-missing; a fixed_drive value shared by two posteams counts as a drive for each.",
+    "Quarter totals: per-row score = fillna(0)(total_home_score) + fillna(0)(total_away_score); qtr values 1-4 only (OT ignored); a game 'has pbp rows' if any pbp row with that game_id exists (in any file).",
+    "League constants for season S use all team-games (incl. postseason) of season S-1; h uses home slots with s != 0 (non-neutral).",
+    "Opponent state 'o' = the opponent team's W values read as of the same game date (its last team-game strictly before d).",
+    "x_plays missing when either t.W_one or o.W_one is 0; such rows are excluded from tps fits as REF rows and get missing tps_exp_plays_pre as targets (tps_sd_pre still filled).",
+    "Tercile cutoffs: np.quantile linear on the full REF vector (all REF rows for mtp/mtd/hms; H' home rows' mtp_total_pre for psc); row's bin uses the same cutoffs and <= rule.",
+    "mtd: D = sample variance (ddof=1) of (td - lambda) in bin / mean lambda in bin; lambda in var/p_ge1 is the target row's own mtd_lambda_pre; k=lambda/(D-1) when D>1.",
+    "hms: cellSD for an empty cell (n_k=0) = pooled; z quantiles computed over all REF rows (single value per season).",
+    "psc: H' = REF rows with is_home=1 (including neutral-site home slots); away row = the opponent row of the same game; Pearson with fewer than 2 points or zero variance would be NaN (did not occur unless noted).",
+    "qos: H = REF rows with is_home=1 (including neutral) whose game has quarter totals; ties in max Q split equally.",
+    "REF(S) seasons S-3..S-1 restricted to >= 2011; so 2013 uses 2011-2012 only, 2014 uses 2011-2013.",
+    "Output sorted by (game_id, team).",
+]
+with open(notes_path, "w") as fh:
+    json.dump({"ambiguities": amb}, fh, indent=1)

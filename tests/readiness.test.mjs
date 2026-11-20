@@ -23,3 +23,16 @@ test("adoption ladder is cumulative, labelled, and its certified count matches t
   assert.equal(all[0], MAP.distinct_inputs);
   assert.equal(LAD.counts_at_least.PRODUCTION_CONSUMED, 0);   // nothing is consumed in production; a change here needs an approved activation
 });
+
+test("P1 tracker reconciles with the frozen baseline and the ledger; closures come only from certified levels", async () => {
+  const {p1TrackerCheck, P1_CATEGORY, p1CategoryValue} = await import("../src/readiness.mjs");
+  const t = R.p1_tracker; assert.ok(t, "dashboard carries the P1 tracker");
+  const c = p1TrackerCheck(t);
+  assert.equal(c.ok, true); assert.equal(c.baseline, 180);
+  assert.equal(c.missing, R.by_tier.P1);                                             // the tracker's "missing now" is the ledger's P1 count
+  for (const i of t.inputs) {
+    if (i.p1_slots_closed > 0) assert.ok(["FULL", "PARTIAL", "PROXY"].includes(i.certified_level), i.input_id);
+    if (i.p1_slots_closed === i.p1_slots) assert.equal(i.remaining_blocker, null, i.input_id); else assert.ok(i.remaining_blocker, i.input_id);
+  }
+  for (const [k] of P1_CATEGORY) assert.equal(typeof p1CategoryValue(t.summary, k), "number", k);
+});

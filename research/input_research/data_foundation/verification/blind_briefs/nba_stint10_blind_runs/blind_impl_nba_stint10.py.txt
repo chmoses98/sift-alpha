@@ -1,0 +1,289 @@
+import sys, os, json, time
+from collections import defaultdict
+import numpy as np
+import pandas as pd
+
+t0 = time.time()
+DATA = sys.argv[1]
+OUT = sys.argv[2]
+SEASONS = ["2024-25", "2025-26"]
+
+# ---------------- games ----------------
+games = pd.concat([pd.read_parquet(os.path.join(DATA, f"pbp_games_{s}.parquet")) for s in SEASONS], ignore_index=True)
+games = games[games["status_completed"].fillna(False).astype(bool)]
+games = games.drop_duplicates("game_id", keep="first").copy()
+games["date"] = (pd.to_datetime(games["start_time_utc"], utc=True)
+                 .dt.tz_convert("America/New_York").dt.tz_localize(None).dt.normalize())
+games = games[["game_id", "season", "date", "home_team_id", "away_team_id"]].reset_index(drop=True)
+games["home_team_id"] = games["home_team_id"].astype("int64")
+games["away_team_id"] = games["away_team_id"].astype("int64")
+kept = set(games["game_id"])
+gdate = dict(zip(games.game_id, games.date))
+ghome = dict(zip(games.game_id, games.home_team_id))
+gaway = dict(zip(games.game_id, games.away_team_id))
+gseason = dict(zip(games.game_id, games.season))
+
+# ---------------- events ----------------
+ecols = ["game_id", "order", "type_text", "team_id", "p1", "p2", "scoring_play", "score_value", "shooting_play"]
+ev = pd.concat([pd.read_parquet(os.path.join(DATA, f"pbp_events_{s}.parquet"), columns=ecols) for s in SEASONS],
+               ignore_index=True)
+ev = ev[ev["game_id"].isin(kept)].reset_index(drop=True)
+tt = ev["type_text"].fillna("")
+shoot = ev["shooting_play"].fillna(False).astype(bool).to_numpy()
+score = ev["scoring_play"].fillna(False).astype(bool).to_numpy()
+sv = ev["score_value"].astype("float64").fillna(0).to_numpy()
+p1 = ev["p1"].astype("float64").to_numpy()  # NaN = missing
+p2 = ev["p2"].astype("float64").to_numpy()
+club = ev["team_id"].astype("float64").to_numpy()
+fga = shoot & ~tt.str.startswith("Free Throw").to_numpy()
+made = fga & score
+made3 = made & (sv == 3)
+astd = made & ~np.isnan(p2)
+ftmiss = tt.isin(["Free Throw - 1 of 1", "Free Throw - 2 of 2", "Free Throw - 3 of 3"]).to_numpy() & ~score
+miss = (fga & ~made) | ftmiss
+oreb = (tt == "Offensive Rebound").to_numpy()
+dreb = (tt == "Defensive Rebound").to_numpy()
+treb = (oreb | dreb) & np.isnan(p1)
+pts = np.where(score, sv, 0.0)
+ev = pd.DataFrame({
+    "game_id": ev["game_id"].to_numpy(), "order": ev["order"].astype("int64").to_numpy(),
+    "club": club, "p1": p1, "p2": p2, "made": made, "astd": astd, "made3": made3,
+    "miss": miss, "oreb": oreb, "dreb": dreb, "treb": treb, "pts": pts,
+})
+
+# ---------------- stints ----------------
+st = pd.concat([pd.read_parquet(os.path.join(DATA, f"stints_{s}.parquet")) for s in SEASONS], ignore_index=True)
+st = st[st["game_id"].isin(kept)].reset_index(drop=True)
+st["stint_id"] = np.arange(len(st))
+st["certified"] = st["certified"].fillna(False).astype(bool)
+
+# assign events to stints: start_order <= order < end_order
+ev = ev.sort_values(["order"], kind="mergesort")
+sts = st[["game_id", "start_order", "end_order", "stint_id", "certified"]].sort_values("start_order", kind="mergesort")
+ev = pd.merge_asof(ev, sts, left_on="order", right_on="start_order", by="game_id", direction="backward")
+inst = ev["stint_id"].notna() & (ev["order"] < ev["end_order"]) & ev["certified"].fillna(False).astype(bool)
+ec = ev[inst].copy()
+ec["stint_id"] = ec["stint_id"].astype("int64")
+
+# per stint per club aggregates
+ec_cl = ec[ec["club"].notna()]
+agg_c = ec_cl.groupby(["stint_id", "club"]).agg(
+    tm_fgm=("made", "sum"), tm_ast_fgm=("astd", "sum"), miss=("miss", "sum")).reset_index()
+# per stint per p1 player aggregates
+ec_p = ec[ec["p1"].notna()]
+agg_p = ec_p.groupby(["stint_id", "p1"]).agg(oreb=("oreb", "sum"), dreb=("dreb", "sum"), pts=("pts", "sum")).reset_index()
+agg_p = agg_p.rename(columns={"p1": "player"})
+ec_a = ec[ec["made"] & ec["p2"].notna()]
+agg_a = ec_a.groupby(["stint_id", "p2"]).size().rename("ast").reset_index().rename(columns={"p2": "player"})
+
+stc = st[st["certified"]]
+rows = []
+for side, other in (("home", "away"), ("away", "home")):
+    base = pd.DataFrame({
+        "stint_id": stc["stint_id"].to_numpy(),
+        "game_id": stc["game_id"].to_numpy(),
+        "club": stc["game_id"].map(ghome if side == "home" else gaway).astype("float64").to_numpy(),
+        "opp": stc["game_id"].map(gaway if side == "home" else ghome).astype("float64").to_numpy(),
+        "sec": stc["seconds"].astype("float64").to_numpy(),
+        "poss": stc[f"{side}_poss"].astype("float64").to_numpy(),
+    })
+    for k in range(1, 6):
+        b = base.copy()
+        b["player"] = stc[f"{side}_p{k}"].astype("float64").to_numpy()
+        rows.append(b[b["player"].notna()])
+sp = pd.concat(rows, ignore_index=True)
+sp = sp.merge(agg_c.rename(columns={"miss": "own_miss"}), on=["stint_id", "club"], how="left")
+sp = sp.merge(agg_c[["stint_id", "club", "miss"]].rename(columns={"club": "opp", "miss": "opp_miss"}),
+              on=["stint_id", "opp"], how="left")
+sp = sp.merge(agg_p, on=["stint_id", "player"], how="left")
+sp = sp.merge(agg_a, on=["stint_id", "player"], how="left")
+VALS = ["sec", "poss", "tm_fgm", "tm_ast_fgm", "own_miss", "opp_miss", "oreb", "dreb", "pts", "ast"]
+for c in VALS:
+    sp[c] = sp[c].astype("float64").fillna(0.0)
+sg = sp.groupby(["game_id", "player", "club"], sort=False)[VALS].sum().reset_index()
+sg["date"] = sg["game_id"].map(gdate)
+sg = sg.sort_values(["player", "date", "game_id", "club"], kind="mergesort").reset_index(drop=True)
+
+# EWM per player, half-life 25 (index based)
+dec = 0.5 ** (1.0 / 25.0)
+WC = VALS + ["one"]
+sg["one"] = 1.0
+X = sg[WC].to_numpy()
+W = np.empty_like(X)
+pl = sg["player"].to_numpy()
+prev = np.zeros(X.shape[1])
+for i in range(len(X)):
+    if i == 0 or pl[i] != pl[i - 1]:
+        prev = X[i].copy()
+    else:
+        prev = dec * prev + X[i]
+    W[i] = prev
+Wdf = pd.DataFrame(W, columns=["W_" + c for c in WC])
+Wdf["player"] = pl
+Wdf["date"] = sg["date"].to_numpy()
+# last stint game per (player, date) -> value after that date's last game
+Wlast = Wdf.groupby(["player", "date"], sort=False).tail(1).sort_values("date", kind="mergesort")
+
+# ---------------- league ratios ----------------
+ld = sg.groupby("date")[["ast", "tm_ast_fgm", "oreb", "own_miss", "dreb", "opp_miss", "pts", "poss"]].sum().sort_index().cumsum()
+def rat(a, b):
+    a = np.asarray(a, float); b = np.asarray(b, float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(b == 0, np.nan, a / b)
+L = pd.DataFrame(index=ld.index)
+L["L_share"] = rat(ld.ast, ld.tm_ast_fgm)
+L["L_or"] = rat(ld.oreb, ld.own_miss)
+L["L_dr"] = rat(ld.dreb, ld.opp_miss)
+L["L_pts"] = rat(ld.pts, ld.poss)
+L["L_reb"] = rat(ld.oreb + ld.dreb, ld.poss)
+L["L_ast"] = rat(ld.ast, ld.poss)
+L = L.reset_index().rename(columns={"date": "ldate"}).sort_values("ldate")
+
+# ---------------- team-games & rows ----------------
+tg = pd.concat([
+    pd.DataFrame({"game_id": games.game_id, "date": games.date, "season": games.season,
+                  "T": games.home_team_id, "opp": games.away_team_id}),
+    pd.DataFrame({"game_id": games.game_id, "date": games.date, "season": games.season,
+                  "T": games.away_team_id, "opp": games.home_team_id}),
+], ignore_index=True).sort_values(["T", "date", "game_id"], kind="mergesort").reset_index(drop=True)
+
+# stint games keyed by (club, game) -> players with their date
+sg_by = defaultdict(list)
+for gid, p, c, d in zip(sg.game_id, sg.player, sg.club, sg.date):
+    sg_by[(int(c), gid)].append(p)
+
+cand = []  # (game_id, T, opp, player, q)
+for T, grp in tg.groupby("T", sort=False):
+    gids = grp.game_id.to_list(); ds = grp.date.to_list(); opps = grp.opp.to_list()
+    for i in range(len(gids)):
+        d = ds[i]
+        prevs = [j for j in range(i) if ds[j] < d][-5:]
+        best = {}
+        for j in prevs:
+            for p in sg_by.get((int(T), gids[j]), []):
+                if p not in best or ds[j] > best[p]:
+                    best[p] = ds[j]
+        for p, q in best.items():
+            cand.append((gids[i], int(T), int(opps[i]), p, q))
+cand = pd.DataFrame(cand, columns=["game_id", "pteam", "opp", "player", "q"])
+cand = cand.sort_values(["game_id", "player", "q", "pteam"], ascending=[True, True, False, True], kind="mergesort")
+R = cand.drop_duplicates(["game_id", "player"], keep="first").reset_index(drop=True)
+R["date"] = R["game_id"].map(gdate)
+R["season"] = R["game_id"].map(gseason)
+print("rows", len(R), "dup", R.duplicated(["game_id", "player"]).sum())
+
+# attach player W (last stint game strictly before date)
+R = R.sort_values("date", kind="mergesort").reset_index(drop=True)
+R = pd.merge_asof(R, Wlast.rename(columns={"date": "wdate"}), left_on="date", right_on="wdate",
+                  by="player", direction="backward", allow_exact_matches=False)
+R = pd.merge_asof(R, L, left_on="date", right_on="ldate", direction="backward", allow_exact_matches=False)
+
+def w(c):
+    return R["W_" + c].to_numpy(dtype=float)
+Wsec = w("sec")
+with np.errstate(divide="ignore", invalid="ignore"):
+    R["ocas_share_pre"] = (w("ast") + 300 * R.L_share) / (w("tm_ast_fgm") + 300)
+    R["ocas_tm_ast_fgm_per48_pre"] = np.where(Wsec > 0, 2880 * w("tm_ast_fgm") / Wsec, np.nan)
+    R["ocas_exp_ast_pre"] = R["ocas_share_pre"] * R["ocas_tm_ast_fgm_per48_pre"] * (Wsec / w("one") / 60) / 48
+    R["prs_oreb_pct_pre"] = (w("oreb") + 200 * R.L_or) / (w("own_miss") + 200)
+    R["prs_dreb_pct_pre"] = (w("dreb") + 200 * R.L_dr) / (w("opp_miss") + 200)
+    R["lcr_pts100_pre"] = 100 * (w("pts") + 400 * R.L_pts) / (w("poss") + 400)
+    R["lcr_reb100_pre"] = 100 * (w("oreb") + w("dreb") + 400 * R.L_reb) / (w("poss") + 400)
+    R["lcr_ast100_pre"] = 100 * (w("ast") + 400 * R.L_ast) / (w("poss") + 400)
+
+# ---------------- assisted three passer map ----------------
+t3 = ev[ev["made3"] & ev["p1"].notna()][["game_id", "order", "club", "p1", "p2"]].copy()
+t3["date"] = t3["game_id"].map(gdate)
+t3["season"] = t3["game_id"].map(gseason)
+t3 = t3.sort_values(["date", "game_id", "order"], kind="mergesort").reset_index(drop=True)
+labels = sorted(set(games.season))
+def prev_label(S):
+    y = int(S[:4]) - 1
+    return f"{y}-{str(y + 1)[-2:]}"
+
+atp_share = np.full(len(R), np.nan)
+atp_top = np.full(len(R), np.nan)
+for S in sorted(R.season.unique()):
+    sub = t3[t3.season.isin([S, prev_label(S)])]
+    sd = sub.date.to_numpy(); sp1 = sub.p1.to_numpy(); sp2 = sub.p2.to_numpy(); scl = sub.club.to_numpy()
+    tot = defaultdict(int); ns = defaultdict(int); nsp = defaultdict(lambda: defaultdict(int))
+    pclub = {}; cp = defaultdict(int); cc = defaultdict(int)
+    idx = 0
+    rS = R.index[R.season == S]
+    rdates = R.loc[rS, "date"]
+    for d, ridx in rdates.groupby(rdates).groups.items():
+        while idx < len(sd) and sd[idx] < d:
+            s = sp1[idx]; p = sp2[idx]; c = scl[idx]
+            tot[s] += 1
+            if not np.isnan(p):
+                ns[s] += 1; nsp[s][p] += 1
+                pclub[p] = c
+                cp[(c, p)] += 1; cc[c] += 1
+            idx += 1
+        for r in ridx:
+            pid = R.at[r, "player"]
+            tt_ = tot.get(pid, 0)
+            if tt_ == 0:
+                continue
+            n_s = ns.get(pid, 0)
+            atp_share[r] = n_s / tt_
+            if n_s == 0:
+                continue
+            best = -np.inf
+            for p, n in nsp[pid].items():
+                c = pclub[p]
+                q = cp[(c, p)] / cc[c]
+                v = (n + 40 * q) / (n_s + 40)
+                if v > best:
+                    best = v
+            atp_top[r] = best
+R["atp_assisted3_share_pre"] = atp_share
+R["atp_top_passer_share_pre"] = atp_top
+
+# ---------------- creditable rebound pool ----------------
+gev = ev.groupby(["game_id", "club"]).agg(miss=("miss", "sum"), treb=("treb", "sum")).reset_index()
+mk = dict(zip(zip(gev.game_id, gev.club), gev.miss)); tk = dict(zip(zip(gev.game_id, gev.club), gev.treb))
+tg["misses"] = [float(mk.get((g, float(t)), 0)) for g, t in zip(tg.game_id, tg["T"])]
+tg["team_reb"] = [float(tk.get((g, float(t)), 0)) for g, t in zip(tg.game_id, tg["T"])]
+om = [float(mk.get((g, float(o)), 0)) for g, o in zip(tg.game_id, tg.opp)]
+ot = [float(tk.get((g, float(o)), 0)) for g, o in zip(tg.game_id, tg.opp)]
+tg["g_miss"] = tg["misses"] + np.array(om)
+tg["g_treb"] = tg["team_reb"] + np.array(ot)
+tg["one"] = 1.0
+dec40 = 0.5 ** (1.0 / 40.0)
+CC = ["misses", "g_miss", "g_treb", "one"]
+Xc = tg[CC].to_numpy(); Wc = np.empty_like(Xc); Tv = tg["T"].to_numpy()
+for i in range(len(Xc)):
+    if i == 0 or Tv[i] != Tv[i - 1]:
+        prev = Xc[i].copy()
+    else:
+        prev = dec40 * prev + Xc[i]
+    Wc[i] = prev
+cw = pd.DataFrame(Wc, columns=["C_" + c for c in CC]); cw["T"] = Tv; cw["cdate"] = tg["date"].to_numpy()
+with np.errstate(divide="ignore", invalid="ignore"):
+    cw["pm"] = cw.C_misses / cw.C_one
+    cw["lk"] = np.where(cw.C_g_miss > 0, cw.C_g_treb / cw.C_g_miss, np.nan)
+cw = cw.groupby(["T", "cdate"], sort=False).tail(1).sort_values("cdate", kind="mergesort")[["T", "cdate", "pm", "lk"]]
+R = R.sort_values("date", kind="mergesort").reset_index(drop=True)
+R["T"] = R["pteam"].astype("int64"); R["O"] = R["opp"].astype("int64")
+R = pd.merge_asof(R, cw, left_on="date", right_on="cdate", by="T", direction="backward", allow_exact_matches=False)
+R = pd.merge_asof(R, cw.rename(columns={"T": "O", "cdate": "cdate_o", "pm": "pm_o", "lk": "lk_o"}),
+                  left_on="date", right_on="cdate_o", by="O", direction="backward", allow_exact_matches=False)
+R["crp_proj_misses_pre"] = R.pm + R.pm_o
+R["crp_leakage_pre"] = 0.5 * (R.lk + R.lk_o)
+R["crp_pool_pre"] = R.crp_proj_misses_pre * (1 - R.crp_leakage_pre)
+
+OUTC = ["ocas_share_pre", "ocas_tm_ast_fgm_per48_pre", "ocas_exp_ast_pre", "prs_oreb_pct_pre", "prs_dreb_pct_pre",
+        "lcr_pts100_pre", "lcr_reb100_pre", "lcr_ast100_pre", "atp_assisted3_share_pre", "atp_top_passer_share_pre",
+        "crp_proj_misses_pre", "crp_leakage_pre", "crp_pool_pre"]
+out = R[["game_id"]].copy()
+out["team"] = R["player"].astype("int64")
+for c in OUTC:
+    out[c] = R[c].astype("float64")
+out = out.sort_values(["game_id", "team"]).reset_index(drop=True)
+assert not out.duplicated(["game_id", "team"]).any()
+out.to_csv(os.path.join(OUT, "out.csv"), index=False, float_format="%.17g")
+print("rows", len(out))
+print(out[OUTC].notna().mean())
+print(out.describe().T)
+print("runtime", time.time() - t0)

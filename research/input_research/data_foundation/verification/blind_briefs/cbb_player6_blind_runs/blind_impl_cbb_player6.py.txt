@@ -1,0 +1,338 @@
+import sys, glob, os, json, time
+import numpy as np
+import pandas as pd
+from scipy.special import gammaln, betaln
+
+t0 = time.time()
+data_dir = sys.argv[1]
+out_dir = sys.argv[2]
+
+STATS = {'points': 'pts', 'rebounds': 'reb', 'offensive_rebounds': 'oreb', 'defensive_rebounds': 'dreb',
+         'assists': 'ast', 'turnovers': 'tov', 'field_goals_made': 'fgm', 'field_goals_attempted': 'fga',
+         'three_point_field_goals_made': 'fg3m', 'three_point_field_goals_attempted': 'fg3a',
+         'free_throws_made': 'ftm', 'free_throws_attempted': 'fta'}
+cols = ['game_id', 'season', 'season_type', 'game_date', 'athlete_id', 'team_id', 'opponent_team_id',
+        'minutes', 'athlete_position_abbreviation'] + list(STATS)
+df = pd.concat([pd.read_parquet(f, columns=cols) for f in sorted(glob.glob(os.path.join(data_dir, '*.parquet')))],
+               ignore_index=True)
+df = df[df.season_type.isin([2, 3]) & (df.season >= 2012)].reset_index(drop=True)
+df = df.rename(columns=STATS)
+for c in STATS.values():
+    df[c] = df[c].astype('float64').fillna(0.0)
+df['date'] = pd.to_datetime(df['game_date']).dt.normalize()
+df['dnum'] = (df['date'] - pd.Timestamp('1970-01-01')).dt.days.astype(np.int64)
+df['game_id'] = df['game_id'].astype(np.int64)
+df['team_id'] = df['team_id'].astype(np.int64)
+df['opponent_team_id'] = df['opponent_team_id'].astype(np.int64)
+df['fg2m'] = df.fgm - df.fg3m
+df['fg2a'] = df.fga - df.fg3a
+df['pu'] = df.fga + 0.44 * df.fta + df.tov
+df['min_f'] = df['minutes'].astype('float64').fillna(0.0)
+
+ROLEMAP = {'C': 'C', 'F': 'F', 'F-C': 'F', 'PF': 'F', 'SF': 'F', 'G': 'G', 'G-F': 'G', 'PG': 'G', 'SG': 'G'}
+
+
+def role_of(s):
+    return s.map(ROLEMAP).fillna('X')
+
+
+def ewm_by_rank(ent_sorted_rank, X, r):
+    """X: (n, k) array sorted by entity then order; ent_sorted_rank: rank within entity (0-based).
+    W_i = r * W_{i-1} + x_i, reset per entity. Exact recursion vectorised across entities."""
+    W = np.empty_like(X)
+    rank = ent_sorted_rank
+    order = np.argsort(rank, kind='stable')
+    rk_sorted = rank[order]
+    bounds = np.searchsorted(rk_sorted, np.arange(rank.max() + 2))
+    idx0 = order[bounds[0]:bounds[1]]
+    W[idx0] = X[idx0]
+    for k in range(1, rank.max() + 1):
+        idx = order[bounds[k]:bounds[k + 1]]
+        W[idx] = r * W[idx - 1] + X[idx]
+    return W
+
+
+def state_index(keys_ent, keys_d, q_ent, q_d):
+    """arrays sorted by (ent, d, ...). Return index of last item with ent==q_ent and d < q_d, else -1."""
+    key = keys_ent * 100000 + keys_d
+    qk = q_ent * 100000 + q_d
+    idx = np.searchsorted(key, qk, side='left') - 1
+    ok = idx >= 0
+    ok[ok] = keys_ent[idx[ok]] == q_ent[ok]
+    idx[~ok] = -1
+    return idx
+
+
+# ---------------- team-games ----------------
+TOT = ['fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'oreb', 'dreb', 'reb', 'ast', 'tov', 'pu', 'min_f']
+tg = df.groupby(['game_id', 'team_id'], sort=False).agg(
+    dnum=('dnum', 'first'), season=('season', 'first'), opp=('opponent_team_id', 'first'),
+    **{c: (c, 'sum') for c in TOT}).reset_index()
+tg = tg.rename(columns={'min_f': 't_min'})
+OT = ['fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'oreb', 'dreb', 'reb', 'ast', 'tov', 'pu']
+oppt = tg[['game_id', 'team_id'] + OT].rename(columns={'team_id': 'opp', **{c: 'opp_' + c for c in OT}})
+tg = tg.merge(oppt, on=['game_id', 'opp'], how='left')
+for c in OT:
+    tg['opp_' + c] = tg['opp_' + c].fillna(0.0)
+tg['live_miss'] = (tg.fga - tg.fgm) + 0.5 * (tg.fta - tg.ftm)
+tg['opp_live_miss'] = (tg.opp_fga - tg.opp_fgm) + 0.5 * (tg.opp_fta - tg.opp_ftm)
+tg = tg.sort_values(['team_id', 'dnum', 'game_id'], kind='stable').reset_index(drop=True)
+tg['rank'] = tg.groupby('team_id').cumcount().to_numpy()
+tg['tpos'] = np.arange(len(tg))
+r10 = 0.5 ** (1 / 10)
+tcols = {'one': np.ones(len(tg)), 'live_miss': tg.live_miss, 'opp_fg3a': tg.opp_fg3a, 'opp_fga': tg.opp_fga,
+         'opp_tov': tg.opp_tov, 'opp_pu': tg.opp_pu, 'oreb': tg.oreb, 'oreb_od': tg.oreb + tg.opp_dreb}
+TX = np.column_stack([np.asarray(v, dtype=np.float64) for v in tcols.values()])
+TW = ewm_by_rank(tg['rank'].to_numpy(), TX, r10)
+TWd = {k: TW[:, i] for i, k in enumerate(tcols)}
+with np.errstate(divide='ignore', invalid='ignore'):
+    t_miss_ewm = TWd['live_miss'] / TWd['one']
+    t_fg3a_allowed = np.where(TWd['opp_fga'] > 0, TWd['opp_fg3a'] / TWd['opp_fga'], np.nan)
+    t_tov_forced = np.where(TWd['opp_pu'] > 0, TWd['opp_tov'] / TWd['opp_pu'], np.nan)
+    t_orb_rate = np.where(TWd['oreb_od'] > 0, TWd['oreb'] / TWd['oreb_od'], np.nan)
+t_ent = tg.team_id.to_numpy()
+t_d = tg.dnum.to_numpy()
+
+# team constants per season (from season S-1)
+tc = tg.groupby('season')[['fg3a', 'fga', 'tov', 'pu', 'reb', 'opp_reb', 'live_miss', 'opp_live_miss']].sum()
+L = pd.DataFrame(index=tc.index + 1)
+L['fg3a_rate'] = (tc.fg3a / tc.fga).to_numpy()
+L['tov_per_pu'] = (tc.tov / tc.pu).to_numpy()
+L['reb_per_miss'] = ((tc.reb + tc.opp_reb) / (tc.live_miss + tc.opp_live_miss)).to_numpy()
+print('team-games', len(tg), time.time() - t0, flush=True)
+
+# ---------------- appearances ----------------
+ap = df[df.athlete_id.notna() & (df.minutes > 0)].copy()
+ap['pid'] = ap.athlete_id.astype(np.int64)
+ap['min'] = ap['minutes'].astype(np.float64)
+ap = ap.merge(tg[['game_id', 'team_id', 'fgm', 'ast', 'reb', 'opp_reb', 'pu', 't_min']].rename(
+    columns={'fgm': 't_fgm', 'ast': 't_ast', 'reb': 't_reb', 'opp_reb': 't_opp_reb', 'pu': 't_pu'}),
+    on=['game_id', 'team_id'], how='left')
+ap = ap.sort_values(['pid', 'dnum', 'game_id'], kind='stable').reset_index(drop=True)
+ap['rank'] = ap.groupby('pid').cumcount().to_numpy()
+ap['role'] = role_of(ap.athlete_position_abbreviation)
+with np.errstate(divide='ignore', invalid='ignore'):
+    ap['exp_pu'] = np.where(ap.t_min > 0, ap.t_pu * ap['min'] / (ap.t_min / 5), 0.0)
+pcols = {'min': ap['min'], 'pts': ap.pts, 'reb': ap.reb, 'ast': ap.ast, 'fga': ap.fga, 'fta': ap.fta,
+         'fg3a': ap.fg3a, 'pu': ap.pu, 'exp_pu': ap.exp_pu, 'tast': ap.t_ast, 'tfgm_o': ap.t_fgm - ap.fgm,
+         'greb': ap.t_reb + ap.t_opp_reb}
+PX = np.column_stack([np.asarray(v, dtype=np.float64) for v in pcols.values()])
+prank = ap['rank'].to_numpy()
+PW = ewm_by_rank(prank, PX, r10)
+PWd = {k: PW[:, i] for i, k in enumerate(pcols)}
+r5 = 0.5 ** (1 / 5)
+PW5 = ewm_by_rank(prank, np.column_stack([ap['min'].to_numpy(), np.ones(len(ap))]), r5)
+min_ewm = PW5[:, 0] / PW5[:, 1]
+g = ap.groupby('pid', sort=False)
+SH = ['fg3m', 'fg3a', 'fg2m', 'fg2a', 'ftm', 'fta']
+C = {}
+R = {}
+for c in SH:
+    cs = g[c].cumsum().to_numpy()
+    C[c] = cs
+    v = ap[c].to_numpy()
+    # last-10 sum: cumsum - cumsum shifted by 10 within entity
+    prev = np.zeros(len(ap))
+    m = prank >= 10
+    idx = np.nonzero(m)[0]
+    prev[idx] = cs[idx - 10]
+    R[c] = cs - prev
+# window 15 mean / var (two-pass on window values)
+WIN = {}
+n15 = np.minimum(prank + 1, 15).astype(np.float64)
+for c in ['pts', 'reb', 'ast', 'fg3m']:
+    v = ap[c].to_numpy()
+    M = np.full((len(ap), 15), np.nan)
+    for j in range(15):
+        ok = prank >= j
+        idx = np.nonzero(ok)[0]
+        M[idx, j] = v[idx - j]
+    mean = np.nansum(M, axis=1) / n15
+    dev = M - mean[:, None]
+    ss = np.nansum(dev * dev, axis=1)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        var = np.where(n15 >= 2, ss / (n15 - 1), np.nan)
+    WIN[c] = (mean, var)
+    del M, dev
+p_ent = ap.pid.to_numpy()
+p_d = ap.dnum.to_numpy()
+print('player state', time.time() - t0, flush=True)
+
+# ---------------- player priors ----------------
+PRI = {}
+for S in sorted(tg.season.unique()):
+    prevs = ap[ap.season == S - 1]
+    if len(prevs) == 0:
+        continue
+    for role in ['C', 'F', 'G', 'X']:
+        if role == 'X':
+            sub = prevs
+        else:
+            sub = prevs[prevs.role == role]
+            if len(sub) == 0 or sub['min'].sum() == 0:
+                sub = prevs
+        sm = sub[['min', 'pts', 'reb', 'ast', 'fga', 'fta', 'fg3a', 'fg3m', 'fg2m', 'fg2a', 'ftm']].sum()
+        d = {}
+        for x in ['pts', 'reb', 'ast', 'fga', 'fta', 'fg3a']:
+            d['rate_' + x] = sm[x] / sm['min']
+        d['pct_fg3'] = sm.fg3m / sm.fg3a
+        d['pct_fg2'] = sm.fg2m / sm.fg2a
+        d['pct_ft'] = sm.ftm / sm.fta
+        d['fg3_share'] = sm.fg3a / sm.fga
+        gg = sub.groupby('pid')
+        cnt = gg.size()
+        keep = cnt[cnt >= 10].index
+        s2 = sub[sub.pid.isin(keep)]
+        for x in ['pts', 'reb', 'ast', 'fg3m']:
+            if len(keep) == 0:
+                d['phi_' + x] = 0.0
+                continue
+            st = s2.groupby('pid')[x].agg(['mean', 'var'])
+            m = st['mean'].to_numpy()
+            v = st['var'].to_numpy()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                phi = np.where(m > 0, np.maximum(v - m, 0) / m ** 2, 0.0)
+            d['phi_' + x] = float(np.mean(phi))
+        PRI[(S, role)] = d
+print('priors', time.time() - t0, flush=True)
+
+# ---------------- row universe ----------------
+otg = tg[tg.season >= 2013][['game_id', 'team_id', 'opp', 'season', 'dnum', 'tpos']].copy()
+sidx = state_index(t_ent, t_d, otg.team_id.to_numpy(), otg.dnum.to_numpy())
+otg['sidx'] = sidx
+otg = otg[otg.sidx >= 0]
+pairs = []
+for k in range(5):
+    j = otg.sidx.to_numpy() - k
+    ok = (j >= 0)
+    ok[ok] = t_ent[j[ok]] == otg.team_id.to_numpy()[ok]
+    sub = otg[ok]
+    pairs.append(pd.DataFrame({'game_id': sub.game_id.to_numpy(), 'team_id': sub.team_id.to_numpy(),
+                               'pg': tg.game_id.to_numpy()[j[ok]]}))
+pairs = pd.concat(pairs, ignore_index=True)
+apk = ap[['game_id', 'team_id', 'pid', 'dnum']].rename(columns={'game_id': 'pg'})
+cand = pairs.merge(apk, on=['pg', 'team_id'], how='inner')
+cand = cand.groupby(['game_id', 'team_id', 'pid'], sort=False).dnum.max().reset_index().rename(columns={'dnum': 'q'})
+cand = cand.sort_values(['game_id', 'pid', 'q', 'team_id'], ascending=[True, True, False, True], kind='stable')
+cand = cand.drop_duplicates(['game_id', 'pid'], keep='first')
+rows = cand.merge(otg[['game_id', 'team_id', 'opp', 'season', 'dnum']], on=['game_id', 'team_id'], how='left')
+print('rows', len(rows), time.time() - t0, flush=True)
+
+# ---------------- assemble ----------------
+n = len(rows)
+d = rows.dnum.to_numpy()
+pi = state_index(p_ent, p_d, rows.pid.to_numpy(), d)
+assert (pi >= 0).all()
+ti = state_index(t_ent, t_d, rows.team_id.to_numpy(), d)
+oi = state_index(t_ent, t_d, rows.opp.to_numpy(), d)
+role = role_of(ap.athlete_position_abbreviation.iloc[pi].reset_index(drop=True)).to_numpy()
+season = rows.season.to_numpy()
+pkeys = ['rate_pts', 'rate_reb', 'rate_ast', 'rate_fga', 'rate_fta', 'rate_fg3a', 'pct_fg3', 'pct_fg2', 'pct_ft',
+         'fg3_share', 'phi_pts', 'phi_reb', 'phi_ast', 'phi_fg3m']
+pri_df = pd.DataFrame([{'season': S, 'role': ro, **v} for (S, ro), v in PRI.items()])
+P = pd.DataFrame({'season': season, 'role': role}).merge(pri_df, on=['season', 'role'], how='left')
+P = {k: P[k].to_numpy(dtype=np.float64) for k in pkeys}
+Ld = L.reindex(season)
+Ld = {k: Ld[k].to_numpy(dtype=np.float64) for k in L.columns}
+
+
+def at(arr, idx):
+    out = np.full(len(idx), np.nan)
+    ok = idx >= 0
+    out[ok] = arr[idx[ok]]
+    return out
+
+
+def div(a, b):
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return np.where(b > 0, a / b, np.nan)
+
+
+W = {k: PWd[k][pi] for k in PWd}
+O = {}
+O['pu_usg_pre'] = div(W['pu'] + 0.20 * 20, W['exp_pu'] + 20)
+for x in ['pts', 'reb', 'ast', 'fga', 'fta']:
+    O['pu_%s40_pre' % x] = div(40 * (W[x] + 200 * P['rate_' + x]), W['min'] + 200)
+for s, K, mk, ak in [('fg3', 100, 'fg3m', 'fg3a'), ('fg2', 80, 'fg2m', 'fg2a'), ('ft', 60, 'ftm', 'fta')]:
+    cm = C[mk][pi]; ca = C[ak][pi]
+    shr = div(cm + K * P['pct_' + s], ca + K)
+    O['psr_%s_shrunk_pre' % s] = shr
+    O['psr_%s_luck_pre' % s] = div(R[mk][pi], R[ak][pi]) - shr
+nw = n15[pi]
+for x in ['pts', 'reb', 'ast', 'fg3m']:
+    m = WIN[x][0][pi]; v = WIN[x][1][pi]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        phi_raw = np.where(m > 0, np.maximum(v - m, 0) / m ** 2, 0.0)
+    phi = nw / (nw + 10) * phi_raw + 10 / (nw + 10) * P['phi_' + x]
+    O['psd_%s_mean_pre' % x] = np.where(nw < 5, np.nan, m)
+    O['psd_%s_phi_pre' % x] = np.where(nw < 5, np.nan, phi)
+fg3a40 = div(40 * (W['fg3a'] + 200 * P['rate_fg3a']), W['min'] + 200)
+O['pv_fg3a40_pre'] = fg3a40
+O['pv_fg3_rate_pre'] = div(W['fg3a'] + 50 * P['fg3_share'], W['fga'] + 50)
+rel = div(at(t_fg3a_allowed, oi), Ld['fg3a_rate'])
+O['pv_opp_fg3a_rel_pre'] = rel
+mew = min_ewm[pi]
+mu = fg3a40 * mew / 40 * np.where(np.isnan(rel), 1.0, rel)
+O['pv_fg3a_exp_pre'] = mu
+
+# compound distribution
+pf3 = P['pct_fg3']
+a_ = 100 * pf3 + C['fg3m'][pi]
+b_ = 100 * (1 - pf3) + (C['fg3a'][pi] - C['fg3m'][pi])
+pge = np.full((n, 4), np.nan)
+Ns = np.arange(41, dtype=np.float64)
+lp, l1p = np.log(2 / 3), np.log(1 - 2 / 3)
+CH = 200000
+for s0 in range(0, n, CH):
+    sl = slice(s0, min(n, s0 + CH))
+    mu_c = mu[sl]; a = a_[sl][:, None]; b = b_[sl][:, None]
+    nn = 2 * mu_c[:, None]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        lnb = gammaln(Ns[None, :] + nn) - gammaln(nn) - gammaln(Ns[None, :] + 1) + nn * lp + Ns[None, :] * l1p
+        nb = np.exp(lnb)
+    z = mu_c == 0
+    nb[z, :] = 0.0
+    nb[z, 0] = 1.0
+    nb[np.isnan(mu_c), :] = np.nan
+    lbab = betaln(a, b)
+    bb = []
+    for x in range(4):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            lt = (gammaln(Ns + 1) - gammaln(x + 1) - gammaln(Ns - x + 1))[None, :] + betaln(x + a, Ns[None, :] - x + b) - lbab
+            pm = np.exp(lt)
+        pm[:, Ns < x] = 0.0
+        bb.append(pm)
+    cum = np.zeros_like(nb)
+    for k in range(1, 5):
+        cum = cum + bb[k - 1]  # sum x=0..k-1, terms with x > N are zero, so min(k-1, N) handled
+        pge[sl, k - 1] = np.sum(nb * (1 - cum), axis=1)
+for k in range(1, 5):
+    O['pc_p_ge%d_pre' % k] = pge[:, k - 1]
+O['pc_mean_makes_pre'] = mu * a_ / (a_ + b_)
+
+O['pa_team_ast_share_pre'] = div(W['ast'], W['tast'])
+O['pa_ast_pct_pre'] = div(W['ast'], W['tfgm_o'])
+O['pa_opp_tov_forced_rel_pre'] = div(at(t_tov_forced, oi), Ld['tov_per_pu'])
+pool = at(t_miss_ewm, ti) + at(t_miss_ewm, oi)
+O['pr_pool_pre'] = pool
+rs = div(W['reb'], W['greb'])
+O['pr_reb_share_pre'] = rs
+O['pr_exp_reb_pre'] = rs * pool * Ld['reb_per_miss']
+O['pr_opp_orb_rate_pre'] = at(t_orb_rate, oi)
+
+COLS = ['pu_usg_pre', 'pu_pts40_pre', 'pu_reb40_pre', 'pu_ast40_pre', 'pu_fga40_pre', 'pu_fta40_pre',
+        'psr_fg3_shrunk_pre', 'psr_fg3_luck_pre', 'psr_fg2_shrunk_pre', 'psr_fg2_luck_pre', 'psr_ft_shrunk_pre',
+        'psr_ft_luck_pre', 'psd_pts_mean_pre', 'psd_pts_phi_pre', 'psd_reb_mean_pre', 'psd_reb_phi_pre',
+        'psd_ast_mean_pre', 'psd_ast_phi_pre', 'psd_fg3m_mean_pre', 'psd_fg3m_phi_pre', 'pv_fg3a40_pre',
+        'pv_fg3_rate_pre', 'pv_opp_fg3a_rel_pre', 'pv_fg3a_exp_pre', 'pc_p_ge1_pre', 'pc_p_ge2_pre',
+        'pc_p_ge3_pre', 'pc_p_ge4_pre', 'pc_mean_makes_pre', 'pa_team_ast_share_pre', 'pa_ast_pct_pre',
+        'pa_opp_tov_forced_rel_pre', 'pr_pool_pre', 'pr_reb_share_pre', 'pr_exp_reb_pre', 'pr_opp_orb_rate_pre']
+out = pd.DataFrame({'game_id': rows.game_id.to_numpy(), 'team': rows.pid.to_numpy().astype(np.int64)})
+for c in COLS:
+    out[c] = np.asarray(O[c], dtype=np.float64)
+assert not out.duplicated(['game_id', 'team']).any()
+assert len(COLS) == 36
+out.to_csv(os.path.join(out_dir, 'out.csv'), index=False, float_format='%.17g')
+print('written', len(out), time.time() - t0, flush=True)
+print(out[COLS].isna().mean().round(4).to_string())
+print(out[COLS].describe().T.to_string())

@@ -1,0 +1,134 @@
+import sys, os, json, glob, time
+import numpy as np, pandas as pd
+
+t0 = time.time()
+data_dir, out_dir = sys.argv[1], sys.argv[2]
+REPL = {'OAK': 'LV', 'SD': 'LAC', 'STL': 'LA'}
+A = 0.5 ** (1.0 / 6.0)
+
+# ---- games
+g = pd.read_csv(os.path.join(data_dir, 'games.csv'), usecols=['game_id', 'season', 'gameday', 'home_team', 'away_team', 'home_score'])
+g = g[(g.season >= 2010) & g.home_score.notna()].drop_duplicates('game_id', keep='first').copy()
+g['date'] = pd.to_datetime(g.gameday)
+for c in ['home_team', 'away_team']:
+    g[c] = g[c].replace(REPL)
+slots = pd.concat([
+    pd.DataFrame({'game_id': g.game_id, 'season': g.season, 'date': g.date, 'T': g.home_team, 'opp': g.away_team}),
+    pd.DataFrame({'game_id': g.game_id, 'season': g.season, 'date': g.date, 'T': g.away_team, 'opp': g.home_team}),
+], ignore_index=True)
+
+# ---- pbp opportunities
+cols = ['game_id', 'posteam', 'play_type', 'receiver_player_id', 'rusher_player_id', 'two_point_attempt',
+        'qb_scramble', 'pass_touchdown', 'rush_touchdown', 'yardline_100', 'down']
+kept = set(g.game_id)
+parts = []
+for f in sorted(glob.glob(os.path.join(data_dir, 'pbp', 'play_by_play_*.parquet'))):
+    d = pd.read_parquet(f, columns=cols)
+    d = d[d.game_id.isin(kept) & d.posteam.notna()]
+    d = d[d.two_point_attempt.fillna(0) != 1]
+    tg = d[(d.play_type == 'pass') & d.receiver_player_id.notna()]
+    tg = pd.DataFrame({'game_id': tg.game_id.values, 'T': tg.posteam.values, 'player': tg.receiver_player_id.values,
+                       'td': (tg.pass_touchdown == 1).astype(float).values, 'kind': 0,
+                       'yl': tg.yardline_100.values, 'down': tg.down.values})
+    cr = d[(d.play_type == 'run') & d.rusher_player_id.notna() & (d.qb_scramble.fillna(0) != 1)]
+    cr = pd.DataFrame({'game_id': cr.game_id.values, 'T': cr.posteam.values, 'player': cr.rusher_player_id.values,
+                       'td': (cr.rush_touchdown == 1).astype(float).values, 'kind': 1,
+                       'yl': cr.yardline_100.values, 'down': cr.down.values})
+    parts += [tg, cr]
+op = pd.concat(parts, ignore_index=True)
+del parts
+op['T'] = op['T'].replace(REPL)
+op = op.merge(g[['game_id', 'season', 'date']], on='game_id', how='left')
+yl = op.yl.values
+yb = np.where(yl <= 2, 0, np.where(yl <= 5, 1, np.where(yl <= 10, 2, np.where(yl <= 20, 3, 4))))  # NaN -> 4
+dg = np.isin(op.down.values, [3.0, 4.0]).astype(int)
+op['cell'] = 10 * op.kind.values + 2 * yb + dg
+
+# ---- model per season
+op['x'] = np.nan
+seasons = sorted(op.season.unique())
+for S in seasons:
+    lo, hi = max(2010, S - 3), max(2010, S - 1)
+    ref = op[(op.season >= lo) & (op.season <= hi)]
+    p_all = ref.td.mean()
+    agg = ref.groupby('cell').td.agg(['sum', 'count'])
+    pc = (agg['sum'] + 10 * p_all) / (agg['count'] + 10)
+    m = op.season == S
+    op.loc[m, 'x'] = op.loc[m, 'cell'].map(pc).fillna(p_all).values
+
+# ---- aggregates
+pg = op.groupby(['game_id', 'T', 'player'], as_index=False).agg(xtd=('x', 'sum'))
+tt = op.groupby(['game_id', 'T'], as_index=False).agg(xtd_team=('x', 'sum'))
+pg = pg.merge(tt, on=['game_id', 'T']).merge(g[['game_id', 'season', 'date']], on='game_id')
+
+def ewm(groups, z):
+    out = np.empty(len(z))
+    prev_g = None; w = 0.0
+    for i in range(len(z)):
+        if groups[i] != prev_g:
+            w = 0.0; prev_g = groups[i]
+        w = A * w + z[i]
+        out[i] = w
+    return out
+
+pg = pg.sort_values(['player', 'date', 'game_id', 'T'], kind='mergesort').reset_index(drop=True)
+pl = pg.player.values
+pg['W_x'] = ewm(pl, pg.xtd.values)
+pg['W_t'] = ewm(pl, pg.xtd_team.values)
+pg['W_1'] = ewm(pl, np.ones(len(pg)))
+pstate = pg.groupby(['player', 'date'], as_index=False).last()[['player', 'date', 'W_x', 'W_t', 'W_1']]
+
+cl = slots.merge(tt, on=['game_id', 'T'], how='left')
+cl['z'] = cl.xtd_team.fillna(0.0)
+cl = cl.sort_values(['T', 'date', 'game_id'], kind='mergesort').reset_index(drop=True)
+cl['C_t'] = ewm(cl['T'].values, cl.z.values)
+cl['C_1'] = ewm(cl['T'].values, np.ones(len(cl)))
+cstate = cl.groupby(['T', 'date'], as_index=False).last()[['T', 'date', 'C_t', 'C_1']]
+
+lg = {}
+for S in sorted(g.season.unique()):
+    a = pg[(pg.season == S - 1) & (pg.xtd_team > 0)]
+    b = cl[cl.season == S - 1]
+    L = (a.xtd / a.xtd_team).mean() if len(a) else np.nan
+    K = 4 * b.z.mean() if len(b) else np.nan
+    lg[S] = (L, K)
+
+# ---- rows
+cand_parts = []
+pgT = pg[['game_id', 'T', 'player', 'date']]
+for T, sl in slots.groupby('T'):
+    sl = sl.sort_values(['date', 'game_id'], kind='mergesort')
+    gids = sl.game_id.values; dates = sl.date.values
+    pT = pgT[pgT['T'] == T]
+    for i in range(len(sl)):
+        if sl.season.values[i] < 2013:
+            continue
+        d = dates[i]
+        k = np.searchsorted(dates, d, side='left')  # games strictly before d
+        prev = gids[max(0, k - 4):k]
+        if len(prev) == 0:
+            continue
+        c = pT[pT.game_id.isin(prev)].groupby('player', as_index=False).date.max().rename(columns={'date': 'q'})
+        c['game_id'] = gids[i]; c['T'] = T; c['rdate'] = d; c['season'] = sl.season.values[i]
+        cand_parts.append(c)
+cand = pd.concat(cand_parts, ignore_index=True)
+cand = cand.sort_values(['game_id', 'player', 'q', 'T'], ascending=[True, True, False, True], kind='mergesort')
+n0 = len(cand)
+cand = cand.drop_duplicates(['game_id', 'player'], keep='first')
+print('conflicts removed', n0 - len(cand))
+
+cand = cand.sort_values('rdate', kind='mergesort').reset_index(drop=True)
+r = pd.merge_asof(cand, pstate.sort_values('date').rename(columns={'date': 'pdate'}), left_on='rdate', right_on='pdate',
+                  by='player', allow_exact_matches=False)
+r = pd.merge_asof(r, cstate.sort_values('date').rename(columns={'date': 'cdate'}), left_on='rdate', right_on='cdate',
+                  by='T', allow_exact_matches=False)
+r['L'] = r.season.map(lambda s: lg[s][0]); r['K'] = r.season.map(lambda s: lg[s][1])
+r['pxt_xtd_pg_pre'] = r.W_x / r.W_1
+r['pxt_share_pre'] = (r.W_x + r.K * r.L) / (r.W_t + r.K)
+r['pxt_exp_td_pre'] = r.pxt_share_pre * r.C_t / r.C_1
+out = r[['game_id', 'player', 'pxt_xtd_pg_pre', 'pxt_share_pre', 'pxt_exp_td_pre']].rename(columns={'player': 'team'})
+out = out.sort_values(['game_id', 'team']).reset_index(drop=True)
+assert not out.duplicated(['game_id', 'team']).any()
+print('rows', len(out)); print(out.describe()); print(out.isna().sum())
+out.to_csv(os.path.join(out_dir, 'out.csv'), index=False, float_format='%.17g')
+print('time', time.time() - t0)

@@ -1,0 +1,430 @@
+import json, os, sys, time, math, datetime, bisect, collections
+from multiprocessing import Pool
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+T0 = time.time()
+FEEDS = sys.argv[1]
+OUTDIR = sys.argv[2]
+
+TYPES = {"R", "F", "D", "L", "W"}
+SKIP = ("caught_stealing", "pickoff", "stolen_base", "wild_pitch", "passed_ball", "balk",
+        "other_advance", "other_out", "runner", "defensive_indiff", "game_advisory", "ejection")
+WHIFF = set("SWTMQ")
+SWING = set("SWTMQFLOXDE")
+NUM = {"walk": 0.69, "hit_by_pitch": 0.72, "single": 0.88, "double": 1.25, "triple": 1.58, "home_run": 2.03}
+NODEN = {"intent_walk", "sac_bunt", "catcher_interf"}
+KEV = {"strikeout", "strikeout_double_play"}
+BBEV = {"walk", "intent_walk"}
+
+
+def ordd(s):
+    return datetime.date.fromisoformat(s).toordinal()
+
+
+def parse(path):
+    try:
+        with open(path) as fh:
+            d = json.load(fh)
+        g = d["game"]
+        if g["type"] not in TYPES or d["status"]["codedGameState"] != "F":
+            return None
+        pk = int(g["pk"])
+        season = int(g["season"])
+        dt = d["datetime"]
+        date = ordd(dt["officialDate"])
+        rd = dt.get("resumeDate")
+        avail = ordd(rd) if rd else date
+        home = int(d["teams"]["home"]["id"])
+        away = int(d["teams"]["away"]["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    h_r = a_r = 0
+    ls = d.get("linescore") or {}
+    for inn in ls.get("innings") or []:
+        h = (inn.get("home") or {}).get("runs")
+        a = (inn.get("away") or {}).get("runs")
+        h_r += h if h is not None else 0
+        a_r += a if a is not None else 0
+    box = d.get("box") or {}
+    hp = (box.get("home") or {}).get("pitchers") or []
+    ap = (box.get("away") or {}).get("pitchers") or []
+    home_sp = int(hp[0]) if hp else -1
+    away_sp = int(ap[0]) if ap else -1
+    rows = []
+    nums = []
+    for p in d.get("plays") or []:
+        ev = p.get("event")
+        if not isinstance(ev, str) or ev.startswith(SKIP):
+            continue
+        if p.get("bat") is None or p.get("pit") is None:
+            continue
+        codes = [pt.get("code") for pt in (p.get("pitches") or [])]
+        n_pitch = len(codes)
+        called = sum(1 for c in codes if c == "C")
+        whiff = sum(1 for c in codes if c in WHIFF)
+        swing = sum(1 for c in codes if c in SWING)
+        th = p.get("throws")
+        thc = 0 if th == "R" else (1 if th == "L" else -1)
+        top = 1 if p.get("half") == "top" else 0
+        rows.append((int(p["ab"]), top, int(p["bat"]), int(p["pit"]), thc,
+                     1 if ev in KEV else 0, 1 if ev in BBEV else 0,
+                     0 if ev in NODEN else 1, n_pitch, called, whiff, swing))
+        nums.append(NUM.get(ev, 0.0))
+    arr = np.array(rows, dtype=np.int64).reshape(-1, 12)
+    return (pk, season, date, avail, home, away, h_r, a_r, home_sp, away_sp), arr, np.array(nums, dtype=np.float64)
+
+
+def main():
+    files = []
+    for s in sorted(os.listdir(FEEDS), key=lambda x: int(x) if x.isdigit() else 10**9):
+        sd = os.path.join(FEEDS, s)
+        if not os.path.isdir(sd):
+            continue
+        for f in sorted(os.listdir(sd)):
+            if f.startswith("_"):
+                continue
+            files.append(os.path.join(sd, f))
+    games = []
+    pa_int = []
+    pa_num = []
+    pa_gid = []
+    seen = set()
+    with Pool(4) as pool:
+        for res in pool.imap(parse, files, chunksize=16):
+            if res is None:
+                continue
+            g, arr, nums = res
+            if g[0] in seen:
+                continue
+            seen.add(g[0])
+            games.append(g)
+            pa_int.append(arr)
+            pa_num.append(nums)
+            pa_gid.append(np.full(len(arr), g[0], dtype=np.int64))
+    print("parsed", len(files), "files, kept games", len(games), "t=%.1f" % (time.time() - T0), flush=True)
+
+    G = pd.DataFrame(games, columns=["gid", "season", "date", "avail", "home", "away", "h_r", "a_r", "home_sp", "away_sp"])
+    A = np.concatenate(pa_int)
+    P = pd.DataFrame(A, columns=["ab", "top", "bat", "pit", "throws", "k", "bb", "den", "n_pitch", "called", "whiff", "swing"])
+    P["num"] = np.concatenate(pa_num)
+    P["den"] = P["den"].astype(np.float64)
+    P["gid"] = np.concatenate(pa_gid)
+    del A, pa_int, pa_num, pa_gid
+    P["csw"] = P["called"] + P["whiff"]
+    gi = G.set_index("gid")
+    P["season"] = gi.loc[P["gid"], "season"].values
+    P["date"] = gi.loc[P["gid"], "date"].values
+    P["avail"] = gi.loc[P["gid"], "avail"].values
+    hm = gi.loc[P["gid"], "home"].values
+    aw = gi.loc[P["gid"], "away"].values
+    hsp = gi.loc[P["gid"], "home_sp"].values
+    asp = gi.loc[P["gid"], "away_sp"].values
+    top = P["top"].values == 1
+    P["bteam"] = np.where(top, aw, hm)
+    P["fteam"] = np.where(top, hm, aw)
+    fsp = np.where(top, hsp, asp)
+    P["is_start"] = ((fsp != -1) & (P["pit"].values == fsp)).astype(np.int64)
+    # bf_i
+    P["_o"] = np.arange(len(P))
+    P = P.sort_values(["gid", "pit", "ab", "_o"], kind="mergesort")
+    P["bf_i"] = P.groupby(["gid", "pit"]).cumcount() + 1
+    P = P.sort_values("_o").drop(columns="_o").reset_index(drop=True)
+    P["tto"] = np.minimum(np.ceil(P["bf_i"] / 9.0), 3).astype(np.int64)
+    print("PAs", len(P), "t=%.1f" % (time.time() - T0), flush=True)
+
+    # ---- league constants
+    LC = {}
+    for s, Ps in P.groupby("season"):
+        c = {}
+        c["k"] = Ps["k"].sum() / len(Ps)
+        c["csw"] = Ps["csw"].sum() / Ps["n_pitch"].sum()
+        c["whiff"] = Ps["whiff"].sum() / Ps["swing"].sum()
+        c["woba"] = Ps["num"].sum() / Ps["den"].sum()
+        for hc, h in ((0, "R"), (1, "L")):
+            q = Ps[Ps["throws"] == hc]
+            c["k_" + h] = q["k"].sum() / len(q)
+            c["woba_" + h] = q["num"].sum() / q["den"].sum()
+        st = Ps[Ps["is_start"] == 1]
+        for t in (1, 2, 3):
+            q = st[st["tto"] == t]
+            c["tto_k_%d" % t] = q["k"].sum() / len(q)
+            c["tto_bb_%d" % t] = q["bb"].sum() / len(q)
+            c["tto_woba_%d" % t] = q["num"].sum() / q["den"].sum()
+        bf = st.groupby(["gid", "pit"]).size().values.astype(np.float64)
+        for t in (1, 2, 3):
+            c["tto_bf_%d" % t] = np.mean(np.minimum(np.maximum(bf - 9 * (t - 1), 0), 9))
+        Gs = G[G["season"] == s]
+        runs = np.concatenate([Gs["h_r"].values, Gs["a_r"].values]).astype(np.float64)
+        m = runs.mean()
+        v = runs.var(ddof=1)
+        c["lg_runs"] = m
+        c["lg_phi"] = max(v - m, 0) / m ** 2 if m > 0 else 0.0
+        c["lg_corr"] = np.corrcoef(Gs["h_r"].values.astype(np.float64), Gs["a_r"].values.astype(np.float64))[0, 1]
+        LC[int(s)] = c
+    print("league constants", {s: round(LC[s]["k"], 4) for s in LC}, flush=True)
+    MAXS = int(P["season"].max())
+
+    # ---- prefix-sum structure
+    class Prefix:
+        def __init__(self, keys, avail, V):
+            # keys: list of arrays forming key tuple
+            order = np.lexsort([avail] + list(keys)[::-1])
+            ks = [k[order] for k in keys]
+            self.av = avail[order]
+            V = V[order]
+            self.C = np.vstack([np.zeros((1, V.shape[1])), np.cumsum(V, axis=0)])
+            self.idx = {}
+            n = len(order)
+            if n == 0:
+                return
+            kt = np.stack(ks, axis=1)
+            chg = np.ones(n, dtype=bool)
+            chg[1:] = np.any(kt[1:] != kt[:-1], axis=1)
+            starts = np.flatnonzero(chg)
+            ends = np.append(starts[1:], n)
+            avl = self.av.tolist()
+            for st, en in zip(starts.tolist(), ends.tolist()):
+                self.idx[tuple(kt[st].tolist())] = (st, en, avl[st:en])
+            self.ncol = V.shape[1]
+
+        def q(self, key, d):
+            e = self.idx.get(key)
+            if e is None:
+                return None
+            st, en, al = e
+            i = bisect.bisect_left(al, d)
+            if i == 0:
+                return None
+            return self.C[st + i] - self.C[st]
+
+    def window(pref, keyprefix, d, S, ncol):
+        tot = np.zeros(ncol)
+        for s in range(S - 1, MAXS + 1):
+            r = pref.q(keyprefix + (s,), d)
+            if r is not None:
+                tot += r
+        return tot
+
+    av = P["avail"].values
+    seasons = P["season"].values
+    # batter by hand: cols n, k, num, den
+    Vb = np.column_stack([np.ones(len(P)), P["k"].values, P["num"].values, P["den"].values]).astype(np.float64)
+    prefB = Prefix([P["bat"].values, P["throws"].values, seasons], av, Vb)
+    prefT = Prefix([P["bteam"].values, P["throws"].values, seasons], av, Vb)
+    # pitcher
+    cols = [np.ones(len(P)), P["k"].values, P["n_pitch"].values, P["csw"].values, P["whiff"].values, P["swing"].values]
+    ist = P["is_start"].values == 1
+    tto = P["tto"].values
+    bfi = P["bf_i"].values
+    for t in (1, 2, 3):
+        mk = (ist & (tto == t)).astype(np.float64)
+        cols += [mk, mk * P["k"].values, mk * P["bb"].values, mk * P["num"].values, mk * P["den"].values,
+                 (ist & (bfi > 9 * (t - 1)) & (bfi <= 9 * t)).astype(np.float64)]
+    cols.append((ist & (bfi == 1)).astype(np.float64))
+    Vp = np.column_stack(cols).astype(np.float64)
+    prefP = Prefix([P["pit"].values, seasons], av, Vp)
+    NPC = Vp.shape[1]
+    # pitcher hand: latest by (avail, gid, ab)
+    o = np.lexsort([P["ab"].values, P["gid"].values, av, P["pit"].values])
+    hand_idx = {}
+    pit_s = P["pit"].values[o]
+    av_s = av[o]
+    th_s = P["throws"].values[o]
+    chg = np.ones(len(o), dtype=bool)
+    chg[1:] = pit_s[1:] != pit_s[:-1]
+    stt = np.flatnonzero(chg)
+    enn = np.append(stt[1:], len(o))
+    for st, en in zip(stt.tolist(), enn.tolist()):
+        hand_idx[int(pit_s[st])] = (av_s[st:en].tolist(), th_s[st:en].tolist())
+    # batter counts per (gid, bteam)
+    bc = P.groupby(["gid", "bteam", "bat"], sort=False).size()
+    BC = collections.defaultdict(list)
+    for (g_, t_, b_), n_ in bc.items():
+        BC[(g_, t_)].append((b_, n_))
+    print("structures built t=%.1f" % (time.time() - T0), flush=True)
+
+    # ---- team-games
+    TG = pd.concat([
+        pd.DataFrame({"gid": G.gid, "season": G.season, "date": G.date, "avail": G.avail, "team": G.home, "opp": G.away,
+                      "runs": G.h_r, "ra": G.a_r, "sp": G.home_sp}),
+        pd.DataFrame({"gid": G.gid, "season": G.season, "date": G.date, "avail": G.avail, "team": G.away, "opp": G.home,
+                      "runs": G.a_r, "ra": G.h_r, "sp": G.away_sp}),
+    ], ignore_index=True)
+    TEAM = {}
+    r = 0.5 ** (1 / 30)
+    for t_, q in TG.groupby("team"):
+        a = q.sort_values(["date", "gid"], kind="mergesort")
+        b = q.sort_values(["avail", "date", "gid"], kind="mergesort")
+        runs = b["runs"].values.astype(np.float64)
+        ra = b["ra"].values.astype(np.float64)
+        off = np.empty(len(b)); dfn = np.empty(len(b))
+        n1 = n2 = dd = 0.0
+        for i in range(len(b)):
+            n1 = r * n1 + runs[i]; n2 = r * n2 + ra[i]; dd = r * dd + 1.0
+            off[i] = n1 / dd; dfn[i] = n2 / dd
+        TEAM[t_] = dict(
+            d_gid=a["gid"].values, d_date=a["date"].values, d_avail=a["avail"].values, d_sp=a["sp"].values,
+            c_avail=b["avail"].values.tolist(), c_av_np=b["avail"].values, c_season=b["season"].values,
+            c_runs=runs, off=off, dfn=dfn)
+
+    def last_n(T, d, n):
+        e = TEAM[T]
+        m = np.flatnonzero(e["d_avail"] < d)
+        return m[-n:]
+
+    def phi(m, v):
+        return max(v - m, 0) / m ** 2 if m > 0 else 0.0
+
+    rows = TG[TG["season"] >= 2023].sort_values(["gid", "team"]).reset_index(drop=True)
+    lineup_cache = {}
+
+    def lineup(X, d, S):
+        key = (X, d, S)
+        if key in lineup_cache:
+            return lineup_cache[key]
+        e = TEAM[X]
+        idx = last_n(X, d, 10)
+        cnt = collections.Counter()
+        for gg in e["d_gid"][idx].tolist():
+            for b_, n_ in BC.get((gg, X), []):
+                cnt[b_] += n_
+        tot = sum(cnt.values())
+        res = {}
+        for hc, h in ((0, "R"), (1, "L")):
+            if tot == 0:
+                res["k_" + h] = np.nan; res["woba_" + h] = np.nan
+                continue
+            kh = LC[S - 1]["k_" + h]; wh = LC[S - 1]["woba_" + h]
+            sk = 0.0; sw = 0.0
+            for b_, n_ in cnt.items():
+                w = n_ / tot
+                s_ = window(prefB, (b_, hc), d, S, 4)
+                sk += w * ((s_[1] + 200 * kh) / (s_[0] + 200))
+                sw += w * ((s_[2] + 300 * wh) / (s_[3] + 300))
+            res["k_" + h] = sk; res["woba_" + h] = sw
+        lineup_cache[key] = res
+        return res
+
+    out = []
+    for g_, T, O, d, S in zip(rows.gid.tolist(), rows.team.tolist(), rows.opp.tolist(), rows.date.tolist(), rows.season.tolist()):
+        L = LC[S - 1]
+        lu = lineup(T, d, S)
+        rec = {"game_id": g_, "team": T}
+        rec["lkp_k_vs_r_pre"] = lu["k_R"]
+        rec["lkp_k_vs_l_pre"] = lu["k_L"]
+        rec["lkp_k_vs_r_rel_pre"] = lu["k_R"] / L["k_R"]
+        rec["lkp_k_vs_l_rel_pre"] = lu["k_L"] / L["k_L"]
+        rec["wrc_woba_vs_r_pre"] = lu["woba_R"]
+        rec["wrc_woba_vs_l_pre"] = lu["woba_L"]
+        rec["wrc_idx_vs_r_pre"] = 100 * lu["woba_R"] / L["woba_R"]
+        rec["wrc_idx_vs_l_pre"] = 100 * lu["woba_L"] / L["woba_L"]
+        for hc, h in ((0, "r"), (1, "l")):
+            s_ = window(prefT, (T, hc), d, S, 4)
+            rec["wrc_team_split_vs_%s_pre" % h] = s_[2] / s_[3] if s_[3] != 0 else np.nan
+        eT = TEAM[T]; eO = TEAM[O]
+        iT = bisect.bisect_left(eT["c_avail"], d)
+        iO = bisect.bisect_left(eO["c_avail"], d)
+        if iT > 0 and iO > 0:
+            mu = eT["off"][iT - 1] * eO["dfn"][iO - 1] / L["lg_runs"]
+        else:
+            mu = np.nan
+        msk = (eT["c_av_np"] < d) & (eT["c_season"] >= S - 1)
+        rr = eT["c_runs"][msk]
+        n = len(rr)
+        phT = phi(rr.mean(), rr.var(ddof=1)) if n > 1 else 0.0
+        ph = n / (n + 50) * phT + 50 / (n + 50) * L["lg_phi"]
+        rec["rd_mu_pre"] = mu
+        rec["rd_phi_pre"] = ph
+        rec["rd_corr_pre"] = L["lg_corr"]
+        for kk in (3, 4, 5, 6):
+            if np.isnan(mu):
+                p = np.nan
+            elif ph == 0:
+                p = stats.poisson.sf(kk - 1, mu)
+            else:
+                sz = 1.0 / ph
+                p = stats.nbinom.sf(kk - 1, sz, sz / (sz + mu))
+            rec["rd_p_ge%d_pre" % kk] = p
+        out.append(rec)
+    team_cols = ["game_id", "team", "lkp_k_vs_r_pre", "lkp_k_vs_l_pre", "lkp_k_vs_r_rel_pre", "lkp_k_vs_l_rel_pre",
+                 "wrc_woba_vs_r_pre", "wrc_woba_vs_l_pre", "wrc_idx_vs_r_pre", "wrc_idx_vs_l_pre",
+                 "wrc_team_split_vs_r_pre", "wrc_team_split_vs_l_pre", "rd_mu_pre", "rd_phi_pre", "rd_corr_pre",
+                 "rd_p_ge3_pre", "rd_p_ge4_pre", "rd_p_ge5_pre", "rd_p_ge6_pre"]
+    TO = pd.DataFrame(out, columns=team_cols)
+    print("team rows", len(TO), "t=%.1f" % (time.time() - T0), flush=True)
+
+    # ---- pitcher table
+    cand = {}  # (gid) -> {p: (q, team, opp, d, S)}
+    for g_, T, O, d, S in zip(rows.gid.tolist(), rows.team.tolist(), rows.opp.tolist(), rows.date.tolist(), rows.season.tolist()):
+        e = TEAM[T]
+        idx = last_n(T, d, 5)
+        qd = {}
+        for sp, dt_ in zip(e["d_sp"][idx].tolist(), e["d_date"][idx].tolist()):
+            if sp == -1:
+                continue
+            qd[sp] = max(qd.get(sp, -1), dt_)
+        cg = cand.setdefault(g_, {})
+        for p_, q_ in qd.items():
+            if p_ in cg:
+                q0, T0_ = cg[p_][0], cg[p_][1]
+                if q_ > q0 or (q_ == q0 and T < T0_):
+                    cg[p_] = (q_, T, O, d, S)
+            else:
+                cg[p_] = (q_, T, O, d, S)
+    pout = []
+    for g_ in sorted(cand):
+        for p_, (q_, T, O, d, S) in sorted(cand[g_].items()):
+            L = LC[S - 1]
+            w = window(prefP, (p_,), d, S, NPC)
+            rec = {"game_id": g_, "team": p_}
+            base = 6
+            for t in (1, 2, 3):
+                n_t, K_t, BB_t, N_t, D_t, f_t = w[base:base + 6]
+                base += 6
+                rec["tto_k_%d_pre" % t] = (K_t + 100 * L["tto_k_%d" % t]) / (n_t + 100)
+                rec["tto_bb_%d_pre" % t] = (BB_t + 100 * L["tto_bb_%d" % t]) / (n_t + 100)
+                rec["tto_woba_%d_pre" % t] = (N_t + 200 * L["tto_woba_%d" % t]) / (D_t + 200)
+                rec["_f%d" % t] = f_t
+            starts = w[base]
+            for t in (1, 2, 3):
+                rec["tto_exp_bf_%d_pre" % t] = (rec.pop("_f%d" % t) + 8 * L["tto_bf_%d" % t]) / (starts + 8)
+            n, K, Pp, C, W, Sw = w[:6]
+            x = (K + 100 * L["k"]) / (n + 100)
+            rec["kr_pit_k_pre"] = x
+            rec["kr_pit_csw_pre"] = (C + 300 * L["csw"]) / (Pp + 300)
+            rec["kr_pit_whiff_pre"] = (W + 150 * L["whiff"]) / (Sw + 150)
+            hand = None
+            hi = hand_idx.get(p_)
+            if hi is not None:
+                i = bisect.bisect_left(hi[0], d)
+                if i > 0:
+                    hand = hi[1][i - 1]
+            if hand in (0, 1):
+                l = lineup(O, d, S)["k_R" if hand == 0 else "k_L"]
+                gk = L["k"]
+                A_ = x * l / gk
+                B_ = (1 - x) * (1 - l) / (1 - gk)
+                rec["kr_opp_lineup_k_pre"] = l
+                rec["kr_log5_k_pre"] = A_ / (A_ + B_)
+            else:
+                rec["kr_opp_lineup_k_pre"] = np.nan
+                rec["kr_log5_k_pre"] = np.nan
+            pout.append(rec)
+    pit_cols = ["game_id", "team", "tto_k_1_pre", "tto_k_2_pre", "tto_k_3_pre", "tto_bb_1_pre", "tto_bb_2_pre", "tto_bb_3_pre",
+                "tto_woba_1_pre", "tto_woba_2_pre", "tto_woba_3_pre", "tto_exp_bf_1_pre", "tto_exp_bf_2_pre", "tto_exp_bf_3_pre",
+                "kr_pit_k_pre", "kr_pit_csw_pre", "kr_pit_whiff_pre", "kr_opp_lineup_k_pre", "kr_log5_k_pre"]
+    PO = pd.DataFrame(pout, columns=pit_cols)
+
+    TO.to_csv(os.path.join(OUTDIR, "team_out.csv"), index=False, float_format="%.17g")
+    PO.to_csv(os.path.join(OUTDIR, "pitcher_out.csv"), index=False, float_format="%.17g")
+    print("team_out rows", len(TO), "dups", TO.duplicated(["game_id", "team"]).sum())
+    print("pitcher_out rows", len(PO), "dups", PO.duplicated(["game_id", "team"]).sum())
+    print("NaN counts team:", TO.isna().sum()[TO.isna().sum() > 0].to_dict())
+    print("NaN counts pitcher:", PO.isna().sum()[PO.isna().sum() > 0].to_dict())
+    print("runtime %.1f s" % (time.time() - T0))
+
+
+if __name__ == "__main__":
+    main()

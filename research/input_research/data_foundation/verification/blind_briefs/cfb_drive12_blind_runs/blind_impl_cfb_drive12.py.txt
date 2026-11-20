@@ -1,0 +1,308 @@
+"""Stage 2: compute features from compact records. Usage: impl.py recs.pkl out.csv notes.json"""
+import sys, json, pickle, math
+from collections import defaultdict
+import numpy as np
+import pandas as pd
+
+NAN = float('nan')
+PS = ['all', 1, 2, 3, 4]
+
+
+def isnan(x):
+    return x is None or (isinstance(x, float) and math.isnan(x))
+
+
+def scoring_states(sps):
+    """Return dict sign -> (ml, mc, pl, pc) or None if no qualifying play."""
+    q = []
+    for idx, (period, clock, hs, aw) in enumerate(sps):
+        if period is None or clock is None:
+            continue
+        if period < 1 or period > 4:
+            continue
+        t = (period - 1) * 900 + 900 - clock
+        q.append((t, idx, hs, aw))
+    if not q:
+        return None
+    q.sort(key=lambda x: (x[0], x[1]))
+    ts = [x[0] for x in q]
+    m = [x[2] - x[3] for x in q]
+    bounds = [0] + ts + [3600]
+    seg_margin = [0.0] + m  # segment j margin
+    res = {}
+    for sign in (1, -1):
+        ml = 0.0
+        mc = 0.0
+        for j in range(len(bounds) - 1):
+            a, b = bounds[j], bounds[j + 1]
+            ov = min(b, 3600) - max(a, 900)
+            if ov <= 0:
+                continue
+            mg = seg_margin[j]
+            if sign * mg >= 14:
+                ml += ov / 60.0
+            if abs(mg) <= 8:
+                mc += ov / 60.0
+        pl = 0.0
+        pc = 0.0
+        prev_score = 0.0
+        for i, (t, idx, hs, aw) in enumerate(q):
+            sc = hs if sign == 1 else aw
+            pts = sc - prev_score
+            prev_score = sc
+            mb = m[i - 1] if i > 0 else 0.0
+            if 900 <= t <= 3600:
+                if sign * mb >= 14:
+                    pl += pts
+                if abs(mb) <= 8:
+                    pc += pts
+        res[sign] = (ml, mc, pl, pc)
+    return res
+
+
+def main():
+    recs_path, out_path, notes_path = sys.argv[1], sys.argv[2], sys.argv[3]
+    with open(recs_path, 'rb') as f:
+        recs = pickle.load(f)
+
+    games = []   # game-level dicts
+    tg = []      # team-game dicts
+    for r in recs:
+        home, away = r['home'], r['away']
+        drives = [(i,) + d for i, d in enumerate(r['drives']) if d[0] in (home, away)]
+        g = dict(game_id=r['game_id'], season=r['season'], date=r['date'], home=home, away=away)
+        if drives:
+            g['drv'] = float(len(drives))
+            g['T_game'] = float(sum(d[3] for d in drives if d[3] is not None))
+        else:
+            g['drv'] = NAN
+            g['T_game'] = NAN
+        for k in (1, 2, 3, 4):
+            g['drv_%d' % k] = float(sum(1 for d in drives if d[2] == k))
+        # receive
+        rv = {}
+        for key, per in (('recv', 1), ('recv2', 3)):
+            pd_ = [d for d in drives if d[2] == per]
+            rv[key] = pd_[0][1] if pd_ else None  # owner team of lowest idx
+        ss = scoring_states(r['sps'])
+        games.append(g)
+        # eligible drives
+        elig = [d for d in drives if d[3] is not None and not d[4].startswith('end of')
+                and not (d[5] is not None and d[5] >= 28)]
+        for team, opp, is_home, sign in ((home, away, True, 1), (away, home, False, -1)):
+            row = dict(game_id=r['game_id'], season=r['season'], date=r['date'], team=team, opp=opp,
+                       is_home=is_home)
+            for p in PS:
+                ow = [d for d in elig if d[1] == team and (p == 'all' or d[2] == p)]
+                op = [d for d in elig if d[1] == opp and (p == 'all' or d[2] == p)]
+                row['n_%s' % p] = float(len(ow))
+                row['s_%s' % p] = float(sum(d[3] for d in ow))
+                row['on_%s' % p] = float(len(op))
+                row['os_%s' % p] = float(sum(d[3] for d in op))
+            for k in (1, 2, 3, 4):
+                row['own_drv_%d' % k] = float(sum(1 for d in drives if d[1] == team and d[2] == k))
+            for key in ('recv', 'recv2'):
+                o = rv[key]
+                row[key] = NAN if o is None else (1.0 if o == team else 0.0)
+            if ss is None:
+                row['ml'] = row['mc'] = row['pl'] = row['pc'] = NAN
+            else:
+                row['ml'], row['mc'], row['pl'], row['pc'] = ss[sign]
+            for c in ('drv', 'T_game', 'drv_1', 'drv_2', 'drv_3', 'drv_4'):
+                row[c] = g[c]
+            tg.append(row)
+
+    G = pd.DataFrame(games)
+    TG = pd.DataFrame(tg)
+    assert not TG.duplicated(['game_id', 'team']).any()
+
+    # ---- season constants (computed from season S, applied to rows of S+1)
+    const = {}
+    for S, sub in TG.groupby('season'):
+        c = {}
+        for p in PS:
+            sn = sub['n_%s' % p].sum()
+            c['lg_%s' % p] = sub['s_%s' % p].sum() / sn if sn > 0 else NAN
+        c['T_eff'] = G.loc[G.season == S, 'T_game'].mean()
+        c['r1'] = sub.loc[sub.recv == 1, 'own_drv_1'].mean()
+        c['k1'] = sub.loc[sub.recv == 0, 'own_drv_1'].mean()
+        c['r3'] = sub.loc[sub.recv2 == 1, 'own_drv_3'].mean()
+        c['k3'] = sub.loc[sub.recv2 == 0, 'own_drv_3'].mean()
+        c['q2'] = sub['own_drv_2'].mean()
+        c['q4'] = sub['own_drv_4'].mean()
+        sml = sub['ml'].sum(); smc = sub['mc'].sum()
+        c['L_lead'] = sub['pl'].sum() / sml if sml > 0 else NAN
+        c['L_close'] = sub['pc'].sum() / smc if smc > 0 else NAN
+        const[S] = c
+    nanc = {k: NAN for k in next(iter(const.values()))}
+
+    # ---- per-team histories sorted by (date, game_id)
+    TG = TG.sort_values(['date', 'game_id', 'is_home'], ascending=[True, True, False]).reset_index(drop=True)
+    hist = defaultdict(list)
+    for i, r in enumerate(TG.itertuples(index=False)):
+        hist[r.team].append(r)
+
+    def before(team, d):
+        h = hist.get(team, [])
+        return [x for x in h if x.date < d]
+
+    def drive_window(team, d, lg):
+        prior = before(team, d)[-10:][::-1]  # newest first
+        W = {}
+        cols = []
+        for p in PS:
+            cols += ['s_%s' % p, 'n_%s' % p, 'os_%s' % p, 'on_%s' % p]
+        for c in cols:
+            W[c] = 0.0
+        ng = 0
+        for j, x in enumerate(prior):
+            w = 0.8 ** j
+            for c in cols:
+                W[c] += w * getattr(x, c)
+            if x.n_all > 0:
+                ng += 1
+        own = {}; allowed = {}
+        for p in PS:
+            l = lg[p]
+            v = W['s_%s' % p] / W['n_%s' % p] if W['n_%s' % p] > 0 else l
+            own[p] = (ng * v + 5 * l) / (ng + 5)
+            v = W['os_%s' % p] / W['on_%s' % p] if W['on_%s' % p] > 0 else l
+            allowed[p] = (ng * v + 5 * l) / (ng + 5)
+        return own, allowed
+
+    def recv_window(team, d):
+        prior = [x for x in before(team, d) if not isnan(x.recv)][-10:][::-1]
+        if not prior:
+            f = 0.5
+        else:
+            sw = 0.0; swr = 0.0
+            for j, x in enumerate(prior):
+                w = 0.8 ** j
+                sw += w; swr += w * x.recv
+            f = swr / sw
+        c = len(prior)
+        return (c * f + 5 * 0.5) / (c + 5)
+
+    def lsp(team, d, S):
+        num_l = den_l = num_c = den_c = 0.0
+        for x in before(team, d):
+            if isnan(x.ml):
+                continue
+            if x.season == S:
+                w = 1.0
+            elif x.season == S - 1:
+                w = 0.5
+            else:
+                continue
+            num_l += w * x.pl; den_l += w * x.ml
+            num_c += w * x.pc; den_c += w * x.mc
+        return num_l, den_l, num_c, den_c
+
+    rows = []
+    for r in TG.itertuples(index=False):
+        S = r.season
+        if S < 2015:
+            continue
+        c = const.get(S - 1, nanc)
+        lg = {p: c['lg_%s' % p] for p in PS}
+        ownT, allT = drive_window(r.team, r.date, lg)
+        ownO, allO = drive_window(r.opp, r.date, lg)
+        D = {p: (ownT[p] + allO[p] + ownO[p] + allT[p]) / 4 for p in PS}
+        o = dict(game_id=r.game_id, team=r.team, season=S, is_home=r.is_home,
+                 drv=r.drv, drv_1=r.drv_1, drv_2=r.drv_2, drv_3=r.drv_3, drv_4=r.drv_4)
+        o['D_all'] = D['all']
+        o['raw'] = c['T_eff'] / D['all'] if D['all'] != 0 else NAN
+        for k in (1, 2, 3, 4):
+            o['raw_%d' % k] = 900.0 / D[k] if D[k] != 0 else NAN
+        FT = recv_window(r.team, r.date)
+        FO = recv_window(r.opp, r.date)
+        P = 0.5 * FT + 0.5 * (1 - FO)
+        o['ppa_p_receive_first_pre'] = P
+        o['ppa_exp_drives_q1_pre'] = P * c['r1'] + (1 - P) * c['k1']
+        o['ppa_exp_drives_q2_pre'] = c['q2']
+        o['ppa_exp_drives_q3_pre'] = (1 - P) * c['r3'] + P * c['k3']
+        o['ppa_exp_drives_q4_pre'] = c['q4']
+        nl, dl, nc, dc = lsp(r.team, r.date, S)
+        o['lsp_ppm_lead14_pre'] = (nl + 60 * c['L_lead']) / (dl + 60)
+        o['lsp_ppm_close_pre'] = (nc + 60 * c['L_close']) / (dc + 60)
+        o['lsp_ratio_pre'] = (o['lsp_ppm_lead14_pre'] / o['lsp_ppm_close_pre']
+                              if o['lsp_ppm_close_pre'] != 0 else NAN)
+        rows.append(o)
+    R = pd.DataFrame(rows)
+
+    # ---- bias / sd from home rows of S-1
+    bias = {}
+    for S in sorted(R.season.unique()):
+        ref = R[(R.season == S - 1) & (R.is_home)]
+        b = {}
+        for a, e in (('drv', 'raw'),) + tuple(('drv_%d' % k, 'raw_%d' % k) for k in (1, 2, 3, 4)):
+            diff = (ref[a] - ref[e]).dropna()
+            b[a] = (diff.mean() if len(diff) else NAN, diff.std(ddof=1) if len(diff) > 1 else NAN)
+        bias[S] = b
+
+    def Phi(x):
+        return 0.5 * (1 + math.erf(x / math.sqrt(2))) if not isnan(x) else NAN
+
+    out = []
+    for o in R.itertuples(index=False):
+        if o.season < 2016:
+            continue
+        b = bias[o.season]
+        rec = dict(game_id=o.game_id, team=o.team)
+        rec['cep_exp_drives_pre'] = o.raw + b['drv'][0]
+        rec['cep_sd_pre'] = b['drv'][1]
+        rec['cep_drive_secs_pre'] = o.D_all
+        for k in (1, 2, 3, 4):
+            bk, sk = b['drv_%d' % k]
+            e = getattr(o, 'raw_%d' % k) + bk
+            rec['pdc_q%d_exp_pre' % k] = e
+        for k in (1, 2, 3, 4):
+            bk, sk = b['drv_%d' % k]
+            e = rec['pdc_q%d_exp_pre' % k]
+            if isnan(e) or isnan(sk):
+                rec['pdc_q%d_p_le4_pre' % k] = NAN
+            elif sk == 0:
+                z = 4.5 - e
+                rec['pdc_q%d_p_le4_pre' % k] = 1.0 if z > 0 else (0.0 if z < 0 else NAN)
+            else:
+                rec['pdc_q%d_p_le4_pre' % k] = Phi((4.5 - e) / sk)
+        for c_ in ('ppa_p_receive_first_pre', 'ppa_exp_drives_q1_pre', 'ppa_exp_drives_q2_pre',
+                   'ppa_exp_drives_q3_pre', 'ppa_exp_drives_q4_pre', 'lsp_ppm_lead14_pre',
+                   'lsp_ppm_close_pre', 'lsp_ratio_pre'):
+            rec[c_] = getattr(o, c_)
+        out.append(rec)
+    cols = ['game_id', 'team', 'cep_exp_drives_pre', 'cep_sd_pre', 'cep_drive_secs_pre',
+            'pdc_q1_exp_pre', 'pdc_q2_exp_pre', 'pdc_q3_exp_pre', 'pdc_q4_exp_pre',
+            'pdc_q1_p_le4_pre', 'pdc_q2_p_le4_pre', 'pdc_q3_p_le4_pre', 'pdc_q4_p_le4_pre',
+            'ppa_p_receive_first_pre', 'ppa_exp_drives_q1_pre', 'ppa_exp_drives_q2_pre',
+            'ppa_exp_drives_q3_pre', 'ppa_exp_drives_q4_pre', 'lsp_ppm_lead14_pre',
+            'lsp_ppm_close_pre', 'lsp_ratio_pre']
+    OUT = pd.DataFrame(out, columns=cols).sort_values(['game_id', 'team']).reset_index(drop=True)
+    for c_ in cols[2:]:
+        OUT[c_] = OUT[c_].astype('float64')
+    dup = OUT.duplicated(['game_id', 'team']).sum()
+    print('rows', len(OUT), 'duplicates', dup)
+    print(OUT.describe().T.to_string())
+    OUT.to_csv(out_path, index=False, float_format='%.17g')
+
+    notes = {"ambiguities": [
+        "Output column list has 19 value columns (3 cep + 8 pdc + 5 ppa + 3 lsp) although the title says 23; the explicit Output list was followed.",
+        "'A game with no drive at all' read as: no drive belonging to the home or away team (drives of other teams are never used). drv_k stays 0 for such games (brief says '0 if none'), so they still enter bias_k/sd_k.",
+        "Drive and scoring-play 'm:ss' parsed as int(m)*60+int(s) after splitting on a single ':'; anything else is missing.",
+        "Missing/None homeScore/awayScore counts as 0 (both for drive start_margin and scoring plays).",
+        "recv/recv2 use only drives of the home/away teams; owner is the team of the lowest-idx drive with that period.",
+        "Windows (drive, receiving) use all prior team-games of X regardless of season (including 2014 games), strictly earlier date; same-date games excluded.",
+        "n_g(X) (count of window games with n_all>0) is used as the shrink count for every period p.",
+        "Scoring-state segments: overlap of [b_j, b_{j+1}] with [900,3600]; play points computed in sorted (t, idx) order relative to the previous sorted play; pl/pc include plays with 900<=t<=3600.",
+        "Season constants with zero denominators (sum n_p, sum ml, sum mc) are missing; constants for a season S-1 with no games are missing.",
+        "T_eff = mean of game-level T_game over all games of S-1 (games with no drives skipped as missing).",
+        "Duplicate game_id files: first file in sorted name order among files that pass the completed/parse checks is kept; the season >= 2014 filter is applied after deduplication.",
+        "pdc_qk_p_le4_pre missing when sd_k is missing; if sd_k were 0 a step function would be used (sd_k was never 0 or missing in the output seasons).",
+        "Rows for teams appearing in a game are produced regardless of whether the team has any prior history (window falls back to lg_p / 0.5).",
+    ]}
+    with open(notes_path, 'w') as f:
+        json.dump(notes, f, indent=2)
+
+
+if __name__ == '__main__':
+    main()

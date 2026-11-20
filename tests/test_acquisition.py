@@ -19,7 +19,7 @@ class AcquisitionPlan(unittest.TestCase):
 
     def test_totals_reconcile_with_the_map(self):
         t = self.plan["totals"]
-        self.assertEqual((t["inputs"], t["archetypes"], t["missing_primary_slots"]), (1649, 170, 828))   # six-sport expansion: 873 -> 841;   # NFL batch 4 (nfl_pbp_ext4): 884 -> 873  # Phase 7: nfl.pass_run_split_epa_both_sides (NFL:team_total) and nfl.rush_yardage_tail (NFL:game_events) close 2 slots  # derived NBA/CBB engine (PR #94): 886 -> 884  # NFL player-prop batch 5, nfl_player_ext5: 841 -> 828
+        self.assertEqual((t["inputs"], t["archetypes"], t["missing_primary_slots"]), (1649, 170, 769))   # P1-completion CFB drive batch (4 inputs): 773 -> 769; P1-completion sprint (35 inputs, docs/P1_COMPLETION_BATCHES.md): 828 -> 773; six-sport expansion: 873 -> 841;   # NFL batch 4 (nfl_pbp_ext4): 884 -> 873  # Phase 7: nfl.pass_run_split_epa_both_sides (NFL:team_total) and nfl.rush_yardage_tail (NFL:game_events) close 2 slots  # derived NBA/CBB engine (PR #94): 886 -> 884  # NFL player-prop batch 5, nfl_player_ext5: 841 -> 828
         self.assertEqual(sum(s["missing_primary_inputs"] for s in self.plan["sports"].values()), t["missing_primary_inputs"])
         self.assertEqual(sum(s["missing_primary_slots"] for s in self.plan["sports"].values()), t["missing_primary_slots"])
         self.assertLessEqual(t["complete_with_archives"], t["complete_after_free"])

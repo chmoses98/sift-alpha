@@ -144,7 +144,66 @@ def build() -> dict:
             "distinct_inputs_by_class": {c: len({(s["sport"], s["input_id"]) for s in slots if s["class"] == c}) for c in CLASSES},
             "vault_holdings_used": {k: {"vault": v[0], "coverage": v[1]} for k, v in VAULT_HOLDINGS.items()},
             "queue_corrections": sorted(d for d in VAULT_HOLDINGS if d in q and q[d]["access_status"] != "COLLECTED_ARCHIVE"),
-            "shared_work": shared, "p1_market_readiness": p1, "slots": slots}
+            "shared_work": shared, "p1_market_readiness": p1, "p1_tracker": p1_tracker(slots), "slots": slots}
+
+
+BASELINE = OUT / "p1_baseline_20261120.json"
+CERT = {"VERIFIED_FULL": "FULL", "VERIFIED_PARTIAL": "PARTIAL", "VERIFIED_PROXY": "PROXY"}
+BLOCKER = {"A_FREE_NOT_COLLECTED": "a free source is identified but not collected (check rights, collect, then build and certify)",
+           "A_NO_FREE_SOURCE": "no permitted free source is known for a required dataset", "A_SOURCE_CONTESTED": "blind rounds disagree that a permitted source exists: owner decision",
+           "B_DATA_IN_HAND_NO_BUILDER": "data already held: needs a builder, replay and blind match", "C_CALCULATED_NOT_CERTIFIED": "verifier downgraded the claim: owner decision (see c_class_reconsideration.json)",
+           "E_PROSPECTIVE_CAPTURE": "needs point-in-time vintages captured from now on (see docs/PROSPECTIVE_CAPTURE.md)", "G_LEGAL_POLICY_BLOCKED": "only source is blocked by provider policy / terms: needs clearance"}
+
+
+def p1_tracker(slots: list[dict]) -> dict | None:
+    """P1 progress against the frozen sprint-start baseline: every baseline P1 slot is either still missing (with its current class) or covered by a certified input
+    (with its FULL / PARTIAL / PROXY level). Per distinct P1 input: what it measures, data, source/collection/calculation/certification/adoption status and the exact blocker."""
+    if not BASELINE.exists():
+        return None
+    base = json.loads(BASELINE.read_text())["slots"]
+    vc = {(r["sport"], r["id"]): r for r in json.loads((IR / "data_foundation/verified_coverage.json").read_text())["rows"]}
+    lad = {r["input_key"]: r["level"] for r in json.loads((ROOT / "research/pipeline/input_ladder.json").read_text())["inputs"]}
+    cat = {}
+    for sp in sorted({b["sport"] for b in base}):
+        cat[sp] = json.loads((IR / f"catalog/{sp}.json").read_text())["inputs"]
+    now = {(s["sport"], s["archetype"], s["input_id"]): s for s in slots}
+    rep = set()
+    for f in sorted((IR / "data_foundation/verification/replay_ext").glob("*.json")):
+        rep |= {(json.loads(f.read_text())["sport"], k) for k in json.loads(f.read_text())["inputs"]}
+    rows, per = [], defaultdict(list)
+    for b in base:
+        k = (b["sport"], b["archetype"], b["input_id"]); s = now.get(k); v = vc.get((b["sport"], b["input_id"]), {})
+        st = "MISSING" if s else ("CLOSED_" + CERT[v["verified_status"]] if v.get("verified_status") in CERT else "NO_LONGER_MISSING_OTHER")
+        rows.append({**{x: b[x] for x in ("sport", "archetype", "input_id")}, "baseline_class": b["class"], "now": st, "class_now": s["class"] if s else None})
+        per[(b["sport"], b["input_id"])].append(rows[-1])
+    inputs = []
+    for (sp, iid), rr in sorted(per.items()):
+        v = vc.get((sp, iid), {}); c = cat[sp].get(iid, {}); s0 = next((now[(sp, r["archetype"], iid)] for r in rr if (sp, r["archetype"], iid) in now), None)
+        closed = [r for r in rr if r["now"].startswith("CLOSED")]
+        cls = (s0 or {}).get("class") or rr[0]["baseline_class"]
+        ds = (s0 or {}).get("datasets") if s0 else next(b["datasets"] for b in base if (b["sport"], b["input_id"]) == (sp, iid))
+        held_ = (s0 or {}).get("datasets_held") if s0 else None
+        inputs.append({"sport": sp, "input_id": iid, "label": c.get("label"), "measures": c.get("mechanism"), "markets": sorted({r["archetype"] for r in rr}), "p1_slots": len(rr),
+                       "p1_slots_closed": len(closed), "required_data": ds, "datasets_held": held_, "source_status": (s0 or {}).get("inventory_category") or "CERTIFIED",
+                       "rights_tiers": (s0 or {}).get("rights_tiers"), "collection_status": ("HELD" if s0 and s0["datasets"] and set(s0["datasets"]) <= set(s0["datasets_held"]) else
+                                                                                              "PARTLY_HELD" if s0 and s0["datasets_held"] else "NOT_HELD" if s0 else "HELD"),
+                       "calculation_status": "REPLAYED" if (sp, iid) in rep else ("CALCULATED_EARLIER" if v.get("verified_status") in CERT or v.get("draft_status", "").startswith("COMPUTED") else "NOT_BUILT"),
+                       "certification_status": v.get("verified_status"), "certified_level": CERT.get(v.get("verified_status")), "adoption_level": lad.get(f"{sp}:{iid}"),
+                       "class_baseline": rr[0]["baseline_class"], "class_now": None if closed and len(closed) == len(rr) else cls,
+                       "remaining_blocker": None if len(closed) == len(rr) else BLOCKER.get(cls, cls)})
+    n = Counter(r["now"] for r in rows); miss = [r for r in rows if r["now"] == "MISSING"]
+    rights = sum(now[(r["sport"], r["archetype"], r["input_id"])]["rights_unresolved"] for r in miss)
+    allp1 = [s for s in slots if s["priority_tier"] == "P1"]
+    summary = {"baseline_p1_slots": len(rows), "p1_missing_now": len(miss), "p1_missing_now_all_tiers_rule": len(allp1), "closed": len(rows) - len(miss),
+               "A_closed_certified_full_or_partial": n.get("CLOSED_FULL", 0) + n.get("CLOSED_PARTIAL", 0), "B_closed_by_proxy": n.get("CLOSED_PROXY", 0),
+               "C_built_not_certified_inputs": sorted(f"{i['sport']}:{i['input_id']}" for i in inputs if i["calculation_status"] == "REPLAYED" and not i["certified_level"]),
+               "D_data_held_not_transformed": sum(r["class_now"] == "B_DATA_IN_HAND_NO_BUILDER" for r in miss), "E_future_capture_required": sum(r["class_now"] == "E_PROSPECTIVE_CAPTURE" for r in miss),
+               "F_licensing_or_policy_blocked": sum(r["class_now"] == "G_LEGAL_POLICY_BLOCKED" for r in miss), "F_missing_slots_with_unresolved_rights": rights,
+               "G_owner_decision_required": sum(r["class_now"] in ("C_CALCULATED_NOT_CERTIFIED", "A_SOURCE_CONTESTED") for r in miss),
+               "H_closed_by_level": {"FULL": n.get("CLOSED_FULL", 0), "PARTIAL": n.get("CLOSED_PARTIAL", 0), "PROXY": n.get("CLOSED_PROXY", 0)},
+               "missing_by_class_now": dict(sorted(Counter(r["class_now"] for r in miss).items())), "other": n.get("NO_LONGER_MISSING_OTHER", 0)}
+    summary["reconciles"] = summary["closed"] + summary["p1_missing_now"] == summary["baseline_p1_slots"] and summary["p1_missing_now"] == summary["p1_missing_now_all_tiers_rule"]
+    return {"baseline": "research/input_research/readiness/p1_baseline_20261120.json", "summary": summary, "inputs": inputs, "slots": rows}
 
 
 def write(d: dict, root: Path = OUT) -> list[Path]:
@@ -167,10 +226,26 @@ def write(d: dict, root: Path = OUT) -> list[Path]:
     lines += ["", "## P1 operating-market readiness (certified share of PRIMARY inputs)", "", "| Sport | Market | Certified / primary | Missing by class |", "|---|---|---|---|"]
     for p in d["p1_market_readiness"]:
         lines.append(f"| {p['sport']} | {p['archetype']} | {p['primary_certified']}/{p['primary_inputs']} | {', '.join(f'{SHORT[k]}:{v}' for k, v in p['missing_by_class'].items()) or '-'} |")
+    t = d.get("p1_tracker")
+    if t:
+        sm = t["summary"]
+        lines += ["", f"## P1 progress against the 2026-11-20 baseline ({sm['baseline_p1_slots']} slots)", "",
+                  f"Missing now: **{sm['p1_missing_now']}** (closed {sm['closed']}: FULL {sm['H_closed_by_level']['FULL']}, PARTIAL {sm['H_closed_by_level']['PARTIAL']}, PROXY {sm['H_closed_by_level']['PROXY']}). "
+                  f"Reconciles with the ledger: {sm['reconciles']}.", "",
+                  "| Category | Value |", "|---|---|",
+                  f"| A. P1 slots closed by FULL or PARTIAL certification | {sm['A_closed_certified_full_or_partial']} |", f"| B. P1 slots covered only by a PROXY | {sm['B_closed_by_proxy']} |",
+                  f"| C. Inputs replayed but not certified | {len(sm['C_built_not_certified_inputs'])} |", f"| D. Missing P1 slots whose data is held (needs a builder) | {sm['D_data_held_not_transformed']} |",
+                  f"| E. Missing P1 slots needing prospective capture | {sm['E_future_capture_required']} |",
+                  f"| F. Missing P1 slots blocked by provider policy / with unresolved rights | {sm['F_licensing_or_policy_blocked']} / {sm['F_missing_slots_with_unresolved_rights']} |",
+                  f"| G. Missing P1 slots needing an owner certification decision | {sm['G_owner_decision_required']} |", "",
+                  "| Sport | Input | P1 slots (closed) | Certification | Remaining blocker |", "|---|---|---|---|---|"]
+        for i in sorted(t["inputs"], key=lambda i: (i["remaining_blocker"] is None, -i["p1_slots"], i["sport"], i["input_id"])):
+            lines.append(f"| {i['sport']} | {i['input_id']} | {i['p1_slots']} ({i['p1_slots_closed']}) | {i['certification_status']} | {i['remaining_blocker'] or 'closed'} |")
     md = root / "README.md"; md.write_text("\n".join(lines) + "\n")
     dash = root / "dashboard.json"        # compact copy for the dashboard (no per-slot rows)
     dash.write_text(json.dumps({k: d[k] for k in ("schema", "status", "note", "totals", "by_class", "by_tier", "by_class_and_tier", "distinct_inputs_by_class", "rights_unresolved_slots", "queue_corrections", "p1_market_readiness")}
-                               | {"shared_work": [{k: v for k, v in g.items() if k != "inputs"} for g in d["shared_work"][:15]], "classes": list(CLASSES), "short": SHORT}, indent=1) + "\n")
+                               | {"shared_work": [{k: v for k, v in g.items() if k != "inputs"} for g in d["shared_work"][:15]], "classes": list(CLASSES), "short": SHORT,
+                                  "p1_tracker": {k: v for k, v in (d.get("p1_tracker") or {}).items() if k != "slots"} or None}, indent=1) + "\n")
     return [full, md, dash]
 
 

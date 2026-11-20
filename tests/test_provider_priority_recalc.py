@@ -20,8 +20,8 @@ class Reproducible(unittest.TestCase):
 
     def test_pinned_universe(self):
         self.assertEqual(RES["rights_group_datasets"], 85)
-        self.assertEqual(RES["distinct_missing_primary_slots"], 736)  # NFL player-prop batch 5: 749 -> 736;  # Phase 7: 796 -> 794 (two NFL slots closed)  # derived NBA/CBB engine (PR #94): 794 -> 792
-        self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 828)  # NFL batch 4: 884 -> 873  # NFL player-prop batch 5, nfl_player_ext5: 841 -> 828
+        self.assertEqual(RES["distinct_missing_primary_slots"], 677)  # P1-completion CFB drive batch: 681 -> 677; P1-completion sprint (35 inputs, docs/P1_COMPLETION_BATCHES.md): 736 -> 681; NFL player-prop batch 5: 749 -> 736;  # Phase 7: 796 -> 794 (two NFL slots closed)  # derived NBA/CBB engine (PR #94): 794 -> 792
+        self.assertEqual(RES["distinct_missing_primary_slots_all_queue_groups"], 769)  # P1-completion CFB drive batch (4 inputs): 773 -> 769; P1-completion sprint (35 inputs, docs/P1_COMPLETION_BATCHES.md): 828 -> 773; NFL batch 4: 884 -> 873  # NFL player-prop batch 5, nfl_player_ext5: 841 -> 828
 
 
 class NeedLevelRules(unittest.TestCase):

@@ -1,0 +1,171 @@
+import re
+import numpy as np
+import pandas as pd
+from scipy.special import ndtr
+
+D = '/tmp/claude-0/-home-user/fc45d301-fe12-5621-965d-4f48b205eae3/scratchpad/blind13/'
+t = pd.read_parquet(D + 'team_rows.parquet').reset_index(drop=True)
+t['z'] = (t['margin'] - t['mu']) / t['sd']
+t.loc[~np.isfinite(t['z']), 'z'] = np.nan
+seasons = sorted(t['season'].unique())
+
+# ---------------- SPEC A ----------------
+KS = [0.10, 0.25, 0.50, 0.75, 0.90]
+qcols = ['mh_q10_pre', 'mh_q25_pre', 'mh_q50_pre', 'mh_q75_pre', 'mh_q90_pre']
+A = pd.DataFrame({'game_id': t.game_id, 'team': t.team})
+for c in qcols + ['mh_skew_fav_pre']:
+    A[c] = np.nan
+for S in seasons:
+    win = t[(t.season >= S - 5) & (t.season <= S - 1)]
+    zw = win['z'].to_numpy()
+    fin = np.isfinite(zw)
+    if win.season.nunique() < 3 or fin.sum() == 0:
+        continue
+    QZ = np.quantile(zw[fin], KS)
+    hm = fin & (win['mu'].to_numpy() >= 8)
+    zh = zw[hm]
+    if len(zh):
+        QH = np.quantile(zh, KS)
+        with np.errstate(all='ignore'):
+            skew = np.mean((zh - zh.mean()) ** 3) / np.std(zh) ** 3
+    else:
+        QH = np.full(5, np.nan); skew = np.nan
+    idx = np.where(t.season.to_numpy() == S)[0]
+    mu = t['mu'].to_numpy()[idx]; sd = t['sd'].to_numpy()[idx]
+    for i, c in enumerate(qcols):
+        q = np.where(mu >= 8, mu + sd * QH[i],
+                     np.where(mu <= -8, mu - sd * QH[4 - i], mu + sd * QZ[i]))
+        q = np.where(np.isfinite(mu) & np.isfinite(sd), q, np.nan)
+        A.loc[idx, c] = q
+    A.loc[idx, 'mh_skew_fav_pre'] = skew
+A.to_parquet(D + 'blind_team.parquet', index=False)
+
+# ---------------- SPEC B ----------------
+s = pd.read_parquet(D + 'sched_linescores.parquet').drop_duplicates('game_id', keep='first')
+
+
+def parse(x):
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return None
+    items = re.findall(r'\{[^}]*\}', str(x))
+    out = []
+    for pos, it in enumerate(items, 1):
+        mv = re.search(r"'value':\s*([-+0-9.eE]+|nan)", it)
+        if mv is None:
+            continue
+        v = float(mv.group(1))
+        mp = re.search(r"'period':\s*([-+0-9.eE]+)", it)
+        p = float(mp.group(1)) if mp else float(pos)
+        out.append((p, v))
+    out.sort(key=lambda a: a[0])
+    return [v for _, v in out]
+
+
+rec = []
+for gid, h, a in zip(s.game_id, s.home_linescores, s.away_linescores):
+    hp, ap = parse(h), parse(a)
+    if hp is None or ap is None or len(hp) < 4 or len(ap) < 4:
+        continue
+    rec.append((gid, *hp[:4], sum(hp[4:]), *ap[:4], sum(ap[4:])))
+L = pd.DataFrame(rec, columns=['game_id', 'h1', 'h2', 'h3', 'h4', 'hot', 'a1', 'a2', 'a3', 'a4', 'aot'])
+t = t.merge(L, on='game_id', how='left')
+t['has_ls'] = t['h1'].notna()
+home = t.home.to_numpy() == 1
+own = {}; opp = {}
+for i in range(1, 5):
+    own[i] = np.where(home, t[f'h{i}'], t[f'a{i}'])
+    opp[i] = np.where(home, t[f'a{i}'], t[f'h{i}'])
+oot = np.where(home, t['hot'], t['aot']); pot = np.where(home, t['aot'], t['hot'])
+M = {}; T = {}
+for i in range(1, 5):
+    M[f'q{i}'] = own[i] - opp[i]; T[f'q{i}'] = own[i] + opp[i]
+M['h1'] = M['q1'] + M['q2']; T['h1'] = T['q1'] + T['q2']
+M['h2'] = M['q3'] + M['q4'] + oot - pot; T['h2'] = T['q3'] + T['q4'] + oot + pot
+
+# pair covariate
+zf = t['z'].to_numpy()
+t['z2'] = np.where(np.isfinite(zf), zf ** 2, 0.0)
+t['n'] = np.isfinite(zf).astype(float)
+t = t.sort_values(['team', 'date', 'game_id'], kind='mergesort')
+g = t.groupby(['team', 'season'])
+t['cz2'] = g['z2'].cumsum() - t['z2']
+t['cn'] = g['n'].cumsum() - t['n']
+tot = t.groupby(['team', 'season'])[['z2', 'n']].sum().reset_index()
+tot['season'] = tot['season'] + 1
+tot = tot.rename(columns={'z2': 'pz2', 'n': 'pn'})
+t = t.merge(tot, on=['team', 'season'], how='left')
+t[['pz2', 'pn']] = t[['pz2', 'pn']].fillna(0.0)
+t['vr'] = (t.cz2 + t.pz2 + 20) / (t.cn + t.pn + 20)
+vo = t[['game_id', 'team', 'vr']].rename(columns={'team': 'opp', 'vr': 'vr_opp'})
+t = t.merge(vo, on=['game_id', 'opp'], how='left')
+t['pair'] = (t.vr + t.vr_opp) / 2
+# restore original order
+# (M/T arrays computed on original order: rebuild via index)
+t = t.sort_values(['game_id', 'team']).reset_index(drop=True)
+t0 = pd.read_parquet(D + 'team_rows.parquet').reset_index(drop=True)
+orig = t0[['game_id', 'team']].reset_index().rename(columns={'index': 'oi'})
+t = t.merge(orig, on=['game_id', 'team']).sort_values('oi').reset_index(drop=True)
+assert len(t) == len(t0)
+
+
+def Dn(y, m, s):
+    return ndtr((y + 0.5 - m) / s) - ndtr((y - 0.5 - m) / s)
+
+
+def fit(y, mean, ep, pair):
+    best = (-np.inf, None)
+    r = y - mean
+    rms = np.sqrt(np.mean(r ** 2))
+    J = np.arange(-10, 11)
+    for t1 in (0, 0.5, 1):
+        for gg in (0, 0.5, 1):
+            base = (ep / 100) ** t1 * pair ** gg
+            sref = rms / np.mean(base)
+            s0s = sref * 1.05 ** J
+            S = s0s[:, None] * base[None, :]
+            d1 = Dn(y[None, :], mean[None, :], S)
+            for w in (0, 0.1, 0.2, 0.3):
+                for k in (1.5, 2, 3):
+                    d2 = Dn(y[None, :], mean[None, :], k * S)
+                    P = (1 - w) * d1 + w * d2
+                    ll = np.log(np.maximum(P, 1e-300)).sum(axis=1)
+                    for jj in range(len(J)):
+                        if ll[jj] > best[0]:
+                            best = (ll[jj], (s0s[jj], t1, gg, w, k))
+    return best[1]
+
+
+PS = ['q1', 'q2', 'q3', 'q4', 'h1', 'h2']
+ls_seasons = set(t.loc[t.has_ls, 'season'].unique())
+mu = t.mu.to_numpy(); ep = t.ep.to_numpy(); et = t.et.to_numpy(); pair = t.pair.to_numpy()
+sea = t.season.to_numpy()
+outs = []
+for S in seasons:
+    if sum(1 for x in range(S - 5, S) if x in ls_seasons) < 5:
+        continue
+    fm = (home & (sea >= S - 5) & (sea <= S - 1) & t.has_ls.to_numpy()
+          & np.isfinite(mu) & np.isfinite(ep) & np.isfinite(et) & np.isfinite(pair))
+    idx = np.where(sea == S)[0]
+    o = pd.DataFrame({'game_id': t.game_id.to_numpy()[idx], 'team': t.team.to_numpy()[idx]})
+    mu_s, ep_s, et_s, pr_s = mu[idx], ep[idx], et[idx], pair[idx]
+    for P in PS:
+        ym = M[P][fm]; yt = T[P][fm]
+        b = np.sum(ym * mu[fm]) / np.sum(mu[fm] ** 2)
+        a = np.sum(yt * et[fm]) / np.sum(et[fm] ** 2)
+        s0, t1, gg, w, k = fit(ym, b * mu[fm], ep[fm], pair[fm])
+        S0, T1, GG, W, K = fit(yt, a * et[fm], ep[fm], pair[fm])
+        mean = b * mu_s
+        sd = s0 * (ep_s / 100) ** t1 * pr_s ** gg
+        o[f'pm_{P}_mu_pre'] = mean
+        o[f'pm_{P}_sd_pre'] = sd
+        o[f'pm_{P}_tie_pre'] = (1 - w) * Dn(0, mean, sd) + w * Dn(0, mean, k * sd)
+        o[f'pm_{P}_ge8_pre'] = (1 - w) * ndtr((mean - 7.5) / sd) + w * ndtr((mean - 7.5) / (k * sd))
+        o[f'pm_{P}_tot_mu_pre'] = a * et_s
+        o[f'pm_{P}_tot_sd_pre'] = S0 * (ep_s / 100) ** T1 * pr_s ** GG
+        print(S, P, (s0, t1, gg, w, k), (S0, T1, GG, W, K), flush=True)
+    q1, q2 = np.quantile(ep[fm], [1 / 3, 2 / 3])
+    o['pm_pace_tercile_pre'] = np.where(np.isnan(ep_s), np.nan, np.where(ep_s <= q1, 1, np.where(ep_s <= q2, 2, 3)))
+    outs.append(o)
+B = pd.concat(outs, ignore_index=True)
+B.to_parquet(D + 'blind_period.parquet', index=False)
+print(len(A), len(B), B.shape)

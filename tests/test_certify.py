@@ -145,7 +145,7 @@ def test_catalog_promotes_only_certified_inputs():
         assert tr["state"] == "TRAINING_READY" and tr["cert"]["dataset"] == c["dataset_sha256"][:12] and c["seasons"] >= 3
     # cfb.drives is certified ONLY on the corrected v2 dataset (v1 keeps it held back for the drive-points defect)
     assert inputs["CFB:cfb.drives"]["tr"]["cert"]["dataset"] == "0b9226c089fa" and inputs["CFB:cfb.off_ppa"]["tr"]["cert"]["dataset"] == "a73a3e141af4"
-    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 48
+    assert sum(1 for v in inputs.values() if v["tr"]["state"] == "TRAINING_READY") == 50  # NBA batch 13 reopen: +2 FULL (48 -> 50)
     assert sum(1 for v in inputs.values() if "cert" in v["tr"]) == 7
 
 

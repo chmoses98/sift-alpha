@@ -18,7 +18,7 @@ BOX_CONTENT = ["team_score", "opponent_team_score", "field_goals_made", "field_g
                "free_throws_attempted", "offensive_rebounds", "defensive_rebounds", "assists", "steals", "blocks", "fouls", "fast_break_points", "total_turnovers", "turnovers", "team_winner"]
 SCHED_CONTENT = ["home_linescores", "away_linescores", "status_period"]
 NOT_CERTIFIED_COLUMNS = {"rest_min_pre"}
-ALREADY_CERTIFIED_ELSEWHERE = {"nba.four_factors_matchup", "nba.team_three_attempt_matchup", "nba.three_point_variance_load", "cbb.tempo", "cbb.adj_off", "cbb.adj_def"}
+ALREADY_CERTIFIED_ELSEWHERE = {"nba.four_factors_matchup", "nba.team_three_attempt_matchup", "nba.three_point_variance_load", "nba.margin_heteroscedasticity", "cbb.tempo", "cbb.adj_off", "cbb.adj_def"}
 # graded BLOCKED_CONTESTED in the ledger: not promotable (verified_coverage.PROMOTABLE), and the extension gate forbids extension evidence on a blocked row. They pass the same replay and blind
 # match (kept for the owner's decision in verification/blind_briefs/derived_bball_blind_runs/not_promotable_evidence.json); re-grading them is an owner decision, not this builder's.
 NOT_PROMOTABLE = {"nba.joint_pace_interaction", "nba.game_pace_composition"}

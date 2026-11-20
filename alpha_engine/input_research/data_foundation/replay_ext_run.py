@@ -1,4 +1,4 @@
-"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2, Phase 6 nhl3, nhl_player3, Phase 7 nfl_pbp3, nfl_rush3, nfl_pbp4, nfl_player5, cbb_player6, mlb_team7, mlb_pitcher7, nfl_team8, nfl_qb8, nfl_skill8, nfl_path8, cbb_team9, nba_stint10, mlb_fi11, nfl_xtd11, cfb_drive12 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
+"""Families: tennis, mlb_pitch, nba_team, nba_player, nhl, cbb, cfb, and Phase 15 nba_team3, nba_player3, nhl2, nhl_ev2, nhl_player2, Phase 6 nhl3, nhl_player3, Phase 7 nfl_pbp3, nfl_rush3, nfl_pbp4, nfl_player5, cbb_player6, mlb_team7, mlb_pitcher7, nfl_team8, nfl_qb8, nfl_skill8, nfl_path8, cbb_team9, nba_stint10, nba_dist13, nba_pmf13, mlb_fi11, nfl_xtd11, cfb_drive12 (python -m ... nba_team NBA_HISTORY_DIR OUT.json).
 Run the generic extension replay for one builder family and write verification/replay_ext-style JSON.
 
     python -m alpha_engine.input_research.data_foundation.replay_ext_run tennis RAW_DIR OUT.json [--quick]
@@ -162,6 +162,13 @@ def main(a=None) -> int:
         raw = X.load_raw(a[1]); out = a[2]
         r = G.run(X, raw, "NBA", {"games": ("game_id", X.G_CONTENT), "events": ("game_id", X.EV_CONTENT), "stints": ("game_id", X.ST_CONTENT)}, games_table="games",
                   games_date_col="game_date", quick=quick, truncate_by_date=True)
+    elif fam in ("nba_dist13", "nba_pmf13"):  # batch 13 NBA margin quantiles / period pmf (owner-authorized reconsideration); args RESTORED_VAULT_DIR OUT.json
+        from ...features import nba_dist_ext13, nba_pmf_ext13
+        X = nba_dist_ext13 if fam == "nba_dist13" else nba_pmf_ext13
+        raw = X.load_raw(a[1]); out = a[2]
+        # pmf rows start in 2025 (five earlier linescore seasons): truncation must keep every earlier game, not only games with output rows
+        r = G.run(X, raw, "NBA", {"box": ("game_id", X.BOX_CONTENT), "sched": ("game_id", X.SCHED_CONTENT)}, games_table="box", games_date_col="game_date", quick=quick,
+                  truncate_by_date=(fam == "nba_pmf13"))
     elif fam == "cfb_drive12":  # batch 12 CFB drive-clock and scoring-timeline inputs; args RAW_DIR (restored espn_summary_postgame dirs, or a cfb_drive_ext12.cache dir) OUT.json
         from ...features import cfb_drive_ext12 as X
         raw = X.load_raw(a[1]); out = a[2]

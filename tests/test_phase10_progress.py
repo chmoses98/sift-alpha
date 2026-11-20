@@ -18,7 +18,7 @@ def test_training_ready_matches_catalog_and_certification():
     o = P.build(); plan = _j(OPS / "acquisition_plan.json")["totals"]
     assert o["training_ready"]["after"] == plan["training_ready_inputs"] == sum(o["training_ready"]["by_sport"].values()) + sum(
         1 for v in _j(OPS / "acquisition_inputs.json")["inputs"].values() if v["tr"]["state"] == "TRAINING_READY" and v["s"] not in P.SPORTS)
-    assert o["training_ready"]["after"] - o["training_ready"]["baseline"]["training_ready_inputs"] == len(o["training_ready"]["promoted_by_certification"]) == 7
+    assert o["training_ready"]["after"] - o["training_ready"]["baseline"]["training_ready_inputs"] - 2 == len(o["training_ready"]["promoted_by_certification"]) == 7  # -2: NBA batch 13 inputs certified FULL by the input gates (not dataset certification)
     assert o["training_ready"]["model_active"] == 0 and all(v["hash"] and not v["superseded_by"] for v in o["dataset_versions"])
 
 

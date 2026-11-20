@@ -1,6 +1,6 @@
 # Readiness ledger: what to do about the missing PRIMARY slots (generated; RESEARCH_ONLY)
 
-769 missing PRIMARY slots, reconciled with market_completeness.json (769): True. A slot is one input required by one market archetype; slots are not datasets.
+767 missing PRIMARY slots, reconciled with market_completeness.json (767): True. A slot is one input required by one market archetype; slots are not datasets.
 
 | Class | Meaning | Slots | P1 slots | Distinct inputs |
 |---|---|---|---|---|
@@ -8,11 +8,11 @@
 | A_NO_FREE_SOURCE | no permitted free source known | 49 | 7 | 41 |
 | A_SOURCE_CONTESTED | blind rounds disagree a source exists | 10 | 6 | 7 |
 | B_DATA_IN_HAND_NO_BUILDER | data already held; needs builder + certification | 90 | 8 | 83 |
-| C_CALCULATED_NOT_CERTIFIED | built, certification failed/downgraded | 28 | 9 | 26 |
+| C_CALCULATED_NOT_CERTIFIED | built, certification failed/downgraded | 26 | 7 | 24 |
 | E_PROSPECTIVE_CAPTURE | needs timestamped capture from now on | 300 | 61 | 219 |
 | G_LEGAL_POLICY_BLOCKED | source blocked by provider policy/terms | 30 | 12 | 14 |
 
-Priority tiers: {'F': 373, 'P1': 128, 'P2': 268}. Slots depending on a dataset whose rights are UNRESOLVED_INTERNAL_ONLY: 688.
+Priority tiers: {'F': 373, 'P1': 126, 'P2': 268}. Slots depending on a dataset whose rights are UNRESOLVED_INTERNAL_ONLY: 686.
 Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the acquisition queue): cbb.box_player, cfb.box_player, mlb.pitch_pa_events, nfl.contracts_cap, nfl.depth_charts, nfl.ftn_charting, nfl.injuries_weekly, nfl.nextgen_stats, nfl.participation, nfl.pbp, nfl.player_stats_weekly, nfl.schedule_results, nfl.snap_counts, nhl.shifts_lines.
 
 ## Highest-value shared work (one dataset / one builder closes many P1 slots)
@@ -27,7 +27,6 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 | E_PROSPECTIVE_CAPTURE | cbb.box_player+cbb.games_espn | 5 | 9 | 4 |
 | A_NO_FREE_SOURCE | soc.results_shots_cards | 4 | 25 | 20 |
 | A_FREE_NOT_COLLECTED | mkt.kalshi_rules | 3 | 10 | 4 |
-| C_CALCULATED_NOT_CERTIFIED | nba.pbp+nba.player_games+nba.team_games | 3 | 6 | 6 |
 | A_FREE_NOT_COLLECTED | env.venue_geo+env.weather_forecast_pit+nfl.pbp | 3 | 5 | 4 |
 | A_FREE_NOT_COLLECTED | cbb.box_player+cbb.coaching_staff_history+cbb.games_espn | 3 | 3 | 3 |
 | A_NO_FREE_SOURCE | cbb.box_player | 3 | 3 | 3 |
@@ -44,6 +43,7 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 | B_DATA_IN_HAND_NO_BUILDER | cbb.box_player | 1 | 6 | 6 |
 | B_DATA_IN_HAND_NO_BUILDER | mlb.pitch_pa_events+mlb.schedule_games | 1 | 6 | 6 |
 | E_PROSPECTIVE_CAPTURE | nfl.pbp | 1 | 6 | 6 |
+| E_PROSPECTIVE_CAPTURE | nba.injury_report_vintages | 1 | 5 | 1 |
 
 ## P1 operating-market readiness (certified share of PRIMARY inputs)
 
@@ -72,13 +72,13 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 | NBA | combo_props | 8/9 | C:1 |
 | NBA | game_moneyline_spread | 5/7 | B:2 |
 | NBA | game_total | 5/7 | A-contested:1, E:1 |
-| NBA | game_win_margin | 4/6 | A-free:1, C:1 |
+| NBA | game_win_margin | 5/6 | A-free:1 |
 | NBA | player_assists | 8/11 | C:1, E:1, G:1 |
 | NBA | player_free_throws | 4/5 | C:1 |
 | NBA | player_points | 7/9 | C:1, E:1 |
 | NBA | player_rebounds | 8/10 | C:1, G:1 |
 | NBA | player_threes | 7/7 | - |
-| NBA | quarter_and_half_markets | 3/9 | A-free:2, C:2, E:2 |
+| NBA | quarter_and_half_markets | 4/9 | A-free:2, C:1, E:2 |
 | NBA | team_total | 8/9 | A-contested:1 |
 | NFL | anytime_first_td_scorer | 7/7 | - |
 | NFL | first_half_and_quarter_totals | 11/12 | E:1 |
@@ -104,17 +104,17 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 
 ## P1 progress against the 2026-11-20 baseline (180 slots)
 
-Missing now: **128** (closed 52: FULL 0, PARTIAL 35, PROXY 17). Reconciles with the ledger: True.
+Missing now: **126** (closed 54: FULL 2, PARTIAL 35, PROXY 17). Reconciles with the ledger: True.
 
 | Category | Value |
 |---|---|
-| A. P1 slots closed by FULL or PARTIAL certification | 35 |
+| A. P1 slots closed by FULL or PARTIAL certification | 37 |
 | B. P1 slots covered only by a PROXY | 17 |
-| C. Inputs replayed but not certified | 1 |
+| C. Inputs replayed but not certified | 0 |
 | D. Missing P1 slots whose data is held (needs a builder) | 8 |
 | E. Missing P1 slots needing prospective capture | 61 |
-| F. Missing P1 slots blocked by provider policy / with unresolved rights | 12 / 115 |
-| G. Missing P1 slots needing an owner certification decision | 15 |
+| F. Missing P1 slots blocked by provider policy / with unresolved rights | 12 / 113 |
+| G. Missing P1 slots needing an owner certification decision | 13 |
 
 | Sport | Input | P1 slots (closed) | Certification | Remaining blocker |
 |---|---|---|---|---|
@@ -173,10 +173,8 @@ Missing now: **128** (closed 52: FULL 0, PARTIAL 35, PROXY 17). Reconciles with 
 | NBA | nba.joint_pace_interaction | 1 (0) | BLOCKED_CONTESTED | blind rounds disagree that a permitted source exists: owner decision |
 | NBA | nba.live_period_state | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
 | NBA | nba.margin_decay_after_pull | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
-| NBA | nba.margin_heteroscedasticity | 1 (0) | DOWNGRADED_BY_VERIFIER | verifier downgraded the claim: owner decision (see c_class_reconsideration.json) |
 | NBA | nba.minutes_scenario_mixture | 1 (0) | DOWNGRADED_BY_VERIFIER | verifier downgraded the claim: owner decision (see c_class_reconsideration.json) |
 | NBA | nba.nonadditive_absence_curve | 1 (0) | REQUIRES_COLLECTION | data already held: needs a builder, replay and blind match |
-| NBA | nba.period_margin_pmf | 1 (0) | DOWNGRADED_BY_VERIFIER | verifier downgraded the claim: owner decision (see c_class_reconsideration.json) |
 | NBA | nba.pot_ast | 1 (0) | BLOCKED_BY_POLICY | only source is blocked by provider policy / terms: needs clearance |
 | NBA | nba.pts_exit_foulout_hazard | 1 (0) | REQUIRES_COLLECTION | needs point-in-time vintages captured from now on (see docs/PROSPECTIVE_CAPTURE.md) |
 | NBA | nba.quarter_unit_projection | 1 (0) | REQUIRES_COLLECTION | needs point-in-time vintages captured from now on (see docs/PROSPECTIVE_CAPTURE.md) |
@@ -233,8 +231,10 @@ Missing now: **128** (closed 52: FULL 0, PARTIAL 35, PROXY 17). Reconciles with 
 | NBA | nba.assisted_three_passer_map | 1 (1) | VERIFIED_PROXY | closed |
 | NBA | nba.creditable_rebound_pool | 1 (1) | VERIFIED_PARTIAL | closed |
 | NBA | nba.lineup_conditional_component_rates | 1 (1) | VERIFIED_PROXY | closed |
+| NBA | nba.margin_heteroscedasticity | 1 (1) | VERIFIED_FULL | closed |
 | NBA | nba.on_court_assist_share | 1 (1) | VERIFIED_PARTIAL | closed |
 | NBA | nba.pairing_adjusted_reb_share | 1 (1) | VERIFIED_PROXY | closed |
+| NBA | nba.period_margin_pmf | 1 (1) | VERIFIED_FULL | closed |
 | NFL | nfl.drive_result_lattice | 1 (1) | VERIFIED_PROXY | closed |
 | NFL | nfl.int_rate | 1 (1) | VERIFIED_PARTIAL | closed |
 | NFL | nfl.market_free_score_state_blowout_mass | 1 (1) | VERIFIED_PROXY | closed |

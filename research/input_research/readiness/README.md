@@ -1,10 +1,10 @@
 # Readiness ledger: what to do about the missing PRIMARY slots (generated; RESEARCH_ONLY)
 
-773 missing PRIMARY slots, reconciled with market_completeness.json (773): True. A slot is one input required by one market archetype; slots are not datasets.
+769 missing PRIMARY slots, reconciled with market_completeness.json (769): True. A slot is one input required by one market archetype; slots are not datasets.
 
 | Class | Meaning | Slots | P1 slots | Distinct inputs |
 |---|---|---|---|---|
-| A_FREE_NOT_COLLECTED | free source known, not collected | 266 | 29 | 223 |
+| A_FREE_NOT_COLLECTED | free source known, not collected | 262 | 25 | 219 |
 | A_NO_FREE_SOURCE | no permitted free source known | 49 | 7 | 41 |
 | A_SOURCE_CONTESTED | blind rounds disagree a source exists | 10 | 6 | 7 |
 | B_DATA_IN_HAND_NO_BUILDER | data already held; needs builder + certification | 90 | 8 | 83 |
@@ -12,7 +12,7 @@
 | E_PROSPECTIVE_CAPTURE | needs timestamped capture from now on | 300 | 61 | 219 |
 | G_LEGAL_POLICY_BLOCKED | source blocked by provider policy/terms | 30 | 12 | 14 |
 
-Priority tiers: {'F': 373, 'P1': 132, 'P2': 268}. Slots depending on a dataset whose rights are UNRESOLVED_INTERNAL_ONLY: 692.
+Priority tiers: {'F': 373, 'P1': 128, 'P2': 268}. Slots depending on a dataset whose rights are UNRESOLVED_INTERNAL_ONLY: 688.
 Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the acquisition queue): cbb.box_player, cfb.box_player, mlb.pitch_pa_events, nfl.contracts_cap, nfl.depth_charts, nfl.ftn_charting, nfl.injuries_weekly, nfl.nextgen_stats, nfl.participation, nfl.pbp, nfl.player_stats_weekly, nfl.schedule_results, nfl.snap_counts, nhl.shifts_lines.
 
 ## Highest-value shared work (one dataset / one builder closes many P1 slots)
@@ -33,7 +33,6 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 | A_NO_FREE_SOURCE | cbb.box_player | 3 | 3 | 3 |
 | A_SOURCE_CONTESTED | cbb.box_player+cbb.games_espn | 3 | 3 | 1 |
 | E_PROSPECTIVE_CAPTURE | mlb.pitch_pa_events+mlb.schedule_games | 2 | 5 | 4 |
-| A_FREE_NOT_COLLECTED | cfb.pbp_cfbd+cfb.rules_formats | 2 | 4 | 3 |
 | C_CALCULATED_NOT_CERTIFIED | nba.pbp+nba.player_games | 2 | 4 | 3 |
 | E_PROSPECTIVE_CAPTURE | cbb.box_player | 2 | 4 | 2 |
 | E_PROSPECTIVE_CAPTURE | nhl.player_games+nhl.shots_xy+nhl.team_states | 2 | 4 | 1 |
@@ -44,6 +43,7 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 | A_FREE_NOT_COLLECTED | env.venue_geo+env.weather_forecast_pit+mlb.pitch_pa_events | 1 | 6 | 6 |
 | B_DATA_IN_HAND_NO_BUILDER | cbb.box_player | 1 | 6 | 6 |
 | B_DATA_IN_HAND_NO_BUILDER | mlb.pitch_pa_events+mlb.schedule_games | 1 | 6 | 6 |
+| E_PROSPECTIVE_CAPTURE | nfl.pbp | 1 | 6 | 6 |
 
 ## P1 operating-market readiness (certified share of PRIMARY inputs)
 
@@ -58,11 +58,11 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 | CBB | player_threes | 4/7 | A-contested:1, E:2 |
 | CBB | team_total | 6/8 | B:1, E:1 |
 | CFB | game_moneyline_spread | 2/5 | A-free:1, E:2 |
-| CFB | game_total | 5/8 | A-free:2, E:1 |
+| CFB | game_total | 6/8 | A-free:1, E:1 |
 | CFB | half_full_double_result | 7/8 | E:1 |
-| CFB | quarter_and_half_sides | 5/7 | A-free:1, E:1 |
-| CFB | quarter_and_half_totals | 7/9 | A-free:1, E:1 |
-| CFB | team_total | 4/6 | A-free:1, E:1 |
+| CFB | quarter_and_half_sides | 6/7 | E:1 |
+| CFB | quarter_and_half_totals | 8/9 | E:1 |
+| CFB | team_total | 5/6 | E:1 |
 | MLB | first5_markets | 3/7 | E:4 |
 | MLB | first_inning_and_inning_markets | 2/6 | A-free:1, B:1, E:2 |
 | MLB | game_moneyline | 3/8 | A-free:1, E:4 |
@@ -104,16 +104,16 @@ Queue corrections (archived in sift-data-vault but still FREE_REACHABLE in the a
 
 ## P1 progress against the 2026-11-20 baseline (180 slots)
 
-Missing now: **132** (closed 48: FULL 0, PARTIAL 32, PROXY 16). Reconciles with the ledger: True.
+Missing now: **128** (closed 52: FULL 0, PARTIAL 35, PROXY 17). Reconciles with the ledger: True.
 
 | Category | Value |
 |---|---|
-| A. P1 slots closed by FULL or PARTIAL certification | 32 |
-| B. P1 slots covered only by a PROXY | 16 |
+| A. P1 slots closed by FULL or PARTIAL certification | 35 |
+| B. P1 slots covered only by a PROXY | 17 |
 | C. Inputs replayed but not certified | 1 |
 | D. Missing P1 slots whose data is held (needs a builder) | 8 |
 | E. Missing P1 slots needing prospective capture | 61 |
-| F. Missing P1 slots blocked by provider policy / with unresolved rights | 12 / 119 |
+| F. Missing P1 slots blocked by provider policy / with unresolved rights | 12 / 115 |
 | G. Missing P1 slots needing an owner certification decision | 15 |
 
 | Sport | Input | P1 slots (closed) | Certification | Remaining blocker |
@@ -148,11 +148,7 @@ Missing now: **132** (closed 48: FULL 0, PARTIAL 32, PROXY 16). Reconciles with 
 | CBB | cbb.second_half_pregame_expectation | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
 | CBB | cbb.three_shot_quality_xp | 1 (0) | BLOCKED_CONTESTED | blind rounds disagree that a permitted source exists: owner decision |
 | CBB | cbb.transfer_role_cold_start_prior | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
-| CFB | cfb.expected_possessions | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
-| CFB | cfb.leader_scoring_persistence | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
 | CFB | cfb.lower_division_game_margin_model | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
-| CFB | cfb.period_drive_clock_budget | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
-| CFB | cfb.period_possession_allocation | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
 | CFB | cfb.qb_replacement_value | 1 (0) | REQUIRES_COLLECTION | needs point-in-time vintages captured from now on (see docs/PROSPECTIVE_CAPTURE.md) |
 | CFB | cfb.weather_pit | 1 (0) | REQUIRES_COLLECTION | a free source is identified but not collected (check rights, collect, then build and certify) |
 | MLB | mlb.f5_lineup_slot_exposure | 1 (0) | REQUIRES_COLLECTION | needs point-in-time vintages captured from now on (see docs/PROSPECTIVE_CAPTURE.md) |
@@ -226,6 +222,10 @@ Missing now: **132** (closed 48: FULL 0, PARTIAL 32, PROXY 16). Reconciles with 
 | CBB | cbb.player_three_volume | 1 (1) | VERIFIED_PARTIAL | closed |
 | CBB | cbb.rebound_pool | 1 (1) | VERIFIED_PARTIAL | closed |
 | CBB | cbb.three_makes_compound_distribution | 1 (1) | VERIFIED_PARTIAL | closed |
+| CFB | cfb.expected_possessions | 1 (1) | VERIFIED_PARTIAL | closed |
+| CFB | cfb.leader_scoring_persistence | 1 (1) | VERIFIED_PARTIAL | closed |
+| CFB | cfb.period_drive_clock_budget | 1 (1) | VERIFIED_PARTIAL | closed |
+| CFB | cfb.period_possession_allocation | 1 (1) | VERIFIED_PROXY | closed |
 | MLB | mlb.first_inning_markov_run_prob | 1 (1) | VERIFIED_PROXY | closed |
 | MLB | mlb.k_rates | 1 (1) | VERIFIED_PARTIAL | closed |
 | MLB | mlb.lineup_k_platoon | 1 (1) | VERIFIED_PARTIAL | closed |

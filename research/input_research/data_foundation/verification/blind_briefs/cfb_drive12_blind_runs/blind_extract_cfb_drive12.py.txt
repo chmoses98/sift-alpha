@@ -1,0 +1,133 @@
+"""Stage 1: parse game JSON files into compact records (pickle)."""
+import sys, os, json, pickle
+from datetime import datetime, timezone, timedelta
+from multiprocessing import Pool
+
+
+def mss(v):
+    if not isinstance(v, str):
+        return None
+    parts = v.split(':')
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return None
+
+
+def to_int(v):
+    try:
+        return int(v)
+    except Exception:
+        return None
+
+
+def score0(v):
+    if v is None:
+        return 0
+    try:
+        return float(v)
+    except Exception:
+        return 0
+
+
+def parse_date(s):
+    # UTC time, made naive, minus 10 hours, truncated to calendar day
+    import pandas as pd
+    ts = pd.Timestamp(s)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert('UTC').tz_localize(None)
+    ts = ts - pd.Timedelta(hours=10)
+    return ts.normalize()
+
+
+def parse(path):
+    try:
+        with open(path, 'rb') as f:
+            d = json.load(f)
+    except Exception:
+        return None
+    try:
+        h = d['header']
+        comp = h['competitions'][0]
+        if comp['status']['type']['completed'] is not True:
+            return None
+        game_id = int(h['id'])
+        season = int(h['season']['year'])
+        date = parse_date(comp['date'])
+        home = away = None
+        for c in comp['competitors']:
+            if c.get('homeAway') == 'home' and home is None:
+                home = int(c['team']['id'])
+            elif c.get('homeAway') == 'away' and away is None:
+                away = int(c['team']['id'])
+        if home is None or away is None:
+            return None
+    except Exception:
+        return None
+    drives = []
+    try:
+        prev = (d.get('drives') or {}).get('previous') or []
+    except Exception:
+        prev = []
+    for dr in prev:
+        try:
+            team = int(dr['team']['id'])
+        except Exception:
+            team = -1
+        try:
+            period = to_int(dr['start']['period']['number'])
+        except Exception:
+            period = None
+        try:
+            secs = mss(dr['timeElapsed']['displayValue'])
+        except Exception:
+            secs = None
+        res = dr.get('displayResult')
+        res = '' if res is None else str(res).lower()
+        plays = dr.get('plays') or []
+        if len(plays) > 0:
+            p0 = plays[0]
+            sm = abs(score0(p0.get('homeScore')) - score0(p0.get('awayScore')))
+        else:
+            sm = None
+        drives.append((team, period, secs, res, sm))
+    sps = []
+    for sp in (d.get('scoringPlays') or []):
+        try:
+            period = to_int(sp['period']['number'])
+        except Exception:
+            period = None
+        try:
+            clock = mss(sp['clock']['displayValue'])
+        except Exception:
+            clock = None
+        sps.append((period, clock, score0(sp.get('homeScore')), score0(sp.get('awayScore'))))
+    return dict(game_id=game_id, season=season, date=date, home=home, away=away,
+                drives=drives, sps=sps)
+
+
+def main():
+    src, out = sys.argv[1], sys.argv[2]
+    names = sorted(n for n in os.listdir(src) if not n.startswith('_'))
+    paths = [os.path.join(src, n) for n in names]
+    recs = []
+    seen = set()
+    with Pool(4) as pool:
+        for r in pool.imap(parse, paths, chunksize=8):
+            if r is None:
+                continue
+            if r['game_id'] in seen:
+                continue
+            seen.add(r['game_id'])
+            if r['season'] < 2014:
+                continue
+            recs.append(r)
+    print('files', len(paths), 'games kept', len(recs))
+    with open(out, 'wb') as f:
+        pickle.dump(recs, f)
+
+
+if __name__ == '__main__':
+    main()

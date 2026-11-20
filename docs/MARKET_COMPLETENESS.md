@@ -14,14 +14,14 @@ Per predictive input (exactly one category): **FULL / PARTIAL / PROXY** = replay
 | Sport | archetypes | predictive slots | FULL | PARTIAL | PROXY | DATA_IN_HAND | FREE_ACCESSIBLE | PROSPECTIVE | NO_FREE_SOURCE | CONTESTED | primary slots | primary covered (F/P/X) | primary missing critical | mean critical score |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | NFL | 28 | 707 | 57 | 216 | 58 | 0 | 269 | 107 | 0 | 0 | 227 | 12/62/26 | 127 | 0.233 |
-| CFB | 16 | 365 | 1 | 76 | 34 | 0 | 162 | 74 | 14 | 4 | 109 | 0/32/18 | 59 | 0.190 |
+| CFB | 16 | 365 | 1 | 81 | 36 | 0 | 155 | 74 | 14 | 4 | 109 | 0/35/19 | 55 | 0.205 |
 | NBA | 31 | 648 | 40 | 207 | 34 | 15 | 199 | 119 | 25 | 9 | 267 | 20/101/13 | 133 | 0.294 |
 | CBB | 18 | 374 | 4 | 92 | 9 | 0 | 171 | 50 | 39 | 9 | 133 | 0/39/2 | 92 | 0.164 |
 | NHL | 15 | 336 | 41 | 136 | 7 | 3 | 63 | 82 | 3 | 1 | 128 | 16/59/5 | 48 | 0.374 |
 | MLB | 26 | 520 | 2 | 79 | 17 | 0 | 243 | 179 | 0 | 0 | 184 | 1/26/14 | 143 | 0.089 |
 | SOCCER | 23 | 459 | 30 | 41 | 13 | 0 | 118 | 74 | 180 | 3 | 154 | 4/19/2 | 129 | 0.109 |
 | TENNIS | 13 | 261 | 36 | 101 | 8 | 13 | 48 | 40 | 5 | 10 | 74 | 3/29/0 | 42 | 0.218 |
-| **all** | 170 | 3670 | 211 | 948 | 180 | 31 | 1273 | 725 | 266 | 36 | 1276 | 56/367/80 | 773 | |
+| **all** | 170 | 3670 | 211 | 953 | 182 | 31 | 1266 | 725 | 266 | 36 | 1276 | 56/370/81 | 769 | |
 
 ## 2. Market semantics completeness (Kalshi rules text, `m.rules_text`)
 
@@ -65,14 +65,14 @@ Rights tiers come from `rights_registry.json` (weakest tier over a builder's raw
 | Sport | built (F+P+X) | research-cleared | commercial-cleared | wrapper licence only (nflverse) | rights UNRESOLVED (internal only) | primary built | primary built rights-cleared | mean rights-cleared critical score | mean critical score |
 |---|---|---|---|---|---|---|---|---|---|
 | NFL | 331 | 0 | 0 | 331 | 0 | 100 | 0 | 0.000 | 0.233 |
-| CFB | 111 | 0 | 0 | 0 | 111 | 50 | 0 | 0.000 | 0.190 |
+| CFB | 118 | 0 | 0 | 0 | 118 | 54 | 0 | 0.000 | 0.205 |
 | NBA | 281 | 0 | 0 | 0 | 281 | 134 | 0 | 0.000 | 0.294 |
 | CBB | 105 | 0 | 0 | 0 | 105 | 41 | 0 | 0.000 | 0.164 |
 | NHL | 184 | 0 | 0 | 0 | 184 | 80 | 0 | 0.000 | 0.374 |
 | MLB | 98 | 0 | 0 | 0 | 98 | 41 | 0 | 0.000 | 0.089 |
 | SOCCER | 84 | 11 | 11 | 0 | 73 | 25 | 8 | 0.038 | 0.109 |
 | TENNIS | 145 | 145 | 0 | 0 | 0 | 32 | 32 | 0.218 | 0.218 |
-| **all** | 1339 | 156 | 11 | 331 | 852 | 503 | 40 | | |
+| **all** | 1346 | 156 | 11 | 331 | 859 | 507 | 40 | | |
 
 ## 4. Prospective-capture gaps (predictive slots that need vintages captured from now on)
 
@@ -97,15 +97,15 @@ An archetype is *independently complete* only when EVERY predictive slot is FULL
 | What it takes | predictive slots | share of slots | primary slots |
 |---|---|---|---|
 | already FULL (definition complete, replay + blind verified) | 211 | 5.7% | 56 |
-| PARTIAL: finish the definition (missing clauses, history, or model-side steps; each needs a new build, replay and blind verification) | 948 | 25.8% | 367 |
-| PROXY: replace by a builder of the actual quantity | 180 | 4.9% | 80 |
-| DATA_IN_HAND: build, replay, blind-verify + FREE_ACCESSIBLE: permitted free source exists, nothing built (collect, build, replay, blind-verify) | 1304 | 35.5% | 384 |
+| PARTIAL: finish the definition (missing clauses, history, or model-side steps; each needs a new build, replay and blind verification) | 953 | 26.0% | 370 |
+| PROXY: replace by a builder of the actual quantity | 182 | 5.0% | 81 |
+| DATA_IN_HAND: build, replay, blind-verify + FREE_ACCESSIBLE: permitted free source exists, nothing built (collect, build, replay, blind-verify) | 1297 | 35.3% | 380 |
 | PROSPECTIVE: capture vintages from now on, then build | 725 | 19.8% | 300 |
 | NO_FREE_SOURCE or CONTESTED: needs a paid/restricted source or an owner policy decision | 302 | 8.2% | 89 |
 
-Distinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): FULL 62, PARTIAL 252, PROXY 51, DATA_IN_HAND 18, FREE_ACCESSIBLE 648, PROSPECTIVE 351, NO_FREE_SOURCE 112, CONTESTED 22.
+Distinct predictive inputs (a shared input counts once per sport; the slot counts above double-count shared inputs): FULL 62, PARTIAL 255, PROXY 52, DATA_IN_HAND 18, FREE_ACCESSIBLE 644, PROSPECTIVE 351, NO_FREE_SOURCE 112, CONTESTED 22.
 
-Of the 1339 built slots, only 156 sit on rights-cleared sources; 331 rest on a wrapper licence with upstream caveat and 852 on unresolved upstream terms, so rights decisions gate a large share of what is already built. Separately, 144 rules-text slots (134 primary) need timestamped capture.
+Of the 1346 built slots, only 156 sit on rights-cleared sources; 331 rest on a wrapper licence with upstream caveat and 859 on unresolved upstream terms, so rights decisions gate a large share of what is already built. Separately, 144 rules-text slots (134 primary) need timestamped capture.
 
 ## All 170 archetypes ranked by predictive data completeness
 
@@ -139,40 +139,40 @@ Of the 1339 built slots, only 156 sit on rights-cleared sources; 331 rest on a w
 | 25 | TENNIS | set_and_game_spreads | 20 | 5 | 12 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0.417 | 0.550 |  | 17 | 0.417 |
 | 26 | NHL | playoff_series_aggregate | 26 | 3 | 14 | 1 | 0 | 5 | 3 | 0 | 0 | 1 | 0.417 | 0.394 |  | 0 | 0.000 |
 | 27 | TENNIS | player_aces_and_double_faults | 22 | 3 | 7 | 0 | 0 | 8 | 0 | 1 | 3 | 2 | 0.417 | 0.295 |  | 10 | 0.417 |
-| 28 | NBA | player_assists | 23 | 1 | 10 | 1 | 0 | 3 | 2 | 4 | 2 | 3 | 0.409 | 0.272 | primary | 0 | 0.000 |
-| 29 | NFL | game_events | 28 | 4 | 12 | 5 | 0 | 6 | 1 | 0 | 0 | 1 | 0.406 | 0.402 | primary | 0 | 0.000 |
-| 30 | NHL | game_moneyline_puckline | 25 | 4 | 10 | 1 | 0 | 4 | 6 | 0 | 0 | 3 | 0.406 | 0.370 | primary | 0 | 0.000 |
-| 31 | TENNIS | set_sweep_and_tiebreak_events | 20 | 3 | 10 | 1 | 2 | 3 | 1 | 0 | 0 | 2 | 0.400 | 0.412 |  | 14 | 0.400 |
-| 32 | NFL | team_and_event_counting_specials | 18 | 3 | 8 | 1 | 0 | 5 | 1 | 0 | 0 | 2 | 0.400 | 0.403 | primary | 0 | 0.000 |
-| 33 | NBA | player_rebounds | 22 | 3 | 6 | 3 | 0 | 4 | 2 | 3 | 1 | 2 | 0.400 | 0.307 | primary | 0 | 0.000 |
-| 34 | NBA | game_total | 23 | 2 | 7 | 2 | 1 | 7 | 2 | 1 | 1 | 2 | 0.393 | 0.261 | primary | 0 | 0.000 |
-| 35 | NBA | game_moneyline_spread | 24 | 1 | 7 | 2 | 1 | 9 | 2 | 2 | 0 | 2 | 0.393 | 0.208 | primary | 0 | 0.000 |
-| 36 | MLB | pitcher_strikeouts | 29 | 0 | 12 | 2 | 0 | 10 | 5 | 0 | 0 | 1 | 0.389 | 0.224 | primary | 0 | 0.000 |
-| 37 | NBA | season_stat_markets | 24 | 2 | 11 | 0 | 1 | 9 | 1 | 0 | 0 | 5 | 0.385 | 0.312 | primary | 0 | 0.000 |
-| 38 | NFL | first_score_team_time_race | 18 | 4 | 6 | 3 | 0 | 4 | 1 | 0 | 0 | 1 | 0.375 | 0.431 | primary | 0 | 0.000 |
-| 39 | NFL | score_path_functionals | 23 | 2 | 10 | 3 | 0 | 7 | 1 | 0 | 0 | 0 | 0.375 | 0.337 | primary | 0 | 0.000 |
-| 40 | CBB | team_total | 22 | 1 | 11 | 0 | 0 | 5 | 1 | 4 | 0 | 2 | 0.375 | 0.295 | primary | 0 | 0.000 |
-| 41 | NFL | rare_play_call_events | 18 | 1 | 8 | 1 | 0 | 6 | 2 | 0 | 0 | 1 | 0.375 | 0.292 | primary | 0 | 0.000 |
-| 42 | CFB | overtime | 14 | 0 | 3 | 3 | 0 | 7 | 1 | 0 | 0 | 0 | 0.375 | 0.161 | primary | 0 | 0.000 |
-| 43 | NFL | qb_passing_yards | 34 | 5 | 15 | 1 | 0 | 10 | 3 | 0 | 0 | 4 | 0.365 | 0.375 | primary | 0 | 0.000 |
-| 44 | CFB | quarter_and_half_totals | 22 | 0 | 7 | 2 | 0 | 12 | 1 | 0 | 0 | 2 | 0.361 | 0.182 | primary | 0 | 0.000 |
-| 45 | NBA | player_h2h_series_stats | 18 | 1 | 5 | 2 | 2 | 5 | 3 | 0 | 0 | 3 | 0.344 | 0.222 | primary | 0 | 0.000 |
-| 46 | NHL | parlay_combo | 16 | 3 | 6 | 0 | 1 | 1 | 5 | 0 | 0 | 2 | 0.333 | 0.375 | primary | 0 | 0.000 |
-| 47 | TENNIS | match_winner | 27 | 3 | 13 | 0 | 2 | 5 | 3 | 0 | 1 | 2 | 0.333 | 0.352 |  | 16 | 0.333 |
-| 48 | NBA | player_milestones | 23 | 1 | 8 | 1 | 0 | 6 | 5 | 2 | 0 | 4 | 0.333 | 0.228 | primary | 0 | 0.000 |
-| 49 | SOCCER | match_result_3way | 25 | 2 | 5 | 1 | 0 | 7 | 3 | 7 | 0 | 3 | 0.333 | 0.190 | primary | 1 | 0.083 |
-| 50 | CBB | game_total | 23 | 0 | 8 | 1 | 0 | 6 | 1 | 6 | 1 | 2 | 0.333 | 0.185 | primary | 0 | 0.000 |
-| 51 | CFB | team_total | 20 | 0 | 6 | 2 | 0 | 6 | 4 | 2 | 0 | 2 | 0.333 | 0.175 |  | 0 | 0.000 |
-| 52 | NBA | race_to_and_points_leader | 17 | 2 | 9 | 0 | 1 | 4 | 1 | 0 | 0 | 4 | 0.312 | 0.382 | primary | 0 | 0.000 |
-| 53 | NBA | game_overtime_and_team_events | 23 | 2 | 9 | 2 | 1 | 7 | 2 | 0 | 0 | 4 | 0.312 | 0.304 | primary | 0 | 0.000 |
-| 54 | NBA | team_and_player_counting_specials | 25 | 1 | 11 | 2 | 0 | 8 | 3 | 0 | 0 | 4 | 0.312 | 0.280 |  | 0 | 0.000 |
-| 55 | CFB | touchdown_scorer | 24 | 0 | 7 | 3 | 0 | 7 | 6 | 1 | 0 | 1 | 0.312 | 0.177 | primary | 0 | 0.000 |
-| 56 | NBA | game_win_margin | 17 | 1 | 6 | 2 | 0 | 7 | 0 | 1 | 0 | 2 | 0.292 | 0.265 | primary | 0 | 0.000 |
-| 57 | NBA | first_basket | 15 | 1 | 8 | 0 | 1 | 3 | 1 | 1 | 0 | 3 | 0.286 | 0.333 | primary | 0 | 0.000 |
-| 58 | CBB | player_threes | 16 | 0 | 7 | 0 | 0 | 2 | 2 | 3 | 2 | 3 | 0.286 | 0.219 | primary | 0 | 0.000 |
-| 59 | CFB | quarter_and_half_sides | 19 | 0 | 5 | 4 | 0 | 9 | 1 | 0 | 0 | 2 | 0.286 | 0.184 | primary | 0 | 0.000 |
-| 60 | CFB | half_full_double_result | 32 | 0 | 8 | 6 | 0 | 11 | 5 | 2 | 0 | 1 | 0.281 | 0.172 | primary | 0 | 0.000 |
-| 61 | CFB | game_total | 25 | 0 | 8 | 1 | 0 | 12 | 2 | 2 | 0 | 3 | 0.281 | 0.170 |  | 0 | 0.000 |
+| 28 | CFB | quarter_and_half_totals | 22 | 0 | 8 | 2 | 0 | 11 | 1 | 0 | 0 | 1 | 0.417 | 0.205 | primary | 0 | 0.000 |
+| 29 | CFB | team_total | 20 | 0 | 7 | 2 | 0 | 5 | 4 | 2 | 0 | 1 | 0.417 | 0.200 |  | 0 | 0.000 |
+| 30 | NBA | player_assists | 23 | 1 | 10 | 1 | 0 | 3 | 2 | 4 | 2 | 3 | 0.409 | 0.272 | primary | 0 | 0.000 |
+| 31 | NFL | game_events | 28 | 4 | 12 | 5 | 0 | 6 | 1 | 0 | 0 | 1 | 0.406 | 0.402 | primary | 0 | 0.000 |
+| 32 | NHL | game_moneyline_puckline | 25 | 4 | 10 | 1 | 0 | 4 | 6 | 0 | 0 | 3 | 0.406 | 0.370 | primary | 0 | 0.000 |
+| 33 | TENNIS | set_sweep_and_tiebreak_events | 20 | 3 | 10 | 1 | 2 | 3 | 1 | 0 | 0 | 2 | 0.400 | 0.412 |  | 14 | 0.400 |
+| 34 | NFL | team_and_event_counting_specials | 18 | 3 | 8 | 1 | 0 | 5 | 1 | 0 | 0 | 2 | 0.400 | 0.403 | primary | 0 | 0.000 |
+| 35 | NBA | player_rebounds | 22 | 3 | 6 | 3 | 0 | 4 | 2 | 3 | 1 | 2 | 0.400 | 0.307 | primary | 0 | 0.000 |
+| 36 | NBA | game_total | 23 | 2 | 7 | 2 | 1 | 7 | 2 | 1 | 1 | 2 | 0.393 | 0.261 | primary | 0 | 0.000 |
+| 37 | NBA | game_moneyline_spread | 24 | 1 | 7 | 2 | 1 | 9 | 2 | 2 | 0 | 2 | 0.393 | 0.208 | primary | 0 | 0.000 |
+| 38 | MLB | pitcher_strikeouts | 29 | 0 | 12 | 2 | 0 | 10 | 5 | 0 | 0 | 1 | 0.389 | 0.224 | primary | 0 | 0.000 |
+| 39 | NBA | season_stat_markets | 24 | 2 | 11 | 0 | 1 | 9 | 1 | 0 | 0 | 5 | 0.385 | 0.312 | primary | 0 | 0.000 |
+| 40 | NFL | first_score_team_time_race | 18 | 4 | 6 | 3 | 0 | 4 | 1 | 0 | 0 | 1 | 0.375 | 0.431 | primary | 0 | 0.000 |
+| 41 | NFL | score_path_functionals | 23 | 2 | 10 | 3 | 0 | 7 | 1 | 0 | 0 | 0 | 0.375 | 0.337 | primary | 0 | 0.000 |
+| 42 | CBB | team_total | 22 | 1 | 11 | 0 | 0 | 5 | 1 | 4 | 0 | 2 | 0.375 | 0.295 | primary | 0 | 0.000 |
+| 43 | NFL | rare_play_call_events | 18 | 1 | 8 | 1 | 0 | 6 | 2 | 0 | 0 | 1 | 0.375 | 0.292 | primary | 0 | 0.000 |
+| 44 | CFB | overtime | 14 | 0 | 3 | 3 | 0 | 7 | 1 | 0 | 0 | 0 | 0.375 | 0.161 | primary | 0 | 0.000 |
+| 45 | NFL | qb_passing_yards | 34 | 5 | 15 | 1 | 0 | 10 | 3 | 0 | 0 | 4 | 0.365 | 0.375 | primary | 0 | 0.000 |
+| 46 | NBA | player_h2h_series_stats | 18 | 1 | 5 | 2 | 2 | 5 | 3 | 0 | 0 | 3 | 0.344 | 0.222 | primary | 0 | 0.000 |
+| 47 | CFB | game_total | 25 | 0 | 9 | 1 | 0 | 11 | 2 | 2 | 0 | 2 | 0.344 | 0.190 |  | 0 | 0.000 |
+| 48 | NHL | parlay_combo | 16 | 3 | 6 | 0 | 1 | 1 | 5 | 0 | 0 | 2 | 0.333 | 0.375 | primary | 0 | 0.000 |
+| 49 | TENNIS | match_winner | 27 | 3 | 13 | 0 | 2 | 5 | 3 | 0 | 1 | 2 | 0.333 | 0.352 |  | 16 | 0.333 |
+| 50 | NBA | player_milestones | 23 | 1 | 8 | 1 | 0 | 6 | 5 | 2 | 0 | 4 | 0.333 | 0.228 | primary | 0 | 0.000 |
+| 51 | SOCCER | match_result_3way | 25 | 2 | 5 | 1 | 0 | 7 | 3 | 7 | 0 | 3 | 0.333 | 0.190 | primary | 1 | 0.083 |
+| 52 | CBB | game_total | 23 | 0 | 8 | 1 | 0 | 6 | 1 | 6 | 1 | 2 | 0.333 | 0.185 | primary | 0 | 0.000 |
+| 53 | CFB | quarter_and_half_sides | 19 | 0 | 5 | 5 | 0 | 8 | 1 | 0 | 0 | 1 | 0.321 | 0.197 | primary | 0 | 0.000 |
+| 54 | NBA | race_to_and_points_leader | 17 | 2 | 9 | 0 | 1 | 4 | 1 | 0 | 0 | 4 | 0.312 | 0.382 | primary | 0 | 0.000 |
+| 55 | NBA | game_overtime_and_team_events | 23 | 2 | 9 | 2 | 1 | 7 | 2 | 0 | 0 | 4 | 0.312 | 0.304 | primary | 0 | 0.000 |
+| 56 | NBA | team_and_player_counting_specials | 25 | 1 | 11 | 2 | 0 | 8 | 3 | 0 | 0 | 4 | 0.312 | 0.280 |  | 0 | 0.000 |
+| 57 | CFB | touchdown_scorer | 24 | 0 | 7 | 3 | 0 | 7 | 6 | 1 | 0 | 1 | 0.312 | 0.177 | primary | 0 | 0.000 |
+| 58 | NBA | game_win_margin | 17 | 1 | 6 | 2 | 0 | 7 | 0 | 1 | 0 | 2 | 0.292 | 0.265 | primary | 0 | 0.000 |
+| 59 | NBA | first_basket | 15 | 1 | 8 | 0 | 1 | 3 | 1 | 1 | 0 | 3 | 0.286 | 0.333 | primary | 0 | 0.000 |
+| 60 | CBB | player_threes | 16 | 0 | 7 | 0 | 0 | 2 | 2 | 3 | 2 | 3 | 0.286 | 0.219 | primary | 0 | 0.000 |
+| 61 | CFB | half_full_double_result | 32 | 0 | 9 | 7 | 0 | 9 | 5 | 2 | 0 | 1 | 0.281 | 0.195 | primary | 0 | 0.000 |
 | 62 | CFB | game_stat_props | 37 | 0 | 9 | 5 | 0 | 14 | 7 | 1 | 1 | 4 | 0.269 | 0.155 | primary | 0 | 0.000 |
 | 63 | NFL | game_moneyline_spread | 28 | 4 | 10 | 4 | 0 | 6 | 4 | 0 | 0 | 3 | 0.250 | 0.357 | primary | 0 | 0.000 |
 | 64 | SOCCER | handicap_and_exact_score | 19 | 2 | 4 | 1 | 0 | 4 | 2 | 6 | 0 | 2 | 0.250 | 0.224 | primary | 1 | 0.125 |
@@ -238,7 +238,7 @@ Of the 1339 built slots, only 156 sit on rights-cleared sources; 331 rest on a w
 | 124 | NBA | all_star_weekend_events | 18 | 0 | 2 | 0 | 0 | 7 | 8 | 0 | 1 | 7 | 0.062 | 0.056 | primary | 0 | 0.000 |
 | 125 | MLB | all_star_week_events | 26 | 0 | 4 | 0 | 0 | 13 | 9 | 0 | 0 | 8 | 0.056 | 0.077 | primary | 0 | 0.000 |
 | 126 | NHL | offfield_markets | 12 | 0 | 1 | 0 | 0 | 1 | 10 | 0 | 0 | 8 | 0.056 | 0.042 | primary | 0 | 0.000 |
-| 127 | CFB | multi_leg_parlay_packs | 23 | 0 | 7 | 1 | 0 | 9 | 5 | 1 | 0 | 4 | 0.050 | 0.163 | primary | 0 | 0.000 |
+| 127 | CFB | multi_leg_parlay_packs | 23 | 0 | 8 | 1 | 0 | 8 | 5 | 1 | 0 | 4 | 0.050 | 0.185 | primary | 0 | 0.000 |
 | 128 | CBB | polls_and_awards | 21 | 0 | 4 | 1 | 0 | 12 | 3 | 1 | 0 | 9 | 0.050 | 0.107 |  | 0 | 0.000 |
 | 129 | NFL | player_availability | 22 | 0 | 4 | 0 | 0 | 9 | 9 | 0 | 0 | 9 | 0.050 | 0.091 | primary | 0 | 0.000 |
 | 130 | CBB | futures_champion | 24 | 0 | 2 | 0 | 0 | 18 | 3 | 1 | 0 | 9 | 0.050 | 0.042 | primary | 0 | 0.000 |

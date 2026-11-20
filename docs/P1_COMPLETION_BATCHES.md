@@ -22,9 +22,10 @@ Certification used the unchanged foundation process:
 | `nba_stint10` | `features/nba_stint_ext10.py` | nba.on_court_assist_share, creditable_rebound_pool (PARTIAL); pairing_adjusted_reb_share, lineup_conditional_component_rates, assisted_three_passer_map (PROXY) | 73,835 player-games 2024-25..2025-26 | 13 / 13 |
 | `mlb_fi11` | `features/mlb_fi_ext11.py` | mlb.first_inning_markov_run_prob (PROXY) | 19,778 team-games 2023-2026 | 2 / 2 |
 | `nfl_xtd11` | `features/nfl_xtd_ext11.py` | nfl.player_xtd (PARTIAL) | 102,106 player-games 2013-2026 | 3 / 3 |
+| `cfb_drive12` | `features/cfb_drive_ext12.py` | cfb.expected_possessions, period_drive_clock_budget, leader_scoring_persistence (PARTIAL); period_possession_allocation (PROXY) | 18,772 team-games 2016-2026 | 19 / 19 (the brief's title says "23 value columns": a miscount, its column list of 19 is what was implemented; the brief is kept exactly as the verifier saw it) |
 
-**Totals: 35 inputs, 157 value columns, 157 / 157 blind MATCH on the first comparison.** The NBA family reads the nba-edge-finder history archive (`data/history/espn_pbp`).
-The rest read sift-data-vault.
+**Totals: 39 inputs, 176 value columns, 176 / 176 blind MATCH on the first comparison.** The NBA family reads the nba-edge-finder history archive (`data/history/espn_pbp`).
+The rest read sift-data-vault. The CFB family uses ESPN drive lists in place of the catalog's CFBD play-by-play: same drive start, duration and result fields, stated in each spec.
 
 Blind briefs: `verification/blind_briefs/briefs_<family>.md`. Blind implementations and notes: `verification/blind_briefs/<family>_blind_runs/`.
 

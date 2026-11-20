@@ -202,3 +202,37 @@ def test_mlb_first_inning_chain_exact_cases_and_truncation():
     assert abs(p[2] - sum(comb(w + 2, w) * 0.5 ** (w + 3) for w in range(4))) < 1e-12
     raw = _mlb(5)
     _same_early(FI, raw, pd.Timestamp("2023-04-15"), ["fim_p_score_pre", "fim_p_nrfi_pre"])
+
+
+def _cfb(seed=0):
+    from alpha_engine.features import cfb_drive_ext12 as CD
+    rng = np.random.default_rng(seed); G, D, SC = [], [], []; gid = 100
+    for season in range(2014, 2018):
+        for wk in range(10):
+            d = pd.Timestamp(f"{season}-09-01") + pd.Timedelta(days=7 * wk); o = rng.permutation([1, 2, 3, 4, 5, 6])
+            for k in range(3):
+                gid += 1; h, a = int(o[2 * k]), int(o[2 * k + 1]); G.append(dict(game_id=gid, season=season, game_date=d, home=h, away=a))
+                idx = 0; hs = as_ = 0.0; si = 0
+                for per in (1, 2, 3, 4):
+                    for j in range(6):
+                        tm = h if (j + per) % 2 == 0 else a
+                        D.append(dict(game_id=gid, idx=idx, team=tm, period=float(per), secs=float(rng.integers(30, 300)), result=str(rng.choice(["punt", "touchdown", "end of half"])),
+                                      start_margin=abs(hs - as_))); idx += 1
+                        if rng.random() < 0.3:
+                            if tm == h: hs += 7
+                            else: as_ += 7
+                            SC.append(dict(game_id=gid, idx=si, period=float(per), clock=float(900 - 150 * j - 10), home_score=hs, away_score=as_)); si += 1
+    g = pd.DataFrame(G); dr = pd.DataFrame(D); sc = pd.DataFrame(SC); w = set(g.game_id[g.season < CD.OUT_FIRST])
+    return CD, {"games": g[~g.game_id.isin(w)], "games_warm": g[g.game_id.isin(w)], "drives": dr[~dr.game_id.isin(w)], "drives_warm": dr[dr.game_id.isin(w)],
+                "scores": sc[~sc.game_id.isin(w)], "scores_warm": sc[sc.game_id.isin(w)]}
+
+
+def test_cfb_drive_truncation():
+    CD, raw = _cfb()
+    full = CD.compute(raw)["team"]; cut = pd.Timestamp("2017-10-01")
+    keep = set(raw["games"].game_id[raw["games"].game_date < cut])
+    part = CD.compute({k: (v[v.game_id.isin(keep)] if not k.endswith("_warm") else v) for k, v in raw.items()})["team"]
+    a = full[full.date < cut].set_index(["game_id", "team"]); b = part[part.date < cut].set_index(["game_id", "team"])
+    assert set(a.index) == set(b.index) and len(a)
+    np.testing.assert_allclose(b.loc[a.index, CD.ALL].to_numpy(float), a[CD.ALL].to_numpy(float), rtol=1e-12, atol=1e-12, equal_nan=True)
+    assert full[CD.ALL].notna().any().all()

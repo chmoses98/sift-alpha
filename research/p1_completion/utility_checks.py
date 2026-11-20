@@ -102,10 +102,24 @@ def cbb(raw):
     return out
 
 
+def cfb(raw):
+    from alpha_engine.features import cfb_drive_ext12 as X
+    r = X.load_raw(Path(raw) / "CFB" / "cache"); f = X.compute(r)["team"]; tg, _ = X._team_games(r)
+    g = f.merge(tg[["game_id", "team", "drv", "drv1", "drv2", "drv3", "drv4", "is_home"]], on=["game_id", "team"]); g = g[g.is_home]
+    out = [compare("CFB combined drives: cep_exp_drives_pre vs same-season league mean", g.drv.to_numpy(float), g.cep_exp_drives_pre.to_numpy(float),
+                   g.groupby("season").drv.transform("mean").to_numpy(float), g.game_id, "season league mean (in-sample)")]
+    for k in (2, 4):
+        out.append(compare(f"CFB Q{k} combined drives: pdc_q{k}_exp_pre vs same-season league mean", g[f"drv{k}"].to_numpy(float), g[f"pdc_q{k}_exp_pre"].to_numpy(float),
+                           g.groupby("season")[f"drv{k}"].transform("mean").to_numpy(float), g.game_id, "season league mean (in-sample)"))
+    return out
+
+
 if __name__ == "__main__":
     raw, out = sys.argv[1], Path(sys.argv[2]); res = json.loads(out.read_text()) if out.exists() else {}
     if "cbb" in sys.argv[3:]:
         res["CBB"] = cbb(raw)
+    elif "cfb" in sys.argv[3:]:
+        res["CFB"] = cfb(raw)
     else:
         res["NFL"] = nfl(raw); res["MLB"] = mlb(raw)
     res["status"] = "RESEARCH_ONLY"; res["note"] = "inputs vs naive or certified baselines on realised outcomes; in-sample league means make the baselines generous; not a betting claim"

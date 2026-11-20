@@ -1,0 +1,119 @@
+import pandas as pd, numpy as np, glob, json
+rep={'OAK':'LV','SD':'LAC','STL':'LA'}
+g=pd.read_csv('data/games.csv')
+g=g[(g.season>=1999)&g.home_score.notna()&g.away_score.notna()].copy()
+g['home_team']=g.home_team.replace(rep); g['away_team']=g.away_team.replace(rep)
+g['date']=g.gameday
+g=g.sort_values(['date','game_id']).reset_index(drop=True)
+teams=sorted(set(g.home_team)|set(g.away_team)); ti={t:i for i,t in enumerate(teams)}; T=len(teams)
+H=g.home_team.map(ti).values; A=g.away_team.map(ti).values
+hs=g.home_score.values.astype(float); as_=g.away_score.values.astype(float)
+neutral=(g.location=='Neutral').values
+seas=g.season.values; dates=g.date.values
+N=len(g)
+res={k:np.full((N,2),np.nan) for k in ['omr_rating_pre','omr_home_edge_pre','omr_exp_margin_pre','pfa_off_pre','pfa_def_pre','pfa_exp_points_pre']}
+# rows: [:,0]=home row, [:,1]=away row
+for d in pd.unique(dates):
+    idx=np.where(dates==d)[0]
+    S=seas[idx].max()
+    pool=np.where((dates<d)&(seas>=S-1))[0]
+    if len(pool)<16: continue
+    n=len(pool)
+    # rank: later pool games where team plays
+    last_cnt=np.zeros(T,int); rank_h=np.zeros(n,int); rank_a=np.zeros(n,int)
+    for j in range(n-1,-1,-1):
+        p=pool[j]; rank_h[j]=last_cnt[H[p]]; rank_a[j]=last_cnt[A[p]]
+        last_cnt[H[p]]+=1; last_cnt[A[p]]+=1
+    mr=np.minimum(rank_h,rank_a)
+    # A
+    X=np.zeros((n,T+1)); X[np.arange(n),H[pool]]=1; X[np.arange(n),A[pool]]=-1
+    X[:,T]=np.where(neutral[pool],0,1)
+    y=np.clip(hs[pool]-as_[pool],-24,24); w=0.5**(mr/10)
+    P=np.diag([20.0]*T+[0.0])
+    b=np.linalg.solve(X.T@(X*w[:,None])+P, X.T@(w*y))
+    rating=b[:T]; he=b[T]
+    # B
+    keep=mr<17; pk=pool[keep]; wk=0.5**(mr[keep]/8); m=len(pk)
+    Xb=np.zeros((2*m,1+2*T+1))
+    Xb[:,0]=1
+    Xb[np.arange(m),1+H[pk]]=1; Xb[np.arange(m),1+T+A[pk]]=1
+    Xb[m+np.arange(m),1+A[pk]]=1; Xb[m+np.arange(m),1+T+H[pk]]=1
+    Xb[:m,-1]=np.where(neutral[pk],0,1)
+    yb=np.concatenate([hs[pk],as_[pk]]); wb=np.concatenate([wk,wk])
+    Pb=np.diag([0.0]+[6.0]*(2*T)+[0.0])
+    bb=np.linalg.solve(Xb.T@(Xb*wb[:,None])+Pb, Xb.T@(wb*yb))
+    b0=bb[0]; a=bb[1:1+T]; dd=bb[1+T:1+2*T]; h=bb[-1]
+    for i in idx:
+        s=0 if neutral[i] else 1
+        res['omr_rating_pre'][i]=[rating[H[i]],rating[A[i]]]
+        res['omr_home_edge_pre'][i]=[he,he]
+        res['omr_exp_margin_pre'][i]=[rating[H[i]]-rating[A[i]]+s*he, rating[A[i]]-rating[H[i]]-s*he]
+        res['pfa_off_pre'][i]=[b0+a[H[i]],b0+a[A[i]]]
+        res['pfa_def_pre'][i]=[b0+dd[H[i]],b0+dd[A[i]]]
+        res['pfa_exp_points_pre'][i]=[b0+a[H[i]]+dd[A[i]]+h*s, b0+a[A[i]]+dd[H[i]]]
+# long format
+L=pd.DataFrame({'game_id':np.repeat(g.game_id.values,2),'team':np.column_stack([g.home_team,g.away_team]).ravel(),
+ 'opp':np.column_stack([g.away_team,g.home_team]).ravel(),
+ 'date':np.repeat(dates,2),'season':np.repeat(seas,2),
+ 'pts':np.column_stack([hs,as_]).ravel(),'opp_pts':np.column_stack([as_,hs]).ravel(),
+ 'ot':np.repeat((g.overtime==1).values,2)})
+for k,v in res.items(): L[k]=v.ravel()
+# C
+pb=pd.concat([pd.read_parquet(f,columns=['game_id','posteam','pass','rush','qb_kneel','qb_spike','xpass','wp','qtr']) for f in sorted(glob.glob('data/pbp/*.parquet'))])
+pb['posteam']=pb.posteam.replace(rep)
+pb=pb[((pb['pass']==1)|(pb['rush']==1))&(pb.qb_kneel!=1)&(pb.qb_spike!=1)&pb.xpass.notna()&pb.wp.notna()&(pb.qtr<=3)&(pb.wp>=0.2)&(pb.wp<=0.8)&pb.posteam.notna()].copy()
+pb['s']=pb['pass']-pb.xpass
+agg=pb.groupby(['game_id','posteam']).agg(n=('s','size'),s=('s','sum'),p=('pass','sum')).reset_index().rename(columns={'posteam':'team'})
+L=L.merge(agg,on=['game_id','team'],how='left')
+L['proe_pre']=np.nan;L['proe_pass_rate_pre']=np.nan;L['proe_n_pre']=np.nan
+for t,sub in L.groupby('team'):
+    sub=sub.sort_values(['date','game_id'])
+    ok=sub[sub.n.notna()&(sub.n>0)]
+    od=ok.date.values; on=ok.n.values; osu=ok.s.values; op=ok.p.values
+    for ix,dt in zip(sub.index,sub.date.values):
+        k=np.searchsorted(od,dt,side='left')  # strictly before
+        if k==0: continue
+        lo=max(0,k-12); sl=slice(lo,k)
+        r=np.arange(k-lo)[::-1]; w=0.5**(r/6)
+        L.loc[ix,'proe_pre']=(w*osu[sl]).sum()/(w*on[sl]).sum()
+        L.loc[ix,'proe_pass_rate_pre']=(w*op[sl]).sum()/(w*on[sl]).sum()
+        L.loc[ix,'proe_n_pre']=on[sl].sum()
+# D/E
+def dist(xcol,bw,events):
+    x=L[xcol].values; out={k:np.full(len(L),np.nan) for k in events}
+    for S in np.unique(L.season):
+        ref=(L.season.values<S)&~np.isnan(x)
+        cur=np.where((L.season.values==S)&~np.isnan(x))[0]
+        if ref.sum()<500 or len(cur)==0: continue
+        K=np.exp(-0.5*((x[ref][None,:]-x[cur][:,None])/bw)**2)
+        ks=K.sum(1)
+        for k,f in events.items():
+            out[k][cur]=(K*f(L[ref])[None,:]).sum(1)/ks
+    return out
+ev={f'tsp_ge{r}_pre':(lambda d,r=r:(d.pts.values>=r).astype(float)) for r in [14,17,21,24,28,31]}
+ev.update({f'tsp_eq{r}_pre':(lambda d,r=r:(d.pts.values==r).astype(float)) for r in [3,10]})
+for k,v in dist('pfa_exp_points_pre',2.5,ev).items(): L[k]=v
+mg=lambda d:(d.pts.values-d.opp_pts.values)
+ev={f'mml_ge{r}_pre':(lambda d,r=r:(mg(d)>=r).astype(float)) for r in [1,4,8,15]}
+ev['mml_abs3_pre']=lambda d:(np.abs(mg(d))==3).astype(float)
+ev['mml_abs7_pre']=lambda d:(np.abs(mg(d))==7).astype(float)
+ev['mml_ot_pre']=lambda d:d.ot.values.astype(float)
+for k,v in dist('omr_exp_margin_pre',3.0,ev).items(): L[k]=v
+cols=['omr_rating_pre','omr_home_edge_pre','omr_exp_margin_pre','pfa_off_pre','pfa_def_pre','pfa_exp_points_pre','proe_pre','proe_pass_rate_pre','proe_n_pre']+[f'tsp_ge{r}_pre' for r in [14,17,21,24,28,31]]+['tsp_eq3_pre','tsp_eq10_pre','mml_ge1_pre','mml_ge4_pre','mml_ge8_pre','mml_ge15_pre','mml_abs3_pre','mml_abs7_pre','mml_ot_pre']
+assert len(cols)==24
+o=L[['game_id','team']+cols]
+assert not o.duplicated(['game_id','team']).any() and (o.groupby('game_id').size()==2).all()
+o.to_csv('out.csv',index=False,float_format='%.17g')
+json.dump({"ambiguities":[
+"Team set for design columns = teams appearing in the filtered Games set (after code replacement); unused teams would get coefficient 0 anyway.",
+"Rank counts later pool games (pool is chronological by date, game_id) in which team plays, ties on same date broken by game_id order.",
+"Pool 'season >= S-1' uses the season column of games; S is max season among games on date d.",
+"Neutral = location == 'Neutral' exactly.",
+"Section A/B missing when pool<16 games; B with fewer kept games still fit (ridge keeps it solvable).",
+"PBP game_id matched directly to games.csv game_id; pbp seasons only 2010+, so earlier games have no proe.",
+"PBP rows with posteam OAK/SD/STL mapped; pass/rush==1 tested numerically, NaN treated as false.",
+"proe 'last 12 such games' = last 12 games with n>0 dated strictly before d (games on same date as d excluded).",
+"Reference sets for D/E: all team rows of earlier seasons with x present; kernel weights unnormalized by bandwidth; missing x rows excluded from both.",
+"overtime==1 test numeric; missing overtime treated as 0.",
+"Final points clipped? No: margin events use unclipped final scores."]},open('notes.json','w'),indent=1)
+print(len(o)); print(o.describe().T[['count','mean']])

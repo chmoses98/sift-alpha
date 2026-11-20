@@ -1,0 +1,427 @@
+import glob, json, os, re, sys
+import numpy as np
+import pandas as pd
+
+DATA = sys.argv[1] if len(sys.argv) > 1 else "/tmp/blind_bb/data"
+OUT = os.path.dirname(os.path.abspath(__file__))
+
+PARAMS = {
+    "NBA": dict(box="NBA/espn_nba_team_boxscores", sched="NBA/espn_nba_schedules", st=[2, 3, 5], P=4, R=48,
+                H=20, K=20, Hov={"fg3a100": 15, "d_fg3a100": 20},
+                Kov={"d_fg3a100": 25, "d_efg": 40, "fg3_pct": 40, "d_fg3_pct": 200, "ft_pct": 30, "fg2_pct": 30}),
+    "CBB": dict(box="CBB/team_box", sched="CBB/schedules", st=[2, 3], P=2, R=40,
+                H=8, K=10, Hov={},
+                Kov={"d_efg": 25, "fg3_pct": 25, "d_fg3_pct": 90, "ft_pct": 20, "fg2_pct": 20}),
+}
+ADJ = ["ortg", "efg", "tov_pct", "orb_pct", "ftr100", "fg3a100", "fg2a100", "ast100", "stl100", "blk100", "fb100"]
+PCT = ["fg3_pct", "fg2_pct", "ft_pct"]
+OUTCOLS = {
+    "NBA": "exp_poss_joint_pre, poss_sd_pre, pace_slow_pre, pace_inter_pre, exp_poss_comp_pre, pace_mean_pre, pace_absdiff_pre, tov_sum_pre, fb_sum_pre, sd_margin_pre, p_ot_pre, p_ot2_given_ot_pre, sd_pts_style_pre",
+    "CBB": "off_efg_pre, off_tov_pct_pre, off_orb_pct_pre, off_ftr100_pre, def_efg_pre, def_tov_pct_pre, def_orb_pct_pre, def_ftr100_pre, mx_efg_pre, mx_tov_pct_pre, mx_orb_pct_pre, mx_ftr100_pre, ff_edge_pre, exp_poss_elastic_pre, exp_fta_pre, exp_ft_pts_pre, opp_fg3a_allowed_z_pre, opp_fg3pct_allowed_z_pre, fg3a_matchup_adj_pre, fg3pct_matchup_adj_pre, sd_total_style_pre, fg3_share_sum_pre, ftr_sum_pre, rho_margin_total_pre, k_pts_margin_pre",
+}
+NOTES = []
+
+
+def num(df, c):
+    if c not in df.columns:
+        return pd.Series(np.nan, index=df.index)
+    return pd.to_numeric(df[c], errors="coerce").astype(float)
+
+
+def n_items(s):
+    if s is None or not isinstance(s, str):
+        return 0
+    return len(re.findall(r"\{[^{}]*\}", s))
+
+
+def sdiv(a, b):
+    a = np.asarray(a, float); b = np.asarray(b, float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(b == 0, np.nan, a / np.where(b == 0, np.nan, b))
+
+
+def run(sport):
+    prm = PARAMS[sport]
+    P, R = prm["P"], prm["R"]
+    Hf = lambda x: prm["Hov"].get(x, prm["H"])
+    Kf = lambda x: prm["Kov"].get(x, prm["K"])
+
+    # ---------------- 1. universe
+    raw = pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(os.path.join(DATA, prm["box"], "*.parquet")))],
+                    ignore_index=True)
+    raw = raw[raw["season_type"].isin(prm["st"])]
+    if sport == "NBA":
+        raw = raw[raw["team_id"].between(1, 30) & raw["opponent_team_id"].between(1, 30)]
+    raw = raw.reset_index(drop=True)
+    d = pd.DataFrame(index=raw.index)
+    for o, c in dict(pts="team_score", fgm="field_goals_made", fga="field_goals_attempted",
+                     fg3m="three_point_field_goals_made", fg3a="three_point_field_goals_attempted",
+                     ftm="free_throws_made", fta="free_throws_attempted", oreb="offensive_rebounds",
+                     dreb="defensive_rebounds", ast="assists", stl="steals", blk="blocks",
+                     fb="fast_break_points").items():
+        d[o] = num(raw, c)
+    tt, t2 = num(raw, "total_turnovers"), num(raw, "turnovers")
+    d["tov"] = tt.where(tt.notna(), t2)
+    d["game_id"] = raw["game_id"].astype("int64")
+    d["season"] = raw["season"].astype(int)
+    d["date"] = pd.to_datetime(raw["game_date"])
+    d["team"] = raw["team_id"]
+    d["home"] = (raw["team_home_away"] == "home")
+    d = d[d["fga"] > 0]
+    d = d.drop_duplicates(["game_id", "team"], keep="first")
+    d = d[d.groupby("game_id")["team"].transform("size") == 2]
+
+    sc = pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(os.path.join(DATA, prm["sched"], "*.parquet")))],
+                   ignore_index=True)
+    sc["game_id"] = sc["game_id"].astype("int64")
+    sc = sc.drop_duplicates("game_id", keep="first").set_index("game_id")
+    L = (sc["home_linescores"].map(n_items) if "home_linescores" in sc.columns
+         else pd.Series(0, index=sc.index)).astype(float)
+    sp = pd.to_numeric(sc["status_period"], errors="coerce")
+    NP = np.where(sp >= P, sp, np.where(L >= P, L, 0.0))
+    otn = pd.Series(np.where(NP < P, np.nan, NP - P), index=sc.index)
+    neu = sc["neutral_site"].astype("object").map(lambda v: 0 if v is None or (isinstance(v, float) and np.isnan(v)) else int(bool(v)))
+    d["ot_n"] = d["game_id"].map(otn)
+    d["neutral"] = d["game_id"].map(neu).fillna(0).astype(int)
+
+    d = d.sort_values(["date", "game_id"], kind="stable").reset_index(drop=True)
+    N = len(d)
+    pos = np.arange(N)
+    opp = (pd.Series(pos).groupby(d["game_id"].values).transform("sum").values - pos)
+    O = lambda c: d[c].values[opp]
+    oc = lambda arr: np.asarray(arr)[opp]
+
+    v = {c: d[c].values.astype(float) for c in ["pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta", "oreb", "dreb", "ast", "stl", "blk", "fb", "tov"]}
+    o = {c: a[opp] for c, a in v.items()}
+    own = v["fga"] - v["oreb"] + v["tov"] + 0.44 * v["fta"]
+    o_own = own[opp]
+    poss = (own + o_own) / 2
+    otn_a = d["ot_n"].values
+    pace = poss * R / (R + 5 * np.where(np.isnan(otn_a), 0, otn_a))
+
+    def metrics(a, b, a_own):
+        m = {}
+        m["ortg"] = 100 * a["pts"] / poss
+        m["efg"] = (a["fgm"] + 0.5 * a["fg3m"]) / a["fga"]
+        m["tov_pct"] = a["tov"] / a_own
+        m["orb_pct"] = sdiv(a["oreb"], a["oreb"] + b["dreb"])
+        m["ftr100"] = 100 * a["fta"] / poss
+        m["fg3a100"] = 100 * a["fg3a"] / poss
+        m["fg2a100"] = 100 * (a["fga"] - a["fg3a"]) / poss
+        for k in ["ast", "stl", "blk", "fb"]:
+            m[k + "100"] = 100 * a[k] / poss
+        m["fg3_pct"] = sdiv(a["fg3m"], a["fg3a"])
+        m["fg2_pct"] = sdiv(a["fgm"] - a["fg3m"], a["fga"] - a["fg3a"])
+        m["ft_pct"] = sdiv(a["ftm"], a["fta"])
+        return m
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        M = metrics(v, o, own)
+        for k, a in metrics(o, v, o_own).items():
+            M["d_" + k] = a
+    M["pace"] = pace
+    margin = v["pts"] - o["pts"]
+    total = v["pts"] + o["pts"]
+    ot = np.where(np.isnan(otn_a), np.nan, (otn_a > 0).astype(float))
+    site = np.where(d["neutral"].values == 1, 0, np.where(d["home"].values, 1, -1)).astype(float)
+    season = d["season"].values
+    team = d["team"].values
+    date = d["date"].values
+    seasons = np.unique(season)
+
+    # ---------------- 2. primitives
+    sd_key = pd.MultiIndex.from_arrays([season, date])
+    sd_codes, sd_uni = pd.factorize(sd_key)  # appearance order == sorted by date within season
+    u_season = np.array([k[0] for k in sd_uni])
+
+    def prior_cum(x):
+        """per row: (sum, count of non-NaN) of x over rows of same season dated strictly before."""
+        x = np.asarray(x, float)
+        ok = ~np.isnan(x)
+        s = np.bincount(sd_codes, np.where(ok, x, 0.0), minlength=len(sd_uni))
+        c = np.bincount(sd_codes, ok.astype(float), minlength=len(sd_uni))
+        g = pd.DataFrame({"s": s, "c": c}).groupby(u_season)
+        cs = g["s"].cumsum().values - s
+        cc = g["c"].cumsum().values - c
+        return cs[sd_codes], cc[sd_codes]
+
+    def season_mean(x):
+        return pd.Series(np.asarray(x, float)).groupby(season).mean()
+
+    def LG(x):
+        cs, cc = prior_cum(x)
+        prev = pd.Series(season - 1).map(season_mean(x)).values
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(cc > 0, cs / np.where(cc > 0, cc, 1), prev)
+
+    keys = [team, season]
+    ts_codes = pd.factorize(pd.MultiIndex.from_arrays(keys))[0]
+    prev_key = pd.MultiIndex.from_arrays([team, season - 1])
+
+    def SHR(x, h, k, lg):
+        s = pd.Series(np.asarray(x, float))
+        sh = s.groupby(ts_codes).shift(1)
+        ew = sh.groupby(ts_codes).ewm(halflife=h, min_periods=1).mean()
+        ew = ew.reset_index(level=0, drop=True).reindex(s.index).values
+        n = sh.notna().astype(float).groupby(ts_codes).cumsum().values
+        g = s.groupby(keys)
+        cnt, mn = g.count(), g.mean()
+        pc = cnt.reindex(prev_key).values
+        pm = mn.reindex(prev_key).values
+        target = np.where(np.nan_to_num(pc, nan=0) >= 10, pm, lg)
+        res = (n * np.where(np.isnan(ew), 0, ew) + k * target) / (n + k)
+        return np.where(np.isnan(target), ew, res)
+
+    def E(x):
+        nn = site != 0
+        df = pd.DataFrame({"s": season[nn], "x": np.asarray(x, float)[nn], "h": site[nn]})
+        hm = df[df.h == 1].groupby("s")["x"].mean()
+        am = df[df.h == -1].groupby("s")["x"].mean()
+        gap = ((hm - am) / 2).dropna()
+        e = {}
+        for s in seasons:
+            g = gap[(gap.index >= s - 5) & (gap.index <= s - 1)]
+            e[s] = g.mean() if len(g) else 0.0
+        return pd.Series(season).map(e).values
+
+    def WF(fit, apply, window=5, m=2):
+        out = np.full(N, np.nan)
+        for S in seasons:
+            tr = (season >= S - window) & (season <= S - 1)
+            if len(np.unique(season[tr])) < m:
+                continue
+            te = np.where(season == S)[0]
+            out[te] = apply(fit(np.where(tr)[0]), te)
+        return out
+
+    def OLSWF(cols, y, window=5, m=2):
+        X = np.column_stack([np.asarray(c, float) for c in cols])
+        y = np.asarray(y, float)
+        fin = np.isfinite(X).all(1) & np.isfinite(y)
+
+        def fit(tr):
+            tr = tr[fin[tr]]
+            if len(tr) == 0:
+                return None
+            A = np.column_stack([np.ones(len(tr)), X[tr]])
+            return np.linalg.lstsq(A, y[tr], rcond=None)[0]
+
+        def apply(b, te):
+            if b is None:
+                return np.full(len(te), np.nan)
+            r = np.full(len(te), b[0])
+            for i in range(X.shape[1]):
+                r = r + b[i + 1] * X[te, i]
+            return r
+        return WF(fit, apply, window, m)
+
+    # ---------------- 3. ratings
+    c = {}
+    lg = {x: LG(M[x]) for x in ADJ + ["pace"] + PCT}
+    o1 = {x: SHR(M[x], Hf(x), Kf(x), lg[x]) for x in ADJ + ["pace"]}
+    d1 = {x: SHR(M["d_" + x], Hf("d_" + x), Kf("d_" + x), lg[x]) for x in ADJ}
+    for x in ADJ:
+        ex = E(M[x])
+        a = M[x] - site * ex - np.nan_to_num(d1[x][opp] - lg[x], nan=0.0)
+        c[f"off_{x}_pre"] = SHR(a, Hf(x), Kf(x), lg[x])
+        ad = M["d_" + x] + site * ex - np.nan_to_num(o1[x][opp] - lg[x], nan=0.0)
+        c[f"def_{x}_pre"] = SHR(ad, Hf("d_" + x), Kf("d_" + x), lg[x])
+    a = pace - np.nan_to_num(o1["pace"][opp] - lg["pace"], nan=0.0)
+    pace_pre = SHR(a, Hf("pace"), Kf("pace"), lg["pace"])
+    for x in PCT:
+        c[f"off_{x}_pre"] = SHR(M[x], Hf(x), Kf(x), lg[x])
+        c[f"def_{x}_pre"] = SHR(M["d_" + x], Hf("d_" + x), Kf("d_" + x), lg[x])
+
+    # ---------------- 4. matchups
+    for x in ADJ:
+        c[f"mx_{x}_pre"] = c[f"off_{x}_pre"] + oc(c[f"def_{x}_pre"]) - lg[x]
+    rev = lambda x: oc(c[f"off_{x}_pre"]) + c[f"def_{x}_pre"] - lg[x]
+    c["ff_edge_pre"] = (40 * (c["mx_efg_pre"] - rev("efg")) - 25 * (c["mx_tov_pct_pre"] - rev("tov_pct"))
+                        + 20 * (c["mx_orb_pct_pre"] - rev("orb_pct")) + 0.15 * (c["mx_ftr100_pre"] - rev("ftr100")))
+    opp_pace = pace_pre[opp]
+    lgp = lg["pace"]
+    exp_poss_add = pace_pre + opp_pace - lgp
+    c["pace_mean_pre"] = (pace_pre + opp_pace) / 2
+    c["pace_absdiff_pre"] = np.abs(pace_pre - opp_pace)
+    c["pace_slow_pre"] = np.where(np.isnan(pace_pre) | np.isnan(opp_pace), np.nan, np.minimum(pace_pre, opp_pace))
+    c["pace_inter_pre"] = (pace_pre - lgp) * (opp_pace - lgp)
+    c["tov_sum_pre"] = c["mx_tov_pct_pre"] + oc(c["off_tov_pct_pre"]) + c["def_tov_pct_pre"] - lg["tov_pct"]
+    c["fb_sum_pre"] = c["off_fb100_pre"] + oc(c["off_fb100_pre"])
+    prevd = pd.Series(date).groupby(team).shift(1)
+    rest = ((pd.Series(date) - prevd).dt.days).clip(upper=7).fillna(7).values.astype(float)
+    rest_min = np.minimum(rest, rest[opp])
+    c["exp_poss_joint_pre"] = OLSWF([c["pace_mean_pre"], c["pace_slow_pre"], c["pace_inter_pre"]], pace, 5, 2)
+    c["exp_poss_comp_pre"] = OLSWF([c["pace_mean_pre"], c["pace_absdiff_pre"], c["tov_sum_pre"], c["fb_sum_pre"], rest_min], pace, 5, 2)
+    pd_t, pd_o = pace_pre - lgp, opp_pace - lgp
+    c["exp_poss_elastic_pre"] = lgp + OLSWF([pd_t, pd_o], pace - lgp, 5, 2)
+    with np.errstate(invalid="ignore"):
+        mtype = (pd_t > 0).astype(int) + (pd_o > 0).astype(int)
+    pres = pace - c["exp_poss_joint_pre"]
+    c["poss_sd_pre"] = WF(lambda tr: pd.Series(pres[tr]).groupby(mtype[tr]).std(ddof=1),
+                          lambda mdl, te: pd.Series(mtype[te]).map(mdl).values.astype(float), 5, 3)
+    ep = np.where(np.isnan(c["exp_poss_joint_pre"]), exp_poss_add, c["exp_poss_joint_pre"])
+    exp_pts = c["mx_ortg_pre"] * ep / 100
+    opp_exp_pts = rev("ortg") * ep / 100
+    mu0 = exp_pts - opp_exp_pts
+
+    def hfit(tr):
+        tr = tr[site[tr] == 1]
+        r = (margin - mu0)[tr]
+        return np.nanmean(r) if np.isfinite(r).any() else np.nan
+    hca = np.nan_to_num(WF(hfit, lambda mdl, te: np.full(len(te), mdl), 5, 2), nan=0.0)
+    exp_margin = mu0 + site * hca
+    exp_total = exp_pts + opp_exp_pts
+    c["exp_fta_pre"] = ep * (0.5 * c["off_ftr100_pre"] + 0.5 * oc(c["def_ftr100_pre"])) / 100
+    c["exp_ft_pts_pre"] = c["exp_fta_pre"] * c["off_ft_pct_pre"]
+
+    # ---------------- 5. z-scores
+    _, rows_before = prior_cum(np.ones(N))
+
+    def zs(V):
+        V = np.asarray(V, float)
+        s1, c1 = prior_cum(V)
+        s2, _ = prior_cum(V * V)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mu = np.where(c1 > 0, s1 / c1, np.nan)
+            sd = np.sqrt(np.maximum(np.where(c1 > 0, s2 / c1, np.nan) - mu * mu, 0))
+        g = pd.Series(V).groupby(season)
+        pm = pd.Series(season - 1).map(g.mean()).values
+        ps = pd.Series(season - 1).map(g.std(ddof=1)).values
+        few = rows_before < 200
+        mu = np.where(few, pm, mu)
+        sd = np.where(few, ps, sd)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z = np.where(sd == 0, np.nan, (V - mu) / np.where(sd == 0, np.nan, sd))
+        return np.clip(z, -4, 4)
+    c["opp_fg3a_allowed_z_pre"] = zs(oc(c["def_fg3a100_pre"]))
+    c["opp_fg3pct_allowed_z_pre"] = zs(oc(c["def_fg3_pct_pre"]))
+    c["fg3a_matchup_adj_pre"] = 0.6 * c["opp_fg3a_allowed_z_pre"] * 0.8
+    c["fg3pct_matchup_adj_pre"] = 0.1 * c["opp_fg3pct_allowed_z_pre"] * 1.5
+
+    # ---------------- 6. scale / OT / joint
+    with np.errstate(divide="ignore", invalid="ignore"):
+        o3 = c["off_fg3a100_pre"] / (c["off_fg3a100_pre"] + c["off_fg2a100_pre"])
+        c["fg3_share_sum_pre"] = o3 + o3[opp]
+        c["ftr_sum_pre"] = c["off_ftr100_pre"] + oc(c["off_ftr100_pre"])
+        tot_res = total - exp_total
+        mar_res = margin - exp_margin
+        pts_res = v["pts"] - exp_pts
+        ytot = np.log(np.where(np.isnan(tot_res), np.nan, np.maximum(tot_res ** 2, 0.25)))
+        Lh = OLSWF([np.log(ep), c["fg3_share_sum_pre"], c["ftr_sum_pre"]], ytot, 5, 3)
+        c["sd_total_style_pre"] = np.sqrt(np.exp(Lh + 1.27))
+        sq = np.sqrt(ep)
+    aem = np.abs(exp_margin)
+    c["sd_margin_pre"] = OLSWF([sq, aem], np.abs(mar_res) * np.sqrt(np.pi / 2), 5, 3)
+    c["sd_pts_style_pre"] = OLSWF([o3, sq, aem], np.abs(pts_res) * np.sqrt(np.pi / 2), 5, 3)
+
+    Xl = np.column_stack([aem, exp_total])
+    finl = np.isfinite(Xl).all(1) & np.isfinite(ot)
+
+    def lfit(tr):
+        tr = tr[finl[tr]]
+        if len(tr) == 0:
+            return None
+        X, y = Xl[tr], ot[tr]
+        mu, sd = X.mean(0), X.std(0)
+        sd = np.where(sd == 0, 1.0, sd)
+        A = np.column_stack([np.ones(len(tr)), (X - mu) / sd])
+        yb = y.mean()
+        b = np.array([np.log(max(yb, 1e-4) / max(1 - yb, 1e-4)), 0.0, 0.0])
+        pen = np.array([0.0, 1.0, 1.0])
+        for _ in range(40):
+            p = 1 / (1 + np.exp(-(A @ b)))
+            W = p * (1 - p) + 1e-9
+            b = b + np.linalg.solve(A.T @ (A * W[:, None]) + 0.001 * np.eye(3), A.T @ (y - p) - 0.001 * b * pen)
+        cj = b[1:] / sd
+        return b[0] - np.sum(b[1:] * mu / sd), cj
+
+    def lapply(mdl, te):
+        if mdl is None:
+            return np.full(len(te), np.nan)
+        return 1 / (1 + np.exp(-(mdl[0] + Xl[te] @ mdl[1])))
+    c["p_ot_pre"] = WF(lfit, lapply, 5, 3)
+    with np.errstate(invalid="ignore"):
+        ge2, ge1 = otn_a >= 2, otn_a >= 1
+    c["p_ot2_given_ot_pre"] = WF(lambda tr: (ge2[tr].sum() + 30) / (ge1[tr].sum() + 200),
+                                 lambda mdl, te: np.full(len(te), mdl), 5, 3)
+    with np.errstate(invalid="ignore"):
+        bk = np.where(np.isnan(aem), np.nan, np.where(aem < 5, 0, np.where(aem < 10, 1, np.where(aem < 20, 2, 3)))).astype(float)
+        fav = (exp_margin > 0).astype(int)
+    ter = WF(lambda tr: pd.Series(sq[tr]).quantile([1 / 3, 2 / 3]).values,
+             lambda q, te: np.searchsorted(q, sq[te]).astype(float), 5, 3)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z_m = mar_res / c["sd_margin_pre"]
+        z_t = tot_res / c["sd_total_style_pre"]
+
+    def cell_wf(a, b, k1, k2, mask, stat, shrink, window):
+        def fit(tr):
+            tr = tr[mask[tr]]
+            df = pd.DataFrame({"a": a[tr], "b": b[tr], "k1": k1[tr], "k2": k2[tr]})
+            pooled = stat(df) if len(df) > 50 else np.nan
+            cells = {}
+            for key, g in df.groupby(["k1", "k2"]):
+                n = len(g)
+                r = stat(g) if n > 5 else pooled
+                cells[(float(key[0]), float(key[1]))] = (n * r + shrink * pooled) / (n + shrink)
+            return pooled, cells
+
+        def apply(mdl, te):
+            pooled, cells = mdl
+            return np.array([cells.get((float(x), float(y)), pooled) for x, y in zip(k1[te], k2[te])], float)
+        return fit, apply
+
+    def corr(g):
+        if len(g) < 2:
+            return np.nan
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.corrcoef(g["a"].values, g["b"].values)[0, 1]
+
+    def beta(g):
+        if len(g) < 2:
+            return np.nan
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.cov(g["a"].values, g["b"].values, ddof=1)[0, 1] / np.var(g["b"].values, ddof=1)
+
+    mask = ~(np.isnan(z_m) | np.isnan(z_t) | np.isnan(bk) | np.isnan(ter)) & (fav == 1)
+    r = WF(*cell_wf(z_m, z_t, bk, ter, mask, corr, 200, 5), 5, 3)
+    c["rho_margin_total_pre"] = np.where(fav == 1, r, -r)
+    mask = ~(np.isnan(pts_res) | np.isnan(mar_res) | np.isnan(bk))
+    c["k_pts_margin_pre"] = WF(*cell_wf(pts_res, mar_res, fav.astype(float), bk, mask, beta, 250, 8), 8, 3)
+
+    cols = [x.strip() for x in OUTCOLS[sport].split(",")]
+    out = pd.DataFrame({"game_id": d["game_id"].values, "team": team})
+    for x in cols:
+        out[x] = c[x]
+    out.to_csv(os.path.join(OUT, f"blind_{sport}.csv"), index=False, float_format="%.17g")
+    print(sport, "rows:", len(out))
+    print(out[cols].isna().sum().to_string())
+    return out
+
+
+if __name__ == "__main__":
+    for s in ["NBA", "CBB"]:
+        run(s)
+    notes = {"ambiguities": [
+        "Linescores: only L (count of '{...}' items in home_linescores) is used downstream, so period/value parsing+sorting was not needed; every {...} item is counted even if its period/value is None or the 'period' key is absent. Schedule files without a home_linescores column give L=0.",
+        "status_period NaN compares false against P, so NP falls back to L.",
+        "CBB fast_break_points is absent from most box files; missing source columns become NaN (fb100 and everything derived is NaN there).",
+        "Venue edge E(x): a season's gap_u counts as 'available' only if both home and away non-neutral means are non-NaN; E for the defensive adjustment uses E of the offensive metric x, as written.",
+        "site/home for E and hca: home rows are rows with site == +1 (non-neutral and team_home_away == 'home').",
+        "LG fallback (season s-1 mean) is applied per metric when no earlier same-season row has a non-NaN value; the same lg_x (of the offensive metric) is used for d_x series.",
+        "SHR prior target for stage-2 series uses the mean of the adjusted series itself (a_x / a_d_x) over the team's season s-1 rows; n counts non-NaN earlier same-season values of that series.",
+        "SHR 'if target is NaN the result is ew' — ew returned as is (may be NaN).",
+        "WF 'distinct seasons' counts seasons present among training rows of the universe, regardless of whether the fit inputs are finite there; if a fit has zero usable rows, OLS/logistic outputs NaN for that season.",
+        "OLS apply gives NaN when any column is NaN (plain arithmetic).",
+        "rest: day difference to the team's previous row (any season) in step-5 order, capped at 7 (no lower bound; same-day = 0).",
+        "pace_slow_pre = NaN if either pace_pre is NaN.",
+        "poss_sd: sd per mtype of pace - exp_poss_joint_pre over training rows; a group with <2 non-NaN residuals gives NaN.",
+        "hca fit with no finite residuals -> NaN -> 0.",
+        "z-scores: the <200 test counts rows of the season dated strictly before d; with >=200 rows mu/sd are point-in-time population moments over non-NaN V; fallback uses previous-season mean and ddof-1 sd (NaN if no previous season).",
+        "log(max(tot_res^2, 0.25)) is NaN when tot_res is NaN.",
+        "ter: NaN for seasons where WF yields NaN (so those rows are excluded from rho fits); otherwise searchsorted (NaN sqrt(ep) -> 2).",
+        "rho/k cells: lookup keyed on the row's (bk, ter) / (fav, bk); NaN key or unseen cell -> pooled. Group stat used when n > 5 even if it evaluates to NaN. Pooled requires > 50 fit rows. Sign flip for fav != 1 (fav = 0 when exp_margin is NaN or <= 0).",
+        "k_pts_margin fit groups use fav of all rows (no fav filter), cov and var both ddof 1.",
+        "p_ot2_given_ot counts are over all training rows (ot_n NaN counts as neither).",
+        "Logistic: X columns standardised with population sd over the usable training rows.",
+    ]}
+    json.dump(notes, open(os.path.join(OUT, "notes.json"), "w"), indent=1)

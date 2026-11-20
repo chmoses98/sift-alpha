@@ -12,7 +12,7 @@ date = the calendar date of (co.date as UTC minus 10 hours); ne = 0 if co.neutra
   team (missing if neither). Otherwise td of both sides and first_td are missing.
 * Team box: for each entry t of j.boxscore.teams (team id = int(t.team.id)), stats = {name: displayValue} over t.statistics. yards = int(totalYards); rush = int(rushingAttempts);
   plays = (the second number of completionAttempts, which looks like "35/52" or "35-52") + rush. If anything fails to parse for either side, or plays is not > 0 for both sides, then yards, plays, rush are missing for both sides.
-* Drives: count the entries of j.drives.previous by int(team.id). If either side has 0 (or drives are absent), the drive counts of both sides are missing.
+* Drives: count the entries of j.drives.previous by int(team.id); an entry with no team id is ignored (it counts for neither side and does not make the counts missing). If either side has 0 (or drives are absent), the drive counts of both sides are missing.
 
 ## Ridge targets (Method R with LAM = 3, HL = 10)
 pts = regulation points; ypp = yards / plays; rush = rush attempts; drv = drive count.

@@ -13,31 +13,31 @@ Every figure below comes from committed verification evidence under `research/in
 | Bucket | Inputs | Meaning |
 |---|---|---|
 | Full | 62 | computed AND replayed: every independent test passed, no forbidden-as-pregame field, whole definition implemented, coverage and provenance checked |
-| Partial | 223 | replayed and clean, but only part of the catalog definition is implemented or coverage is limited |
-| Proxy | 29 | replayed and clean, but measures a different quantity for the same mechanism |
+| Partial | 226 | replayed and clean, but only part of the catalog definition is implemented or coverage is limited |
+| Proxy | 37 | replayed and clean, but measures a different quantity for the same mechanism |
 | Data In Hand | 18 | no builder yet; two blind verifiers confirmed from REAL re-read columns that it can be built point-in-time (a verdict resting on a table not re-read this session does not count) |
 | Caveat | 0 | replayed; depends on schedule structure (e.g. games left) valid only if the fixture list is known before the event |
 | Unverified | 41 | a claim with no replay or real-column check (schema-only, or a blocked/computable dispute the two blind rounds did not settle) |
 | Failed | 60 | a replay or blind verifier showed the claim fails, or it depends on a field the point-in-time policy forbids (quarantined) |
-| Requires Collection | 1086 | a permitted source exists but data must still be pulled/encoded, or captured prospectively |
+| Requires Collection | 1075 | a permitted source exists but data must still be pulled/encoded, or captured prospectively |
 | Blocked | 49 | no permitted usable source (policy-blocked, none found, sample-only, or blind-confirmed) |
 | Excluded | 81 | market-derived benchmark inputs |
 
-Total 1649 inputs. At the draft, **309** inputs were called potentially computable; **332** are verified computable now (FULL 62, PARTIAL 223, PROXY 29, DATA_IN_HAND 18). These are counted separately everywhere: a FULL is never averaged with a DATA_IN_HAND.
+Total 1649 inputs. At the draft, **309** inputs were called potentially computable; **343** are verified computable now (FULL 62, PARTIAL 226, PROXY 37, DATA_IN_HAND 18). These are counted separately everywhere: a FULL is never averaged with a DATA_IN_HAND.
 
 ### Verified status by sport
 
 | Sport | verified full | verified partial | verified proxy | data in hand confirmed | replayed pit caveat | claimed not replayed | data in hand schema only | replay failed | downgraded by verifier | pit quarantined | requires collection | blocked confirmed | blocked by policy | blocked contested | excluded benchmark only |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | NFL | 14 | 41 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 219 | 0 | 0 | 0 | 13 |
-| CFB | 1 | 15 | 2 | 0 | 0 | 0 | 0 | 0 | 4 | 2 | 120 | 5 | 1 | 2 | 11 |
+| CFB | 1 | 18 | 10 | 0 | 0 | 0 | 0 | 0 | 4 | 2 | 109 | 5 | 1 | 2 | 11 |
 | NBA | 8 | 45 | 5 | 7 | 0 | 0 | 14 | 0 | 29 | 0 | 145 | 1 | 9 | 5 | 11 |
 | CBB | 1 | 18 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 141 | 4 | 3 | 4 | 11 |
 | NHL | 12 | 42 | 4 | 2 | 0 | 0 | 4 | 0 | 8 | 4 | 71 | 0 | 0 | 1 | 7 |
 | MLB | 2 | 19 | 6 | 0 | 0 | 0 | 0 | 0 | 2 | 5 | 208 | 0 | 0 | 1 | 8 |
 | SOCCER | 6 | 9 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 128 | 6 | 17 | 1 | 11 |
 | TENNIS | 18 | 34 | 2 | 9 | 0 | 0 | 0 | 0 | 5 | 0 | 54 | 3 | 0 | 9 | 9 |
-| **all** | **62** | **223** | **29** | **18** | **0** | **0** | **18** | **0** | **49** | **11** | **1086** | **19** | **30** | **23** | **81** |
+| **all** | **62** | **226** | **37** | **18** | **0** | **0** | **18** | **0** | **49** | **11** | **1075** | **19** | **30** | **23** | **81** |
 
 ### Point-in-time policy and quarantine
 

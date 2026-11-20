@@ -15,3 +15,14 @@ Operating-model defects found (reported, NOT changed; production changes need ow
 2. YRFI probabilities run 9–13 points too high.
 3. Margin probabilities run about 6 points too low.
 4. The recommendation archive keeps only the day's last pipeline run, often after first pitch: 267 of 660 recommendations are unscorable point-in-time.
+
+## Cross-sport replication of the R3 idea (recorded after freezing; the frozen MLB candidate is unchanged)
+| Sport / sample | What was measured | Result |
+|---|---|---|
+| NBA props 2025-26 (`research/nba_props_vs_kalshi`, frozen pf model, hourly candles) | R3 as a pre-declared rule (net edge ≥ 0.05, \|model − mid\| ≤ 0.15) | 390 bets, ROI −1.9% [−12.8%, +8.6%]: no edge |
+| CFB 2026 weeks 6–12 (PR #99 forward report, 3 frozen candidates) | contracts with \|model − mid\| in (0.05, 0.10], before fees | on the model's side: model 0.51–0.53, market 0.44–0.46, observed 0.41–0.43; the model side loses even against mid |
+| MLB 2026 (this study) | R3 | +4.9% / +12.2% on two splits, CIs include 0 |
+
+"Moderate disagreement plus edge" is therefore not a general SIFT property. It held, without significance, only for the MLB
+operating model, the one model here built on a Poisson run engine. Treat the MLB result as sport- and model-specific until the
+2027 forward test.

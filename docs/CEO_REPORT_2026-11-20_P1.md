@@ -34,11 +34,16 @@ Research only. No operating model, published probability, bet, stake, schedule, 
 Tennis is owner-paused (handoff 2026-11-13) and was not touched.
 
 ## 1. PRs and merges
-See the PR linked in the session summary. One PR on `claude/sift-alpha-p1-completion-2nk8gm` holds two commits:
-- builders and evidence;
-- ledger regeneration with pins, docs and dashboard.
+| PR | Merge SHA | Verification |
+|---|---|---|
+| sift-alpha [#101](https://github.com/chmoses98/sift-alpha/pull/101) | `c4a6810c` | Final head `6062b2a9`: CI 4/4 green (research-desk, test, e2e incl. iPhone WebKit, dashboard). Main tree == tested head tree (`9d5c3bac`). |
 
-The PR body records the CI result and the merge SHA.
+#101 holds three commits:
+1. `f7dab8a2`: builders and evidence for 35 inputs;
+2. `1401881d`: ledger regeneration with pins, docs and dashboard (its own CI run was also 4/4 green);
+3. `6062b2a9`: the CFB drive batch (4 inputs) and a second regeneration.
+
+No other repository was changed.
 
 **Local verification:**
 - Python: 1,825 passed, 8 skipped, 0 failed.

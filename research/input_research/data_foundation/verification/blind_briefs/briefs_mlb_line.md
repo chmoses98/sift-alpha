@@ -1,10 +1,11 @@
-# Blind brief: MLB linescore and starter-workload inputs (20 value columns)
+# Blind brief: MLB linescore and starter-workload inputs (20 value columns), version 2
 
 Data: `/tmp/raw/MLB2022`, `/tmp/raw/MLB2023`, `/tmp/raw/MLB24`, `/tmp/raw/MLB2025`, `/tmp/raw/MLB2026` (`*.json`, one compact game feed per game; ignore names starting with "_"). If a game id occurs twice keep the first.
 
 ## Games (parse per file j)
 Keep the game only if j.game.type is one of R, F, D, L, W, j.status.codedGameState == "F", and j.linescore.innings has at least 5 entries. game_id = int(j.pk); season = int(j.game.season);
-date = j.datetime.resumeDate if that key is present and non-empty, else j.datetime.officialDate; team id = int(j.teams.home.id) / int(j.teams.away.id); ne = 1 always.
+date = j.datetime.officialDate (the date of the first pitch; a game that was suspended and completed on a later day keeps the date it started);
+avail = j.datetime.resumeDate if that key is present and non-empty, else j.datetime.officialDate (the date the game's result became known); team id = int(j.teams.home.id) / int(j.teams.away.id); ne = 1 always.
 Runs by inning: for inning entry x, home runs = x.home.runs and away runs = x.away.runs (a missing side or missing/null runs = 0). Per side: r1 = runs in the first entry; r5 = runs in the first five entries;
 r = runs over all entries; late = r - r5. n_inn = number of inning entries. walkoff = 1 if (home r > away r) and (home r minus home runs in the LAST entry <= away r), else 0.
 Starter line per side (side = home / away): pid = j.box[side].pitchers[0]; pit = the `pit` object of the entry of j.box[side].players whose id == pid; outs = pit.outs, bf = pit.battersFaced, np = pit.numberOfPitches.
@@ -25,7 +26,7 @@ Kernel on spw_outs_pre, bw 0.4:  exb_ge{k}_pre = P(own starter outs >= k) for k 
 
 ## Method R: walk-forward ridge (used for every "ridge target" below)
 Order the Games by (date, game_id). Teams = every team id appearing in the Games. All games on the same date d share one fit:
-* S = the largest season among the games on d. Pool = every game dated strictly before d with season >= S-1, in (date, game_id) order. If the pool has fewer than 16 games, every ridge value is missing for games on d.
+* S = the largest season among the games on d. Pool = every game dated strictly before d AND with avail strictly before d, with season >= S-1, in (date, game_id) order. If the pool has fewer than 16 games, every ridge value is missing for games on d.
 * rank(team, pool game) = the number of LATER pool games (later in pool order) in which that team plays (0 = the team's most recent pool game). rk = min(rank of home team, rank of away team).
   Ranks are always counted over the whole pool, also when a target is missing in some pool games. Weight w = 0.5 ** (rk / HL).
 * For a target with per-side values (y_home, y_away): keep the pool games where both values are present (if fewer than 16 are kept, that target is missing on d). Each kept game gives two observations with

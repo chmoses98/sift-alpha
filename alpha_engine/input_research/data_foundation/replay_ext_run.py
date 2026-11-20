@@ -115,7 +115,8 @@ def main(a=None) -> int:
         from ...features import cfb_espn_ext, mlb_line_ext, nhl_period_ext
         X = {"cfb_espn": cfb_espn_ext, "nhl_period": nhl_period_ext, "mlb_line": mlb_line_ext}[fam]
         raw = X.load_raw(a[1]); out = a[2]
-        r = G.run(X, raw, X.S, {"games": ("game_id", X.CONTENT)}, games_table="games", games_date_col="game_date", quick=quick)
+        r = G.run(X, raw, X.S, {"games": ("game_id", X.CONTENT)}, games_table="games", games_date_col="game_date", quick=quick,
+                  avail_col="avail_date" if "avail_date" in raw["games"] else None)     # MLB: suspended games (first-pitch date vs completion date)
     else:
         raise SystemExit("unknown family " + fam)
     Path(out).write_text(json.dumps(r, default=str, indent=0)); print("replayed", len(r["inputs"]), r["seconds"], "s"); return 0
